@@ -1,7 +1,7 @@
 """Edge-case tests for the `leftoverDetails` key of retro.py (ADR-0006 section 1), beyond test_contract_leftover_details.py.
 
 Written from the ADR before the producer exists: until retro.py emits `leftoverDetails`, every test fails with
-"producer missing". Real git in temp repos. Run: python -m unittest discover -s plugins/foundry/tests
+"producer missing". Real git in temp repos. Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -22,7 +22,7 @@ ID = "a0123456789abcdef"
 
 def spawn(agent_id):
     return json.dumps({"v": 1, "ts": TS, "event": "spawn", "crew": "c", "agent": "c", "agentId": agent_id,
-                       "type": "foundry:lead", "model": "opus", "effort": "high", "by": "main"})
+                       "type": "truss:foreman", "model": "opus", "effort": "high", "by": "main"})
 
 
 def quarantined_merge_tree(repo, ref):
@@ -45,7 +45,7 @@ class RetroLeftoverDetails(unittest.TestCase):
         os.mkdir(self.repo)
         git(self.repo, "init", "-q")
         self.commit("f.txt", "x\n", "one")
-        self.session = os.path.join(self.repo, ".git", "foundry", "S1")
+        self.session = os.path.join(self.repo, ".git", "truss", "S1")
         os.makedirs(self.session)
         with open(os.path.join(self.session, "events.jsonl"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(spawn(ID) + "\n")

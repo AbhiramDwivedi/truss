@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "foundry eval case",
-  "description": "One golden case for the judge or cynic prompt, one per file at evals/golden/<id>.json. Foundry ADR-0007, section 2.",
+  "title": "truss eval case",
+  "description": "One golden case for the QC engineer or checking engineer prompt, one per file at evals/golden/<id>.json. Truss ADR-0007, section 2.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "source", "role", "input", "expected"],
@@ -12,15 +12,15 @@
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
     "source": {
-      "description": "The run file the case came from, .git/foundry/<run-id>/<path>, relative to the git common dir: strip .git/ and resolve against git rev-parse --git-common-dir. Forward slashes; no segment starts with a dot, so no .. and no absolute path.",
+      "description": "The run file the case came from, .git/truss/<run-id>/<path>, relative to the git common dir: strip .git/ and resolve against git rev-parse --git-common-dir. Forward slashes; no segment starts with a dot, so no .. and no absolute path.",
       "type": "string",
       "pattern": "^\\.git/foundry/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/(?:[A-Za-z0-9_][A-Za-z0-9._-]*/)*[A-Za-z0-9_][A-Za-z0-9._-]*$"
     },
     "role": {
-      "enum": ["judge", "cynic"]
+      "enum": ["qc", "checker"]
     },
     "input": {
-      "description": "The brief handed to the role, verbatim. A judge input has no line starting VERDICT:; a cynic input never contains RECOMMEND.",
+      "description": "The brief handed to the role, verbatim. A QC input has no line starting VERDICT:; a checker input never contains RECOMMEND.",
       "type": "string",
       "minLength": 1
     },
@@ -36,11 +36,11 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "role": { "const": "judge" } }, "required": ["role"] },
+      "if": { "properties": { "role": { "const": "qc" } }, "required": ["role"] },
       "then": { "properties": { "expected": { "properties": { "keyword": { "const": "VERDICT" }, "kind": { "enum": ["PASS", "FAIL"] } } } } }
     },
     {
-      "if": { "properties": { "role": { "const": "cynic" } }, "required": ["role"] },
+      "if": { "properties": { "role": { "const": "checker" } }, "required": ["role"] },
       "then": { "properties": { "expected": { "properties": { "keyword": { "const": "RECOMMEND" }, "kind": { "enum": ["answer", "defer", "pass"] } } } } }
     }
   ]

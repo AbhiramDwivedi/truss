@@ -1,8 +1,8 @@
-"""Contract test for retro's per-goal `goals` key, foundry ADR-0010 (mid-run intake) section 6 and line 87.
+"""Contract test for retro's per-goal `goals` key, truss ADR-0010 (mid-run intake) section 6 and line 87.
 
 Written from the ADR before the producer exists. Fixtures are built in a tempdir (plan.json and decisions.md)
 and retro.py is run by subprocess; only the printed JSON is checked. Expected counts are worked out by hand.
-Run: python -m unittest discover -s plugins/foundry/tests -p test_contract_retro_intake.py
+Run: python -m unittest discover -s tests -p test_contract_retro_intake.py
 """
 import json
 import os
@@ -21,22 +21,22 @@ GOALS = [
     {"id": "alpha", "goal": "add the alpha feature", "addedAt": "2026-10-28T10:00:00Z",
      "approval": "auto", "approvedAt": "2026-10-28T10:01:00Z"},
     {"id": "beta-two", "goal": "fix the beta bug", "addedAt": "2026-10-28T11:30:00Z",
-     "approval": "owner", "approvedAt": None},
+     "approval": "client", "approvedAt": None},
 ]
 # run: a, b, c (no goal, "run", non-string goal). alpha: d, e. beta-two: f.
 CREWS = [
-    {"slug": "a", "wave": 0, "estAgents": 2, "status": "merged"},
-    {"slug": "b", "goal": "run", "wave": 0, "estAgents": 3, "status": "merged"},
-    {"slug": "c", "goal": 5, "wave": 1, "estAgents": 1},
-    {"slug": "d", "goal": "alpha", "wave": 0, "estAgents": 4, "status": "merged"},
-    {"slug": "e", "goal": "alpha", "wave": 1, "estAgents": 5, "status": "running"},
-    {"slug": "f", "goal": "beta-two", "wave": 0, "estAgents": 6},
+    {"slug": "a", "stage": 0, "estAgents": 2, "status": "merged"},
+    {"slug": "b", "goal": "run", "stage": 0, "estAgents": 3, "status": "merged"},
+    {"slug": "c", "goal": 5, "stage": 1, "estAgents": 1},
+    {"slug": "d", "goal": "alpha", "stage": 0, "estAgents": 4, "status": "merged"},
+    {"slug": "e", "goal": "alpha", "stage": 1, "estAgents": 5, "status": "running"},
+    {"slug": "f", "goal": "beta-two", "stage": 0, "estAgents": 6},
 ]
 
 
 def plan(goals=None, crews=None, version=3):
-    p = {"version": version, "goal": "ship the thing", "approval": "owner",
-         "approvedAt": "2026-10-27T09:00:00Z", "agentCap": 10, "repairBudget": 2,
+    p = {"version": version, "goal": "ship the thing", "approval": "client",
+         "approvedAt": "2026-10-27T09:00:00Z", "agentCap": 10, "reworkAllowance": 2,
          "crews": CREWS if crews is None else crews}
     if goals is not None:
         p["goals"] = goals
@@ -44,7 +44,7 @@ def plan(goals=None, crews=None, version=3):
 
 
 def line(text, hhmm="10:00"):
-    return "- %s | %s | because | cynic: none | followed\n" % (hhmm, text)
+    return "- %s | %s | because | checker: none | followed\n" % (hhmm, text)
 
 
 class RetroIntake(unittest.TestCase):
@@ -106,9 +106,9 @@ class RetroIntake(unittest.TestCase):
                          (1, 6, {"unset": 1}))
 
     def test_goal_absent_run_and_non_string_all_count_to_run(self):
-        crews = [{"slug": "a", "wave": 0, "estAgents": 1, "status": "merged"},
-                 {"slug": "b", "goal": "run", "wave": 0, "estAgents": 1, "status": "merged"},
-                 {"slug": "c", "goal": ["x"], "wave": 0, "estAgents": 1, "status": "merged"}]
+        crews = [{"slug": "a", "stage": 0, "estAgents": 1, "status": "merged"},
+                 {"slug": "b", "goal": "run", "stage": 0, "estAgents": 1, "status": "merged"},
+                 {"slug": "c", "goal": ["x"], "stage": 0, "estAgents": 1, "status": "merged"}]
         by = self.goals_by_id(self.retro(plan(GOALS, crews), ""))
         self.assertEqual((by["run"]["crews"], by["run"]["estAgents"], by["run"]["status"]),
                          (3, 3, {"merged": 3}))

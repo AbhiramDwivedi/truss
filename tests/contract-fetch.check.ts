@@ -1,9 +1,9 @@
 // @ts-nocheck
-// foundry 0.8.0 contract, ADR-0005 section 11: the `fetch` branch of docs/events.schema.json, read with node:fs and
+// truss 0.8.0 contract, ADR-0005 section 11: the `fetch` branch of docs/events.schema.json, read with node:fs and
 // checked with a small inline validator (type, enum, const, required, properties, additionalProperties, minLength,
 // maxLength, minimum, oneOf, anyOf, allOf, if/then, not). Synthetic data only (P8).
 //
-// Run with: node --test plugins/foundry/tests/contract-fetch.check.ts
+// Run with: node --test tests/contract-fetch.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` gives tests no fs.
 
 import assert from 'node:assert/strict'
@@ -50,7 +50,7 @@ function ok(s, v) {
 }
 const valid = v => ok(schema, v)
 
-const base = { v: 1, ts: '2026-10-29T08:12:03.512Z', crew: 'growth-contract', agent: 'growth-contract-architect' }
+const base = { v: 1, ts: '2026-10-29T08:12:03.512Z', crew: 'growth-contract', agent: 'growth-contract-designer' }
 const fetchLine = (extra = {}) => ({ ...base, event: 'fetch', tool: 'WebFetch', url: 'https://example.com:8443/docs/api?version=&lang=', ...extra })
 
 test('ADR-0005 the schema file reads, parses and names the fetch event', () => {
@@ -60,7 +60,7 @@ test('ADR-0005 the schema file reads, parses and names the fetch event', () => {
 
 test('ADR-0005 the validator itself rejects a bad line (sanity)', () => {
   assert.equal(valid({ ...base, event: 'nope' }), false)
-  assert.equal(valid({ ...base, v: 2, event: 'budget-spent' }), false)
+  assert.equal(valid({ ...base, v: 2, event: 'allowance-spent' }), false)
 })
 
 test('ADR-0005 a WebFetch line with a url validates', () => {
@@ -98,7 +98,7 @@ test('ADR-0005 a fetch line without tool, crew or agent fails', () => {
 
 test('ADR-0005 the existing event kinds still validate', () => {
   const lines = [
-    { ...base, event: 'budget-spent' },
+    { ...base, event: 'allowance-spent' },
     { ...base, event: 'spawn', agentId: 'new1', type: 'kit:builder', model: 'sonnet', effort: null, by: 'main' },
     { ...base, event: 'stall', kind: 'agent', minutes: 12 },
     { ...base, event: 'tag', tag: 'QUESTION' },
@@ -111,5 +111,5 @@ test('ADR-0005 the existing event kinds still validate', () => {
 test('ADR-0005 existing event kinds still reject extra or missing fields', () => {
   assert.equal(valid({ ...base, event: 'tag', tag: 'QUESTION', url: 'https://example.com/' }), false)
   assert.equal(valid({ ...base, event: 'stall', kind: 'agent' }), false)
-  assert.equal(valid({ ...base, event: 'budget-spent', tool: 'WebFetch' }), false)
+  assert.equal(valid({ ...base, event: 'allowance-spent', tool: 'WebFetch' }), false)
 })

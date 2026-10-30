@@ -1,9 +1,9 @@
 // @ts-nocheck
-// foundry ADR-0007 Seams 4-5, anti-fake checks the contract test (contract-evals.check.ts) does not make: the snippet
+// truss ADR-0007 Seams 4-5, anti-fake checks the contract test (contract-evals.check.ts) does not make: the snippet
 // runner really executes, cleans up and stays out of the caller's checkout; the scorer reads only the first line.
 // Written before evals/*.ts exist. Red by design until the evals-build crew builds score.ts and snippets.ts.
 //
-// Run with: node --test plugins/foundry/tests/evals-runner.check.ts
+// Run with: node --test tests/evals-runner.check.ts
 // Needs bash and git, no model, no network. Paths come from this file's location, not cwd.
 
 import assert from 'node:assert/strict'
@@ -16,17 +16,17 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { score } from '../evals/score.ts'
 import { extractSnippet, runSnippet } from '../evals/snippets.ts'
-import { judgeRuling } from '../hooks/register.ts'
+import { qcRuling } from '../hooks/register.ts'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOT = join(PLUGIN, '..', '..')
+const ROOT = PLUGIN
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 const token = () => randomBytes(8).toString('hex')
 // Drops block and line comments so a source check cannot be satisfied by a comment. Naive: skips `//` after ':' or a quote.
 const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
-const snippetDirs = () => new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('foundry-snippet-')))
+const snippetDirs = () => new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('truss-snippet-')))
 
-// Other test files run in parallel and may hold a foundry-snippet-* dir for a moment, so a leak is a new dir that is
+// Other test files run in parallel and may hold a truss-snippet-* dir for a moment, so a leak is a new dir that is
 // still there after a grace period, not one seen at an instant.
 function waitGone(extra: Set<string>, ms = 10000) {
   const end = Date.now() + ms
@@ -39,7 +39,7 @@ function waitGone(extra: Set<string>, ms = 10000) {
 }
 
 // ---- Seam 5: runSnippet cleans up ----
-test('runSnippet: removes its foundry-snippet-* temp dir after ok, failing, unfilled and worktree runs', () => {
+test('runSnippet: removes its truss-snippet-* temp dir after ok, failing, unfilled and worktree runs', () => {
   const before = snippetDirs()
   const a = runSnippet('echo hi', {})
   const b = runSnippet('exit 3', {})
@@ -95,7 +95,7 @@ test('runSnippet: the worktree toplevel differs from the root toplevel, and neit
 
 test('runSnippet: a failure inside a pipe fails the script (pipefail), and an unset variable fails it (set -u)', () => {
   assert.equal(runSnippet('false | cat', {}).ok, false)
-  assert.equal(runSnippet('echo "$FOUNDRY_NOT_SET_' + token() + '"', {}).ok, false)
+  assert.equal(runSnippet('echo "$TRUSS_NOT_SET_' + token() + '"', {}).ok, false)
 })
 
 test('runSnippet: stdout and stderr come back with CR dropped', () => {
@@ -119,7 +119,7 @@ test('runSnippet: a snippet that creates a canary file leaves the caller checkou
 
 test('runSnippet: drops every GIT_* variable from the caller environment and never touches the repo they point at', () => {
   // Every injected path is inside a throwaway dir. Never point GIT_* at ROOT or any real repo.
-  const tmp = mkdtempSync(join(tmpdir(), 'foundry-gitenv-'))
+  const tmp = mkdtempSync(join(tmpdir(), 'truss-gitenv-'))
   const keys = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_CONFIG_GLOBAL', 'GIT_AUTHOR_NAME']
   const saved: Record<string, string | undefined> = {}
   for (const k of keys) saved[k] = process.env[k]
@@ -205,10 +205,10 @@ test('score RECOMMEND: the keyword is case-sensitive', () => {
   assert.equal(score('Recommend: defer\n', R('defer')).got, undefined)
 })
 
-test('score RECOMMEND: the line must start with RECOMMEND or a cynic-N prefix', () => {
+test('score RECOMMEND: the line must start with RECOMMEND or a checker-N prefix', () => {
   assert.equal(score('I would not RECOMMEND pass here\n', R('pass')).got, undefined)
-  assert.equal(score('note: cynic-2 RECOMMEND: defer\n', R('defer')).got, undefined)
-  assert.deepEqual(score('cynic-2: RECOMMEND: defer\n', R('defer')), { ok: true, got: 'defer' })
+  assert.equal(score('note: checker-2 RECOMMEND: defer\n', R('defer')).got, undefined)
+  assert.deepEqual(score('checker-2: RECOMMEND: defer\n', R('defer')), { ok: true, got: 'defer' })
   assert.deepEqual(score('  RECOMMEND answer\n', R('answer')), { ok: true, got: 'answer' })
 })
 
@@ -223,7 +223,7 @@ test('runSnippet (source check): the bash spawn carries timeout: 30_000', () => 
 
 // ---- ADR-0007 section 5: extractSnippet rules ----
 function withPrompt(content: string, fn: (path: string) => void) {
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-extract-'))
+  const dir = mkdtempSync(join(tmpdir(), 'truss-extract-'))
   try {
     const p = join(dir, 'prompt.md')
     writeFileSync(p, content)
@@ -282,17 +282,17 @@ test('extractSnippet inline: spans inside fence bodies are skipped; the first sp
 })
 
 test('extractSnippet: an unreadable file gives undefined', () => {
-  assert.equal(extractSnippet(join(tmpdir(), 'foundry-no-such-prompt-' + token() + '.md'), line('x', 'fenced')), undefined)
+  assert.equal(extractSnippet(join(tmpdir(), 'truss-no-such-prompt-' + token() + '.md'), line('x', 'fenced')), undefined)
 })
 
 // ---- ADR-0007 section 4: score rules a VERDICT exactly as the merge gate does ----
-test('score VERDICT: agrees with judgeRuling from the gate (hooks/register.ts) on text the gate and a bare regex rule differently', () => {
+test('score VERDICT: agrees with qcRuling from the gate (hooks/register.ts) on text the gate and a bare regex rule differently', () => {
   for (const text of ['  VERDICT: PASS\n', '\n\nVERDICT: FAIL\n', 'VERDICT:  PASS\n', 'VERDICT: PASS   \n', 'VERDICT: PASS (see findings)\n', 'VERDICT: FAIL, two bugs\n', 'VERDICT: PASS\t\n', 'VERDICT: FAIL\r\n\r\n## Proof checked\n','﻿VERDICT: PASS\n']) {
-    const gate = judgeRuling(text).verdict
+    const gate = qcRuling(text).verdict
     for (const kind of ['PASS', 'FAIL']) {
       assert.deepEqual(score(text, V(kind)), { ok: gate === kind, got: gate }, JSON.stringify(text) + ' expecting ' + kind)
     }
   }
-  assert.equal(judgeRuling('  VERDICT: PASS\n').verdict, 'PASS', 'premise: the gate rules indented VERDICT lines')
+  assert.equal(qcRuling('  VERDICT: PASS\n').verdict, 'PASS', 'premise: the gate rules indented VERDICT lines')
   assert.deepEqual(score('  VERDICT: PASS\n', V('PASS')), { ok: true, got: 'PASS' })
 })

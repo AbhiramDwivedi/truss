@@ -1,7 +1,7 @@
 // @ts-nocheck
-// Regression cases for `finish`, from red-team reproductions against the merge step and the session audit
-// (foundry ADR-0009, "finish, session audit" and "finish, merge step" items 2 and 4). Loaded by tests/factory.check.ts.
-//   1. the target moves during the done-check: the merge must be a compare-and-swap, so a concurrent commit is kept
+// Regression cases for `finish`, from stress test reproductions against the merge step and the session audit
+// (truss ADR-0009, "finish, session audit" and "finish, merge step" items 2 and 4). Loaded by tests/factory.check.ts.
+//   1. the target moves during the acceptance test: the merge must be a compare-and-swap, so a concurrent commit is kept
 //      and the crew goes to rework with why "target moved";
 //   2. a tag named like the target must not make the CLI update the wrong ref and rewind the branch;
 //   3. while any session-audit entry stands, finish merges nothing at all.
@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../../../hooks/register.ts'
-import { addCrewWorktree, appendEvent, crew, factorySpawn, git, gitStatus, head, judgeReport, mkEnv, mkRun, planObj, putFile, tmp, writePlan } from './harness.ts'
+import { addCrewWorktree, appendEvent, crew, factorySpawn, git, gitStatus, head, qcReport, mkEnv, mkRun, planObj, putFile, tmp, writePlan } from './harness.ts'
 
 function patchId(cwd, base, hd) {
   const [diffCmd, idCmd] = reg.PATCH_COMMAND.split(' | ').map((s) => s.replace('<base>', base).replace('<head>', hd).split(' '))
@@ -19,10 +19,10 @@ function patchId(cwd, base, hd) {
   return reg.patchIdOf(p.stdout)
 }
 
-/** One running crew `s` with a judged, passed branch. The caller moves main and checks main out nowhere. */
-function world(doneCheck = 'true') {
+/** One running crew `s` with a qcd, passed branch. The caller moves main and checks main out nowhere. */
+function world(acceptanceTest = 'true') {
   const env = mkEnv({ config: { merge: 'sequential', target: 'main' } })
-  writePlan(env.dir, planObj([crew('s', { status: 'running', doneCheck })], { approvedAt: '2026-10-01T00:00:00.000Z' }))
+  writePlan(env.dir, planObj([crew('s', { status: 'running', acceptanceTest })], { approvedAt: '2026-10-01T00:00:00.000Z' }))
   appendEvent(env.dir, factorySpawn('s', new Date(Date.now() - 3 * 3600_000).toISOString()))
   const wt = addCrewWorktree(env.repo, 's', 'main')
   putFile(wt, 'src/s/a.ts', 's\n', 'work')
@@ -33,10 +33,10 @@ function world(doneCheck = 'true') {
   writeFileSync(`${env.dir}/checks/s-1.json`, JSON.stringify({ command: 'true', exit: 1, head: hd, tail: '' }))
   const agents = [
     { label: 's-builder', agentType: 'general-purpose', metaModel: 'sonnet', model: 'claude-sonnet-5-5', effort: 'medium', result: 'built' },
-    { label: 's-judge', agentType: 'foundry:judge', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', result: judgeReport({ head: hd, patch }) },
+    { label: 's-qc', agentType: 'truss:qc-engineer', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', result: qcReport({ head: hd, patch }) },
   ]
   const resFile = `${env.dir}/result.json`
-  writeFileSync(resFile, JSON.stringify([{ slug: 's', state: 'passed', head: hd, base, judge: 's-judge' }]))
+  writeFileSync(resFile, JSON.stringify([{ slug: 's', state: 'passed', head: hd, base, qc: 's-qc' }]))
   return { env, wt, hd, patch, base, agents, resFile }
 }
 const listed = (j, key, slug) => (j[key] ?? []).some((x) => (typeof x === 'string' ? x : x.slug) === slug)
@@ -44,8 +44,8 @@ const entry = (j, key, slug) => (j[key] ?? []).find((x) => x.slug === slug)
 const isAncestor = (repo, a, b) => gitStatus(repo, ['merge-base', '--is-ancestor', a, b]) === 0
 const parsed = (r) => r.json ?? JSON.parse(r.stdout.trim().split('\n').pop())
 
-test('finish merge: the target moving during the done-check is a failed compare-and-swap, not a lost commit', () => {
-  // main moves before finish, so step 2 makes a merge commit and the done-check runs. The check script itself
+test('finish merge: the target moving during the acceptance test is a failed compare-and-swap, not a lost commit', () => {
+  // main moves before finish, so step 2 makes a merge commit and the acceptance test runs. The check script itself
   // fast-forwards main with a concurrent commit and exits 0: the race needs no timing.
   const w = world()
   const repo = w.env.repo
@@ -57,7 +57,7 @@ test('finish merge: the target moving during the done-check is a failed compare-
   const script = `${tmp('fcli-race-')}/race-check.js`.replace(/\\/g, '/')
   writeFileSync(script, `const { spawnSync } = require('node:child_process')\nconst r = spawnSync('git', ['push', '-q', '.', 'other-crew:main'], { cwd: ${JSON.stringify(repo)}, encoding: 'utf8' })\nprocess.exit(r.status === 0 ? 0 : 7)\n`)
   const plan = JSON.parse(readFileSync(`${w.env.dir}/plan.json`, 'utf8'))
-  plan.crews[0].doneCheck = `node ${script}`
+  plan.crews[0].acceptanceTest = `node ${script}`
   writeFileSync(`${w.env.dir}/plan.json`, JSON.stringify(plan, null, 2))
   const mainBefore = git(repo, ['rev-parse', 'main'])
   const run = mkRun(w.env.transcripts, 'wf_1', w.agents)
@@ -93,7 +93,7 @@ test('session audit: an entry from the run blocks every merge, even for a clean 
   const mainBefore = git(repo, ['rev-parse', 'main'])
   const run = mkRun(w.env.transcripts, 'wf_1', [
     ...w.agents,
-    { label: 'foundry-builder', agentType: 'general-purpose', model: 'claude-fable-5', effort: 'medium', result: 'helper with no model, inherited the session model' },
+    { label: 'truss-builder', agentType: 'general-purpose', model: 'claude-fable-5', effort: 'medium', result: 'helper with no model, inherited the session model' },
   ])
   const r = w.env.run('finish', { transcript: run.dir, result: w.resFile })
   const j = parsed(r)

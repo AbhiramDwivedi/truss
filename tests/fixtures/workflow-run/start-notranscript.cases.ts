@@ -17,17 +17,17 @@ function staleWorld() {
   return env
 }
 
-test('start --wave next without --transcript: a would-be-stale crew is not under stale', () => {
+test('start --stage next without --transcript: a would-be-stale crew is not under stale', () => {
   const env = staleWorld()
-  const res = env.run('start', { wave: 'next' })
+  const res = env.run('start', { stage: 'next' })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
   assert.deepEqual(j.stale, [])
 })
 
-test('start --wave next without --transcript: the running workflow crew is listed under unfinished', () => {
+test('start --stage next without --transcript: the running workflow crew is listed under unfinished', () => {
   const env = staleWorld()
-  const j = assertOneLine(env.run('start', { wave: 'next' }))
+  const j = assertOneLine(env.run('start', { stage: 'next' }))
   assert.ok(Array.isArray(j.unfinished))
   assert.ok(j.unfinished.some((u) => u.slug === 's'), JSON.stringify(j.unfinished))
 })
@@ -48,6 +48,6 @@ test('control: with --transcript pointing at an empty run dir the same crew IS s
   const env = staleWorld()
   const t = `${env.transcripts}/wf_empty`
   mkdirSync(t, { recursive: true })
-  const j = assertOneLine(env.run('start', { wave: 'next', transcript: t }))
+  const j = assertOneLine(env.run('start', { stage: 'next', transcript: t }))
   assert.deepEqual(j.stale.map((x) => x.slug), ['s'])
 })

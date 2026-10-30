@@ -1,15 +1,15 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry run-wiring goal (ADR-0009 Decision 7): the foreman's procedure, config, schema, manifest and README
-// that drive the factory CLI (bin/factory.ts) and the Workflow scripts (workflows/plan.js, wave.js).
+// truss run-wiring goal (ADR-0009 Decision 7): the PM's procedure, config, schema, manifest and README
+// that drive the factory CLI (bin/factory.ts) and the Workflow scripts (workflows/plan.js, stage.js).
 // Pinned from the spec before the prose and config are written. Each assertion is scoped to its SKILL.md section.
 //
-// Run with: node --test plugins/foundry/tests/run-procedure.check.ts
+// Run with: node --test tests/run-procedure.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs. Every read returns ''
 // for a missing path, so each test fails on its own assertion.
 //
-// Scope note: owner ruling 06:22 "One round, real defects" reverses ADR-0009 owner decision #1, so nothing
-// here pins red-team rounds sharing the repair budget.
+// Scope note: client ruling 06:22 "One round, real defects" reverses ADR-0009 client decision #1, so nothing
+// here pins stress test rounds sharing the rework allowance.
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -19,7 +19,7 @@ import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = join(PLUGIN, '..', '..')
+const REPO = PLUGIN
 const raw = (...parts: string[]): string => {
   try {
     return readFileSync(join(...parts), 'utf8')
@@ -66,16 +66,16 @@ describe('run-procedure: SKILL.md section 4 (plan)', () => {
     has(S4, /(failed|fails|failing)\s+plan-check[^.]*resum|plan-check[^.]*fail[^.]*resum[^.]*\bonce\b|resum[^.]*\bonce\b[^.]*plan-check/i, 'resume once on failed plan-check')
     has(S4, /\bonce\b/i, 'once')
   })
-  test('4 keeps the lead-path Agent architect text for sessions without Workflow, beside the new path', () => {
-    has(S4, /lead path|without Workflow|no Workflow|Workflow (is )?(not available|unavailable)/i, 'lead-path / no-Workflow wording')
-    has(S4, /Agent[^.]*architect|architect[^.]*Agent/i, 'Agent call of the architect')
+  test('4 keeps the foreman-path Agent designer text for sessions without Workflow, beside the new path', () => {
+    has(S4, /foreman path|without Workflow|no Workflow|Workflow (is )?(not available|unavailable)/i, 'foreman-path / no-Workflow wording')
+    has(S4, /Agent[^.]*designer|designer[^.]*Agent/i, 'Agent call of the designer')
     has(S4, /plan-brief\.md/i, 'new path present too, so this is not today\'s text')
   })
 })
 
 describe('run-procedure: SKILL.md section 5 (merge mode and target)', () => {
-  test('5 no longer asks the owner two more things, and runs settings instead', () => {
-    gone(S5, /Ask the owner two more things/i, '"Ask the owner two more things"')
+  test('5 no longer asks the client two more things, and runs settings instead', () => {
+    gone(S5, /Ask the client two more things/i, '"Ask the client two more things"')
     has(S5, /factory\.ts settings/i, 'factory.ts settings (so the section is the new one)')
   })
   test('5 shows settings as information in the plan table and logs it', () => {
@@ -85,26 +85,26 @@ describe('run-procedure: SKILL.md section 5 (merge mode and target)', () => {
     has(S5, /factory\.ts settings/i, 'factory.ts settings')
   })
   test('5 never asks merge mode or target', () => {
-    has(S5, /never asks[^.]*(merge mode|target)|(merge mode|target)[^.]*never ask|never ask(s)? the owner (for|about) (the )?(merge|target)/i, 'never asks merge mode or target')
+    has(S5, /never asks[^.]*(merge mode|target)|(merge mode|target)[^.]*never ask|never ask(s)? the client (for|about) (the )?(merge|target)/i, 'never asks merge mode or target')
   })
-  test('5 gets single only from config or the owner\'s own words', () => {
-    has(S5, /single[^.]*(foundry\.json|config)[^.]*(owner|own words)|(foundry\.json|config)[^.]*single[^.]*(owner|own words)/i, 'single from config or owner words')
-    has(S5, /own words|owner'?s? (instruction|words)/i, "owner's own words")
-    has(S5, /single[^.]*lead path/i, 'a single run puts every crew on the lead path')
+  test('5 gets single only from config or the client\'s own words', () => {
+    has(S5, /single[^.]*(truss\.json|config)[^.]*(client|own words)|(truss\.json|config)[^.]*single[^.]*(client|own words)/i, 'single from config or client words')
+    has(S5, /own words|client'?s? (instruction|words)/i, "client's own words")
+    has(S5, /single[^.]*foreman path/i, 'a single run puts every crew on the foreman path')
   })
 })
 
 describe('run-procedure: SKILL.md section 6 (goal files and start)', () => {
-  test('6 goal files carry Approved scope, Red team (yes/no) and Engine (workflow/lead)', () => {
+  test('6 goal files carry Approved scope, Stress test (yes/no) and Engine (workflow/foreman)', () => {
     has(S6, /## Approved scope/i, '## Approved scope')
-    has(S6, /## Red team/i, '## Red team')
+    has(S6, /## Stress test/i, '## Stress test')
     has(S6, /## Engine/i, '## Engine')
-    has(S6, /Red team[^.]*\byes\b[^.]*\bno\b/i, 'Red team first word yes or no')
-    has(S6, /Engine[^.]*\bworkflow\b[^.]*\blead\b/i, 'Engine first word workflow or lead')
+    has(S6, /Stress test[^.]*\byes\b[^.]*\bno\b/i, 'Stress test first word yes or no')
+    has(S6, /Engine[^.]*\bworkflow\b[^.]*\bforeman\b/i, 'Engine first word workflow or foreman')
   })
-  test('6 Workflow crews run start, Workflow(wave.js), then finish --transcript --result', () => {
-    has(S6, /factory\.ts start|\bstart\b[\s\S]*Workflow\(?\s*wave\.js/i, 'start')
-    has(S6, /Workflow\(?\s*wave\.js/i, 'Workflow(wave.js)')
+  test('6 Workflow crews run start, Workflow(stage.js), then finish --transcript --result', () => {
+    has(S6, /factory\.ts start|\bstart\b[\s\S]*Workflow\(?\s*stage\.js/i, 'start')
+    has(S6, /Workflow\(?\s*stage\.js/i, 'Workflow(stage.js)')
     has(S6, /finish[^.]*--transcript[^.]*--result/i, 'finish --transcript ... --result')
   })
   test('6 passes --transcript to start and finish whenever a Workflow ran this session', () => {
@@ -112,21 +112,21 @@ describe('run-procedure: SKILL.md section 6 (goal files and start)', () => {
     has(S6, /finish[^.]*--transcript/i, '--transcript on finish')
     has(S6, /(whenever|when|if|once)[^.]*Workflow[^.]*(ran|run|started)[^.]*this session|this session'?s? transcript/i, 'whenever a Workflow ran this session')
   })
-  test('6 restarts: --resume answers, --resume stale, run may be live, start --wave next', () => {
+  test('6 restarts: --resume answers, --resume stale, run may be live, start --stage next', () => {
     has(S6, /--resume answers/i, '--resume answers')
     has(S6, /--resume stale/i, '--resume stale')
     has(S6, /run may be live/i, 'run may be live')
-    has(S6, /start --wave next/i, 'start --wave next')
+    has(S6, /start --stage next/i, 'start --stage next')
   })
-  test('6 --no-workflow falls back to the lead path, with when to use it', () => {
+  test('6 --no-workflow falls back to the foreman path, with when to use it', () => {
     has(S6, /start --no-workflow/i, 'start --no-workflow')
-    has(S6, /--no-workflow[^.]*(every crew|all crews)[^.]*lead path|lead path[^.]*--no-workflow/i, '--no-workflow puts every crew on the lead path')
+    has(S6, /--no-workflow[^.]*(every crew|all crews)[^.]*foreman path|foreman path[^.]*--no-workflow/i, '--no-workflow puts every crew on the foreman path')
     has(S6, /Workflow tool (is )?(unavailable|not available)|no Workflow tool|without the Workflow tool/i, 'when: Workflow tool unavailable')
-    has(S6, /not opted in|has not opted|hasn'?t opted|did not opt|not opt/i, 'when: owner has not opted in')
+    has(S6, /not opted in|has not opted|hasn'?t opted|did not opt|not opt/i, 'when: client has not opted in')
   })
-  test('6 deploy and raised-effort crews stay on the lead path', () => {
-    has(S6, /deploy[^.]*lead path|lead path[^.]*deploy/i, 'deploy on the lead path')
-    has(S6, /raised[- ]effort[^.]*lead path|lead path[^.]*raised[- ]effort|(xhigh|high effort)[^.]*lead path/i, 'raised-effort on the lead path')
+  test('6 deploy and raised-effort crews stay on the foreman path', () => {
+    has(S6, /deploy[^.]*foreman path|foreman path[^.]*deploy/i, 'deploy on the foreman path')
+    has(S6, /raised[- ]effort[^.]*foreman path|foreman path[^.]*raised[- ]effort|(xhigh|high effort)[^.]*foreman path/i, 'raised-effort on the foreman path')
   })
 })
 
@@ -135,16 +135,16 @@ describe('run-procedure: SKILL.md section 9 (merge)', () => {
     has(S9, /Workflow crews?[^.]*\bfinish\b|\bfinish\b[^.]*Workflow crews?/i, 'finish is the gate for Workflow crews')
     has(S9, /gate[^.]*\bfinish\b|\bfinish\b[^.]*gate/i, 'finish named as the gate')
   })
-  test('9 rework: conflict and rework: rejudge go back through --resume merge-ready', () => {
+  test('9 rework: conflict and rework: reqc go back through --resume merge-ready', () => {
     has(S9, /rework: conflict/i, 'rework: conflict')
-    has(S9, /rework: rejudge/i, 'rework: rejudge')
+    has(S9, /rework: reqc/i, 'rework: reqc')
     has(S9, /--resume merge-ready/i, '--resume merge-ready')
   })
 })
 
-describe('run-procedure: .claude/foundry.json', () => {
+describe('run-procedure: .claude/truss.json', () => {
   test('parses and carries merge sequential and target main, keeping architecture and adr', () => {
-    const cfg = json(REPO, '.claude', 'foundry.json')
+    const cfg = json(REPO, '.claude', 'truss.json')
     assert.equal(cfg.merge, 'sequential')
     assert.equal(cfg.target, 'main')
     assert.equal(cfg.architecture, 'docs/architecture.md')
@@ -159,15 +159,15 @@ describe('run-procedure: .claude/foundry.json', () => {
     }
     const flat = out.replace(/\s+/g, '')
     has(flat, /"target":"main"/, '"target":"main" in settings output')
-    has(flat, /"source":"\.claude\/foundry\.json"/, '"source":".claude/foundry.json" in settings output')
+    has(flat, /"source":"\.claude\/truss\.json"/, '"source":".claude/truss.json" in settings output')
   })
 })
 
-describe('run-procedure: foundry-config.schema.json', () => {
-  test('merge and target say every run, the foreman never asks; enum and type unchanged', () => {
-    const p = json(PLUGIN, 'docs', 'foundry-config.schema.json').properties
-    assert.match(p.merge.description, /of every run; the foreman never asks/i)
-    assert.match(p.target.description, /of every run; the foreman never asks/i)
+describe('run-procedure: truss-config.schema.json', () => {
+  test('merge and target say every run, the PM never asks; enum and type unchanged', () => {
+    const p = json(PLUGIN, 'docs', 'truss-config.schema.json').properties
+    assert.match(p.merge.description, /of every run; the PM never asks/i)
+    assert.match(p.target.description, /of every run; the PM never asks/i)
     assert.doesNotMatch(p.merge.description, /auto-started runs/i)
     assert.doesNotMatch(p.target.description, /auto-started runs/i)
     assert.deepEqual(p.merge.enum, ['sequential', 'single'])
@@ -201,13 +201,13 @@ describe('run-procedure: plugin.json and README', () => {
     const notes = notes11()
     has(notes, /interview/i, 'interview wiring')
     has(notes, /Workflow/i, 'Workflow')
-    has(notes, /run procedure|SKILL\.md|foreman'?s? procedure|plan-args|wave\.js/i, 'Workflow run procedure')
+    has(notes, /run procedure|SKILL\.md|PM'?s? procedure|plan-args|stage\.js/i, 'Workflow run procedure')
   })
   test('CHANGELOG 0.11.0 notes name factory-scripts, intake-retro, speed-rules and critical-fixes work', () => {
     const notes = notes11()
-    has(notes, /factory[- ]scripts|factory\.ts|plan\.js|wave\.js/i, 'factory-scripts')
+    has(notes, /factory[- ]scripts|factory\.ts|plan\.js|stage\.js/i, 'factory-scripts')
     has(notes, /intake[- ]retro|intake/i, 'intake-retro')
-    has(notes, /speed[- ]rules|one round|red[- ]team round/i, 'speed-rules')
+    has(notes, /speed[- ]rules|one round|stress[- ]test round/i, 'speed-rules')
     has(notes, /critical[- ]fixes|critical fix/i, 'critical-fixes')
   })
 })

@@ -1,12 +1,12 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry 0.4.1: init never sets kit up itself (foundry ADR-0002, amendment of 2026-10-27)
+// truss 0.4.1: init never sets kit up itself (truss ADR-0002, amendment of 2026-10-27)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const init = readFileSync(new URL('../skills/init/SKILL.md', import.meta.url), 'utf8')
-const NO_MANIFEST = 'no kit manifest; foundry init carries on without one (run /kit:init on its own to set kit up)'
+const NO_MANIFEST = 'no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)'
 
 test('init prints the no-manifest line and does not run kit:init without a manifest', () => {
   assert.ok(init.includes(NO_MANIFEST))

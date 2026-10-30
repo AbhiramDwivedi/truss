@@ -1,13 +1,13 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry ADR-0008 Seams 1-5: contract tests for interview/ledger.ts and interview/cli.ts. Written from the ADR before either file exists.
+// truss ADR-0008 Seams 1-5: contract tests for brief/ledger.ts and brief/cli.ts. Written from the ADR before either file exists.
 // Seams 6-7 (branches.md, SKILL.md wording) belong to other crews and are not tested here.
 //
-// Run with: node --test plugins/foundry/tests/contract-interview.check.ts
+// Run with: node --test tests/contract-interview.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs.
 // The code under test is imported inside each test, so a missing module fails that test with
-// "producer missing: interview/ledger.ts" instead of crashing the file.
-// Names the ADR leaves open are pinned in the describe('lead-pinned shapes ...') block at the end; adjust them there.
+// "producer missing: brief/ledger.ts" instead of crashing the file.
+// Names the ADR leaves open are pinned in the describe('foreman-pinned shapes ...') block at the end; adjust them there.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -18,21 +18,21 @@ import { describe, test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const CLI_PATH = join(PLUGIN, 'interview', 'cli.ts')
-const LEDGER_PATH = join(PLUGIN, 'interview', 'ledger.ts')
+const CLI_PATH = join(PLUGIN, 'brief', 'cli.ts')
+const LEDGER_PATH = join(PLUGIN, 'brief', 'ledger.ts')
 
 const ledger = async () => {
   try {
-    return await import('../interview/ledger.ts')
+    return await import('../brief/ledger.ts')
   } catch (e) {
-    assert.fail(`producer missing: interview/ledger.ts (${e?.code ?? e?.message})`)
+    assert.fail(`producer missing: brief/ledger.ts (${e?.code ?? e?.message})`)
   }
 }
 const cli = async () => {
   try {
-    return await import('../interview/cli.ts')
+    return await import('../brief/cli.ts')
   } catch (e) {
-    assert.fail(`producer missing: interview/cli.ts (${e?.code ?? e?.message})`)
+    assert.fail(`producer missing: brief/cli.ts (${e?.code ?? e?.message})`)
   }
 }
 const source = (path: string): string => {
@@ -57,7 +57,7 @@ const SAMPLE = [
   blk('outcome', { Visit: 'standard, large', Ask: 'What is it for?', Recommend: 'the goal text', Writes: 'functional', Fact: 'README, docs/' }),
   blk('hosting', { Visit: 'standard, large', Ask: 'Where does it run?', Recommend: 'what the repo deploys to', Opens: 'environments, cost' }),
   blk('environments', { Visit: 'opened', Ask: 'Which environments?', Recommend: 'staging and production' }),
-  blk('cost', { Visit: 'large', Writes: 'nfr', Ask: 'What is the budget?', Recommend: 'the current bill' }),
+  blk('cost', { Visit: 'large', Writes: 'nfr', Ask: 'What is the allowance?', Recommend: 'the current bill' }),
   blk('integrations', { Visit: 'standard, large', Ask: 'Which services does it call?', Recommend: 'the SDKs in use', Opens: 'webhooks, secrets' }),
   blk('secrets', { Ask: 'Where do secrets live?', Recommend: 'the existing vault' }),
   blk('authz', { Pack: 'service', Visit: 'standard', Ask: 'Who may do what?', Recommend: 'roles in the code' }),
@@ -82,14 +82,14 @@ const ids = (bs: { id: string }[]): string[] => bs.map((b) => b.id)
 // ADR-0008 section 7, copied exactly
 const EXAMPLE = `# Requirements
 
-Kept by foundry's owner interview (ADR-0008). Ids are never reused.
+Kept by truss's client brief (ADR-0008). Ids are never reused.
 
-## R-1: Owners can export their invoices as CSV
+## R-1: Clients can export their invoices as CSV
 Status: open
 Kind: functional
 Added: 2026-10-29T19:42:00Z | add invoice export
-Source: owner
-Example: Given an account with 3 invoices, when the owner clicks Export, then a CSV with 3 rows downloads.
+Source: client
+Example: Given an account with 3 invoices, when the client clicks Export, then a CSV with 3 rows downloads.
 
 ## R-2: The export finishes quickly for large accounts
 Status: open
@@ -104,7 +104,7 @@ Source: default
 
 const AT = '2026-10-29T19:42:00Z | add invoice export'
 const req = (n: number, o: Record<string, string | undefined> = {}, lines: string[] = [], title = `Title ${n}`): string => {
-  const f = { Status: 'open', Kind: 'constraint', Added: AT, Source: 'owner', ...o }
+  const f = { Status: 'open', Kind: 'constraint', Added: AT, Source: 'client', ...o }
   return [
     `## R-${n}: ${title}`,
     ...Object.entries(f)
@@ -119,7 +119,7 @@ const errs = async (md: string): Promise<string[]> => (await ledger()).parseRequ
 
 // ---------- cli fixtures ----------
 
-const tmp = (): string => mkdtempSync(join(tmpdir(), 'interview-contract-'))
+const tmp = (): string => mkdtempSync(join(tmpdir(), 'brief-contract-'))
 const put = (dir: string, name: string, content: string): string => {
   const p = join(dir, name)
   mkdirSync(dirname(p), { recursive: true })
@@ -243,13 +243,13 @@ describe('Seam 3: nextBranches and remainingBranches (section 5 candidate and ba
     const { parseBranches, nextBranches } = await ledger()
     const bs = parseBranches(SAMPLE)
     assert.deepEqual(ids(nextBranches(bs, state(), 10)), ['outcome', 'hosting'])
-    assert.deepEqual(ids(nextBranches(bs, state({ visits: { outcome: { by: 'owner', note: 'x' } } }), 10)), ['hosting'])
+    assert.deepEqual(ids(nextBranches(bs, state({ visits: { outcome: { by: 'client', note: 'x' } } }), 10)), ['hosting'])
   })
 
   test('caps at max', async () => {
     const { parseBranches, nextBranches } = await ledger()
     const bs = parseBranches(SAMPLE)
-    const s = state({ packs: ['service'], visits: { hosting: { by: 'owner', note: 'x' }, integrations: { by: 'owner', note: 'x' } } })
+    const s = state({ packs: ['service'], visits: { hosting: { by: 'client', note: 'x' }, integrations: { by: 'client', note: 'x' } } })
     assert.deepEqual(ids(nextBranches(bs, s, 10)), ['outcome', 'secrets', 'authz'])
     assert.deepEqual(ids(nextBranches(bs, s, 2)), ['outcome', 'secrets'])
     assert.deepEqual(ids(nextBranches(bs, s, 1)), ['outcome'])
@@ -258,9 +258,9 @@ describe('Seam 3: nextBranches and remainingBranches (section 5 candidate and ba
   test('returns candidates in file order; the Opens branch is included, nothing after it', async () => {
     const { parseBranches, nextBranches } = await ledger()
     const bs = parseBranches(SAMPLE)
-    const s = state({ packs: ['service'], visits: { outcome: { by: 'owner', note: 'x' }, hosting: { by: 'owner', note: 'x' } } })
+    const s = state({ packs: ['service'], visits: { outcome: { by: 'client', note: 'x' }, hosting: { by: 'client', note: 'x' } } })
     assert.deepEqual(ids(nextBranches(bs, s, 10)), ['integrations'])
-    const s2 = state({ packs: ['service'], visits: { outcome: { by: 'owner', note: 'x' }, hosting: { by: 'owner', note: 'x' }, integrations: { by: 'owner', note: 'x' } } })
+    const s2 = state({ packs: ['service'], visits: { outcome: { by: 'client', note: 'x' }, hosting: { by: 'client', note: 'x' }, integrations: { by: 'client', note: 'x' } } })
     assert.deepEqual(ids(nextBranches(bs, s2, 10)), ['secrets', 'authz'])
   })
 
@@ -269,7 +269,7 @@ describe('Seam 3: nextBranches and remainingBranches (section 5 candidate and ba
     const bs = parseBranches(SAMPLE)
     assert.ok(!ids(remainingBranches(bs, state({ size: 'large', packs: ['service'] }))).includes('environments'))
     assert.ok(!ids(remainingBranches(bs, state({ size: 'large', packs: ['service'] }))).includes('webhooks'))
-    const s = state({ opened: ['environments'], visits: { outcome: { by: 'owner', note: 'x' }, hosting: { by: 'owner', note: 'x' } } })
+    const s = state({ opened: ['environments'], visits: { outcome: { by: 'client', note: 'x' }, hosting: { by: 'client', note: 'x' } } })
     assert.deepEqual(ids(nextBranches(bs, s, 10)), ['environments', 'integrations'])
   })
 
@@ -282,7 +282,7 @@ describe('Seam 3: nextBranches and remainingBranches (section 5 candidate and ba
   test('a visits entry with any "by" removes the branch', async () => {
     const { parseBranches, remainingBranches } = await ledger()
     const bs = parseBranches(SAMPLE)
-    for (const by of ['owner', 'closed', 'default', 'fact']) {
+    for (const by of ['client', 'closed', 'default', 'fact']) {
       const r = ids(remainingBranches(bs, state({ visits: { outcome: { by, note: 'n' } } })))
       assert.ok(!r.includes('outcome'), `by:${by} must remove outcome`)
     }
@@ -407,7 +407,7 @@ describe('Seam 4: parseRequirements', () => {
     assert.ok((await errs(doc(req(1), req(2, { Status: 'replaced by R-1' })))).includes('R-2: replaced by unknown R-1'))
   })
 
-  const base = '# Requirements\n\n## R-1: T\nStatus: open\nKind: constraint\nAdded: 2026-10-29T19:42:00Z | g\nSource: owner\n'
+  const base = '# Requirements\n\n## R-1: T\nStatus: open\nKind: constraint\nAdded: 2026-10-29T19:42:00Z | g\nSource: client\n'
   test('line <i>: unexpected: <text> for a stray line, 1-based', async () => {
     assert.ok((await errs(`${base}stray words\n\n## Non-goals\n- x\n`)).includes('line 8: unexpected: stray words'))
   })
@@ -484,7 +484,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('exit 2 for an unknown command, no command, and wrong argument counts', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state()))
+    const s = put(d, 'brief.json', JSON.stringify(state()))
     const r = put(d, 'requirements.md', EXAMPLE)
     const cases: string[][] = [
       ['frobnicate', r],
@@ -504,7 +504,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('exit 2 for unreadable files', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state()))
+    const s = put(d, 'brief.json', JSON.stringify(state()))
     const nope = join(d, 'nope')
     assert.equal((await run('check', nope)).code, 2)
     assert.equal((await run('next', nope, s)).code, 2)
@@ -516,7 +516,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('exit 2 for a branches parse error', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', blk('Bad_Id'))
-    const s = put(d, 'interview.json', JSON.stringify(state()))
+    const s = put(d, 'brief.json', JSON.stringify(state()))
     assert.equal((await run('next', b, s, '3')).code, 2)
     assert.equal((await run('remaining', b, s)).code, 2)
   })
@@ -542,7 +542,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
     test(`exit 2 for a bad state file: ${label}`, async () => {
       const d = tmp()
       const b = put(d, 'branches.md', SAMPLE)
-      const s = put(d, 'interview.json', JSON.stringify(state(over)))
+      const s = put(d, 'brief.json', JSON.stringify(state(over)))
       assert.equal((await run('next', b, s, '3')).code, 2)
       assert.equal((await run('remaining', b, s)).code, 2)
     })
@@ -551,7 +551,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('exit 2 for a state file that is not JSON', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', '{not json')
+    const s = put(d, 'brief.json', '{not json')
     assert.equal((await run('next', b, s, '3')).code, 2)
   })
 
@@ -567,7 +567,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('next prints exact NEXT lines for the batch, comma-and-space ids, exit 0', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state()))
+    const s = put(d, 'brief.json', JSON.stringify(state()))
     const r = await run('next', b, s, '3')
     assert.equal(r.code, 0)
     assert.deepEqual(lines(r), [
@@ -579,7 +579,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('next works with two arguments', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state()))
+    const s = put(d, 'brief.json', JSON.stringify(state()))
     const r = await run('next', b, s)
     assert.equal(r.code, 0)
     assert.ok(lines(r).length >= 1 && lines(r)[0].startsWith('NEXT: outcome | core |'))
@@ -588,16 +588,16 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('next honours the max argument', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state({ visits: { hosting: { by: 'owner', note: 'x' }, integrations: { by: 'owner', note: 'x' } } })))
+    const s = put(d, 'brief.json', JSON.stringify(state({ visits: { hosting: { by: 'client', note: 'x' }, integrations: { by: 'client', note: 'x' } } })))
     assert.deepEqual(lines(await run('next', b, s, '1')), ['NEXT: outcome | core | What is it for? | the goal text | opens: none'])
   })
 
   test('next prints NEXT: none when stopped, small, or nothing is left', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const all = Object.fromEntries(['outcome', 'hosting', 'integrations', 'secrets'].map((i) => [i, { by: 'owner', note: 'x' }]))
+    const all = Object.fromEntries(['outcome', 'hosting', 'integrations', 'secrets'].map((i) => [i, { by: 'client', note: 'x' }]))
     for (const over of [{ stopped: true }, { size: 'small' }, { visits: all }]) {
-      const s = put(d, 'interview.json', JSON.stringify(state(over)))
+      const s = put(d, 'brief.json', JSON.stringify(state(over)))
       const r = await run('next', b, s, '3')
       assert.equal(r.code, 0)
       assert.deepEqual(lines(r), ['NEXT: none'], JSON.stringify(over))
@@ -607,7 +607,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
   test('remaining prints every remaining branch uncapped, even when stopped', async () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state({ stopped: true })))
+    const s = put(d, 'brief.json', JSON.stringify(state({ stopped: true })))
     const r = await run('remaining', b, s)
     assert.equal(r.code, 0)
     assert.deepEqual(lines(r), [
@@ -622,7 +622,7 @@ describe('Seam 5: cli COMMANDS and main', () => {
     const d = tmp()
     const b = put(d, 'branches.md', SAMPLE)
     const all = Object.fromEntries(['outcome', 'hosting', 'integrations', 'secrets'].map((i) => [i, { by: 'default', note: 'x' }]))
-    const s = put(d, 'interview.json', JSON.stringify(state({ stopped: true, visits: all })))
+    const s = put(d, 'brief.json', JSON.stringify(state({ stopped: true, visits: all })))
     const r = await run('remaining', b, s)
     assert.equal(r.code, 0)
     assert.deepEqual(lines(r), ['NEXT: none'])
@@ -675,9 +675,9 @@ describe('Seam 5: running cli.ts as a script', () => {
   })
 })
 
-// ======================= lead-pinned =======================
+// ======================= foreman-pinned =======================
 
-describe('lead-pinned shapes (ADR leaves open)', () => {
+describe('foreman-pinned shapes (ADR leaves open)', () => {
   test('branch object: { id, pack, visit[], fact?, ask, recommend, writes, opens[] }', async () => {
     const { parseBranches } = await ledger()
     const bs = parseBranches(SAMPLE)
@@ -698,7 +698,7 @@ describe('lead-pinned shapes (ADR leaves open)', () => {
 
   test('parseBranches accepts a title and prose before the first ## section', async () => {
     const { parseBranches } = await ledger()
-    assert.equal(parseBranches(`# Interview branches\n\nSome prose.\n\n${blk('alpha')}`).length, 1)
+    assert.equal(parseBranches(`# Brief branches\n\nSome prose.\n\n${blk('alpha')}`).length, 1)
   })
 
   test('parseRequirements item shape and nonGoals', async () => {
@@ -707,12 +707,12 @@ describe('lead-pinned shapes (ADR leaves open)', () => {
     const [a, b] = r.requirements
     assert.equal(a.id, 'R-1')
     assert.equal(a.n, 1)
-    assert.equal(a.title, 'Owners can export their invoices as CSV')
+    assert.equal(a.title, 'Clients can export their invoices as CSV')
     assert.equal(a.status, 'open')
     assert.equal(a.kind, 'functional')
     assert.equal(a.added, '2026-10-29T19:42:00Z | add invoice export')
-    assert.equal(a.source, 'owner')
-    assert.deepEqual([...a.examples], ['Given an account with 3 invoices, when the owner clicks Export, then a CSV with 3 rows downloads.'])
+    assert.equal(a.source, 'client')
+    assert.deepEqual([...a.examples], ['Given an account with 3 invoices, when the client clicks Export, then a CSV with 3 rows downloads.'])
     assert.equal(b.id, 'R-2')
     assert.equal(b.n, 2)
     assert.equal(b.kind, 'nfr')
@@ -744,8 +744,8 @@ describe('lead-pinned shapes (ADR leaves open)', () => {
   test('cli trace: OK line and exit 0 over every *.md in the goals dir', async () => {
     const d = tmp()
     const req_ = put(d, 'requirements.md', EXAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state({ requirements: ['R-1', 'R-2'] })))
-    put(d, 'goals/alpha.md', '# A\n\n## Requirements\n- R-1: Owners can export their invoices as CSV\n')
+    const s = put(d, 'brief.json', JSON.stringify(state({ requirements: ['R-1', 'R-2'] })))
+    put(d, 'goals/alpha.md', '# A\n\n## Requirements\n- R-1: Clients can export their invoices as CSV\n')
     put(d, 'goals/beta.md', '# B\n\n## Requirements\n- R-2: The export finishes quickly for large accounts\n')
     put(d, 'goals/notes.txt', '- R-9: ignored, not markdown\n')
     const r = await run('trace', req_, s, join(d, 'goals'))
@@ -756,8 +756,8 @@ describe('lead-pinned shapes (ADR leaves open)', () => {
   test('cli trace: TRACE lines, name is the file name without .md, exit 1', async () => {
     const d = tmp()
     const req_ = put(d, 'requirements.md', EXAMPLE)
-    const s = put(d, 'interview.json', JSON.stringify(state({ requirements: ['R-1', 'R-2'] })))
-    put(d, 'goals/alpha.md', '## Requirements\n- R-1: Owners can export their invoices as CSV\n- R-9: Nine\n')
+    const s = put(d, 'brief.json', JSON.stringify(state({ requirements: ['R-1', 'R-2'] })))
+    put(d, 'goals/alpha.md', '## Requirements\n- R-1: Clients can export their invoices as CSV\n- R-9: Nine\n')
     const r = await run('trace', req_, s, join(d, 'goals'))
     assert.equal(r.code, 1)
     assert.deepEqual(lines(r), ['TRACE: unknown R-9 in alpha', 'TRACE: uncovered R-2'])

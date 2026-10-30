@@ -1,11 +1,11 @@
-"""Contract test for retro's 0.8.0 per-run keys, foundry ADR-0005 (growth model) point 4, written from the spec
-before the producer exists: `fetches` {total, perAgent}, `extendPasses`, `defaultDecisions`, `openOwnerActions`,
+"""Contract test for retro's 0.8.0 per-run keys, truss ADR-0005 (growth model) point 4, written from the spec
+before the producer exists: `fetches` {total, perAgent}, `extendPasses`, `defaultDecisions`, `openClientActions`,
 each "not recorded" where its source is absent.
 
 Fixtures are synthetic (fixtures/contract-080/data); setUpClass builds throwaway git repos in a tempdir from
-them, with a fixed author and dates. Session dir = <repo>/.git/foundry/<session>, as for the leftovers contract.
+them, with a fixed author and dates. Session dir = <repo>/.git/truss/<session>, as for the leftovers contract.
 Run 1 window starts 2026-10-27T09:00Z, run 2 starts 2026-10-28T09:00Z.
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -75,11 +75,11 @@ class Retro080(unittest.TestCase):
         os.makedirs(repo)
         git(repo, "2026-10-01T00:00:00Z", "init", "-q")
         git(repo, "2026-10-01T00:00:00Z", "commit", "-q", "--allow-empty", "-m", "chore: start")
-        sess = os.path.join(repo, ".git", "foundry", "2026-10-27-run")
+        sess = os.path.join(repo, ".git", "truss", "2026-10-27-run")
         copy("decisions.md", os.path.join(sess, "decisions.md"))
         copy(events, os.path.join(sess, "events.jsonl"))
         if full:
-            put(os.path.join(repo, ".claude", "foundry.json"),
+            put(os.path.join(repo, ".claude", "truss.json"),
                 json.dumps({"architecture": "docs/architecture.md", "adr": "docs/adr"}))
             copy("architecture.md", os.path.join(repo, "docs", "architecture.md"))
             for f in sorted(os.listdir(os.path.join(DATA, "adr"))):
@@ -105,7 +105,7 @@ class Retro080(unittest.TestCase):
     def test_fetches_total_and_per_agent(self):
         run = self.run1(self.full)
         self.assertIn("fetches", run)
-        self.assertEqual(run["fetches"], {"total": 3, "perAgent": {"alpha-architect": 2, "alpha-writer": 1}})
+        self.assertEqual(run["fetches"], {"total": 3, "perAgent": {"alpha-designer": 2, "alpha-writer": 1}})
 
     def test_fetches_without_fetch_lines_is_not_recorded_never_zero(self):
         run = self.run1(self.bare)
@@ -132,16 +132,16 @@ class Retro080(unittest.TestCase):
         self.assertIn("defaultDecisions", run)
         self.assertEqual(run["defaultDecisions"], NR)
 
-    def test_open_owner_actions_counts_open_under_owner_actions_only(self):
-        # 2 open under "Owner actions", 3 done (not counted), 1 open under "Notes" (not counted)
+    def test_open_client_actions_counts_open_under_client_actions_only(self):
+        # 2 open under "Client actions", 3 done (not counted), 1 open under "Notes" (not counted)
         run = self.run1(self.full)
-        self.assertIn("openOwnerActions", run)
-        self.assertEqual(run["openOwnerActions"], 2)
+        self.assertIn("openClientActions", run)
+        self.assertEqual(run["openClientActions"], 2)
 
-    def test_open_owner_actions_without_architecture_doc_is_not_recorded(self):
+    def test_open_client_actions_without_architecture_doc_is_not_recorded(self):
         run = self.run1(self.bare)
-        self.assertIn("openOwnerActions", run)
-        self.assertEqual(run["openOwnerActions"], NR)
+        self.assertIn("openClientActions", run)
+        self.assertEqual(run["openClientActions"], NR)
 
 
 if __name__ == "__main__":

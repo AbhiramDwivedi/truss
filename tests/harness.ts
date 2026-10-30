@@ -2,7 +2,7 @@ import type { AgentInfo, On, ToolCallResult } from 'claude-code'
 import type { Engine, MockClock, TestBody, TestOptions } from 'claude-code/testing'
 import { mock, test as kitTest } from 'claude-code/testing'
 
-import { LEAD_TYPE } from '../hooks/register'
+import { FOREMAN_TYPE } from '../hooks/register'
 
 // Per-test time bound for every suite. The kit's 5000 ms default trips when the
 // runner executes all seven suite files in parallel: a test that takes well
@@ -23,7 +23,7 @@ export function test(name: string, a: TestBody | TestOptions, b?: TestBody): voi
 export const agent = (id: string, type: string, name?: string, parentId?: string): AgentInfo => ({ id, type, name, parentId, status: 'running', description: id })
 
 export const NOW = Date.UTC(2026, 9, 17, 12)
-export const ROOT = 'C:/r/.git/foundry/s1'
+export const ROOT = 'C:/r/.git/truss/s1'
 export const slashed = (path: string) => path.replace(/\\/g, '/')
 
 export type Options = {
@@ -77,13 +77,13 @@ export function world($: Engine, on: On, options: Options = {}): World {
   const clock = mock.clock(on, { now: NOW })
   const w: World = {
     agents: [
-      agent('L1', LEAD_TYPE, 'auth'),
-      agent('L2', LEAD_TYPE, 'billing'),
+      agent('L1', FOREMAN_TYPE, 'auth'),
+      agent('L2', FOREMAN_TYPE, 'billing'),
       agent('A1', 'kit:builder', 'auth-builder', 'L1'),
       agent('A2', 'Explore', 'auth-scout', 'A1'),
       agent('B1', 'general-purpose', 'billing-builder', 'L2'),
       agent('X', 'general-purpose', 'helper'),
-      agent('C1', 'foundry:cynic', 'cynic-1'),
+      agent('C1', 'truss:checking-engineer', 'checker-1'),
     ],
     files: new Map(),
     mtimes: new Map(),
@@ -197,9 +197,9 @@ export function world($: Engine, on: On, options: Options = {}): World {
 
 export type Task = { id: string; type: string; status: string; description: string }
 
-// a world whose crews have no live descendants: every non-lead agent has finished
+// a world whose crews have no live descendants: every non-foreman agent has finished
 export const quiet = (w: World): World => {
-  w.agents = w.agents.map(a => (a.type === LEAD_TYPE || a.id === 'X' || a.id === 'C1' ? a : { ...a, status: 'completed' }))
+  w.agents = w.agents.map(a => (a.type === FOREMAN_TYPE || a.id === 'X' || a.id === 'C1' ? a : { ...a, status: 'completed' }))
   return w
 }
 
@@ -208,7 +208,7 @@ export const stop = (id: string, text: string, active = false, tasks?: Task[], t
 
 export const handBack = ($: Engine, id: string, message: string) => $.tool.call({ tool: 'SubagentHandback', message, agentId: id } as never)
 
-export const status = async ($: Engine) => ((await $.command.run({ command: 'foundry', args: '' } as never)) as { text?: string }).text ?? ''
+export const status = async ($: Engine) => ((await $.command.run({ command: 'truss', args: '' } as never)) as { text?: string }).text ?? ''
 
 export const startSession = ($: Engine) => $.session.start({ cwd: 'C:/r', surface: null, isInteractive: true } as never)
 

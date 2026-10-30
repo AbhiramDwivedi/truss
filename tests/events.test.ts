@@ -3,8 +3,8 @@ import { expect } from 'claude-code/testing'
 import { EFFORT_REFUSAL, EVENT_BACKLOG_MAX, EVENT_WAIT_MS, HANDBACK_REFUSAL, ROLL_BYTES, markerOf } from '../hooks/register'
 import { NOW, ROOT, handBack, quiet, startSession, stop, world, test } from './harness'
 
-// foundry 0.4.0 event log (ADR-0003 s1) and the HH:MM stamp (s2), past what contract.test.ts pins: tag and report
-// lines, the idle-lead stall, the roll at ROLL_BYTES, refused calls, and an Edit holding HH:MM on both sides.
+// truss 0.4.0 event log (ADR-0003 s1) and the HH:MM stamp (s2), past what contract.test.ts pins: tag and report
+// lines, the idle-foreman stall, the roll at ROLL_BYTES, refused calls, and an Edit holding HH:MM on both sides.
 
 type W = ReturnType<typeof world>
 
@@ -23,7 +23,7 @@ const setStatus = (w: W, id: string, s: W['agents'][number]['status']) => {
   w.agents = w.agents.map(a => (a.id === id ? { ...a, status: s } : a))
 }
 
-test('a lead tagging its message to main appends one tag line, without the message text', async ($, on) => {
+test('a foreman tagging its message to main appends one tag line, without the message text', async ($, on) => {
   const w = world($, on)
   await startSession($)
   await w.send('L1', 'main', 'QUESTION: keep the v1 endpoint secret-text?\nOptions: keep or drop.')
@@ -53,17 +53,17 @@ test('a refused SendMessage, a refused Agent call and a refused hand-back append
   expect(w.files.has(EVENTS)).toBe(false)
 })
 
-test('a lead started by the main session appends a spawn line with by main and the lead as its own crew', async ($, on) => {
+test('a foreman started by the main session appends a spawn line with by main and the foreman as its own crew', async ($, on) => {
   const w = world($, on)
   await startSession($)
-  await w.agentCall(undefined, { subagent_type: 'foundry:lead', name: 'docs', model: 'opus' })
+  await w.agentCall(undefined, { subagent_type: 'truss:foreman', name: 'docs', model: 'opus' })
   // outside every crew: no line
   await w.agentCall('X', { subagent_type: 'Explore', name: 'scout' })
   await settle()
   const got = events(w)
   expect(got.length).toBe(1)
   const e = got[0] ?? {}
-  expect([e.event, e.crew, e.agent, e.agentId, e.type, e.model, e.effort, e.by]).toEqual(['spawn', 'docs', 'docs', 'new1', 'foundry:lead', 'opus', null, 'main'])
+  expect([e.event, e.crew, e.agent, e.agentId, e.type, e.model, e.effort, e.by]).toEqual(['spawn', 'docs', 'docs', 'new1', 'truss:foreman', 'opus', null, 'main'])
   expect(keys(e)).toEqual(['agent', 'agentId', 'by', 'crew', 'effort', 'event', 'model', 'ts', 'type', 'v'])
   expect(lines(w).some(l => l.includes('"p"') || l.includes('"d"'))).toBe(false)
 })
@@ -89,7 +89,7 @@ test('a final report appends one report line with its marker; an interim stop ap
 
 test('markerOf reads the first non-empty line, else null', () => {
   expect(markerOf('VERDICT: FAIL\nwhy')).toBe('VERDICT: FAIL')
-  expect(markerOf('  \n  REDTEAM 3 findings')).toBe('REDTEAM')
+  expect(markerOf('  \n  STRESSTEST 3 findings')).toBe('STRESSTEST')
   expect(markerOf('QUESTION: which?')).toBe('QUESTION')
   expect(markerOf('PROPOSAL: x')).toBe('PROPOSAL')
   expect(markerOf('BLOCKED: x')).toBe('BLOCKED')
@@ -102,7 +102,7 @@ test('markerOf reads the first non-empty line, else null', () => {
   expect(markerOf('VERDICT: FAIL - why')).toBe('VERDICT: FAIL')
 })
 
-test('an idle lead wake appends one stall line with kind idle-lead and the minutes its prompt shows', async ($, on) => {
+test('an idle foreman wake appends one stall line with kind idle-foreman and the minutes its prompt shows', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
@@ -111,12 +111,12 @@ test('an idle lead wake appends one stall line with kind idle-lead and the minut
   await settle()
   await w.clock.advance(60 * MIN)
   await settle()
-  const idle = events(w).filter(e => e.kind === 'idle-lead')
+  const idle = events(w).filter(e => e.kind === 'idle-foreman')
   expect(idle.length).toBe(1)
   const e = idle[0] ?? {}
   expect([e.event, e.crew, e.agent]).toEqual(['stall', 'auth', 'auth'])
   expect(keys(e)).toEqual(['agent', 'crew', 'event', 'kind', 'minutes', 'ts', 'v'])
-  const prompt = w.prompts.find(p => p.startsWith('[foundry] idle lead: auth '))
+  const prompt = w.prompts.find(p => p.startsWith('[truss] idle foreman: auth '))
   expect(prompt).toBeDefined()
   expect(Number(/no report for (\d+)m/.exec(prompt ?? '')?.[1])).toBe(e.minutes as number)
 })
@@ -180,7 +180,7 @@ test('with the event log hung, an Agent call returns within the bound with its r
   })
   expect(done).toBe(true)
   expect(w.ran.filter(c => c.tool === 'Agent').length).toBe(1)
-  expect(r?.context).toEqual([`[foundry] If auth-helper's report does not reach you, read ${ROOT}/reports/auth/auth-helper.md once it stops.`])
+  expect(r?.context).toEqual([`[truss] If auth-helper's report does not reach you, read ${ROOT}/reports/auth/auth-helper.md once it stops.`])
 })
 
 test('with the event log hung, a hand-back reaches its tool and a final SubagentStop returns, each within the bound', async ($, on) => {
@@ -193,7 +193,7 @@ test('with the event log hung, a hand-back reaches its tool and a final Subagent
   expect(w.files.has(`${ROOT}/reports/billing/billing-builder.md`)).toBe(true)
 })
 
-test('with the event log hung, a lead tagging main gets its message through within the bound', async ($, on) => {
+test('with the event log hung, a foreman tagging main gets its message through within the bound', async ($, on) => {
   const w = world($, on)
   await startSession($)
   hang(w)
@@ -201,7 +201,7 @@ test('with the event log hung, a lead tagging main gets its message through with
   expect(w.ran.filter(c => c.tool === 'SendMessage').length).toBe(1)
 })
 
-test('with the event log hung, every stall wake and idle-lead wake still goes out, the later ones too', async ($, on) => {
+test('with the event log hung, every stall wake and idle-foreman wake still goes out, the later ones too', async ($, on) => {
   const w = world($, on)
   await startSession($)
   hang(w)
@@ -221,19 +221,19 @@ test('with the event log hung, every stall wake and idle-lead wake still goes ou
   await w.clock.advance(17 * MIN)
   await settle()
   expect(billing()).toBe(2)
-  // and an idle lead after both, once its members are done
+  // and an idle foreman after both, once its members are done
   quiet(w)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(17 * MIN)
   await settle()
   await w.clock.advance(17 * MIN)
   await settle()
-  expect(w.prompts.filter(p => p.startsWith('[foundry] idle lead: auth ')).length).toBe(1)
+  expect(w.prompts.filter(p => p.startsWith('[truss] idle foreman: auth ')).length).toBe(1)
 })
 
 // ---------- the event log stays serial: a slow write delays the appends after it, never clobbers them ----------
 
-const FAILED = 'foundry: event log failed, letting the call through:'
+const FAILED = 'truss: event log failed, letting the call through:'
 const spawn = (w: W, name: string) => w.agentCall('A1', { subagent_type: 'kit:builder', name, model: 'sonnet', effort: 'low' })
 // holds the next write of the live log until released
 const gate = (w: W) => {
@@ -258,7 +258,7 @@ test('an append that hangs holds the appends after it, in order, and none is los
       r = await spawn(w, 'auth-1')
     }),
   ).toBe(true)
-  expect(r?.context).toEqual([`[foundry] If auth-1's report does not reach you, read ${ROOT}/reports/auth/auth-1.md once it stops.`])
+  expect(r?.context).toEqual([`[truss] If auth-1's report does not reach you, read ${ROOT}/reports/auth/auth-1.md once it stops.`])
   // the later calls return within the bound too, their appends queued behind the hung one
   expect(await returnsWithin(w, () => spawn(w, 'auth-2'))).toBe(true)
   expect(await returnsWithin(w, () => spawn(w, 'auth-3'))).toBe(true)
@@ -279,7 +279,7 @@ test('an append that hangs holds the appends after it, in order, and none is los
 // ---------- the cross-crew message log is bounded the same way ----------
 
 const MESSAGES = `${ROOT}/messages.jsonl`
-const MSG_FAILED = 'foundry: message log failed, letting the call through:'
+const MSG_FAILED = 'truss: message log failed, letting the call through:'
 const msgs = (w: W) => lines(w, MESSAGES).map(l => (JSON.parse(l) as { summary: string }).summary)
 
 test('with the message log hung, a cross-crew SendMessage returns within the bound and logs it', async ($, on) => {
@@ -308,7 +308,7 @@ test('a message append that hangs holds the message appends after it, in order, 
   expect(msgs(w)).toEqual(['one', 'two', 'three'])
 })
 
-test('red team B1: a write that lands after the bound does not clobber an append made in the meantime', async ($, on) => {
+test('stress test B1: a write that lands after the bound does not clobber an append made in the meantime', async ($, on) => {
   const w = world($, on)
   await startSession($)
   w.files.set(EVENTS, OLD)
@@ -329,7 +329,7 @@ test('red team B1: a write that lands after the bound does not clobber an append
   expect(events(w).map(e => e.agent).filter(a => a !== 'old')).toEqual(['auth-1', 'auth-2', 'auth-3'])
 })
 
-test('red team B2: a write that lands after the bound near ROLL_BYTES does not roll the old lines twice', async ($, on) => {
+test('stress test B2: a write that lands after the bound near ROLL_BYTES does not roll the old lines twice', async ($, on) => {
   const w = world($, on)
   await startSession($)
   // just under ROLL_BYTES: one spawn line takes the live log past it
@@ -365,8 +365,8 @@ test('past EVENT_BACKLOG_MAX queued appends a new event is dropped and logged; t
   await startSession($)
   const release = gate(w)
   // the first append's write is held; every call after it queues behind it. Started in batches of 50, as many calls
-  // at once cost the kit far more; the whole hold must stay inside the kit's 10 s real-time budget for one hook
-  // (HookBudget.ms), past which the held fs.write hook is skipped.
+  // at once cost the kit far more; the whole hold must stay inside the kit's 10 s real-time allowance for one hook
+  // (HookAllowance.ms), past which the held fs.write hook is skipped.
   const calls: Promise<unknown>[] = []
   for (let i = 0; i < EVENT_BACKLOG_MAX; i++) {
     calls.push(spawn(w, `q-${i}`))

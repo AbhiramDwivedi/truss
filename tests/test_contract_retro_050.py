@@ -1,10 +1,10 @@
-"""Contract test for retro's 0.5.0 key `budgetsSpent`, foundry ADR-0004 sections 5 and 8, Seams 4.
+"""Contract test for retro's 0.5.0 key `allowancesSpent`, truss ADR-0004 sections 5 and 8, Seams 4.
 
 Written from the ADR. Fixtures are synthetic, under fixtures/contract-050/retro/:
-  spent/     a `## Run` heading, 3 spawn lines, and budget-spent lines for crew auth (twice) and billing (once)
+  spent/     a `## Run` heading, 3 spawn lines, and allowance-spent lines for crew auth (twice) and billing (once)
   none/      a `## Run` heading, events with spawn lines only (a 0.4.x log looks the same)
   noevents/  a `## Run` heading and no events*.jsonl
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -18,7 +18,7 @@ ROOT = os.path.join(HERE, "fixtures", "contract-050", "retro")
 NR = "not recorded"
 
 
-class RetroBudgetsSpent(unittest.TestCase):
+class RetroAllowancesSpent(unittest.TestCase):
     cache = {}
 
     def retro(self, name):
@@ -38,27 +38,27 @@ class RetroBudgetsSpent(unittest.TestCase):
 
     def test_two_crews_one_twice_counts_distinct_crews(self):
         run = self.run0("spent")
-        self.assertIn("budgetsSpent", run)
-        self.assertEqual(run["budgetsSpent"], 2)
+        self.assertIn("allowancesSpent", run)
+        self.assertEqual(run["allowancesSpent"], 2)
 
-    def test_run_with_events_but_no_budget_line_is_not_recorded_never_zero(self):
+    def test_run_with_events_but_no_allowance_line_is_not_recorded_never_zero(self):
         run = self.run0("none")
-        self.assertIn("budgetsSpent", run)
-        self.assertEqual(run["budgetsSpent"], NR)
-        self.assertNotEqual(run["budgetsSpent"], 0)
+        self.assertIn("allowancesSpent", run)
+        self.assertEqual(run["allowancesSpent"], NR)
+        self.assertNotEqual(run["allowancesSpent"], 0)
 
     def test_run_without_events_is_not_recorded(self):
         run = self.run0("noevents")
-        self.assertIn("budgetsSpent", run)
-        self.assertEqual(run["budgetsSpent"], NR)
+        self.assertIn("allowancesSpent", run)
+        self.assertEqual(run["allowancesSpent"], NR)
 
-    def test_budgetsSpent_is_a_per_run_key_after_judges(self):
+    def test_allowancesSpent_is_a_per_run_key_after_qcs(self):
         out = self.retro("spent")
-        self.assertNotIn("budgetsSpent", out, "budgetsSpent is per run, not top level")
+        self.assertNotIn("allowancesSpent", out, "allowancesSpent is per run, not top level")
         keys = list(self.run0("spent").keys())
-        self.assertIn("budgetsSpent", keys)
-        self.assertIn("judges", keys)
-        self.assertEqual(keys.index("budgetsSpent"), keys.index("judges") + 1)
+        self.assertIn("allowancesSpent", keys)
+        self.assertIn("qcs", keys)
+        self.assertEqual(keys.index("allowancesSpent"), keys.index("qcs") + 1)
 
     def test_retro_version_stays_1(self):
         for name in ("spent", "none", "noevents"):
@@ -66,18 +66,18 @@ class RetroBudgetsSpent(unittest.TestCase):
                 self.assertEqual(self.retro(name)["retro"], 1)
 
     def test_top_level_keys_unchanged(self):
-        want = {"leftovers", "leftoverDetails", "retro", "dir", "split", "runs", "judgeFiles", "plan", "eventsSkipped", "eventsOutsideRuns"}
+        want = {"leftovers", "leftoverDetails", "retro", "dir", "split", "runs", "qcFiles", "plan", "eventsSkipped", "eventsOutsideRuns"}
         self.assertEqual(set(self.retro("spent").keys()), want)
 
     def test_spawns_counted_from_spawn_lines_only(self):
-        # Spawn lines gain no keys; the budget-spent lines are not spawns.
+        # Spawn lines gain no keys; the allowance-spent lines are not spawns.
         run = self.run0("spent")
-        self.assertIn("budgetsSpent", run, "fixture must be read as a 0.5.0 run")
+        self.assertIn("allowancesSpent", run, "fixture must be read as a 0.5.0 run")
         self.assertEqual(run["spawns"], {"total": 3, "byModelEffort": {"opus/high": 1, "sonnet/medium": 2}})
 
-    def test_budget_lines_are_not_skipped_as_malformed(self):
+    def test_allowance_lines_are_not_skipped_as_malformed(self):
         out = self.retro("spent")
-        self.assertIn("budgetsSpent", out["runs"][0], "fixture must be read as a 0.5.0 run")
+        self.assertIn("allowancesSpent", out["runs"][0], "fixture must be read as a 0.5.0 run")
         self.assertEqual(out["eventsSkipped"], 0)
         self.assertEqual(out["eventsOutsideRuns"], 0)
 

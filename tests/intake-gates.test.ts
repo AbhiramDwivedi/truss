@@ -2,26 +2,26 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect } from 'claude-code/testing'
 
-import { LEAD_TYPE } from '../hooks/register'
+import { FOREMAN_TYPE } from '../hooks/register'
 import { handBack, startSession, status, test, world } from './harness'
 
-// ADR-0010 mid-run intake, "What the contract tests pin" items 1-10, with the lead's amendments: no `after`, approval not
-// tied to wave 0, the reserved goal id `run` (gate R), and a crew's goal must name a plan goal (gate 2). Written from the
-// ADR and the crew spec alone; everything goes through the Agent tool.call entry, the architect hand-back and /foundry.
+// ADR-0010 mid-run intake, "What the contract tests pin" items 1-10, with the foreman's amendments: no `after`, approval not
+// tied to stage 0, the reserved goal id `run` (gate R), and a crew's goal must name a plan goal (gate 2). Written from the
+// ADR and the crew spec alone; everything goes through the Agent tool.call entry, the designer hand-back and /truss.
 
 type W = ReturnType<typeof world>
 type Obj = Record<string, unknown>
 
 const FENCE = '````'
-const DIR = 'C:/r/.git/foundry/S1'
+const DIR = 'C:/r/.git/truss/S1'
 const PLAN_JSON = `${DIR}/plan.json`
 const PLAN_MD = `${DIR}/plan.md`
 const APPROVED = '2026-10-17T10:00:00Z'
-const REFUSED = '[foundry] Refused: '
-const NOTHING = 'foundry: plan-amend route wrote nothing: '
-const ADDED = 'foundry: plan-amend route added goal '
-const KEPT = 'foundry: plan-file route kept the existing plan:'
-const NOT_APPROVED = "the plan isn't approved; give the goal to the plan architect instead"
+const REFUSED = '[truss] Refused: '
+const NOTHING = 'truss: plan-amend route wrote nothing: '
+const ADDED = 'truss: plan-amend route added goal '
+const KEPT = 'truss: plan-file route kept the existing plan:'
+const NOT_APPROVED = "the plan isn't approved; give the goal to the plan design engineer instead"
 
 const settle = async () => {
   for (let i = 0; i < 50; i++) await Promise.resolve()
@@ -31,7 +31,7 @@ const logged = (w: W, start: string) => w.logs.filter(l => l.startsWith(start))
 
 // ---- fixtures ----
 
-const crew = (slug: string, wave: unknown, status = 'planned', extra: Obj = {}): Obj => ({ slug, wave, verdict: 'change', status, ...extra })
+const crew = (slug: string, stage: unknown, status = 'planned', extra: Obj = {}): Obj => ({ slug, stage, verdict: 'change', status, ...extra })
 const goalEntry = (id: string, extra: Obj = {}): Obj => ({ id, goal: `goal ${id}`, addedAt: '2026-10-17T11:00:00Z', approval: 'auto', approvedAt: '2026-10-17T11:05:00Z', ...extra })
 const planOf = (crews: Obj[], goals?: Obj[], top: Obj = {}): Obj => ({
   version: 3,
@@ -39,16 +39,16 @@ const planOf = (crews: Obj[], goals?: Obj[], top: Obj = {}): Obj => ({
   approval: 'auto',
   approvedAt: APPROVED,
   maxParallelCrews: 4,
-  repairBudget: 2,
+  reworkAllowance: 2,
   ...(goals === undefined ? {} : { goals }),
   crews,
   ...top,
 })
 
-// ---- gates, through the Agent tool.call entry (a foundry:lead start from the main session) ----
+// ---- gates, through the Agent tool.call entry (a truss:foreman start from the main session) ----
 
-const setGate = (w: W, plan: Obj) => w.files.set('C:/r/.git/foundry/s1/plan.json', JSON.stringify(plan))
-const start = (w: W, name: string) => w.agentCall(undefined, { subagent_type: LEAD_TYPE, name, model: 'opus', effort: 'medium' })
+const setGate = (w: W, plan: Obj) => w.files.set('C:/r/.git/truss/s1/plan.json', JSON.stringify(plan))
+const start = (w: W, name: string) => w.agentCall(undefined, { subagent_type: FOREMAN_TYPE, name, model: 'opus', effort: 'medium' })
 const expectRefused = async (w: W, name: string, reason: string) => {
   const before = w.ran.length
   expect(await start(w, name)).toEqual({ deny: `${REFUSED}${reason}` })
@@ -60,26 +60,26 @@ const expectAllowed = async (w: W, name: string) => {
   expect(w.ran.filter(c => c.tool === 'Agent').at(-1)?.name).toBe(name)
 }
 
-test('intake item 1: an added goal wave 1 is not held by the run goal unmerged wave 0, and the run goal keeps its own gate', async ($, on) => {
+test('intake item 1: an added goal stage 1 is not held by the run goal unmerged stage 0, and the run goal keeps its own gate', async ($, on) => {
   const w = world($, on)
   setGate(w, planOf([crew('r0', 0, 'running'), crew('r1', 1), crew('a0', 0, 'merged', { goal: 'g1' }), crew('a1', 1, 'planned', { goal: 'g1' })], [goalEntry('g1')]))
   await expectAllowed(w, 'a1')
-  await expectRefused(w, 'r1', `wave 0 isn't merged yet: r0`)
+  await expectRefused(w, 'r1', `stage 0 isn't merged yet: r0`)
 })
 
-test('intake item 1: a run wave 0 crew that is unmerged never holds an added goal wave 0 either', async ($, on) => {
+test('intake item 1: a run stage 0 crew that is unmerged never holds an added goal stage 0 either', async ($, on) => {
   const w = world($, on)
   setGate(w, planOf([crew('r0', 0, 'running'), crew('a0', 0, 'planned', { goal: 'g1' })], [goalEntry('g1')]))
   await expectAllowed(w, 'a0')
 })
 
-test('intake item 2: an added goal wave gate names the goal, and lists the lowest open wave of that goal only', async ($, on) => {
+test('intake item 2: an added goal stage gate names the goal, and lists the lowest open stage of that goal only', async ($, on) => {
   const w = world($, on)
   setGate(w, planOf([crew('r0', 0, 'running'), crew('a0', 0, 'running', { goal: 'g1' }), crew('a0b', 0, 'planned', { goal: 'g1' }), crew('a1', 1, 'planned', { goal: 'g1' })], [goalEntry('g1')]))
-  await expectRefused(w, 'a1', `wave 0 of goal g1 isn't merged yet: a0, a0b`)
+  await expectRefused(w, 'a1', `stage 0 of goal g1 isn't merged yet: a0, a0b`)
 })
 
-test('intake item 2: a goal wave gate lets merged and dropped crews of that goal through', async ($, on) => {
+test('intake item 2: a goal stage gate lets merged and dropped crews of that goal through', async ($, on) => {
   const w = world($, on)
   setGate(w, planOf([crew('a0', 0, 'merged', { goal: 'g1' }), crew('a0b', 0, 'dropped', { goal: 'g1' }), crew('a1', 1, 'planned', { goal: 'g1' })], [goalEntry('g1')]))
   await expectAllowed(w, 'a1')
@@ -97,16 +97,16 @@ test('intake item 3: gate 2 also refuses when the plan has no goals at all', asy
   await expectRefused(w, 't', `t names goal ghost, which isn't in the plan`)
 })
 
-test('intake item 3: gate 3 holds a crew of an owner goal whose approvedAt is null, exact text', async ($, on) => {
+test('intake item 3: gate 3 holds a crew of a client goal whose approvedAt is null, exact text', async ($, on) => {
   const w = world($, on)
-  setGate(w, planOf([crew('a0', 0, 'planned', { goal: 'g1' }), crew('r0', 0)], [goalEntry('g1', { approval: 'owner', approvedAt: null })]))
-  await expectRefused(w, 'a0', `goal g1 changes the design; get the owner's approval first`)
+  setGate(w, planOf([crew('a0', 0, 'planned', { goal: 'g1' }), crew('r0', 0)], [goalEntry('g1', { approval: 'client', approvedAt: null })]))
+  await expectRefused(w, 'a0', `goal g1 changes the design; get the client's approval first`)
   await expectAllowed(w, 'r0')
 })
 
-test('intake item 3: gate 3 lets an owner goal through once approvedAt is set, and an auto goal whatever the foreman logged', async ($, on) => {
+test('intake item 3: gate 3 lets a client goal through once approvedAt is set, and an auto goal whatever the pm logged', async ($, on) => {
   const w = world($, on)
-  setGate(w, planOf([crew('a0', 0, 'planned', { goal: 'g1' })], [goalEntry('g1', { approval: 'owner', approvedAt: '2026-10-17T11:30:00Z' })]))
+  setGate(w, planOf([crew('a0', 0, 'planned', { goal: 'g1' })], [goalEntry('g1', { approval: 'client', approvedAt: '2026-10-17T11:30:00Z' })]))
   await expectAllowed(w, 'a0')
 })
 
@@ -122,17 +122,17 @@ test('intake item 3: gate R refuses every crew when goals holds an entry with id
 test('intake item 3: gate order, 1 before R before 2 before 3 before 4', async ($, on) => {
   const w = world($, on)
   // gate 1 beats R
-  setGate(w, planOf([crew('t', 0)], [goalEntry('run')], { approval: 'owner', approvedAt: null }))
-  await expectRefused(w, 't', `this run changes the design; get the owner's approval first`)
+  setGate(w, planOf([crew('t', 0)], [goalEntry('run')], { approval: 'client', approvedAt: null }))
+  await expectRefused(w, 't', `this run changes the design; get the client's approval first`)
   // R beats 2
   setGate(w, planOf([crew('t', 0, 'planned', { goal: 'ghost' })], [goalEntry('run')]))
   await expectRefused(w, 't', `goal id run is reserved for the run's first goal; rename it in plan.json`)
   // 3 beats 4
-  setGate(w, planOf([crew('t', 0, 'planned', { goal: 'g1', ownerApproval: 'pending' })], [goalEntry('g1', { approval: 'owner', approvedAt: null })]))
-  await expectRefused(w, 't', `goal g1 changes the design; get the owner's approval first`)
+  setGate(w, planOf([crew('t', 0, 'planned', { goal: 'g1', clientApproval: 'pending' })], [goalEntry('g1', { approval: 'client', approvedAt: null })]))
+  await expectRefused(w, 't', `goal g1 changes the design; get the client's approval first`)
   // 4 stays as it was
-  setGate(w, planOf([crew('t', 0, 'planned', { goal: 'g1', ownerApproval: 'pending' })], [goalEntry('g1')]))
-  await expectRefused(w, 't', `t waits for the owner's approval`)
+  setGate(w, planOf([crew('t', 0, 'planned', { goal: 'g1', clientApproval: 'pending' })], [goalEntry('g1')]))
+  await expectRefused(w, 't', `t waits for the client's approval`)
 })
 
 test('intake item 4: the cap counts running crews of every goal', async ($, on) => {
@@ -151,25 +151,25 @@ test('intake item 10: a crew with goal "run" passes gate 2 with no run entry in 
   await expectAllowed(w, 't')
 })
 
-test('intake item 10: a crew with goal "run" is wave-gated together with crews that have no goal', async ($, on) => {
+test('intake item 10: a crew with goal "run" is stage-gated together with crews that have no goal', async ($, on) => {
   const w = world($, on)
   setGate(w, planOf([crew('a', 0, 'running'), crew('t', 1, 'planned', { goal: 'run' })], [goalEntry('g1')]))
-  await expectRefused(w, 't', `wave 0 isn't merged yet: a`)
+  await expectRefused(w, 't', `stage 0 isn't merged yet: a`)
   setGate(w, planOf([crew('a', 0, 'running', { goal: 'run' }), crew('t', 1)], [goalEntry('g1')]))
-  await expectRefused(w, 't', `wave 0 isn't merged yet: a`)
+  await expectRefused(w, 't', `stage 0 isn't merged yet: a`)
 })
 
 // ---- the plan-amend route ----
 
-const mdOf = (id: string) => `# Goal ${id}\n\nWave 0: ${id}-one.`
-const newCrew = (slug: string, wave: number, extra: Obj = {}): Obj => ({
+const mdOf = (id: string) => `# Goal ${id}\n\nStage 0: ${id}-one.`
+const newCrew = (slug: string, stage: number, extra: Obj = {}): Obj => ({
   slug,
-  wave,
+  stage,
   verdict: 'change',
   modules: [slug],
   owns: [`src/${slug}/**`],
-  doneCheck: `pnpm test -- ${slug}`,
-  doneCheckProved: true,
+  acceptanceTest: `pnpm test -- ${slug}`,
+  acceptanceTestProved: true,
   estAgents: 3,
   status: 'planned',
   ...extra,
@@ -183,7 +183,7 @@ const message = (json: string | undefined, md: string | undefined = '# plan\n\nt
     'Report: one crew.',
   ].join('\n')
 
-// the harness answers session.id 's1'; the foundry dir is under S1
+// the harness answers session.id 's1'; the truss dir is under S1
 const setup = async ($: Engine, on: On): Promise<W> => {
   const w = world($, ((name: string, handler: unknown) => (name === 'session.id' ? undefined : (on as (n: string, h: unknown) => unknown)(name, handler))) as unknown as On)
   on('session.id', async () => ({ value: 'S1' }))
@@ -191,14 +191,14 @@ const setup = async ($: Engine, on: On): Promise<W> => {
   return w
 }
 
-// the foreman's architect call, then its hand-back
+// the pm's designer call, then its hand-back
 const sendAmend = async ($: Engine, w: W, id: string, amend: unknown, md: string | null = mdOf(id)) => {
-  await w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt: `Mode: amend\nGoal id: ${id}`, name: `architect-amend-${id}`, model: 'opus', effort: 'medium' })
+  await w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt: `Mode: amend\nGoal id: ${id}`, name: `designer-amend-${id}`, model: 'opus', effort: 'medium' })
   await handBack($, 'new1', message(typeof amend === 'string' ? amend : JSON.stringify(amend), md))
   await settle()
 }
 const sendPlan = async ($: Engine, w: W) => {
-  await w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt: 'Mode: plan\nGoal: something else', name: 'planner', model: 'opus', effort: 'medium' })
+  await w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt: 'Mode: plan\nGoal: something else', name: 'planner', model: 'opus', effort: 'medium' })
   await handBack($, 'new1', ['VERDICT: plan ready, both files below.', `${FENCE}json plan.json`, JSON.stringify(planOf([newCrew('other', 0)]), null, 2), FENCE, `${FENCE}markdown plan.md`, '# other plan', FENCE, 'Report: one crew.'].join('\n'))
   await settle()
 }
@@ -207,12 +207,12 @@ const existing = (): Obj => ({
   version: 2,
   goal: 'Add rate limiting',
   architecture: 'docs/architecture.md',
-  approval: 'owner',
+  approval: 'client',
   approvedAt: APPROVED,
   agentCap: 40,
   maxParallelCrews: 3,
-  repairBudget: 2,
-  crews: [newCrew('quotas', 0, { status: 'merged', ownerApproval: 'approved', verdict: 'design' }), newCrew('gateway', 1, { status: 'running' }), newCrew('docs', 1)],
+  reworkAllowance: 2,
+  crews: [newCrew('quotas', 0, { status: 'merged', clientApproval: 'approved', verdict: 'design' }), newCrew('gateway', 1, { status: 'running' }), newCrew('docs', 1)],
 })
 const text = (plan: Obj) => JSON.stringify(plan, null, 2) + '\n'
 const onDisk = (w: W): Obj => JSON.parse(w.files.get(PLAN_JSON) ?? '{}') as Obj
@@ -252,16 +252,16 @@ test('intake item 5: a second goal is appended after the first, and the first go
   await sendAmend($, w, 'one', amendOf('one', [newCrew('one-a', 0)]))
   const mid = onDisk(w)
   await w.clock.advance(3 * 60_000)
-  await sendAmend($, w, 'two', amendOf('two', [newCrew('two-a', 0)], { approval: 'owner' }))
+  await sendAmend($, w, 'two', amendOf('two', [newCrew('two-a', 0)], { approval: 'client' }))
   const after = onDisk(w)
   expect(goalsOf(after).map(g => g.id)).toEqual(['one', 'two'])
   expect(goalsOf(after)[0]).toEqual(goalsOf(mid)[0])
-  expect(goalsOf(after)[1]).toMatchObject({ approval: 'owner', approvedAt: null })
+  expect(goalsOf(after)[1]).toMatchObject({ approval: 'client', approvedAt: null })
   expect(crewsOf(after).slice(0, 4)).toEqual(crewsOf(mid))
   expect(slugs(after)).toEqual(['quotas', 'gateway', 'docs', 'one-a', 'two-a'])
 })
 
-test('intake item 3: an amend with approval auto and a wave 0 crew is accepted', async ($, on) => {
+test('intake item 3: an amend with approval auto and a stage 0 crew is accepted', async ($, on) => {
   const w = await setup($, on)
   w.files.set(PLAN_JSON, text(existing()))
   await sendAmend($, w, 'auto-goal', amendOf('auto-goal', [newCrew('ag-design', 0, { verdict: 'design' })], { approval: 'auto' }))
@@ -269,11 +269,11 @@ test('intake item 3: an amend with approval auto and a wave 0 crew is accepted',
   expect(logged(w, NOTHING)).toEqual([])
 })
 
-test('intake item 3: an amend with approval owner and no wave 0 crew is accepted', async ($, on) => {
+test('intake item 3: an amend with approval client and no stage 0 crew is accepted', async ($, on) => {
   const w = await setup($, on)
   w.files.set(PLAN_JSON, text(existing()))
-  await sendAmend($, w, 'owner-goal', amendOf('owner-goal', [newCrew('og-build', 1)], { approval: 'owner' }))
-  expect(goalsOf(onDisk(w))[0]).toMatchObject({ id: 'owner-goal', approval: 'owner', approvedAt: null })
+  await sendAmend($, w, 'client-goal', amendOf('client-goal', [newCrew('og-build', 1)], { approval: 'client' }))
+  expect(goalsOf(onDisk(w))[0]).toMatchObject({ id: 'client-goal', approval: 'client', approvedAt: null })
   expect(logged(w, NOTHING)).toEqual([])
 })
 
@@ -295,7 +295,7 @@ const refusals: Refusal[] = [
   { name: 'the goal id is run', amend: () => amendOf('run', [newCrew('c1', 0)]) },
   { name: 'goal.goal is empty', amend: () => amendOf('g1', [newCrew('c1', 0)], { goal: '' }) },
   { name: 'goal.goal is not a string', amend: () => amendOf('g1', [newCrew('c1', 0)], { goal: 5 }) },
-  { name: 'goal.approval is neither auto nor owner', amend: () => amendOf('g1', [newCrew('c1', 0)], { approval: 'maybe' }) },
+  { name: 'goal.approval is neither auto nor client', amend: () => amendOf('g1', [newCrew('c1', 0)], { approval: 'maybe' }) },
   { name: 'crews is empty', amend: () => amendOf('g1', []) },
   { name: 'crews is not an array', amend: () => ({ goal: { id: 'g1', goal: 'x', approval: 'auto' }, crews: { slug: 'c1' } }) },
   { name: 'a crew is not an object', amend: () => amendOf('g1', [newCrew('c1', 0), 'c2' as never]) },
@@ -323,7 +323,7 @@ test('intake item 6: the plan.json block missing is refused with the nothing lin
   const w = await setup($, on)
   const plan = text(existing())
   w.files.set(PLAN_JSON, plan)
-  await w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt: 'Mode: amend\nGoal id: g1', name: 'a', model: 'opus', effort: 'medium' })
+  await w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt: 'Mode: amend\nGoal id: g1', name: 'a', model: 'opus', effort: 'medium' })
   await handBack($, 'new1', message(undefined, '# only the markdown'))
   await settle()
   expect(w.files.get(PLAN_JSON)).toBe(plan)
@@ -348,10 +348,10 @@ test('intake item 7: replace keeps the goal index and original addedAt and puts 
   const addedAt = await withGoalAThenB($, w)
   const mid = onDisk(w)
   expect(slugs(mid)).toEqual(['quotas', 'gateway', 'docs', 'aa-one', 'aa-two', 'bb-one'])
-  await sendAmend($, w, 'aa', amendOf('aa', [newCrew('aa-x', 0), newCrew('aa-y', 0), newCrew('aa-z', 1)], { goal: 'do aa, redone', approval: 'owner' }))
+  await sendAmend($, w, 'aa', amendOf('aa', [newCrew('aa-x', 0), newCrew('aa-y', 0), newCrew('aa-z', 1)], { goal: 'do aa, redone', approval: 'client' }))
   const after = onDisk(w)
   expect(goalsOf(after).map(g => g.id)).toEqual(['aa', 'bb'])
-  expect(goalsOf(after)[0]).toMatchObject({ id: 'aa', goal: 'do aa, redone', approval: 'owner', approvedAt: null, addedAt })
+  expect(goalsOf(after)[0]).toMatchObject({ id: 'aa', goal: 'do aa, redone', approval: 'client', approvedAt: null, addedAt })
   expect(goalsOf(after)[1]).toEqual(goalsOf(mid)[1])
   expect(slugs(after)).toEqual(['quotas', 'gateway', 'docs', 'aa-x', 'aa-y', 'aa-z', 'bb-one'])
   expect(crewsOf(after)[6]).toEqual(crewsOf(mid)[5])
@@ -417,13 +417,13 @@ test('intake item 8: a Mode: plan hand-back over an approved plan is still kept,
   expect(logged(w, KEPT).length).toBeGreaterThan(0)
 })
 
-// ---- /foundry ----
+// ---- /truss ----
 
-// the plan lines at the head of /foundry's text
+// the plan lines at the head of /truss's text
 const planBlock = (t: string) => {
   const out: string[] = []
   for (const line of t.split('\n')) {
-    if (!/^(Plan \(|Goal |- wave )/.test(line)) break
+    if (!/^(Plan \(|Goal |- stage )/.test(line)) break
     out.push(line)
   }
   return out
@@ -435,48 +435,48 @@ const show = async ($: Engine, w: W, plan: Obj) => {
 
 test('intake item 9: wait suffixes, ready to start, and no suffix on a status other than planned', async ($, on) => {
   const w = world($, on)
-  const lines = await show($, w, planOf([crew('a', 0, 'running'), crew('b', 0, 'merged'), crew('c', 1), crew('d', 0), crew('e', 0, 'planned', { ownerApproval: 'pending' })], undefined, { maxParallelCrews: 4 }))
+  const lines = await show($, w, planOf([crew('a', 0, 'running'), crew('b', 0, 'merged'), crew('c', 1), crew('d', 0), crew('e', 0, 'planned', { clientApproval: 'pending' })], undefined, { maxParallelCrews: 4 }))
   expect(lines).toEqual([
     'Plan (5 crews, approval auto):',
-    '- wave 0: a, change, running',
-    '- wave 0: b, change, merged',
-    '- wave 0: d, change, planned, ready to start',
-    `- wave 0: e, change, planned, waits for the owner's approval`,
-    '- wave 1: c, change, planned, waits for wave 0 to merge: a, d, e',
+    '- stage 0: a, change, running',
+    '- stage 0: b, change, merged',
+    '- stage 0: d, change, planned, ready to start',
+    `- stage 0: e, change, planned, waits for the client's approval`,
+    '- stage 1: c, change, planned, waits for stage 0 to merge: a, d, e',
   ])
 })
 
 test('intake item 9: gate wait texts for the run approval, the cap, goal approval, a missing goal and the reserved id', async ($, on) => {
   const w = world($, on)
-  expect(await show($, w, planOf([crew('t', 0)], undefined, { approval: 'owner', approvedAt: null }))).toEqual([
-    'Plan (1 crews, approval owner, waiting for the owner):',
-    `- wave 0: t, change, planned, waits for the owner's approval of the plan`,
+  expect(await show($, w, planOf([crew('t', 0)], undefined, { approval: 'client', approvedAt: null }))).toEqual([
+    'Plan (1 crews, approval client, waiting for the client):',
+    `- stage 0: t, change, planned, waits for the client's approval of the plan`,
   ])
   expect(await show($, w, planOf([crew('r', 0, 'running'), crew('s', 0, 'running'), crew('t', 0)], undefined, { maxParallelCrews: 2 }))).toEqual([
     'Plan (3 crews, approval auto):',
-    '- wave 0: r, change, running',
-    '- wave 0: s, change, running',
-    '- wave 0: t, change, planned, waits for a free slot: 2 of 2 running',
+    '- stage 0: r, change, running',
+    '- stage 0: s, change, running',
+    '- stage 0: t, change, planned, waits for a free slot: 2 of 2 running',
   ])
-  const owner = await show($, w, planOf([crew('t', 0, 'planned', { goal: 'g1' })], [goalEntry('g1', { approval: 'owner', approvedAt: null })]))
-  expect(owner).toContain(`- wave 0: t, change, planned, waits for the owner's approval of goal g1`)
+  const client = await show($, w, planOf([crew('t', 0, 'planned', { goal: 'g1' })], [goalEntry('g1', { approval: 'client', approvedAt: null })]))
+  expect(client).toContain(`- stage 0: t, change, planned, waits for the client's approval of goal g1`)
   const ghost = await show($, w, planOf([crew('t', 0, 'planned', { goal: 'ghost' })], [goalEntry('g1')]))
-  expect(ghost).toContain(`- wave 0: t, change, planned, waits for a fix: goal ghost isn't in the plan`)
+  expect(ghost).toContain(`- stage 0: t, change, planned, waits for a fix: goal ghost isn't in the plan`)
   const reserved = await show($, w, planOf([crew('t', 0)], [goalEntry('run')]))
-  expect(reserved).toContain('- wave 0: t, change, planned, waits for a fix: goal id run is reserved')
+  expect(reserved).toContain('- stage 0: t, change, planned, waits for a fix: goal id run is reserved')
 })
 
-test('intake item 9: a wave wait inside an added goal names only that goal crews', async ($, on) => {
+test('intake item 9: a stage wait inside an added goal names only that goal crews', async ($, on) => {
   const w = world($, on)
   const lines = await show($, w, planOf([crew('r0', 0, 'running'), crew('a0', 0, 'running', { goal: 'g1' }), crew('a1', 1, 'planned', { goal: 'g1' }), crew('r1', 1)], [goalEntry('g1')]))
   expect(lines).toEqual([
     'Plan (4 crews, 2 goals, approval auto):',
     'Goal run (approval auto): g',
-    '- wave 0: r0, change, running',
-    '- wave 1: r1, change, planned, waits for wave 0 to merge: r0',
+    '- stage 0: r0, change, running',
+    '- stage 1: r1, change, planned, waits for stage 0 to merge: r0',
     'Goal g1 (approval auto): goal g1',
-    '- wave 0: a0, change, running',
-    '- wave 1: a1, change, planned, waits for wave 0 to merge: a0',
+    '- stage 0: a0, change, running',
+    '- stage 1: a1, change, planned, waits for stage 0 to merge: a0',
   ])
 })
 
@@ -485,37 +485,37 @@ test('intake item 9: no goal lines and the old header when the plan has no goals
   const lines = await show($, w, planOf([crew('a', 0, 'running'), crew('b', 1)], undefined))
   expect(lines.some(l => l.startsWith('Goal '))).toBe(false)
   expect(lines[0]).toBe('Plan (2 crews, approval auto):')
-  const v2 = await show($, w, { version: 2, goal: 'g', approval: 'auto', approvedAt: APPROVED, maxParallelCrews: 4, repairBudget: 2, crews: [crew('a', 0)] })
-  expect(v2).toEqual(['Plan (1 crews, approval auto):', '- wave 0: a, change, planned, ready to start'])
+  const v2 = await show($, w, { version: 2, goal: 'g', approval: 'auto', approvedAt: APPROVED, maxParallelCrews: 4, reworkAllowance: 2, crews: [crew('a', 0)] })
+  expect(v2).toEqual(['Plan (1 crews, approval auto):', '- stage 0: a, change, planned, ready to start'])
 })
 
-test('intake item 9: goal lines show approval, waiting for the owner, and done', async ($, on) => {
+test('intake item 9: goal lines show approval, waiting for the client, and done', async ($, on) => {
   const w = world($, on)
   const lines = await show(
     $,
     w,
     planOf(
       [crew('r0', 0, 'merged'), crew('r1', 1, 'dropped'), crew('a0', 0, 'planned', { goal: 'g1' }), crew('b0', 0, 'merged', { goal: 'g2' })],
-      [goalEntry('g1', { approval: 'owner', approvedAt: null, goal: 'first   added' }), goalEntry('g2', { goal: 'second' })],
+      [goalEntry('g1', { approval: 'client', approvedAt: null, goal: 'first   added' }), goalEntry('g2', { goal: 'second' })],
     ),
   )
   expect(lines).toEqual([
     'Plan (4 crews, 3 goals, approval auto):',
     'Goal run (approval auto, done): g',
-    '- wave 0: r0, change, merged',
-    '- wave 1: r1, change, dropped',
-    'Goal g1 (approval owner, waiting for the owner): first added',
-    `- wave 0: a0, change, planned, waits for the owner's approval of goal g1`,
+    '- stage 0: r0, change, merged',
+    '- stage 1: r1, change, dropped',
+    'Goal g1 (approval client, waiting for the client): first added',
+    `- stage 0: a0, change, planned, waits for the client's approval of goal g1`,
     'Goal g2 (approval auto, done): second',
-    '- wave 0: b0, change, merged',
+    '- stage 0: b0, change, merged',
   ])
 })
 
-test('intake item 9: the run goal waiting for the owner shows in the header and its goal line', async ($, on) => {
+test('intake item 9: the run goal waiting for the client shows in the header and its goal line', async ($, on) => {
   const w = world($, on)
-  const lines = await show($, w, planOf([crew('r0', 0)], [goalEntry('g1')], { approval: 'owner', approvedAt: null }))
-  expect(lines[0]).toBe('Plan (1 crews, 2 goals, approval owner, waiting for the owner):')
-  expect(lines[1]).toBe('Goal run (approval owner, waiting for the owner): g')
+  const lines = await show($, w, planOf([crew('r0', 0)], [goalEntry('g1')], { approval: 'client', approvedAt: null }))
+  expect(lines[0]).toBe('Plan (1 crews, 2 goals, approval client, waiting for the client):')
+  expect(lines[1]).toBe('Goal run (approval client, waiting for the client): g')
 })
 
 test('intake item 9: a crew naming a goal that is not in the plan is listed under a not-in-the-plan line after the known goals', async ($, on) => {
@@ -524,11 +524,11 @@ test('intake item 9: a crew naming a goal that is not in the plan is listed unde
   expect(lines).toEqual([
     'Plan (3 crews, 2 goals, approval auto):',
     'Goal run (approval auto): g',
-    '- wave 0: r0, change, running',
+    '- stage 0: r0, change, running',
     'Goal g1 (approval auto): goal g1',
-    '- wave 0: a0, change, running',
+    '- stage 0: a0, change, running',
     'Goal ghost (not in the plan):',
-    `- wave 0: x, change, planned, waits for a fix: goal ghost isn't in the plan`,
+    `- stage 0: x, change, planned, waits for a fix: goal ghost isn't in the plan`,
   ])
 })
 
@@ -548,20 +548,20 @@ test('intake item 10: a crew with goal "run" is listed under Goal run with the c
   expect(lines).toEqual([
     'Plan (3 crews, 2 goals, approval auto):',
     'Goal run (approval auto): g',
-    '- wave 0: a, change, running',
-    '- wave 0: t, change, planned, ready to start',
+    '- stage 0: a, change, running',
+    '- stage 0: t, change, planned, ready to start',
     'Goal g1 (approval auto): goal g1',
-    '- wave 0: a0, change, running',
+    '- stage 0: a0, change, running',
   ])
 })
 
 test('intake item 9: the section 5 example prints exactly its lines, with no after', async ($, on) => {
   const w = world($, on)
-  const head = 'Make foundry prod-grade on quality and bloat, from the reviewed anti-bloat analysis: (1) hook clean'
+  const head = 'Make truss prod-grade on quality and bloat, from the reviewed anti-bloat analysis: (1) a hook clean'
   expect(head.length).toBe(99)
   const runGoal = `${head}ing of the hooks,\n  (2) fewer   prompts,\n\n(3) ${'more words about the plan '.repeat(50)}end`
   expect(runGoal.replace(/\s+/g, ' ').length).toBeGreaterThan(1000)
-  const intake = 'Mid-run intake: start new crews mid-run, tell the owner what is in progress, take more work'
+  const intake = 'Mid-run intake: start new crews mid-run, tell the client what is in progress, take more work'
   const plan = planOf(
     [
       crew('eval-design', 0, 'merged', { verdict: 'design' }),
@@ -572,19 +572,19 @@ test('intake item 9: the section 5 example prints exactly its lines, with no aft
       crew('intake-gates', 1, 'planned', { goal: 'intake' }),
       crew('intake-retro', 1, 'planned', { goal: 'intake' }),
     ],
-    [goalEntry('intake', { goal: intake, approval: 'owner', approvedAt: '2026-10-17T11:30:00Z' })],
-    { goal: runGoal, approval: 'owner', approvedAt: APPROVED },
+    [goalEntry('intake', { goal: intake, approval: 'client', approvedAt: '2026-10-17T11:30:00Z' })],
+    { goal: runGoal, approval: 'client', approvedAt: APPROVED },
   )
   expect(await show($, w, plan)).toEqual([
-    'Plan (7 crews, 2 goals, approval owner):',
-    `Goal run (approval owner): ${head}…`,
-    '- wave 0: eval-design, design, merged',
-    '- wave 1: hooks-cleanup, extend, merged',
-    '- wave 1: evals-build, change, running',
-    '- wave 2: prompt-rules, change, planned, waits for wave 1 to merge: evals-build',
-    `Goal intake (approval owner): ${intake}`,
-    '- wave 0: intake-design, design, running',
-    '- wave 1: intake-gates, change, planned, waits for wave 0 to merge: intake-design',
-    '- wave 1: intake-retro, change, planned, waits for wave 0 to merge: intake-design',
+    'Plan (7 crews, 2 goals, approval client):',
+    `Goal run (approval client): ${head}…`,
+    '- stage 0: eval-design, design, merged',
+    '- stage 1: hooks-cleanup, extend, merged',
+    '- stage 1: evals-build, change, running',
+    '- stage 2: prompt-rules, change, planned, waits for stage 1 to merge: evals-build',
+    `Goal intake (approval client): ${intake}`,
+    '- stage 0: intake-design, design, running',
+    '- stage 1: intake-gates, change, planned, waits for stage 0 to merge: intake-design',
+    '- stage 1: intake-retro, change, planned, waits for stage 0 to merge: intake-design',
   ])
 })

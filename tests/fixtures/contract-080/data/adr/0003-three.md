@@ -1,3 +1,3 @@
 # ADR 3
 
-Decided by: owner
+Decided by: client

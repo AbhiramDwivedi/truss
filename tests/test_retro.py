@@ -1,7 +1,7 @@
 """Edge-case tests for scripts/retro.py that test_contract_retro.py does not pin.
 
 All data is synthetic and written to a temp dir, never to fixtures/ (P8).
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -60,9 +60,9 @@ class RetroEdges(unittest.TestCase):
             "- 2026-02-02 | d1 | r | c | followed",
             "- 2026-02-02T10:00:00+02:00 | d2 | r | c | overruled: x",
             "- HH:MM | d3 | r | c | —",
-            "- 9:05 | cynic-1 RECOMMEND pass: nope | followed",
+            "- 9:05 | checker-1 RECOMMEND pass: nope | followed",
             "- 2026-02-02 free text without a bar",
-            "- cynic-1 RECOMMEND answer: no time field",
+            "- checker-1 RECOMMEND answer: no time field",
             "    - 09:00 | indented | r | c | followed",
         ]) + "\n")
         run = self.run_retro()["runs"][0]
@@ -78,7 +78,7 @@ class RetroEdges(unittest.TestCase):
                    + ev("2026-03-03T07:30:00.000Z", "stall", kind="agent", minutes=5) + "\n")
         out = self.run_retro()
         self.assertEqual(out["runs"][0]["started"], "2026-03-03T10:00:00+02:00")
-        self.assertEqual(out["runs"][0]["stalls"], {"agent": 1, "idleLead": 0})
+        self.assertEqual(out["runs"][0]["stalls"], {"agent": 1, "idleForeman": 0})
         self.assertEqual(out["eventsOutsideRuns"], 1)
 
     def test_unparsable_heading_start_is_not_recorded_and_gets_no_events(self):
@@ -107,7 +107,7 @@ class RetroEdges(unittest.TestCase):
     def test_empty_events_file_gives_zeros_for_headed_runs(self):
         self.write("decisions.md", "## Run 2026-01-01T00:00:00Z | g\n")
         self.write("events.jsonl", "")
-        self.assertEqual(self.run_retro()["runs"][0]["stalls"], {"agent": 0, "idleLead": 0})
+        self.assertEqual(self.run_retro()["runs"][0]["stalls"], {"agent": 0, "idleForeman": 0})
 
     def test_no_decisions_file_and_odd_plan(self):
         self.write("plan.json", json.dumps({"crews": "nope"}))
@@ -132,7 +132,7 @@ class RetroEdges(unittest.TestCase):
         r = subprocess.run([sys.executable, SCRIPT, self.dir], capture_output=True, cwd=other, timeout=60)
         self.assertEqual(r.returncode, 0)
 
-    # --- red-team regressions: no input may crash the script or break strict JSON ---
+    # --- stress-test regressions: no input may crash the script or break strict JSON ---
 
     def run_raw(self):
         r = subprocess.run([sys.executable, SCRIPT, self.dir], capture_output=True, timeout=120)
@@ -158,21 +158,21 @@ class RetroEdges(unittest.TestCase):
         t = "2026-01-01T01:00:00Z"
         self.write("events.jsonl", "\n".join([
             ev(t, "tag", tag=["QUESTION"]), ev(t, "tag", tag={"a": 1}), ev(t, "tag", tag="BLOCKED"),
-            ev(t, "stall", kind=["agent"]), ev(t, "report", agent=["x-judge"], marker=["VERDICT: PASS"]),
-            ev(t, "report", agent="c-judge", marker={"a": 1}),
+            ev(t, "stall", kind=["agent"]), ev(t, "report", agent=["x-qc"], marker=["VERDICT: PASS"]),
+            ev(t, "report", agent="c-qc", marker={"a": 1}),
             ev(t, "spawn", model=["opus"], effort=5), ev(t, ["spawn"]),
         ]) + "\n")
         out = self.run_raw()
         run = out["runs"][0]
         self.assertEqual(out["eventsSkipped"], 0)
         self.assertEqual(run["escalations"], {"QUESTION": 0, "BLOCKED": 1, "PROPOSAL": 0})
-        self.assertEqual(run["stalls"], {"agent": 0, "idleLead": 0})
-        self.assertEqual(run["judges"], {"pass": 0, "fail": 0})
+        self.assertEqual(run["stalls"], {"agent": 0, "idleForeman": 0})
+        self.assertEqual(run["qcs"], {"pass": 0, "fail": 0})
         self.assertEqual(run["spawns"], {"total": 1, "byModelEffort": {"unset/unset": 1}})
 
     def test_plan_output_is_strict_json(self):
-        self.write("plan.json", '{"agentCap": NaN, "crews":[{"wave":1,"estAgents":Infinity,"status":"done"},'
-                                '{"wave":1,"estAgents":3},{"estAgents":true},{"estAgents":1.5}]}')
+        self.write("plan.json", '{"agentCap": NaN, "crews":[{"stage":1,"estAgents":Infinity,"status":"done"},'
+                                '{"stage":1,"estAgents":3},{"estAgents":true},{"estAgents":1.5}]}')
         plan = self.run_raw()["plan"]
         self.assertEqual(plan["estAgents"], 3)
         self.assertEqual(plan["agentCap"], "not recorded")
@@ -186,7 +186,7 @@ class RetroEdges(unittest.TestCase):
         self.assertEqual(plan["agentCap"], "not recorded")
 
     def test_plan_without_agent_cap_says_not_recorded(self):
-        self.write("plan.json", '{"crews":[{"wave":1,"estAgents":2}]}')
+        self.write("plan.json", '{"crews":[{"stage":1,"estAgents":2}]}')
         self.assertEqual(self.run_raw()["plan"]["agentCap"], "not recorded")
 
     def test_plan_valid_agent_cap_is_copied(self):
@@ -230,46 +230,46 @@ class RetroEdges(unittest.TestCase):
         self.assertEqual(out["spawns"]["total"], 2)
         self.assertEqual(out["messages"], 3)
 
-    # A RECOMMEND in the cynic field (4th field) of a decision line counts as a recommendation,
+    # A RECOMMEND in the checker field (4th field) of a decision line counts as a recommendation,
     # and the line still counts as a decision.
     def recs_of(self, *lines):
         self.write("decisions.md", "\n".join(lines) + "\n")
         return self.run_retro()["runs"][0]
 
-    def test_cynic_field_bare_recommend(self):
+    def test_checker_field_bare_recommend(self):
         run = self.recs_of("- 19:04 | d | r | RECOMMEND: answer (soft) | followed")
         self.assertEqual(run["recommendations"], {"total": 1, "answer": 1, "defer": 0, "pass": 0})
         self.assertEqual((run["decisions"]["total"], run["decisions"]["followed"]), (1, 1))
 
-    def test_cynic_field_numbered_recommend_on_an_overruled_line(self):
-        run = self.recs_of("- 22:30 | d | r | cynic-3 RECOMMEND: answer (conditional on x) | overruled: y")
+    def test_checker_field_numbered_recommend_on_an_overruled_line(self):
+        run = self.recs_of("- 22:30 | d | r | checker-3 RECOMMEND: answer (conditional on x) | overruled: y")
         self.assertEqual(run["recommendations"], {"total": 1, "answer": 1, "defer": 0, "pass": 0})
         self.assertEqual((run["decisions"]["total"], run["decisions"]["overruled"]), (1, 1))
 
-    def test_cynic_field_colon_after_cynic_name(self):
-        run = self.recs_of("- 00:08 | d | r | cynic-4: RECOMMEND: pass, option (a) | followed")
+    def test_checker_field_colon_after_checker_name(self):
+        run = self.recs_of("- 00:08 | d | r | checker-4: RECOMMEND: pass, option (a) | followed")
         self.assertEqual(run["recommendations"], {"total": 1, "answer": 0, "defer": 0, "pass": 1})
 
-    def test_cynic_field_multiplier_counts_n_outcomes(self):
-        run = self.recs_of("- 00:08 | d1; d2 | r | cynic-4: RECOMMEND: defer (x2) | followed")
+    def test_checker_field_multiplier_counts_n_outcomes(self):
+        run = self.recs_of("- 00:08 | d1; d2 | r | checker-4: RECOMMEND: defer (x2) | followed")
         self.assertEqual(run["recommendations"], {"total": 2, "answer": 0, "defer": 2, "pass": 0})
         self.assertEqual(run["decisions"]["total"], 1)
 
-    def test_cynic_field_none_counts_nothing(self):
+    def test_checker_field_none_counts_nothing(self):
         run = self.recs_of(
             "- 09:00 | d | r | none | followed",
             "- 09:01 | d naming RECOMMEND: answer | r | none | followed",
-            "- 09:02 | d | r | cynic-4 correctness flag | followed",
+            "- 09:02 | d | r | checker-4 correctness flag | followed",
             "- 09:03 | d | r | RECOMMEND: defer | followed (deferred)",
         )
         self.assertEqual(run["recommendations"], {"total": 1, "answer": 0, "defer": 1, "pass": 0})
         self.assertEqual(run["decisions"]["total"], 4)
 
-    def test_line_form_still_counts_beside_cynic_field_form_without_double_counting(self):
+    def test_line_form_still_counts_beside_checker_field_form_without_double_counting(self):
         run = self.recs_of(
-            "- 09:10 | cynic-1 RECOMMEND answer: x | followed",
-            "- 09:11 | cynic-1 RECOMMEND defer: y | followed (deferred)",
-            "- 09:12 | d | r | cynic-1 RECOMMEND: pass | followed",
+            "- 09:10 | checker-1 RECOMMEND answer: x | followed",
+            "- 09:11 | checker-1 RECOMMEND defer: y | followed (deferred)",
+            "- 09:12 | d | r | checker-1 RECOMMEND: pass | followed",
         )
         self.assertEqual(run["recommendations"], {"total": 3, "answer": 1, "defer": 1, "pass": 1})
         self.assertEqual(run["decisions"]["total"], 1)

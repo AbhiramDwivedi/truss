@@ -1,27 +1,27 @@
 // @ts-nocheck
-// foundry ADR-0009 Decision 1, the `start` command (rows at ADR :158-161, paragraphs "start, engine split", "start,
-// budget and label numbering", "start, base", "start, stale runs" and "Labels"). Written from the ADR before
-// plugins/foundry/bin/factory.ts existed; loaded by tests/factory.check.ts (it imports every *.cases.ts here).
+// truss ADR-0009 Decision 1, the `start` command (rows at ADR :158-161, paragraphs "start, engine split", "start,
+// allowance and label numbering", "start, base", "start, stale runs" and "Labels"). Written from the ADR before
+// bin/factory.ts existed; loaded by tests/factory.check.ts (it imports every *.cases.ts here).
 //
-// Owner ruling (overrides ADR :175): `spent` counts the crew's judge FAILs only; red-team reports never add to it.
+// Client ruling (overrides ADR :175): `spent` counts the crew's qc FAILs only; stress test reports never add to it.
 //
 // Assumptions the ADR leaves open (each is also listed in the report):
 // - how `start` finds the Workflow runs (T/../*/) is not in the ADR rows: these tests pass `--transcript <a run dir>`
-//   to every start call that needs the runs (--wave next with running crews, --resume stale), and the runs root is
+//   to every start call that needs the runs (--stage next with running crews, --resume stale), and the runs root is
 //   that dir's parent;
 // - a refusal of `--resume ...` is exit 1 with `why` at the top level of the one-line JSON object;
-// - the `goal` entry field is only checked to be a string; `redTeam` is `true` or a string that says "yes"; `scope`
+// - the `goal` entry field is only checked to be a string; `stressTest` is `true` or a string that says "yes"; `scope`
 //   and `highImpact` contain the goal file's section text;
-// - the wave.js copy made by --scripts-dir is `<S>/foundry-wave.js` (plan-args writes `foundry-plan.js` the same way);
+// - the stage.js copy made by --scripts-dir is `<S>/truss-stage.js` (plan-args writes `truss-plan.js` the same way);
 // - a task in `done` is a task name (string) or a task object with a `name`; `tasks` are the planner's task objects;
-// - `since` (stale list) is a non-empty string; a lead's reason for a missing `## Engine` section is a string.
+// - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
 
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../../../hooks/register.ts'
 import {
-  addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, flat, git, head, judgeReport, mkEnv, mkRun, planObj, pluginCopy, putFile,
+  addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, flat, git, head, qcReport, mkEnv, mkRun, planObj, pluginCopy, putFile,
   readEvents, readPlan, tmp, validateEvent, writeGoal, writePlan, writeReport,
 } from './harness.ts'
 
@@ -38,9 +38,9 @@ const norm = (p: string): string => {
   }
 }
 
-const FOUNDRY_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repairBudget', 'repo', 'roles', 'scriptPath', 'target']
-const OUTPUT_KEYS = ['foundry', 'leads', 'refused', 'stale', 'unfinished']
-const ENTRY_KEYS = ['adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'doneCheck', 'goal', 'goalFile', 'highImpact', 'labelFrom', 'owns', 'redTeam', 'resume', 'scope', 'slug', 'spent', 'tasks', 'wave', 'worktree']
+const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
+const OUTPUT_KEYS = ['foremen', 'refused', 'stale', 'truss', 'unfinished']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'highImpact', 'labelFrom', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {
@@ -50,11 +50,11 @@ function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknow
   return env
 }
 
-const start = (env: any, wave: string | number = 'next', flags: Record<string, unknown> = {}, extra: string[] = []) => env.run('start', { wave, ...flags }, extra)
+const start = (env: any, stage: string | number = 'next', flags: Record<string, unknown> = {}, extra: string[] = []) => env.run('start', { stage, ...flags }, extra)
 const resume = (env: any, slug: string, kind: string, flags: Record<string, unknown> = {}) => env.run('start', { slug, resume: kind, ...flags })
 const statusOf = (env: any, slug: string): string => readPlan(env.dir).crews.find((c: any) => c.slug === slug).status
 const factorySpawns = (env: any, slug: string): any[] => readEvents(env.dir).filter((e) => e.event === 'spawn' && e.by === 'factory' && e.crew === slug)
-const wtPath = (env: any, slug: string): string => `${env.repo}/.claude/worktrees/foundry-${slug}`
+const wtPath = (env: any, slug: string): string => `${env.repo}/.claude/worktrees/truss-${slug}`
 const slugsOf = (list: any[]): string[] => list.map((x) => x.slug)
 
 function assertEventsValid(env: any): void {
@@ -86,7 +86,7 @@ function record(env: any, runId: string, run: any, slug: string, o: { incomplete
 }
 
 /** A run holding none of the crews' labels (a plan run), so a `--transcript` has a runs root to name. */
-const anchorRun = (env: any) => deadRun(env, 'wf_anchor', [{ label: 'foundry-architect', agentType: 'foundry:architect' }])
+const anchorRun = (env: any) => deadRun(env, 'wf_anchor', [{ label: 'truss-designer', agentType: 'truss:design-engineer' }])
 
 /** On the crew branch (in its worktree): a member branch `name` with one commit, merged into the crew branch when `merge`. */
 function memberBranch(wt: string, crewBranch: string, name: string, merge: boolean): void {
@@ -101,8 +101,8 @@ const task = (name: string) => ({ name, role: 'builder', effort: 'medium', files
 // ---------------------------------------------------------------------------------------------------------------
 // engine split
 
-test('start engine split: a goal with `## Engine` workflow goes to foundry.crews, the others to leads with their reason', () => {
-  const env = world([crew('wf'), crew('ld'), crew('nosec')], { goals: { ld: { engine: 'lead has a devops member' } } })
+test('start engine split: a goal with `## Engine` workflow goes to truss.crews, the others to foremen with their reason', () => {
+  const env = world([crew('wf'), crew('ld'), crew('nosec')], { goals: { ld: { engine: 'foreman has a commissioning member' } } })
   // a goal file with no ## Engine section at all
   const text = readFileSync(`${env.dir}/goals/nosec.md`, 'utf8').replace(/\n## Engine[\s\S]*$/, '\n')
   assert.ok(!text.includes('## Engine'))
@@ -110,52 +110,52 @@ test('start engine split: a goal with `## Engine` workflow goes to foundry.crews
   const res = start(env)
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
-  assert.deepEqual(slugsOf(j.foundry.crews), ['wf'])
-  assert.deepEqual(slugsOf(j.leads).sort(), ['ld', 'nosec'])
-  const ld = j.leads.find((l: any) => l.slug === 'ld')
-  assert.match(ld.reason, /devops member/)
-  assert.equal(typeof j.leads.find((l: any) => l.slug === 'nosec').reason, 'string')
+  assert.deepEqual(slugsOf(j.truss.crews), ['wf'])
+  assert.deepEqual(slugsOf(j.foremen).sort(), ['ld', 'nosec'])
+  const ld = j.foremen.find((l: any) => l.slug === 'ld')
+  assert.match(ld.reason, /commissioning member/)
+  assert.equal(typeof j.foremen.find((l: any) => l.slug === 'nosec').reason, 'string')
 })
 
-test('start engine split: a lead crew stays planned, gets no worktree and no spawn line, and a second start returns it again', () => {
-  const env = world([crew('ld')], { goals: { ld: { engine: 'lead owner raised a member to high' } } })
+test('start engine split: a foreman crew stays planned, gets no worktree and no spawn line, and a second start returns it again', () => {
+  const env = world([crew('ld')], { goals: { ld: { engine: 'foreman client raised a member to high' } } })
   const a = start(env)
   const ja = assertOneLine(a)
   assert.equal(a.status, 0, a.stderr)
-  assert.deepEqual(slugsOf(ja.leads), ['ld'])
-  assert.deepEqual(ja.foundry.crews, [])
+  assert.deepEqual(slugsOf(ja.foremen), ['ld'])
+  assert.deepEqual(ja.truss.crews, [])
   assert.equal(statusOf(env, 'ld'), 'planned')
-  assert.ok(!existsSync(wtPath(env, 'ld')), 'no worktree for a lead crew')
-  assert.equal(git(env.repo, ['branch', '--list', 'foundry-ld']), '', 'no branch for a lead crew')
+  assert.ok(!existsSync(wtPath(env, 'ld')), 'no worktree for a foreman crew')
+  assert.equal(git(env.repo, ['branch', '--list', 'truss-ld']), '', 'no branch for a foreman crew')
   assert.equal(readEvents(env.dir).filter((e) => e.event === 'spawn').length, 0)
   const b = start(env)
   assert.equal(b.stdout, a.stdout, 'idempotent: same output')
   assert.equal(statusOf(env, 'ld'), 'planned')
 })
 
-test('start engine split: `merge: single` forces every crew to lead', () => {
+test('start engine split: `merge: single` forces every crew to foreman', () => {
   const env = world([crew('a'), crew('b')], { config: { merge: 'single', target: 'main' } })
   const j = assertOneLine(start(env))
-  assert.deepEqual(j.foundry.crews, [])
-  assert.deepEqual(slugsOf(j.leads).sort(), ['a', 'b'])
+  assert.deepEqual(j.truss.crews, [])
+  assert.deepEqual(slugsOf(j.foremen).sort(), ['a', 'b'])
   assert.equal(statusOf(env, 'a'), 'planned')
   assert.equal(readEvents(env.dir).filter((e) => e.event === 'spawn').length, 0)
 })
 
-test('start engine split: --no-workflow forces every crew to lead', () => {
+test('start engine split: --no-workflow forces every crew to foreman', () => {
   const env = world([crew('a'), crew('b')])
   const j = assertOneLine(start(env, 'next', { 'no-workflow': true }))
-  assert.deepEqual(j.foundry.crews, [])
-  assert.deepEqual(slugsOf(j.leads).sort(), ['a', 'b'])
+  assert.deepEqual(j.truss.crews, [])
+  assert.deepEqual(slugsOf(j.foremen).sort(), ['a', 'b'])
   assert.ok(!existsSync(wtPath(env, 'a')))
   assert.equal(statusOf(env, 'b'), 'planned')
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// status rules, wave choice, the cap
+// status rules, stage choice, the cap
 
-test('start --wave next: the lowest wave with a planned crew; merged waves are skipped; --wave n must be that wave', () => {
-  const crews = [crew('old', { wave: 1, status: 'merged' }), crew('a', { wave: 2 }), crew('b', { wave: 3 })]
+test('start --stage next: the lowest stage with a planned crew; merged stages are skipped; --stage n must be that stage', () => {
+  const crews = [crew('old', { stage: 1, status: 'merged' }), crew('a', { stage: 2 }), crew('b', { stage: 3 })]
   const env = world(crews)
   const bad = start(env, 3)
   assert.equal(bad.status, 1, `stdout ${bad.stdout} stderr ${bad.stderr}`)
@@ -165,21 +165,21 @@ test('start --wave next: the lowest wave with a planned crew; merged waves are s
   assert.equal(bad1.status, 1)
   const ok = start(env, 2)
   assert.equal(ok.status, 0, ok.stderr)
-  assert.deepEqual(slugsOf(assertOneLine(ok).foundry.crews), ['a'])
+  assert.deepEqual(slugsOf(assertOneLine(ok).truss.crews), ['a'])
   assert.equal(statusOf(env, 'a'), 'running')
   assert.equal(statusOf(env, 'b'), 'planned')
 })
 
-test('start --wave next: a wave whose only crews are running is still the wave; --wave of a later wave refuses', () => {
-  const env = world([crew('r', { wave: 1, status: 'running' }), crew('p', { wave: 2 })])
+test('start --stage next: a stage whose only crews are running is still the stage; --stage of a later stage refuses', () => {
+  const env = world([crew('r', { stage: 1, status: 'running' }), crew('p', { stage: 2 })])
   makeRunning(env, 'r', iso(Date.now()))
   const anchor = anchorRun(env)
   const res = start(env, 'next', { transcript: anchor.dir })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
-  assert.deepEqual(j.foundry.crews, [], 'a running crew is never in a plain --wave result')
-  assert.deepEqual(j.leads, [])
-  assert.equal(statusOf(env, 'p'), 'planned', 'wave 2 waits for wave 1')
+  assert.deepEqual(j.truss.crews, [], 'a running crew is never in a plain --stage result')
+  assert.deepEqual(j.foremen, [])
+  assert.equal(statusOf(env, 'p'), 'planned', 'stage 2 waits for stage 1')
   const later = start(env, 2, { transcript: anchor.dir })
   assert.equal(later.status, 1)
   assert.equal(statusOf(env, 'p'), 'planned')
@@ -193,7 +193,7 @@ test('start: merged, dropped and running crews are never re-marked or returned; 
   const res = start(env, 'next', { transcript: anchorRun(env).dir })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
-  assert.deepEqual(slugsOf(j.foundry.crews), ['p'])
+  assert.deepEqual(slugsOf(j.truss.crews), ['p'])
   const after = readPlan(env.dir)
   for (const c of after.crews) assert.equal(c.status, c.slug === 'p' ? 'running' : before.crews.find((x: any) => x.slug === c.slug).status)
   assert.equal(factorySpawns(env, 'm').length + factorySpawns(env, 'd').length, 0)
@@ -204,23 +204,23 @@ test('start cap: free slots = maxParallelCrews minus running crews (any engine),
   const env = world([crew('zeta'), crew('alpha'), crew('mid'), crew('busy', { status: 'running' })], { plan: { maxParallelCrews: 3 } })
   makeRunning(env, 'busy', iso(Date.now()))
   const j = assertOneLine(start(env, 'next', { transcript: anchorRun(env).dir }))
-  assert.deepEqual(slugsOf(j.foundry.crews), ['zeta', 'alpha'], 'queue order, not alphabetical; 3 - 1 running = 2 slots')
+  assert.deepEqual(slugsOf(j.truss.crews), ['zeta', 'alpha'], 'queue order, not alphabetical; 3 - 1 running = 2 slots')
   assert.equal(statusOf(env, 'mid'), 'planned')
   assert.ok(!j.refused.some((r: any) => r.slug === 'mid'), 'a crew left for lack of a slot is not refused')
 })
 
-test('start cap: a running lead crew counts against the cap like any other', () => {
-  const env = world([crew('lead1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { lead1: { engine: 'lead devops member' } } })
+test('start cap: a running foreman crew counts against the cap like any other', () => {
+  const env = world([crew('foreman1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { foreman1: { engine: 'foreman commissioning member' } } })
   const j = assertOneLine(start(env, 'next', { transcript: anchorRun(env).dir }))
-  assert.deepEqual(slugsOf(j.foundry.crews), ['a'], 'one slot free')
+  assert.deepEqual(slugsOf(j.truss.crews), ['a'], 'one slot free')
   assert.equal(statusOf(env, 'b'), 'planned')
 })
 
-test('start cap: each returned lead crew takes one of the call\'s slots', () => {
-  const env = world([crew('ld'), crew('w1'), crew('w2')], { plan: { maxParallelCrews: 2 }, goals: { ld: { engine: 'lead devops member' } } })
+test('start cap: each returned foreman crew takes one of the call\'s slots', () => {
+  const env = world([crew('ld'), crew('w1'), crew('w2')], { plan: { maxParallelCrews: 2 }, goals: { ld: { engine: 'foreman commissioning member' } } })
   const j = assertOneLine(start(env))
-  assert.deepEqual(slugsOf(j.leads), ['ld'])
-  assert.deepEqual(slugsOf(j.foundry.crews), ['w1'], 'two slots: the lead took one')
+  assert.deepEqual(slugsOf(j.foremen), ['ld'])
+  assert.deepEqual(slugsOf(j.truss.crews), ['w1'], 'two slots: the foreman took one')
   assert.equal(statusOf(env, 'w2'), 'planned')
   assert.equal(statusOf(env, 'ld'), 'planned')
 })
@@ -229,11 +229,11 @@ test('start cap: each returned lead crew takes one of the call\'s slots', () => 
 // workflow crew start
 
 test('start (workflow crew): refused on planVerdict with the hook\'s text; the crew stays planned with no worktree or spawn', () => {
-  const env = world([crew('ok'), crew('gate', { verdict: 'design', ownerApproval: 'pending' })])
+  const env = world([crew('ok'), crew('gate', { verdict: 'design', clientApproval: 'pending' })])
   const expected = planVerdict(parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8')), 'gate')
   assert.ok(expected, 'fixture: the real planVerdict refuses this crew')
   const j = assertOneLine(start(env))
-  assert.deepEqual(slugsOf(j.foundry.crews), ['ok'])
+  assert.deepEqual(slugsOf(j.truss.crews), ['ok'])
   assert.deepEqual(j.refused, [{ slug: 'gate', reason: expected.deny }])
   assert.equal(statusOf(env, 'gate'), 'planned')
   assert.ok(!existsSync(wtPath(env, 'gate')))
@@ -241,11 +241,11 @@ test('start (workflow crew): refused on planVerdict with the hook\'s text; the c
 })
 
 test('start (workflow crew): an unapproved plan refuses the crew with the real planVerdict text', () => {
-  const env = world([crew('d', { wave: 0, verdict: 'design' })], { plan: { approval: 'owner', approvedAt: null } })
+  const env = world([crew('d', { stage: 0, verdict: 'design' })], { plan: { approval: 'client', approvedAt: null } })
   const expected = planVerdict(parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8')), 'd')
   assert.ok(expected)
   const j = assertOneLine(start(env))
-  assert.deepEqual(j.foundry.crews, [])
+  assert.deepEqual(j.truss.crews, [])
   assert.deepEqual(j.refused, [{ slug: 'd', reason: expected.deny }])
   assert.equal(statusOf(env, 'd'), 'planned')
 })
@@ -259,7 +259,7 @@ test('start (workflow crew): sets running, makes the worktree and branch from th
   assert.equal(statusOf(env, 'x'), 'running')
   const wt = wtPath(env, 'x')
   assert.ok(existsSync(`${wt}/later.txt`), 'worktree is at the target head')
-  assert.equal(git(wt, ['rev-parse', '--abbrev-ref', 'HEAD']), 'foundry-x')
+  assert.equal(git(wt, ['rev-parse', '--abbrev-ref', 'HEAD']), 'truss-x')
   assert.equal(head(wt), target)
   const spawns = readEvents(env.dir).filter((e) => e.event === 'spawn')
   assert.equal(spawns.length, 1)
@@ -277,46 +277,46 @@ test('start (workflow crew): an existing crew worktree is reused, its commits ke
   const wt = addCrewWorktree(env.repo, 'x')
   const mine = putFile(wt, 'src/x/mine.ts', 'mine\n', 'crew work')
   const j = assertOneLine(start(env))
-  assert.deepEqual(slugsOf(j.foundry.crews), ['x'])
+  assert.deepEqual(slugsOf(j.truss.crews), ['x'])
   assert.equal(head(wt), mine)
-  assert.equal(git(env.repo, ['branch', '--list', 'foundry-x']).replace(/^[*+]?\s*/, ''), 'foundry-x')
-  assert.equal(j.foundry.crews[0].base, git(wt, ['merge-base', 'main', 'HEAD']))
+  assert.equal(git(env.repo, ['branch', '--list', 'truss-x']).replace(/^[*+]?\s*/, ''), 'truss-x')
+  assert.equal(j.truss.crews[0].base, git(wt, ['merge-base', 'main', 'HEAD']))
 })
 
-test('start output: top-level keys, foundry keys and crew entry keys are exactly the ADR row\'s', () => {
-  const env = world([crew('x', { owns: ['src/x/**', 'docs/x.md'], doneCheck: 'node --test t.ts' })], {
-    plan: { repairBudget: 3 },
-    goals: { x: { scope: 'Build only the x thing.', highImpact: 'src/x/core.ts', redTeam: 'yes, it takes input' } },
+test('start output: top-level keys, truss keys and crew entry keys are exactly the ADR row\'s', () => {
+  const env = world([crew('x', { owns: ['src/x/**', 'docs/x.md'], acceptanceTest: 'node --test t.ts' })], {
+    plan: { reworkAllowance: 3 },
+    goals: { x: { scope: 'Build only the x thing.', highImpact: 'src/x/core.ts', stressTest: 'yes, it takes input' } },
   })
   const j = assertOneLine(start(env))
   assert.deepEqual(Object.keys(j).sort(), OUTPUT_KEYS)
-  assert.deepEqual(Object.keys(j.foundry).sort(), FOUNDRY_KEYS)
-  assert.equal(j.foundry.kind, 'wave')
-  assert.equal(norm(j.foundry.dir), norm(env.dir))
-  assert.equal(norm(j.foundry.repo), norm(env.repo))
-  assert.equal(norm(j.foundry.plugin), norm(env.plugin))
-  assert.equal(j.foundry.target, 'main')
-  assert.equal(j.foundry.repairBudget, 3)
-  assert.equal(flat(j.foundry.scriptPath), `${flat(j.foundry.plugin)}/workflows/wave.js`)
-  assert.equal(workflowRoleVerdict(j.foundry.roles), undefined)
-  assert.deepEqual(j.leads, [])
+  assert.deepEqual(Object.keys(j.truss).sort(), TRUSS_KEYS)
+  assert.equal(j.truss.kind, 'stage')
+  assert.equal(norm(j.truss.dir), norm(env.dir))
+  assert.equal(norm(j.truss.repo), norm(env.repo))
+  assert.equal(norm(j.truss.plugin), norm(env.plugin))
+  assert.equal(j.truss.target, 'main')
+  assert.equal(j.truss.reworkAllowance, 3)
+  assert.equal(flat(j.truss.scriptPath), `${flat(j.truss.plugin)}/workflows/stage.js`)
+  assert.equal(workflowRoleVerdict(j.truss.roles), undefined)
+  assert.deepEqual(j.foremen, [])
   assert.deepEqual(j.refused, [])
   assert.deepEqual(j.stale, [])
   assert.deepEqual(j.unfinished, [])
-  assert.equal(j.foundry.crews.length, 1)
-  const e = j.foundry.crews[0]
+  assert.equal(j.truss.crews.length, 1)
+  const e = j.truss.crews[0]
   assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
   assert.equal(e.slug, 'x')
-  assert.equal(e.wave, 1)
+  assert.equal(e.stage, 1)
   assert.equal(norm(e.goalFile), norm(`${env.dir}/goals/x.md`))
   assert.equal(typeof e.goal, 'string')
   assert.deepEqual(e.owns, ['src/x/**', 'docs/x.md'])
-  assert.equal(e.doneCheck, 'node --test t.ts')
+  assert.equal(e.acceptanceTest, 'node --test t.ts')
   assert.ok(JSON.stringify(e.highImpact).includes('src/x/core.ts'), 'high-impact section read from the goal file')
-  assert.ok(e.redTeam === true || /yes/i.test(String(e.redTeam)), `redTeam from the goal file: ${JSON.stringify(e.redTeam)}`)
+  assert.ok(e.stressTest === true || /yes/i.test(String(e.stressTest)), `stressTest from the goal file: ${JSON.stringify(e.stressTest)}`)
   assert.ok(JSON.stringify(e.scope).includes('Build only the x thing.'), 'approved scope read from the goal file')
   assert.equal(norm(e.worktree), norm(wtPath(env, 'x')))
-  assert.equal(e.branch, 'foundry-x')
+  assert.equal(e.branch, 'truss-x')
   assert.equal(e.base, git(wtPath(env, 'x'), ['merge-base', 'main', 'HEAD']))
   assert.equal(typeof e.architecture, 'string')
   assert.ok(Array.isArray(e.adrs))
@@ -331,25 +331,25 @@ test('start output: top-level keys, foundry keys and crew entry keys are exactly
 test('start output passes the real workflowCallVerdict (after the crew is running) and workflowRoleVerdict', () => {
   const env = world([crew('x'), crew('y')])
   const j = assertOneLine(start(env))
-  assert.equal(workflowRoleVerdict(j.foundry.roles), undefined)
+  assert.equal(workflowRoleVerdict(j.truss.roles), undefined)
   const plan = parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8'))
   const planJs = readFileSync(`${env.plugin}/workflows/plan.js`, 'utf8')
-  const waveJs = readFileSync(`${env.plugin}/workflows/wave.js`, 'utf8')
-  const verdict = workflowCallVerdict(plan, { scriptPath: j.foundry.scriptPath, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, waveJs] })
+  const stageJs = readFileSync(`${env.plugin}/workflows/stage.js`, 'utf8')
+  const verdict = workflowCallVerdict(plan, { scriptPath: j.truss.scriptPath, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, stageJs] })
   assert.equal(verdict, undefined)
 })
 
-test('start --scripts-dir copies wave.js byte for byte to <S>/foundry-wave.js and points scriptPath at it', () => {
+test('start --scripts-dir copies stage.js byte for byte to <S>/truss-stage.js and points scriptPath at it', () => {
   const env = world([crew('x')])
   const scripts = tmp('fcli-scripts-')
   const j = assertOneLine(start(env, 'next', { 'scripts-dir': scripts }))
-  assert.equal(flat(j.foundry.scriptPath), `${scripts}/foundry-wave.js`)
-  assert.ok(readFileSync(`${scripts}/foundry-wave.js`).equals(readFileSync(`${pluginCopy()}/workflows/wave.js`)))
+  assert.equal(flat(j.truss.scriptPath), `${scripts}/truss-stage.js`)
+  assert.ok(readFileSync(`${scripts}/truss-stage.js`).equals(readFileSync(`${pluginCopy()}/workflows/stage.js`)))
   const plan = parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8'))
   const planJs = readFileSync(`${env.plugin}/workflows/plan.js`, 'utf8')
-  const waveJs = readFileSync(`${env.plugin}/workflows/wave.js`, 'utf8')
-  const scriptText = readFileSync(j.foundry.scriptPath, 'utf8')
-  assert.equal(workflowCallVerdict(plan, { scriptPath: j.foundry.scriptPath, scriptText, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, waveJs] }), undefined)
+  const stageJs = readFileSync(`${env.plugin}/workflows/stage.js`, 'utf8')
+  const scriptText = readFileSync(j.truss.scriptPath, 'utf8')
+  assert.equal(workflowCallVerdict(plan, { scriptPath: j.truss.scriptPath, scriptText, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, stageJs] }), undefined)
 })
 
 test('start is idempotent: a second run adds no spawn line and does not return the running crew again', () => {
@@ -360,14 +360,14 @@ test('start is idempotent: a second run adds no spawn line and does not return t
   const second = start(env, 'next', { transcript: anchorRun(env).dir })
   const j = assertOneLine(second)
   assert.equal(second.status, 0, second.stderr)
-  assert.deepEqual(j.foundry.crews, [])
+  assert.deepEqual(j.truss.crews, [])
   assert.equal(readEvents(env.dir).filter((e) => e.event === 'spawn').length, spawnsAfterFirst)
   assert.equal(factorySpawns(env, 'x').length, 1)
   assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), planAfterFirst)
 })
 
 test('start: every line it appends validates against events.schema.json', () => {
-  const env = world([crew('a'), crew('b'), crew('l')], { goals: { l: { engine: 'lead devops member' } } })
+  const env = world([crew('a'), crew('b'), crew('l')], { goals: { l: { engine: 'foreman commissioning member' } } })
   assertOneLine(start(env))
   const lines = readEvents(env.dir)
   assert.ok(lines.length >= 2)
@@ -382,9 +382,9 @@ test('start: every line it appends validates against events.schema.json', () => 
 function stoppedWorld() {
   const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 3 * HOUR) } })
   const wt = makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
-  memberBranch(wt, 'foundry-x', 'member-t1', true)
-  memberBranch(wt, 'foundry-x', 'member-t2', false)
-  memberBranch(wt, 'foundry-x', 'member-t3', true)
+  memberBranch(wt, 'truss-x', 'member-t1', true)
+  memberBranch(wt, 'truss-x', 'member-t2', false)
+  memberBranch(wt, 'truss-x', 'member-t3', true)
   const plannerTasks = [task('t1'), task('t2'), task('t3'), task('t4')]
   const member = (n: string, marker: string, branch: string) => ({ task: n, marker, branch, commit: 'c0ffee', proof: 'ran it', text: 'ok' })
   const run = deadRun(env, 'wf_stopped', [
@@ -427,8 +427,8 @@ test('start --resume answers: tasks come from the highest-numbered planner resul
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
   assert.deepEqual(Object.keys(j).sort(), OUTPUT_KEYS)
-  assert.equal(j.foundry.crews.length, 1)
-  const e = j.foundry.crews[0]
+  assert.equal(j.truss.crews.length, 1)
+  const e = j.truss.crews[0]
   assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
   assert.equal(e.slug, 'x')
   assert.equal(e.resume, 'answers')
@@ -437,30 +437,30 @@ test('start --resume answers: tasks come from the highest-numbered planner resul
   assert.deepEqual(done, ['t1'], 't2 is DONE but unmerged, t3 merged but CHECKPOINT, t4 has no branch')
   assert.deepEqual(e.answers, ans)
   assert.equal(statusOf(env, 'x'), 'running')
-  assert.equal(e.branch, 'foundry-x')
+  assert.equal(e.branch, 'truss-x')
   assert.equal(norm(e.worktree), norm(wtPath(env, 'x')))
 })
 
-test('start --resume answers: spent counts judge FAILs only (red-team reports never add) and labelFrom is the next free number per role', () => {
+test('start --resume answers: spent counts qc FAILs only (stress test reports never add) and labelFrom is the next free number per role', () => {
   const { env, run } = stoppedWorld()
-  writeReport(env.dir, 'x', 'x-judge', judgeReport({ verdict: 'FAIL' }))
-  writeReport(env.dir, 'x', 'x-judge-2', judgeReport({ verdict: 'FAIL' }))
-  writeReport(env.dir, 'x', 'x-redteam', 'REDTEAM: 1 break\n')
-  writeReport(env.dir, 'x', 'x-redteam-2', 'REDTEAM: 1 break\n')
+  writeReport(env.dir, 'x', 'x-qc', qcReport({ verdict: 'FAIL' }))
+  writeReport(env.dir, 'x', 'x-qc-2', qcReport({ verdict: 'FAIL' }))
+  writeReport(env.dir, 'x', 'x-stress', 'STRESSTEST: 1 break\n')
+  writeReport(env.dir, 'x', 'x-stress-2', 'STRESSTEST: 1 break\n')
   const j = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) }))
-  const e = j.foundry.crews[0]
+  const e = j.truss.crews[0]
   assert.equal(e.spent, 2)
-  assert.deepEqual(e.labelFrom, { judge: 3, redteam: 3 })
+  assert.deepEqual(e.labelFrom, { qc: 3, stress: 3 })
   assert.deepEqual(e.answers, [])
 })
 
-test('start --resume answers: a PASS judge report does not count as spend', () => {
+test('start --resume answers: a PASS qc report does not count as spend', () => {
   const { env, run } = stoppedWorld()
-  writeReport(env.dir, 'x', 'x-judge', judgeReport({ verdict: 'FAIL' }))
-  writeReport(env.dir, 'x', 'x-judge-2', judgeReport({ verdict: 'PASS' }))
-  const e = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).foundry.crews[0]
+  writeReport(env.dir, 'x', 'x-qc', qcReport({ verdict: 'FAIL' }))
+  writeReport(env.dir, 'x', 'x-qc-2', qcReport({ verdict: 'PASS' }))
+  const e = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).truss.crews[0]
   assert.equal(e.spent, 1)
-  assert.deepEqual(e.labelFrom, { judge: 3 })
+  assert.deepEqual(e.labelFrom, { qc: 3 })
 })
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -471,24 +471,24 @@ test('start --resume merge-ready: one entry with resume "merge-ready"; base is t
   const wt = makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
   const startHead = head(env.repo)
   putFile(wt, 'src/x/mine.ts', 'mine\n', 'crew work')
-  const a = assertOneLine(resume(env, 'x', 'merge-ready')).foundry.crews[0]
+  const a = assertOneLine(resume(env, 'x', 'merge-ready')).truss.crews[0]
   assert.equal(a.resume, 'merge-ready')
   assert.equal(a.slug, 'x')
   assert.equal(a.base, startHead, 'before any sync, the base is the target head at start')
   const moved = putFile(env.repo, 'other.txt', 'other crew\n', 'another crew merged')
   git(wt, ['merge', '-q', '--no-edit', 'main'])
   const b = assertOneLine(resume(env, 'x', 'merge-ready'))
-  assert.equal(b.foundry.crews.length, 1)
-  assert.equal(b.foundry.crews[0].base, moved, 'after the merge of the target, the base moves')
-  assert.equal(b.foundry.crews[0].base, git(wt, ['merge-base', 'main', 'HEAD']))
-  assert.equal(b.foundry.crews[0].resume, 'merge-ready')
+  assert.equal(b.truss.crews.length, 1)
+  assert.equal(b.truss.crews[0].base, moved, 'after the merge of the target, the base moves')
+  assert.equal(b.truss.crews[0].base, git(wt, ['merge-base', 'main', 'HEAD']))
+  assert.equal(b.truss.crews[0].resume, 'merge-ready')
 })
 
 // ---------------------------------------------------------------------------------------------------------------
 // stale rule and --resume stale
 
-test('start stale: no run holds the crew\'s labels and everything is older than 30 minutes -> listed under stale with `since`; wave stays open', () => {
-  const env = world([crew('x', { status: 'running' }), crew('later', { wave: 2 })])
+test('start stale: no run holds the crew\'s labels and everything is older than 30 minutes -> listed under stale with `since`; stage stays open', () => {
+  const env = world([crew('x', { status: 'running' }), crew('later', { stage: 2 })])
   makeRunning(env, 'x')
   const t = anchorRun(env).dir
   const res = start(env, 'next', { transcript: t })
@@ -499,8 +499,8 @@ test('start stale: no run holds the crew\'s labels and everything is older than 
   assert.equal(typeof j.stale[0].since, 'string')
   assert.ok(j.stale[0].since.length > 0)
   assert.deepEqual(j.unfinished, [])
-  assert.deepEqual(j.foundry.crews, [], 'start never restarts a stale crew itself')
-  assert.equal(statusOf(env, 'later'), 'planned', 'wave 1 stays open')
+  assert.deepEqual(j.truss.crews, [], 'start never restarts a stale crew itself')
+  assert.equal(statusOf(env, 'later'), 'planned', 'stage 1 stays open')
   assert.equal(factorySpawns(env, 'x').length, 1)
   assert.deepEqual(assertOneLine(start(env, 'next', { transcript: t })).stale, j.stale, 'idempotent')
 })
@@ -514,8 +514,8 @@ test('start --resume stale (no labelled run): appends a fresh factory spawn line
   const res = resume(env, 'x', 'stale', { transcript: t })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
-  assert.equal(j.foundry.crews.length, 1)
-  const e = j.foundry.crews[0]
+  assert.equal(j.truss.crews.length, 1)
+  const e = j.truss.crews[0]
   assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
   assert.equal(e.resume, 'stale')
   assert.deepEqual(e.tasks, [])
@@ -534,8 +534,8 @@ test('start --resume stale (no labelled run): appends a fresh factory spawn line
 test('start --resume stale: a dead run recorded with `incomplete` -> tasks and done rebuilt from git, commits survive, spent and labelFrom count the dead run', () => {
   const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 4 * HOUR) } })
   const wt = makeRunning(env, 'x')
-  memberBranch(wt, 'foundry-x', 'member-t1', true)
-  memberBranch(wt, 'foundry-x', 'member-t2', false)
+  memberBranch(wt, 'truss-x', 'member-t1', true)
+  memberBranch(wt, 'truss-x', 'member-t2', false)
   const kept = head(wt)
   const tasks = [task('t1'), task('t2')]
   const member = (n: string, branch: string) => ({ task: n, marker: 'DONE', branch, commit: 'c0ffee', proof: 'ran', text: 'ok' })
@@ -543,19 +543,19 @@ test('start --resume stale: a dead run recorded with `incomplete` -> tasks and d
     { label: 'x-planner', result: { tasks, stop: null } },
     { label: 'x-tester', result: member('t1', 'member-t1') },
     { label: 'x-builder', result: member('t2', 'member-t2') },
-    { label: 'x-judge', result: 'VERDICT: FAIL\n' },
+    { label: 'x-qc', result: 'VERDICT: FAIL\n' },
   ])
   record(env, 'wf_dead', run, 'x', { incomplete: true })
-  writeReport(env.dir, 'x', 'x-judge', judgeReport({ verdict: 'FAIL' }), Date.now() - 100 * MIN)
+  writeReport(env.dir, 'x', 'x-qc', qcReport({ verdict: 'FAIL' }), Date.now() - 100 * MIN)
   const res = resume(env, 'x', 'stale', { transcript: run.dir })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
-  const e = j.foundry.crews[0]
+  const e = j.truss.crews[0]
   assert.equal(e.resume, 'stale')
   assert.deepEqual(e.tasks, tasks)
   assert.deepEqual(e.done.map((d: any) => (typeof d === 'string' ? d : d.name)), ['t1'])
-  assert.equal(e.spent, 1, 'the dead run\'s judge FAIL is counted')
-  assert.equal(e.labelFrom.judge, 2, 'the dead run\'s judge label is skipped')
+  assert.equal(e.spent, 1, 'the dead run\'s qc FAIL is counted')
+  assert.equal(e.labelFrom.qc, 2, 'the dead run\'s qc label is skipped')
   assert.equal(head(wt), kept, 'the crew branch keeps its commits')
   assert.ok(existsSync(`${wt}/members/member-t1.txt`))
   assert.equal(git(env.repo, ['branch', '--list', 'member-t2']).replace(/^[*+]?\s*/, ''), 'member-t2', 'unmerged member branches are left alone')
@@ -600,7 +600,7 @@ test('start unfinished: the newest run holding the crew\'s labels is unrecorded 
   const j = assertOneLine(start(env, 'next', { transcript: run.dir }))
   assert.deepEqual(j.unfinished, [{ slug: 'x', run: 'wf_lost' }])
   assert.deepEqual(j.stale, [])
-  assert.deepEqual(j.foundry.crews, [])
+  assert.deepEqual(j.truss.crews, [])
   const res = resume(env, 'x', 'stale', { transcript: run.dir })
   assert.equal(res.status, 1, `${res.stdout} ${res.stderr}`)
   assert.equal(res.json?.why, 'run not finished')
@@ -659,7 +659,7 @@ test('start stale boundary: all signals just under 30 minutes old are live, just
   record(old, 'wf_o', ro, 'x', { incomplete: true })
   const res = resume(old, 'x', 'stale', { transcript: ro.dir })
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
-  assert.equal(assertOneLine(res).foundry.crews[0].resume, 'stale')
+  assert.equal(assertOneLine(res).truss.crews[0].resume, 'stale')
 })
 
 test('start --resume stale: a dead run\'s labels (x-test crew vs x crew) are parsed exactly: x-test-tester does not belong to crew x', () => {
@@ -677,8 +677,8 @@ test('e2e: finish --transcript T (no --result) on a dead run records it incomple
   const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 4 * HOUR) } })
   const wt = makeRunning(env, 'x')
   const run = deadRun(env, 'wf_e2e', [
-    { label: 'x-planner', agentType: 'foundry:crew-planner', metaModel: 'opus', effort: 'medium', result: { tasks: [task('t1')], stop: null } },
-    { label: 'x-judge', agentType: 'foundry:judge', metaModel: 'opus', effort: 'medium', result: 'VERDICT: FAIL\n\n## Findings\n- bad\n' },
+    { label: 'x-planner', agentType: 'truss:planning-engineer', metaModel: 'opus', effort: 'medium', result: { tasks: [task('t1')], stop: null } },
+    { label: 'x-qc', agentType: 'truss:qc-engineer', metaModel: 'opus', effort: 'medium', result: 'VERDICT: FAIL\n\n## Findings\n- bad\n' },
   ])
   // before finish: the run is unfinished
   const before = assertOneLine(start(env, 'next', { transcript: run.dir }))
@@ -694,10 +694,10 @@ test('e2e: finish --transcript T (no --result) on a dead run records it incomple
   const res = resume(env, 'x', 'stale', { transcript: run.dir })
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
-  const e = j.foundry.crews[0]
+  const e = j.truss.crews[0]
   assert.equal(e.resume, 'stale')
-  assert.equal(e.spent, 1, 'the dead run\'s judge FAIL (filed by finish) counts')
-  assert.equal(e.labelFrom.judge, 2)
+  assert.equal(e.spent, 1, 'the dead run\'s qc FAIL (filed by finish) counts')
+  assert.equal(e.labelFrom.qc, 2)
   assert.equal(e.labelFrom.planner, 2)
   assert.equal(head(wt), kept)
   assert.equal(factorySpawns(env, 'x').length, 2)

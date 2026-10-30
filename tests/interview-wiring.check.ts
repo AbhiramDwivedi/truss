@@ -1,10 +1,10 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry ADR-0008 "Files touched": the prose that wires the interview skill into run, architect, init and README.
+// truss ADR-0008 "Files touched": the prose that wires the brief skill into run, designer, init and README.
 // Written from the ADR before the prose exists. Each new-wiring test slices the file to the section the ADR names,
 // so a phrase in the wrong section fails. Regexes tolerate wording (case, spacing) but not absence.
 //
-// Run with: node --test plugins/foundry/tests/interview-wiring.check.ts
+// Run with: node --test tests/interview-wiring.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs. Every read returns ''
 // for a missing path, so each test fails on its own assertion.
 
@@ -23,7 +23,7 @@ const read = (...p: string[]): string => {
   }
 }
 const RUN = read('skills', 'run', 'SKILL.md')
-const ARCH = read('agents', 'architect.md')
+const ARCH = read('agents', 'design-engineer.md')
 const INIT = read('skills', 'init', 'SKILL.md')
 const README = read('README.md')
 
@@ -40,24 +40,24 @@ const mdSection = (text: string, title: string): string => {
 const has = (text: string, re: RegExp, what: string) => assert.match(text, re, what)
 
 describe('run/SKILL.md wiring', () => {
-  test('section 0: greenfield paragraph sends the owner to the interview first', () => {
+  test('section 0: greenfield paragraph sends the client to the brief first', () => {
     const s = runSection(0)
     assert.ok(s, 'section 0 not found')
     has(s, /greenfield/i, 'section 0 has no greenfield case')
-    has(s, /interview/i, 'section 0 does not run the interview')
+    has(s, /brief/i, 'section 0 does not run the brief')
     has(s, /Greenfield:\s*\S*requirements\.md/i, 'section 0 does not pass the `Greenfield:` line to init')
   })
 
-  test('section 1: ### Interview the owner names the interview skill and docs/requirements.md', () => {
+  test('section 1: ### Take the client brief names the brief skill and docs/requirements.md', () => {
     const s = runSection(1)
-    const m = s.match(/^### Interview the owner[^\n]*\n([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/im)
-    assert.ok(m, 'section 1 has no `### Interview the owner` heading')
-    has(m[1], /foundry:interview/, 'subsection does not name the foundry:interview skill')
+    const m = s.match(/^### Take the client brief[^\n]*\n([\s\S]*?)(?=^#{2,3} |(?![\s\S]))/im)
+    assert.ok(m, 'section 1 has no `### Take the client brief` heading')
+    has(m[1], /truss:brief/, 'subsection does not name the truss:brief skill')
     has(m[1], /requirements\.md/, 'subsection does not name requirements.md')
-    has(m[1], /interview\.json/, 'subsection does not name interview.json')
+    has(m[1], /brief\.json/, 'subsection does not name brief.json')
   })
 
-  test('section 4: architect brief passes the requirements path and R-ids', () => {
+  test('section 4: designer brief passes the requirements path and R-ids', () => {
     const s = runSection(4)
     has(s, /requirements\.md/i, 'section 4 brief does not name requirements.md')
     has(s, /R-ids?/i, 'section 4 brief does not pass the run\'s R-ids')
@@ -84,7 +84,7 @@ describe('run/SKILL.md wiring', () => {
     has(s, /Unserved:/, 'section 5 does not list `Unserved:` ids')
   })
 
-  test('section 5: auto-start message uses the exact `Defaults filled: R-<n> (<branch id>)` format (owner ruling #1)', () => {
+  test('section 5: auto-start message uses the exact `Defaults filled: R-<n> (<branch id>)` format (client ruling #1)', () => {
     const s = runSection(5)
     has(s, /Defaults filled:\s*R-<n>\s*\(<branch id>\)/, 'section 5 lacks the literal `Defaults filled: R-<n> (<branch id>)` format')
     has(s, /Defaults filled:[^\n]*(,\s*\.\.\.|…)/, 'format does not show a repeated list (`, ...`)')
@@ -96,10 +96,10 @@ describe('run/SKILL.md wiring', () => {
     has(s, /R-<n>:\s*<title>|R-\d+:\s*<?title/i, 'section 6 does not give the `- R-<n>: <title>` line form')
   })
 
-  test('section 6: the foreman runs the interview cli trace before the first lead', () => {
+  test('section 6: the pm runs the brief cli trace before the first foreman', () => {
     const s = runSection(6)
-    has(s, /interview\/cli\.ts\s+trace\b/, 'section 6 does not run `interview/cli.ts trace`')
-    has(s, /interview\.json/, 'section 6 trace call omits interview.json')
+    has(s, /brief\/cli\.ts\s+trace\b/, 'section 6 does not run `brief/cli.ts trace`')
+    has(s, /brief\.json/, 'section 6 trace call omits brief.json')
     has(s, /OK:/, 'section 6 does not wait for `OK:`')
   })
 
@@ -109,7 +109,7 @@ describe('run/SKILL.md wiring', () => {
     has(s, /requirements/i, 'section 10 does not mention requirements')
   })
 
-  test('scrubbed commit (owner ruling #2): run/SKILL.md or README states the rule', () => {
+  test('scrubbed commit (client ruling #2): run/SKILL.md or README states the rule', () => {
     const rule = (text: string) =>
       text.split(/\n\s*\n/).some(
         (p) =>
@@ -123,12 +123,12 @@ describe('run/SKILL.md wiring', () => {
     assert.ok(rule(RUN) || rule(README), 'no paragraph says requirements.md is committed with no names, emails, user paths or private infrastructure')
   })
 
-  test('owner /goal principle: the foundry adapts to needs found in the interview', () => {
-    has(RUN + README, /adapt[^\n]{0,120}interview|interview[^\n]{0,120}adapt/i, 'neither run/SKILL.md nor README ties adaptation to the interview')
+  test('client /goal principle: the truss adapts to needs found in the brief', () => {
+    has(RUN + README, /adapt[^\n]{0,120}brief|brief[^\n]{0,120}adapt/i, 'neither run/SKILL.md nor README ties adaptation to the brief')
   })
 })
 
-describe('architect.md wiring', () => {
+describe('design-engineer.md wiring', () => {
   test('init mode: greenfield paragraph (planned modules citing R-ids)', () => {
     const s = mdSection(ARCH, 'init mode')
     assert.ok(s, 'init mode section not found')
@@ -153,7 +153,7 @@ describe('architect.md wiring', () => {
 })
 
 describe('init/SKILL.md wiring', () => {
-  test('step 3 passes the Greenfield: line into the architect brief', () => {
+  test('step 3 passes the Greenfield: line into the designer brief', () => {
     const s = mdSection(INIT, '3\\.')
     assert.ok(s, 'init step 3 not found')
     has(s, /Greenfield:/, 'step 3 brief does not pass the `Greenfield:` line')
@@ -161,27 +161,27 @@ describe('init/SKILL.md wiring', () => {
 })
 
 describe('README wiring', () => {
-  test('names the interview skill and docs/requirements.md', () => {
-    has(README, /foundry:interview|interview skill/i, 'README does not name the interview skill')
+  test('names the brief skill and docs/requirements.md', () => {
+    has(README, /truss:brief|brief skill/i, 'README does not name the brief skill')
     has(README, /docs\/requirements\.md/, 'README does not name docs/requirements.md')
   })
 })
 
 describe('regression guards: merged text that must survive the rewrite', () => {
-  test('architect design mode keeps the 3,000-word ADR budget', () => {
-    has(mdSection(ARCH, 'design mode'), /at most 3,000 words/i, '3,000-word ADR budget gone')
+  test('designer design mode keeps the 3,000-word ADR allowance', () => {
+    has(mdSection(ARCH, 'design mode'), /at most 3,000 words/i, '3,000-word ADR allowance gone')
   })
-  test('run keeps the leadless small crew rule', () => {
-    has(runSection(6), /at most 2 members and no red team has no lead/i, 'leadless small-crew rule gone')
+  test('run keeps the foremanless small crew rule', () => {
+    has(runSection(6), /at most 2 members and no stress test has no foreman/i, 'foremanless small-crew rule gone')
   })
-  test('run keeps the plan table red team column', () => {
-    has(runSection(5), /Red team \(yes\/no\)/, 'Red team (yes/no) column gone')
+  test('run keeps the plan table stress test column', () => {
+    has(runSection(5), /Stress test \(yes\/no\)/, 'Stress test (yes/no) column gone')
   })
-  test('run keeps the extend pass commit and the cynic section', () => {
+  test('run keeps the extend pass commit and the checker section', () => {
     has(RUN, /commit of each extend pass/i, 'extend pass commit wording gone')
-    has(RUN, /^## The cynic/m, 'cynic section gone')
+    has(RUN, /^## The checking engineer/m, 'checker section gone')
   })
-  test('architect keeps its Extend or change and Diagrams sections', () => {
+  test('designer keeps its Extend or change and Diagrams sections', () => {
     has(ARCH, /^## Extend or change/m, 'Extend or change section gone')
     has(ARCH, /^## Diagrams/m, 'Diagrams section gone')
   })

@@ -1,9 +1,9 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry 0.3.0, principles crew: the principle packs (ADR-0001 section 2) and the architect agent
+// truss 0.3.0, principles crew: the principle packs (ADR-0001 section 2) and the designer agent
 // (sections 3-5). Written before any pack exists.
 //
-// Run with: node --test plugins/foundry/tests/packs.check.ts
+// Run with: node --test tests/packs.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs, so it can't read the
 // packs from disk. Node can. Every read goes through `read`/`files`, which return ''/[] for a
 // missing path, so each test fails on its own assertion instead of crashing the file.
@@ -34,7 +34,7 @@ const files = (...parts: string[]): string[] => {
 }
 const skill = () => read('skills', 'principles', 'SKILL.md')
 const pack = (name: string) => read('skills', 'principles', `${name}.md`)
-const architect = () => read('agents', 'architect.md')
+const designer = () => read('agents', 'design-engineer.md')
 
 // Frontmatter: the block between a leading `---` line and the next `---` line, as key -> value.
 const frontmatter = (text: string): Record<string, string> | null => {
@@ -63,9 +63,9 @@ const TEST = /^   Test: \S/
 
 // ---------- harness sanity: the plugin root resolves (so the failures below are real) ----------
 
-test('packs harness: the plugin root resolves to the foundry plugin files', () => {
-  assert.match(read('agents', 'judge.md'), /^---\nname: judge\n/)
-  assert.ok(files('agents').includes('judge.md'))
+test('packs harness: the plugin root resolves to the truss plugin files', () => {
+  assert.match(read('agents', 'qc-engineer.md'), /^---\nname: qc-engineer\n/)
+  assert.ok(files('agents').includes('qc-engineer.md'))
 })
 
 // ---------- 1. the index skill ----------
@@ -152,44 +152,44 @@ for (const name of PACKS) {
   })
 }
 
-// ---------- 6. the architect agent ----------
+// ---------- 6. the designer agent ----------
 
-test('architect: agents/architect.md exists', () => {
-  assert.ok(files('agents').includes('architect.md'), 'architect.md missing')
+test('designer: agents/design-engineer.md exists', () => {
+  assert.ok(files('agents').includes('design-engineer.md'), 'design-engineer.md missing')
 })
 
-test('architect: frontmatter has name, description, model opus and effort high', () => {
-  const fm = frontmatter(architect())
+test('designer: frontmatter has name, description, model opus and effort medium', () => {
+  const fm = frontmatter(designer())
   assert.notEqual(fm, null, 'no frontmatter')
-  assert.equal(fm?.name, 'architect')
+  assert.equal(fm?.name, 'design-engineer')
   assert.ok((fm?.description ?? '').length > 0, 'empty description')
   assert.equal(fm?.model, 'opus')
   assert.equal(fm?.effort, 'medium')
 })
 
-test('architect: tools line has Read, Grep, Glob, Bash, Skill, Write and Edit', () => {
-  const tools = (frontmatter(architect())?.tools ?? '').split(',').map(t => t.trim())
+test('designer: tools line has Read, Grep, Glob, Bash, Skill, Write and Edit', () => {
+  const tools = (frontmatter(designer())?.tools ?? '').split(',').map(t => t.trim())
   const missing = ['Read', 'Grep', 'Glob', 'Bash', 'Skill', 'Write', 'Edit'].filter(t => !tools.includes(t))
   assert.deepEqual(missing, [])
 })
 
 for (const mode of ['init', 'plan', 'design']) {
-  test(`architect: body names the ${mode} mode with a heading or bold label`, () => {
-    const b = body(architect())
+  test(`designer: body names the ${mode} mode with a heading or bold label`, () => {
+    const b = body(designer())
     assert.match(b, new RegExp(`\\b${mode}\\b`))
     assert.match(b, new RegExp(`(^#+ .*\\b${mode}\\b|\\*\\*${mode}\\b)`, 'im'))
   })
 }
 
-test('architect: body names the plan files, the schema and the project config', () => {
-  const b = body(architect())
-  const missing = ['plan.schema.json', 'plan.json', 'plan.md', '.claude/foundry.json'].filter(s => !b.includes(s))
-  assert.ok(b.length > 0, 'architect.md empty or missing')
+test('designer: body names the plan files, the schema and the project config', () => {
+  const b = body(designer())
+  const missing = ['plan.schema.json', 'plan.json', 'plan.md', '.claude/truss.json'].filter(s => !b.includes(s))
+  assert.ok(b.length > 0, 'design-engineer.md empty or missing')
   assert.deepEqual(missing, [])
 })
 
-test('architect: body names the extend and change verdicts and the leaf test', () => {
-  const b = body(architect())
+test('designer: body names the extend and change verdicts and the leaf test', () => {
+  const b = body(designer())
   assert.match(b, /\bextend\b/)
   assert.match(b, /\bchange\b/)
   assert.ok(b.toLowerCase().includes('leaf test'), 'no "leaf test"')

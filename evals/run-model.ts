@@ -1,5 +1,5 @@
-// foundry ADR-0007 section 7: the owner's optional model-eval runner. Never a gate, outside every suite.
-// Run: node plugins/foundry/evals/run-model.ts   (CLAUDE=<path> picks the binary, else `claude`)
+// truss ADR-0007 section 7: the client's optional model-eval runner. Never a gate, outside every suite.
+// Run: node evals/run-model.ts   (CLAUDE=<path> picks the binary, else `claude`)
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, statSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,11 +11,11 @@ import type { Expected } from './score.ts'
 
 const CASE_TIMEOUT_MS = 600000
 const TOOLS: Record<string, string[]> = {
-  judge: ['Read', 'Grep', 'Glob', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git diff:*)', 'Bash(git rev-parse:*)'],
-  cynic: ['Read', 'Grep', 'Glob'],
+  qc: ['Read', 'Grep', 'Glob', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git diff:*)', 'Bash(git rev-parse:*)'],
+  checker: ['Read', 'Grep', 'Glob'],
 }
 
-const BUILT_IN: Record<string, string[]> = { judge: ['Read', 'Grep', 'Glob', 'Bash'], cynic: ['Read', 'Grep', 'Glob'] }
+const BUILT_IN: Record<string, string[]> = { qc: ['Read', 'Grep', 'Glob', 'Bash'], checker: ['Read', 'Grep', 'Glob'] }
 const DISALLOWED = [
   'Bash(git diff --output*)', 'Bash(git add:*)', 'Bash(git commit:*)',
   'Bash(git push:*)', 'Bash(git reset:*)', 'Bash(git checkout:*)',
@@ -89,8 +89,9 @@ function runCase(cmd: string, argv: string[], cwd: string, input: string): Promi
 }
 
 // Frontmatter sits between the first two --- lines; the body is what follows.
+const AGENT_FILE: Record<string, string> = { qc: 'qc-engineer', checker: 'checking-engineer' }
 function agent(role: string): { body: string; model: string; effort: string } {
-  const text = readFileSync(join(here, '..', 'agents', `${role}.md`), 'utf8').replace(/\r/g, '').replace(/^﻿/, '')
+  const text = readFileSync(join(here, '..', 'agents', `${AGENT_FILE[role] ?? role}.md`), 'utf8').replace(/\r/g, '').replace(/^﻿/, '')
   const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(text)
   if (!m) fail(`agents/${role}.md has no frontmatter`)
   const field = (k: string) => new RegExp(`^${k}:[ \\t]*(.+?)[ \\t]*$`, 'm').exec(m[1])?.[1]
@@ -116,7 +117,7 @@ const common = resolve(here, git('rev-parse', '--git-common-dir'))
 const head = git('rev-parse', 'HEAD')
 const bin = process.env.CLAUDE || 'claude'
 const script = /\.(?:js|mjs|cjs)$/.test(bin)
-const out = mkdtempSync(join(tmpdir(), 'foundry-evals-'))
+const out = mkdtempSync(join(tmpdir(), 'truss-evals-'))
 
 const results: { id: string; role: string; result: string; expected: string; got: string }[] = []
 let ok = 0
@@ -136,13 +137,13 @@ for (const c of cases) {
     '--output-format', 'text',
     '--allowedTools', ...tools,
   ]
-  live = mkdtempSync(join(tmpdir(), 'foundry-evals-wt-'))
+  live = mkdtempSync(join(tmpdir(), 'truss-evals-wt-'))
   const wt = live
   git('worktree', 'add', '--detach', wt, 'HEAD')
-  rmSync(join(wt, 'plugins', 'foundry', 'evals', 'golden'), { recursive: true, force: true })
-  // Files under .git/foundry are copied in and named by relative path, so the input points nowhere outside the tree.
+  rmSync(join(wt, 'evals', 'golden'), { recursive: true, force: true })
+  // Files under .git/truss are copied in and named by relative path, so the input points nowhere outside the tree.
   const copied = new Map<string, string>()
-  c.input = c.input.replace(/\S*\.git[\\/]foundry[^\s"'`)]*/g, (p) => {
+  c.input = c.input.replace(/\S*\.git[\\/]truss[^\s"'`)]*/g, (p) => {
     const tail = /[,;.:!?]*$/.exec(p)![0]
     const rel = p.slice(0, p.length - tail.length).replace(/\\/g, '/').replace(/^.*?\.git\//, '')
     const src = join(common, rel)

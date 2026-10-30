@@ -9,20 +9,20 @@ import { handBack, slashed, startSession, test, world } from './harness'
 
 type W = ReturnType<typeof world>
 
-const DIR = 'C:/r/.git/foundry/S1'
+const DIR = 'C:/r/.git/truss/S1'
 const PLAN_JSON = `${DIR}/plan.json`
 const PLAN_MD = `${DIR}/plan.md`
 const FENCE = '````'
-const NOTHING = 'foundry: plan-file route wrote nothing:'
+const NOTHING = 'truss: plan-file route wrote nothing:'
 
-const crew = (slug: string, wave: number, verdict: string) => ({
+const crew = (slug: string, stage: number, verdict: string) => ({
   slug,
-  wave,
+  stage,
   verdict,
   modules: [slug],
   owns: [`src/${slug}/**`],
-  doneCheck: `pnpm test -- ${slug}`,
-  doneCheckProved: true,
+  acceptanceTest: `pnpm test -- ${slug}`,
+  acceptanceTestProved: true,
   estAgents: 4,
   status: 'planned',
 })
@@ -31,7 +31,7 @@ const planWith = (over: Record<string, unknown> = {}) => ({
   version: 1,
   goal: 'Add rate limiting to the public API',
   architecture: 'docs/architecture.md',
-  approval: 'owner',
+  approval: 'client',
   approvedAt: '2026-10-28T15:00:00Z',
   agentCap: 40,
   maxParallelCrews: 4,
@@ -39,7 +39,7 @@ const planWith = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 const CARRIED = planWith()
-const MD = '# Plan\n\nWave 0: quotas.\nWave 1: gateway.'
+const MD = '# Plan\n\nStage 0: quotas.\nStage 1: gateway.'
 const jsonOf = (p: unknown) => JSON.stringify(p, null, 2)
 const expectedJson = (p: Record<string, unknown>) => JSON.stringify({ ...p, approvedAt: null }, null, 2) + '\n'
 
@@ -62,7 +62,7 @@ const planKeys = (w: W) => [...w.files.keys()].filter(k => k.toLowerCase().inclu
 
 test('a second plan.json block is ignored: the first block counts', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   const other = planWith({ goal: 'A different goal', crews: [crew('only', 0, 'change')] })
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD), jsonBlock(jsonOf(other))))
   expect(w.files.get(PLAN_JSON)).toBe(expectedJson(CARRIED))
@@ -71,7 +71,7 @@ test('a second plan.json block is ignored: the first block counts', async ($, on
 
 test('a second plan.json block counts nothing even when the first one is invalid', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock('{"crews": 3}'), mdBlock(MD), jsonBlock(jsonOf(CARRIED))))
   expect(planKeys(w)).toEqual([])
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)
@@ -79,7 +79,7 @@ test('a second plan.json block counts nothing even when the first one is invalid
 
 test('a second plan.md block is ignored: the first block counts', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD), mdBlock('# Another plan')))
   expect(w.files.get(PLAN_MD)).toBe(MD)
   expect(w.files.get(PLAN_JSON)).toBe(expectedJson(CARRIED))
@@ -87,7 +87,7 @@ test('a second plan.md block is ignored: the first block counts', async ($, on) 
 
 test('a hand-back with only a plan.md block writes nothing and logs why', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(mdBlock(MD)))
   expect(planKeys(w)).toEqual([])
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)
@@ -97,7 +97,7 @@ test('a hand-back with only a plan.md block writes nothing and logs why', async 
 // spaces and a CR are trimmed and the rest must equal the literal: a trailing "ning" or a leading space is not trimmed.
 test('a first line of "Mode: plan  \\r" (trailing spaces and CR) is recorded and written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan  \r\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan  \r\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(w.files.get(PLAN_JSON)).toBe(expectedJson(CARRIED))
   expect(w.files.get(PLAN_MD)).toBe(MD)
@@ -105,7 +105,7 @@ test('a first line of "Mode: plan  \\r" (trailing spaces and CR) is recorded and
 
 test('a first line of "Mode: plan\\r" (CR only, CRLF prompt) is recorded and written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\r\nGoal: rate limiting\r\n')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\r\nGoal: rate limiting\r\n')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(w.files.has(PLAN_JSON)).toBe(true)
   expect(w.files.has(PLAN_MD)).toBe(true)
@@ -113,30 +113,30 @@ test('a first line of "Mode: plan\\r" (CR only, CRLF prompt) is recorded and wri
 
 test('a first line of "Mode: planning" is not recorded: nothing is written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: planning\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: planning\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(planKeys(w)).toEqual([])
 })
 
 test('a first line of " Mode: plan" (leading space, which the spec does not trim) is not recorded', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', ' Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', ' Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(planKeys(w)).toEqual([])
 })
 
 test('"Mode: plan" on a later line, not the first, is not recorded', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Goal: rate limiting\nMode: plan')
+  await spawn(w, undefined, 'truss:design-engineer', 'Goal: rate limiting\nMode: plan')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(planKeys(w)).toEqual([])
 })
 
-// The hand-back "reaches the foreman as today": the hook returns next(e), it does not deny. A foreman-level architect
+// The hand-back "reaches the PM as today": the hook returns next(e), it does not deny. A PM-level designer
 // belongs to no crew, so today no reports/ file is written for it, and the route adds none.
-test('a plan-mode architect hand-back is not denied, and adds no file besides plan.json and plan.md', async ($, on) => {
+test('a plan-mode designer hand-back is not denied, and adds no file besides plan.json and plan.md', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   const r = (await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))) as { deny?: unknown } | undefined
   expect(r?.deny).toBeUndefined()
   expect(w.files.has(PLAN_JSON)).toBe(true)
@@ -145,15 +145,15 @@ test('a plan-mode architect hand-back is not denied, and adds no file besides pl
 
 test('a failed route does not deny the hand-back either', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   const r = (await handBack($, 'new1', join(jsonBlock('{not json'), mdBlock(MD)))) as { deny?: unknown } | undefined
   expect(r?.deny).toBeUndefined()
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)
 })
 
-test('the written files sit directly under the foundry dir and nothing else has plan in its path', async ($, on) => {
+test('the written files sit directly under the truss dir and nothing else has plan in its path', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD)))
   expect(w.files.has(PLAN_JSON)).toBe(true)
   expect(planKeys(w).sort()).toEqual([PLAN_JSON, PLAN_MD])
@@ -162,7 +162,7 @@ test('the written files sit directly under the foundry dir and nothing else has 
 test('an architecture of ../../../evil still writes only the two fixed paths', async ($, on) => {
   const w = await setup($, on)
   const evil = planWith({ architecture: '../../../evil' })
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(evil)), mdBlock(MD)))
   expect(w.files.get(PLAN_JSON)).toBe(expectedJson(evil))
   expect([...w.files.keys()].filter(k => k.includes('evil') || k.includes('..'))).toEqual([])
@@ -172,7 +172,7 @@ test('an architecture of ../../../evil still writes only the two fixed paths', a
 test('a goal containing ../ still writes only the two fixed paths', async ($, on) => {
   const w = await setup($, on)
   const evil = planWith({ goal: 'Replace ../../etc/passwd handling ../ everywhere' })
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', join(jsonBlock(jsonOf(evil)), mdBlock(MD)))
   expect(w.files.get(PLAN_JSON)).toBe(expectedJson(evil))
   expect([...w.files.keys()].filter(k => k.includes('..'))).toEqual([])
@@ -180,8 +180,8 @@ test('a goal containing ../ still writes only the two fixed paths', async ($, on
 })
 
 // Foreground and failure paths of the route. Claude Code runs a foreground Agent call's subagent inside the tool call:
-// the architect's agent.spawn fires and its SubagentHandback arrives BEFORE the Agent call's next() returns. The spawn
-// belongs to its Agent call by tool_use_id. The mock beneath foundry holds the Agent call open until the test releases
+// the designer's agent.spawn fires and its SubagentHandback arrives BEFORE the Agent call's next() returns. The spawn
+// belongs to its Agent call by tool_use_id. The mock beneath truss holds the Agent call open until the test releases
 // it (a hook module may not call $.agent.spawn itself, so the test drives the spawn and the hand-back meanwhile).
 type Held = { w: W; release: () => void; started: Promise<void>; afterRead: { fn?: (path: string) => Promise<void> }; denyHandBacks: { on: boolean; isError: boolean; agentThrows: boolean } }
 const setupHeld = async ($: Engine, on: On): Promise<Held> => {
@@ -206,7 +206,7 @@ const setupHeld = async ($: Engine, on: On): Promise<Held> => {
   on('agent.spawn', (async (_: Engine, e: { tool_use_id?: string }) => ({ agentId: e.tool_use_id === 'tu-other' ? 'other1' : 'new1', model: 'opus' })) as never)
   on('tool.call', (async (_: Engine, e: Record<string, unknown>) => {
     w.ran.push(e)
-    if (e.tool === 'SubagentHandback' && denyHandBacks.on) return { deny: 'refused beneath foundry' }
+    if (e.tool === 'SubagentHandback' && denyHandBacks.on) return { deny: 'refused beneath truss' }
     if (e.tool === 'SubagentHandback' && denyHandBacks.isError) return { isError: true, result: 'interrupted', text: 'interrupted' }
     if (e.tool !== 'Agent') return { result: 'ok' }
     if (denyHandBacks.agentThrows) throw new Error('agent call blew up')
@@ -218,12 +218,12 @@ const setupHeld = async ($: Engine, on: On): Promise<Held> => {
   return { w, release, started, denyHandBacks, afterRead }
 }
 const fullMessage = () => join(jsonBlock(jsonOf(CARRIED)), mdBlock(MD))
-const callTu = (w: W, prompt: string) => w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt, name: 'planner', model: 'opus', effort: 'high', tool_use_id: 'tu-plan' })
+const callTu = (w: W, prompt: string) => w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt, name: 'planner', model: 'opus', effort: 'high', tool_use_id: 'tu-plan' })
 const spawnFor = ($: Engine, prompt: string, toolUseId: string, name = 'planner') =>
-  $.agent.spawn({ subagentType: 'foundry:architect', prompt, description: 'd', name, tool_use_id: toolUseId } as never)
+  $.agent.spawn({ subagentType: 'truss:design-engineer', prompt, description: 'd', name, tool_use_id: toolUseId } as never)
 const handBackFrom = ($: Engine, id: string, message = fullMessage()) => handBack($, id, message)
 
-test('foreground: a plan-mode architect whose hand-back arrives before the Agent call returns is written', async ($, on) => {
+test('foreground: a plan-mode designer whose hand-back arrives before the Agent call returns is written', async ($, on) => {
   const h = await setupHeld($, on)
   const call = callTu(h.w, 'Mode: plan\nGoal: rate limiting')
   await h.started
@@ -246,11 +246,11 @@ test('foreground: the same flow with Mode: design writes nothing', async ($, on)
   expect(planKeys(h.w)).toEqual([])
 })
 
-test('foreground: an unrelated spawn (other tool_use_id) in between is not recorded; the plan architect still writes', async ($, on) => {
+test('foreground: an unrelated spawn (other tool_use_id) in between is not recorded; the plan designer still writes', async ($, on) => {
   const h = await setupHeld($, on)
   const call = callTu(h.w, 'Mode: plan\nGoal: rate limiting')
   await h.started
-  // a background architect from another Agent call, with a Mode: plan prompt of its own
+  // a background designer from another Agent call, with a Mode: plan prompt of its own
   await spawnFor($, 'Mode: plan\nGoal: other', 'tu-other', 'other')
   await handBackFrom($, 'other1')
   expect(planKeys(h.w)).toEqual([])
@@ -262,7 +262,7 @@ test('foreground: an unrelated spawn (other tool_use_id) in between is not recor
   expect(h.w.files.get(PLAN_MD)).toBe(MD)
 })
 
-test('a hand-back that a hook beneath foundry denies writes no plan files; a later accepted one does', async ($, on) => {
+test('a hand-back that a hook beneath truss denies writes no plan files; a later accepted one does', async ($, on) => {
   const h = await setupHeld($, on)
   const call = callTu(h.w, 'Mode: plan\nGoal: rate limiting')
   await h.started
@@ -290,11 +290,11 @@ test('plan.md failing after plan.json was written logs "wrote plan.json but not 
   await handBackFrom($, 'new1')
   expect(h.w.files.has(PLAN_JSON)).toBe(true)
   expect(h.w.files.has(PLAN_MD)).toBe(false)
-  expect(logged(h.w, 'foundry: plan-file route wrote plan.json but not plan.md:').length).toBeGreaterThan(0)
+  expect(logged(h.w, 'truss: plan-file route wrote plan.json but not plan.md:').length).toBeGreaterThan(0)
 })
 
-// Lifetime of a recorded plan architect. The Agent call returns first in these, so each is about the hand-backs alone.
-const readyArchitect = async ($: Engine, on: On): Promise<Held> => {
+// Lifetime of a recorded plan designer. The Agent call returns first in these, so each is about the hand-backs alone.
+const readyDesigner = async ($: Engine, on: On): Promise<Held> => {
   const h = await setupHeld($, on)
   const call = callTu(h.w, 'Mode: plan\nGoal: rate limiting')
   await h.started
@@ -303,10 +303,10 @@ const readyArchitect = async ($: Engine, on: On): Promise<Held> => {
   await call
   return h
 }
-const KEPT = 'foundry: plan-file route kept the existing plan:'
+const KEPT = 'truss: plan-file route kept the existing plan:'
 
-test('a hand-back that comes back isError from beneath foundry writes no plan files; a later accepted one writes', async ($, on) => {
-  const h = await readyArchitect($, on)
+test('a hand-back that comes back isError from beneath truss writes no plan files; a later accepted one writes', async ($, on) => {
+  const h = await readyDesigner($, on)
   h.denyHandBacks.isError = true
   await handBackFrom($, 'new1')
   expect(planKeys(h.w)).toEqual([])
@@ -316,8 +316,8 @@ test('a hand-back that comes back isError from beneath foundry writes no plan fi
   expect(h.w.files.get(PLAN_MD)).toBe(MD)
 })
 
-test('the foreman sends the architect back: a first hand-back that wrote nothing, then a valid one, writes both files', async ($, on) => {
-  const h = await readyArchitect($, on)
+test('the PM sends the designer back: a first hand-back that wrote nothing, then a valid one, writes both files', async ($, on) => {
+  const h = await readyDesigner($, on)
   await handBackFrom($, 'new1', join(jsonBlock('{"crews": 3}'), mdBlock(MD)))
   expect(planKeys(h.w)).toEqual([])
   expect(logged(h.w, NOTHING).length).toBeGreaterThan(0)
@@ -327,7 +327,7 @@ test('the foreman sends the architect back: a first hand-back that wrote nothing
 })
 
 test('a second valid hand-back with a different goal replaces the first plan while approvedAt is null', async ($, on) => {
-  const h = await readyArchitect($, on)
+  const h = await readyDesigner($, on)
   await handBackFrom($, 'new1')
   expect(h.w.files.get(PLAN_JSON)).toBe(expectedJson(CARRIED))
   const second = planWith({ goal: 'A revised goal', crews: [crew('only', 0, 'change')] })
@@ -338,7 +338,7 @@ test('a second valid hand-back with a different goal replaces the first plan whi
 })
 
 test('once the plan on disk is approved, a further hand-back keeps it and logs the keep', async ($, on) => {
-  const h = await readyArchitect($, on)
+  const h = await readyDesigner($, on)
   await handBackFrom($, 'new1')
   const approved = jsonOf(planWith({ approvedAt: '2026-10-28T16:00:00Z' })) + '\n'
   h.w.files.set(PLAN_JSON, approved)
@@ -349,7 +349,7 @@ test('once the plan on disk is approved, a further hand-back keeps it and logs t
   expect(logged(h.w, KEPT).length).toBeGreaterThan(0)
 })
 
-test('an Agent call that throws beneath foundry leaves its tool_use_id unarmed: a later spawn carrying it writes nothing', async ($, on) => {
+test('an Agent call that throws beneath truss leaves its tool_use_id unarmed: a later spawn carrying it writes nothing', async ($, on) => {
   const h = await setupHeld($, on)
   h.denyHandBacks.agentThrows = true
   await callTu(h.w, 'Mode: plan\nGoal: rate limiting').catch(() => undefined)
@@ -366,7 +366,7 @@ const waitFor = async (cond: () => boolean, what: string) => {
   if (!cond()) throw new Error(`timed out waiting for ${what}`)
 }
 const callWith = (w: W, toolUseId: string) =>
-  w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt: 'Mode: plan\nGoal: rate limiting', name: toolUseId, model: 'opus', effort: 'high', tool_use_id: toolUseId })
+  w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt: 'Mode: plan\nGoal: rate limiting', name: toolUseId, model: 'opus', effort: 'high', tool_use_id: toolUseId })
 
 test('two accepted plan hand-backs whose routes overlap leave plan.json and plan.md from the same hand-back', async ($, on) => {
   const h = await setupHeld($, on)
@@ -400,7 +400,7 @@ test('two accepted plan hand-backs whose routes overlap leave plan.json and plan
 })
 
 test('a route queued behind another reads the plan only once its turn comes: an approval that lands meanwhile is kept', async ($, on) => {
-  const h = await readyArchitect($, on)
+  const h = await readyDesigner($, on)
   const msgA = join(jsonBlock(jsonOf(planWith({ goal: 'Plan A' }))), mdBlock('# A'))
   const msgB = join(jsonBlock(jsonOf(planWith({ goal: 'Plan B' }))), mdBlock('# B'))
   // route A writes plan.json, then stalls on its plan.md write
@@ -408,15 +408,15 @@ test('a route queued behind another reads the plan only once its turn comes: an 
   h.w.writeHolds.set(PLAN_MD, new Promise<void>(r => (releaseMd = r)))
   const hbA = handBackFrom($, 'new1', msgA)
   await waitFor(() => h.w.files.has(PLAN_JSON), "A's plan.json")
-  // route B (the foreman sent the architect back) is queued behind A
+  // route B (the PM sent the designer back) is queued behind A
   const hbB = handBackFrom($, 'new1', msgB)
   await sleep(100)
-  // the foreman approves the plan on disk while A is stalled and B waits
+  // the PM approves the plan on disk while A is stalled and B waits
   const approved = jsonOf(planWith({ goal: 'Plan A', approvedAt: '2026-10-28T16:00:00Z' })) + '\n'
   h.w.files.set(PLAN_JSON, approved)
   releaseMd()
   await Promise.all([hbA, hbB])
   expect(h.w.files.get(PLAN_JSON)).toBe(approved)
   expect(h.w.files.get(PLAN_MD)).toBe('# A')
-  expect(logged(h.w, 'foundry: plan-file route kept the existing plan: it is approved').length).toBeGreaterThan(0)
+  expect(logged(h.w, 'truss: plan-file route kept the existing plan: it is approved').length).toBeGreaterThan(0)
 })

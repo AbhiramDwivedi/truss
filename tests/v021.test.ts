@@ -1,19 +1,19 @@
 import { expect } from 'claude-code/testing'
 
-import * as foundry from '../hooks/register'
+import * as truss from '../hooks/register'
 import { HEARTBEAT_MS, LIMIT_RESET, RESET_GRACE_MS, STALL_MS, STALLED, stallText } from '../hooks/register'
 import { NOW, ROOT, agent, handBack, measure, quiet, startSession, status, stop, world, test } from './harness'
 
-// foundry 0.2.1 (spec C1-C4, C6, C7). Names the spec leaves open, chosen here for the builder to match:
-//   IDLE_LEAD = '[foundry] idle lead:'               exported constant
-//   idleLeadText(label, crew, minutes): string        exported; <crew>-<n+1> is the next crew name: auth -> auth-2, auth-3 -> auth-4
-//   /foundry member line, after the crew's reports line:  `  <label> <status> <n>m (<model family>), last activity <ago>`
+// truss 0.2.1 (spec C1-C4, C6, C7). Names the spec leaves open, chosen here for the builder to match:
+//   IDLE_FOREMAN = '[truss] idle foreman:'               exported constant
+//   idleForemanText(label, crew, minutes): string        exported; <crew>-<n+1> is the next crew name: auth -> auth-2, auth-3 -> auth-4
+//   /truss member line, after the crew's reports line:  `  <label> <status> <n>m (<model family>), last activity <ago>`
 // New exports are read through the namespace, so a missing one fails its own test, not the whole file.
 
 const MIN = 60_000
-const api = foundry as unknown as Record<string, unknown>
-const IDLE = '[foundry] idle lead:'
-const idleLeads = (prompts: string[]) => prompts.filter(p => p.startsWith(IDLE))
+const api = truss as unknown as Record<string, unknown>
+const IDLE = '[truss] idle foreman:'
+const idleForemen = (prompts: string[]) => prompts.filter(p => p.startsWith(IDLE))
 const stalls = (prompts: string[], label: string) => prompts.filter(p => p.startsWith(STALLED) && p.includes(` ${label} in crew`))
 const setStatus = (w: ReturnType<typeof world>, id: string, s: ReturnType<typeof world>['agents'][number]['status']) => {
   w.agents = w.agents.map(a => (a.id === id ? { ...a, status: s } : a))
@@ -23,9 +23,9 @@ const blockOf = async ($: Parameters<typeof status>[0], id: string, text: string
 
 // ---------- C1. the stall clock resets on resume ----------
 
-test('C1: the stall prompt tells the foreman to read the transcript tail first', () => {
+test('C1: the stall prompt tells the PM to read the transcript tail first', () => {
   expect(stallText('auth-builder', 'auth', 15)).toBe(
-    '[foundry] stalled: auth-builder in crew auth, no activity for 15m. Check /foundry and message the auth lead. Read its transcript tail before you stop it; a resumed agent may be compacting.',
+    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.',
   )
 })
 
@@ -92,62 +92,62 @@ test('C1 flow: a resume takes an agent off the stalled list, so a second stall i
 test('C1 flow: agent.spawn counts as activity', async ($, on) => {
   const w = world($, on)
   on('agent.spawn', async () => ({ agentId: 'L9', model: 'claude-opus-4-1' }) as never)
-  w.agents = [...w.agents, agent('L9', foundry.LEAD_TYPE, 'search')]
+  w.agents = [...w.agents, agent('L9', truss.FOREMAN_TYPE, 'search')]
   // no session.start, so no heartbeat: only the spawn can have recorded activity
-  await $.agent.spawn({ subagentType: foundry.LEAD_TYPE, prompt: 'p', description: 'd', name: 'search' } as never)
+  await $.agent.spawn({ subagentType: truss.FOREMAN_TYPE, prompt: 'p', description: 'd', name: 'search' } as never)
   await w.clock.advance(3 * MIN)
   const line = (await status($)).split('\n').find(l => l.startsWith('- search:'))
   expect(line).toContain(', last active 3m ago')
 })
 
-// ---------- C2. idle-lead check ----------
+// ---------- C2. idle-foreman check ----------
 
-test('C2: exports IDLE_LEAD and idleLeadText with the exact prompt', () => {
-  expect(api.IDLE_LEAD).toBe('[foundry] idle lead:')
-  const text = api.idleLeadText as ((label: string, crew: string, minutes: number) => string) | undefined
+test('C2: exports IDLE_FOREMAN and idleForemanText with the exact prompt', () => {
+  expect(api.IDLE_FOREMAN).toBe('[truss] idle foreman:')
+  const text = api.idleForemanText as ((label: string, crew: string, minutes: number) => string) | undefined
   expect(typeof text).toBe('function')
   expect(text!('auth', 'auth', 17)).toBe(
-    '[foundry] idle lead: auth in crew auth, no report for 17m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.',
+    '[truss] idle foreman: auth in crew auth, no report for 17m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.',
   )
   expect(text!('gateway-3', 'gateway-3', 20)).toBe(
-    '[foundry] idle lead: gateway-3 in crew gateway-3, no report for 20m and no member at work. Read its last message and resume it with SendMessage, or start gateway-4 from its report.',
+    '[truss] idle foreman: gateway-3 in crew gateway-3, no report for 20m and no member at work. Read its last message and resume it with SendMessage, or start gateway-4 from its report.',
   )
 })
 
-test('C2 flow: an idle lead with no live member and no report is prompted once after 15 minutes', async ($, on) => {
+test('C2 flow: an idle foreman with no live member and no report is prompted once after 15 minutes', async ($, on) => {
   const w = quiet(world($, on))
-  // the module must see the lead go from running to idle (v021-fix item 1)
+  // the module must see the foreman go from running to idle (v021-fix item 1)
   await startSession($)
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(14 * MIN)
-  expect(idleLeads(w.prompts)).toEqual([])
+  expect(idleForemen(w.prompts)).toEqual([])
   await w.clock.advance(3 * MIN)
-  const got = idleLeads(w.prompts)
+  const got = idleForemen(w.prompts)
   expect(got.length).toBe(1)
-  expect(got[0]!.startsWith('[foundry] idle lead: auth in crew auth, no report for ')).toBe(true)
+  expect(got[0]!.startsWith('[truss] idle foreman: auth in crew auth, no report for ')).toBe(true)
   expect(got[0]).toContain('m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.')
   // once per idle period, however long it lasts
   await w.clock.advance(3 * 60 * MIN)
-  expect(idleLeads(w.prompts).length).toBe(1)
-  // the running lead L2 is never an idle lead
+  expect(idleForemen(w.prompts).length).toBe(1)
+  // the running foreman L2 is never an idle foreman
   expect(w.prompts.some(p => p.startsWith(IDLE) && p.includes('billing'))).toBe(false)
 })
 
-test('C2 flow: resuming the lead ends the idle period and re-arms the prompt', async ($, on) => {
+test('C2 flow: resuming the foreman ends the idle period and re-arms the prompt', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(17 * MIN)
-  expect(idleLeads(w.prompts).length).toBe(1)
+  expect(idleForemen(w.prompts).length).toBe(1)
   setStatus(w, 'L1', 'running')
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(14 * MIN)
-  expect(idleLeads(w.prompts).length).toBe(1)
+  expect(idleForemen(w.prompts).length).toBe(1)
   await w.clock.advance(3 * MIN)
-  expect(idleLeads(w.prompts).length).toBe(2)
+  expect(idleForemen(w.prompts).length).toBe(2)
 })
 
 test('C2 flow: no prompt while a member of the crew is live', async ($, on) => {
@@ -155,22 +155,22 @@ test('C2 flow: no prompt while a member of the crew is live', async ($, on) => {
   setStatus(w, 'L1', 'idle')
   await startSession($)
   await w.clock.advance(2 * 60 * MIN)
-  expect(idleLeads(w.prompts)).toEqual([])
+  expect(idleForemen(w.prompts)).toEqual([])
 })
 
 for (const report of ['Summary: done\n\n## Proof\nran the tests', 'CHECKPOINT: half the slices merged', 'BLOCKED: no staging key']) {
-  test(`C2 flow: no prompt for a lead whose captured report is final (${report.split('\n')[0]})`, async ($, on) => {
+  test(`C2 flow: no prompt for a foreman whose captured report is final (${report.split('\n')[0]})`, async ($, on) => {
     const w = quiet(world($, on))
     await startSession($)
     await w.clock.advance(2 * MIN)
     expect(await blockOf($, 'L1', report)).toBeUndefined()
     setStatus(w, 'L1', 'idle')
     await w.clock.advance(2 * 60 * MIN)
-    expect(idleLeads(w.prompts)).toEqual([])
+    expect(idleForemen(w.prompts)).toEqual([])
   })
 }
 
-test('C2 flow: a captured report that is not final does not excuse the lead', async ($, on) => {
+test('C2 flow: a captured report that is not final does not excuse the foreman', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
@@ -180,21 +180,21 @@ test('C2 flow: a captured report that is not final does not excuse the lead', as
   expect(await blockOf($, 'L1', 'chatter', true)).toBeUndefined()
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(20 * MIN)
-  expect(idleLeads(w.prompts).length).toBe(1)
+  expect(idleForemen(w.prompts).length).toBe(1)
 })
 
 for (const tagged of ['QUESTION: keep v1?', 'BLOCKED: no API key', 'PROPOSAL: split the crew']) {
-  test(`C2 flow: no prompt while the lead holds a waiting tag (${tagged.split(':')[0]})`, async ($, on) => {
+  test(`C2 flow: no prompt while the foreman holds a waiting tag (${tagged.split(':')[0]})`, async ($, on) => {
     const w = quiet(world($, on))
     await startSession($)
     await w.send('L1', 'main', tagged)
     setStatus(w, 'L1', 'idle')
     await w.clock.advance(2 * 60 * MIN)
-    expect(idleLeads(w.prompts)).toEqual([])
+    expect(idleForemen(w.prompts)).toEqual([])
   })
 }
 
-test('C2 flow: only listed leads are checked: an unlisted lead, an idle member or an agent outside crews gets no prompt', async ($, on) => {
+test('C2 flow: only listed foremen are checked: an unlisted foreman, an idle member or an agent outside crews gets no prompt', async ($, on) => {
   const w = quiet(world($, on))
   // L1 drops off the list; B1 is an idle member; X is outside every crew
   w.agents = w.agents.filter(a => a.id !== 'L1')
@@ -202,7 +202,7 @@ test('C2 flow: only listed leads are checked: an unlisted lead, an idle member o
   setStatus(w, 'X', 'idle')
   await startSession($)
   await w.clock.advance(2 * 60 * MIN)
-  expect(idleLeads(w.prompts)).toEqual([])
+  expect(idleForemen(w.prompts)).toEqual([])
 })
 
 // ---------- C3. interim stops do not overwrite reports ----------
@@ -214,7 +214,7 @@ test('C3 flow: an interim stop writes <label>.interim.md and leaves <label>.md u
   const w = quiet(world($, on))
   expect(await blockOf($, 'L1', 'Summary: done\n\n## Proof\nran it')).toBeUndefined()
   expect(w.files.get(AUTH)).toBe('Summary: done\n\n## Proof\nran it')
-  // a member is resumed, so the lead's next stop is interim
+  // a member is resumed, so the foreman's next stop is interim
   setStatus(w, 'A1', 'running')
   expect(await blockOf($, 'L1', 'builder-4 is fixing the token test')).toBeUndefined()
   expect(w.files.get(AUTH)).toBe('Summary: done\n\n## Proof\nran it')
@@ -230,7 +230,7 @@ test('C3 flow: an interim stop after a hand-back writes the hand-back to the int
   expect(w.files.get(AUTH_INTERIM)).toBe('just a note on progress so far, more to come later on')
 })
 
-test('C3 flow: /foundry does not count an interim file as a report', async ($, on) => {
+test('C3 flow: /truss does not count an interim file as a report', async ($, on) => {
   const w = world($, on)
   expect(await blockOf($, 'L1', 'waiting on the builder')).toBeUndefined()
   expect(w.files.has(AUTH_INTERIM)).toBe(true)
@@ -239,7 +239,7 @@ test('C3 flow: /foundry does not count an interim file as a report', async ($, o
   expect(line).not.toContain('last report')
 })
 
-test('C3 flow: /foundry dates the last report from <label>.md, not from a newer interim file', async ($, on) => {
+test('C3 flow: /truss dates the last report from <label>.md, not from a newer interim file', async ($, on) => {
   const w = world($, on)
   w.files.set(AUTH, '## Proof\nx')
   w.mtimes.set(AUTH, NOW - 40 * MIN)
@@ -250,69 +250,69 @@ test('C3 flow: /foundry dates the last report from <label>.md, not from a newer 
   expect(line).toContain('last report 40m ago')
 })
 
-// a judge resumed after its ruling must not overwrite it: the merge gate reads the ruling from <label>.md
-const JUDGE = `${ROOT}/reports/auth/auth-judge.md`
-const JUDGE_INTERIM = `${ROOT}/reports/auth/auth-judge.interim.md`
-const FAIL = 'VERDICT: FAIL\n\n## Findings\n- the done-check still fails on the token refresh path'
+// a qc resumed after its ruling must not overwrite it: the merge gate reads the ruling from <label>.md
+const QC = `${ROOT}/reports/auth/auth-qc.md`
+const QC_INTERIM = `${ROOT}/reports/auth/auth-qc.interim.md`
+const FAIL = 'VERDICT: FAIL\n\n## Findings\n- the acceptance test still fails on the token refresh path'
 const PASS = 'VERDICT: PASS\n\n## Findings\n- none; the refresh test now advances the clock'
 const reportEvents = (w: ReturnType<typeof world>) =>
   (w.files.get(`${ROOT}/events.jsonl`) ?? '')
     .split('\n')
     .filter(l => l.trim() !== '')
     .map(l => JSON.parse(l) as Record<string, unknown>)
-    .filter(e => e.event === 'report' && e.agent === 'auth-judge')
-const withJudge = (w: ReturnType<typeof world>) => w.agents.push(agent('J1', 'foundry:judge', 'auth-judge', 'L1'))
+    .filter(e => e.event === 'report' && e.agent === 'auth-qc')
+const withQc = (w: ReturnType<typeof world>) => w.agents.push(agent('J1', 'truss:qc-engineer', 'auth-qc', 'L1'))
 
-test('C3 flow: a judge follow-up with no ruling goes to the interim file and leaves the verdict', async ($, on) => {
+test('C3 flow: a qc follow-up with no ruling goes to the interim file and leaves the verdict', async ($, on) => {
   const w = quiet(world($, on))
-  withJudge(w)
+  withQc(w)
   await handBack($, 'J1', FAIL)
-  expect(w.files.get(JUDGE)).toBe(FAIL)
+  expect(w.files.get(QC)).toBe(FAIL)
   await handBack($, 'J1', 'The refresh test fails because the clock is not advanced past the expiry.')
-  expect(w.files.get(JUDGE)).toBe(FAIL)
-  expect(w.files.get(JUDGE_INTERIM)).toBe('The refresh test fails because the clock is not advanced past the expiry.')
-  // the follow-up logs no report event, so it neither counts as a ruling nor spends the budget again
+  expect(w.files.get(QC)).toBe(FAIL)
+  expect(w.files.get(QC_INTERIM)).toBe('The refresh test fails because the clock is not advanced past the expiry.')
+  // the follow-up logs no report event, so it neither counts as a ruling nor spends the allowance again
   expect(reportEvents(w).map(e => e.marker)).toEqual(['VERDICT: FAIL'])
 })
 
-test('C3 flow: a resumed judge that rules again replaces its verdict', async ($, on) => {
+test('C3 flow: a resumed qc that rules again replaces its verdict', async ($, on) => {
   const w = quiet(world($, on))
-  withJudge(w)
+  withQc(w)
   await handBack($, 'J1', FAIL)
   await handBack($, 'J1', PASS)
-  expect(w.files.get(JUDGE)).toBe(PASS)
-  expect(w.files.has(JUDGE_INTERIM)).toBe(false)
+  expect(w.files.get(QC)).toBe(PASS)
+  expect(w.files.has(QC_INTERIM)).toBe(false)
 })
 
-test('C3 flow: a red-team report is kept the same way', async ($, on) => {
+test('C3 flow: a stress test report is kept the same way', async ($, on) => {
   const w = quiet(world($, on))
-  withJudge(w)
-  await handBack($, 'J1', 'REDTEAM: 2 breaks found in the token refresh path')
+  withQc(w)
+  await handBack($, 'J1', 'STRESSTEST: 2 breaks found in the token refresh path')
   await handBack($, 'J1', 'Break 1 is the null token case, which the refresh path never checks.')
-  expect(w.files.get(JUDGE)).toBe('REDTEAM: 2 breaks found in the token refresh path')
-  expect(w.files.get(JUDGE_INTERIM)).toBe('Break 1 is the null token case, which the refresh path never checks.')
+  expect(w.files.get(QC)).toBe('STRESSTEST: 2 breaks found in the token refresh path')
+  expect(w.files.get(QC_INTERIM)).toBe('Break 1 is the null token case, which the refresh path never checks.')
 })
 
 test('C3 flow: a report with no ruling is still replaced by the next one', async ($, on) => {
   const w = quiet(world($, on))
-  withJudge(w)
+  withQc(w)
   await handBack($, 'J1', 'Looking at the diff now.')
   await handBack($, 'J1', FAIL)
-  expect(w.files.get(JUDGE)).toBe(FAIL)
+  expect(w.files.get(QC)).toBe(FAIL)
 })
 
-test('C3 flow: the judge line ignores *.interim.md files', async ($, on) => {
+test('C3 flow: the qc line ignores *.interim.md files', async ($, on) => {
   const w = world($, on)
   const put = (name: string, text: string, age: number) => {
     w.files.set(`${ROOT}/reports/auth/${name}`, text)
     w.mtimes.set(`${ROOT}/reports/auth/${name}`, NOW - age)
   }
-  put('auth-judge.md', 'VERDICT: PASS', 30 * MIN)
-  put('auth-judge.interim.md', 'VERDICT: FAIL - interim', MIN)
-  put('auth-judge-9.interim.md', 'VERDICT: FAIL - numbered interim', MIN)
+  put('auth-qc.md', 'VERDICT: PASS', 30 * MIN)
+  put('auth-qc.interim.md', 'VERDICT: FAIL - interim', MIN)
+  put('auth-qc-9.interim.md', 'VERDICT: FAIL - numbered interim', MIN)
   const text = await status($)
-  expect(text).toContain('  judge: PASS')
-  expect(text).not.toContain('judge: FAIL')
+  expect(text).toContain('  qc: PASS')
+  expect(text).not.toContain('qc: FAIL')
 })
 
 // ---------- C4. empty hand-backs are refused ----------
@@ -382,7 +382,7 @@ test('C6 flow: a main-session tool call after resetsAt skips the wake, and the r
   await mainToolCall($)
   await w.clock.advance(RESET_GRACE_MS)
   expect(resets(w.prompts)).toEqual([])
-  expect(w.stateValues.get('foundry/limitReset')).toEqual({ resetsAt: at, fired: true })
+  expect(w.stateValues.get('truss/limitReset')).toEqual({ resetsAt: at, fired: true })
   // marked fired: the same resetsAt reported again, or a new session.start, never wakes later
   await measure($, limit(at))
   await startSession($)
@@ -398,7 +398,7 @@ test('C6 flow: a main-session model step after resetsAt skips the wake too', asy
   await w.step(undefined)
   await w.clock.advance(3 * MIN)
   expect(resets(w.prompts)).toEqual([])
-  expect((w.stateValues.get('foundry/limitReset') as { fired?: boolean } | undefined)?.fired).toBe(true)
+  expect((w.stateValues.get('truss/limitReset') as { fired?: boolean } | undefined)?.fired).toBe(true)
 })
 
 test('C6 flow: main activity before resetsAt, or a member\'s activity after it, still wakes', async ($, on) => {
@@ -414,9 +414,9 @@ test('C6 flow: main activity before resetsAt, or a member\'s activity after it, 
   expect(resets(w.prompts).length).toBe(1)
 })
 
-// ---------- C7. /foundry shows each live member's running time and last activity ----------
+// ---------- C7. /truss shows each live member's running time and last activity ----------
 
-test('C7 flow: /foundry lists each live member with status, model, running time and time since its last activity', async ($, on) => {
+test('C7 flow: /truss lists each live member with status, model, running time and time since its last activity', async ($, on) => {
   const w = world($, on)
   on('agent.spawn', async () => ({ agentId: 'M9', model: 'claude-sonnet-4-6' }) as never)
   w.agents = [...w.agents, agent('M9', 'kit:test-writer', 'auth-tester', 'L1')]

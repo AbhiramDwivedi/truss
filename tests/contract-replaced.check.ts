@@ -1,9 +1,9 @@
 // @ts-nocheck
-// foundry ADR-0007 Seams (contract-replaced): each wording check listed under `## Checks replaced` is gone from its
-// file, and what covers it exists. Red until wave 2 (prompt-rules) deletes the checks. Imports nothing from evals/:
+// truss ADR-0007 Seams (contract-replaced): each wording check listed under `## Checks replaced` is gone from its
+// file, and what covers it exists. Red until stage 2 (prompt-rules) deletes the checks. Imports nothing from evals/:
 // it must fail on assertions, never on a missing module.
 //
-// Run with: node --test plugins/foundry/tests/contract-replaced.check.ts
+// Run with: node --test tests/contract-replaced.check.ts
 
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
@@ -11,8 +11,8 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const ADR = readFileSync(join(ROOT, 'plugins', 'foundry', 'docs', 'adr', '0007-behaviour-evals.md'), 'utf8').replace(/\r/g, '')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ADR = readFileSync(join(ROOT, 'docs', 'adr', '0007-behaviour-evals.md'), 'utf8').replace(/\r/g, '')
 
 // the lines after `## <heading>` up to the next line that starts with `## `
 const section = (heading: string): string[] => {
@@ -24,10 +24,10 @@ const section = (heading: string): string[] => {
   return end < 0 ? rest : rest.slice(0, end)
 }
 
-const LINE = /^- (plugins\/foundry\/tests\/[^:]+\.check\.ts): (.+) \(covered by (.+)\)$/
+const LINE = /^- (tests\/[^:]+\.check\.ts): (.+) \(covered by (.+)\)$/
 const CASE_REF = /^case ([a-z0-9]+(?:-[a-z0-9]+)*(?:, [a-z0-9]+(?:-[a-z0-9]+)*)*)$/
 const SNIPPET_REF = /^snippet (\S+\.md): `([^`]+)`$/
-const SNIPPET_LINE = /^- (plugins\/foundry\/\S+\.md): `([^`]+)` \((?:fenced|inline); placeholders: .+\)$/
+const SNIPPET_LINE = /^- (\S+\.md): `([^`]+)` \((?:fenced|inline); placeholders: .+\)$/
 
 const entries = section('Checks replaced')
   .filter((l) => l.startsWith('- '))
@@ -62,7 +62,7 @@ for (const e of entries) {
     const c = CASE_REF.exec(e.ref)
     const s = SNIPPET_REF.exec(e.ref)
     if (c) {
-      for (const id of c[1].split(', ')) assert.ok(existsSync(join(ROOT, 'plugins', 'foundry', 'evals', 'golden', `${id}.json`)), `no golden case ${id}`)
+      for (const id of c[1].split(', ')) assert.ok(existsSync(join(ROOT, 'evals', 'golden', `${id}.json`)), `no golden case ${id}`)
     } else {
       assert.ok(s, `bad ref: ${e.ref}`)
       assert.ok(snippetLines.some((l) => l.file === s[1] && l.opening === s[2]), `no ## Snippets line for ${s[1]}: \`${s[2]}\``)

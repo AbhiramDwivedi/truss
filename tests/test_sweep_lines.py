@@ -1,7 +1,7 @@
-"""retro.py counts the foreman's `sweep keep|drop` log lines as ordinary decisions (foundry 0.9.2).
+"""retro.py counts the pm's `sweep keep|drop` log lines as ordinary decisions (truss 0.9.2).
 
 All data is synthetic and written to a temp dir (P8).
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -22,8 +22,8 @@ class SweepLines(unittest.TestCase):
 
     def test_sweep_lines_count_as_followed_decisions(self):
         text = ("## Run 2026-10-29T10:00:00Z | g\n"
-                "- 10:01 | sweep drop: README omits id | doc drift | cynic-5 | followed\n"
-                "- 10:02 | sweep keep: remove_tree hides an OSError | a leak goes unseen | cynic-5 | followed\n")
+                "- 10:01 | sweep drop: README omits id | doc drift | checker-5 | followed\n"
+                "- 10:02 | sweep keep: remove_tree hides an OSError | a leak goes unseen | checker-5 | followed\n")
         with open(os.path.join(self.dir, "decisions.md"), "w", encoding="utf-8", newline="") as f:
             f.write(text)
         r = subprocess.run([sys.executable, SCRIPT, self.dir], capture_output=True, timeout=60)

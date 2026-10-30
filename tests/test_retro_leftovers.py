@@ -1,7 +1,7 @@
 """Edge-case tests for the `leftovers` key of retro.py, beyond test_contract_leftovers.py.
 
-Written from the lead's spec before the producer exists: until retro.py emits `leftovers`, every test that
-needs it fails with "producer missing". Temp git repos only. Run: python -m unittest discover -s plugins/foundry/tests
+Written from the foreman's spec before the producer exists: until retro.py emits `leftovers`, every test that
+needs it fails with "producer missing". Temp git repos only. Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -21,7 +21,7 @@ TS = "2026-10-27T09:01:00.000Z"
 
 def spawn(agent_id, **over):
     e = {"v": 1, "ts": TS, "event": "spawn", "crew": "c", "agent": "c", "agentId": agent_id,
-         "type": "foundry:lead", "model": "opus", "effort": "high", "by": "main"}
+         "type": "truss:foreman", "model": "opus", "effort": "high", "by": "main"}
     e.update(over)
     return json.dumps(e)
 
@@ -37,7 +37,7 @@ class LeftoversEdges(unittest.TestCase):
             fh.write("x\n")
         git(self.repo, "add", "f.txt")
         git(self.repo, "commit", "-q", "-m", "one")
-        self.session = os.path.join(self.repo, ".git", "foundry", "S1")
+        self.session = os.path.join(self.repo, ".git", "truss", "S1")
 
     def put(self, lines, name="events.jsonl", dest=None):
         dest = dest or self.session
@@ -70,7 +70,7 @@ class LeftoversEdges(unittest.TestCase):
     def test_bare_repo_is_not_recorded(self):
         bare = os.path.join(self.tmp, "x.git")
         git(self.tmp, "init", "-q", "--bare", bare)
-        d = self.put([spawn("a1")], dest=os.path.join(bare, "foundry", "S1"))
+        d = self.put([spawn("a1")], dest=os.path.join(bare, "truss", "S1"))
         self.assertEqual(self.leftovers(d), NR)
 
     def test_no_events_file_is_not_recorded(self):

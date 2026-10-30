@@ -7,8 +7,8 @@ import {
   ago,
   crewOf,
   family,
-  foundryDir,
-  LEAD_TYPE,
+  trussDir,
+  FOREMAN_TYPE,
   messageVerdict,
   MODEL_REFUSAL,
   recipientsOf,
@@ -19,26 +19,26 @@ import {
 
 const agent = (id: string, type: string, name?: string, parentId?: string): Agent => ({ id, type, name, parentId, status: 'running', description: id })
 
-// two crews, a member two levels down, a plain agent with a child, and a lead that some other agent started
+// two crews, a member two levels down, a plain agent with a child, and a foreman that some other agent started
 const AGENTS: Agent[] = [
-  agent('L1', LEAD_TYPE, 'auth'),
-  agent('L2', LEAD_TYPE, 'billing'),
+  agent('L1', FOREMAN_TYPE, 'auth'),
+  agent('L2', FOREMAN_TYPE, 'billing'),
   agent('A1', 'kit:builder', 'auth-builder', 'L1'),
   agent('A2', 'Explore', 'auth-scout', 'A1'),
   agent('B1', 'general-purpose', 'billing-builder', 'L2'),
   agent('X', 'general-purpose', 'helper'),
   agent('Y', 'Explore', 'helper-scout', 'X'),
-  agent('N', LEAD_TYPE, 'nested-lead', 'X'),
+  agent('N', FOREMAN_TYPE, 'nested-foreman', 'X'),
 ]
 
 test('resolves an agent to its crew through any depth of parents', async () => {
-  expect(crewOf('L1', AGENTS)).toEqual({ crew: 'auth', leadId: 'L1', leadName: 'auth', isLead: true })
-  expect(crewOf('A1', AGENTS)).toEqual({ crew: 'auth', leadId: 'L1', leadName: 'auth', isLead: false })
+  expect(crewOf('L1', AGENTS)).toEqual({ crew: 'auth', foremanId: 'L1', foremanName: 'auth', isForeman: true })
+  expect(crewOf('A1', AGENTS)).toEqual({ crew: 'auth', foremanId: 'L1', foremanName: 'auth', isForeman: false })
   expect(crewOf('A2', AGENTS)?.crew).toBe('auth')
   expect(crewOf('B1', AGENTS)?.crew).toBe('billing')
 })
 
-test('puts no crew on the main thread, plain agents, unknown ids or a lead another agent started', async () => {
+test('puts no crew on the main thread, plain agents, unknown ids or a foreman another agent started', async () => {
   expect(crewOf(undefined, AGENTS)).toBeUndefined()
   expect(crewOf('X', AGENTS)).toBeUndefined()
   expect(crewOf('Y', AGENTS)).toBeUndefined()
@@ -48,16 +48,16 @@ test('puts no crew on the main thread, plain agents, unknown ids or a lead anoth
   expect(crewOf('C1', [agent('C1', 'x', 'a', 'C2'), agent('C2', 'x', 'b', 'C1')])).toBeUndefined()
 })
 
-test('names a crew by its lead, or by the lead id when it has no name', async () => {
-  expect(crewOf('M', [agent('L', LEAD_TYPE), agent('M', 'x', 'm', 'L')])?.crew).toBe('L')
+test('names a crew by its foreman, or by the foreman id when it has no name', async () => {
+  expect(crewOf('M', [agent('L', FOREMAN_TYPE), agent('M', 'x', 'm', 'L')])?.crew).toBe('L')
 })
 
 test('keeps reports in the git common dir, or under the home folder outside git', async () => {
-  expect(foundryDir('C:/r/.git', 'C:\\Users\\me', 's1')).toBe('C:/r/.git/foundry/s1')
-  expect(foundryDir(undefined, 'C:\\Users\\me\\', 's1')).toBe('C:/Users/me/.claude/foundry/s1')
-  expect(foundryDir('', '/home/me', 's1')).toBe('/home/me/.claude/foundry/s1')
-  expect(foundryDir(undefined, undefined, 's1')).toBeUndefined()
-  expect(reportPath('C:/r/.git/foundry/s1', 'auth', 'auth-builder')).toBe('C:/r/.git/foundry/s1/reports/auth/auth-builder.md')
+  expect(trussDir('C:/r/.git', 'C:\\Users\\me', 's1')).toBe('C:/r/.git/truss/s1')
+  expect(trussDir(undefined, 'C:\\Users\\me\\', 's1')).toBe('C:/Users/me/.claude/truss/s1')
+  expect(trussDir('', '/home/me', 's1')).toBe('/home/me/.claude/truss/s1')
+  expect(trussDir(undefined, undefined, 's1')).toBeUndefined()
+  expect(reportPath('C:/r/.git/truss/s1', 'auth', 'auth-builder')).toBe('C:/r/.git/truss/s1/reports/auth/auth-builder.md')
 })
 
 test('makes every path segment safe', async () => {
@@ -75,8 +75,8 @@ test('finds a recipient by id, or by name with a listing ref dropped', async () 
 
 test('resolves a name to its live agents first, else to the newest one seen', async () => {
   const ended = (a: Agent, seq: number): Agent => ({ ...a, live: false, seq })
-  // a lead restarted under its old name: the live one wins over the older, ended one
-  const restarted = [ended(agent('L1', LEAD_TYPE, 'auth'), 1), { ...agent('L9', LEAD_TYPE, 'auth'), live: true, seq: 9 }]
+  // a foreman restarted under its old name: the live one wins over the older, ended one
+  const restarted = [ended(agent('L1', FOREMAN_TYPE, 'auth'), 1), { ...agent('L9', FOREMAN_TYPE, 'auth'), live: true, seq: 9 }]
   expect(recipientsOf('auth', restarted).map(a => a.id)).toEqual(['L9'])
   // none live: the newest seen
   const both = [ended(agent('W1', 'x', 'worker', 'L1'), 2), ended(agent('W2', 'x', 'worker', 'L2'), 5)]
@@ -98,7 +98,7 @@ test('refuses a name two live agents in different crews share', async () => {
   expect(messageVerdict('A1', 'W1', agents)).toEqual({ kind: 'allow', crossCrew: false })
 })
 
-test('lets members message their lead and siblings, and leads message main and their members', async () => {
+test('lets members message their foreman and siblings, and foremen message main and their members', async () => {
   expect(messageVerdict('A2', 'auth', AGENTS)).toEqual({ kind: 'allow', crossCrew: false })
   expect(messageVerdict('A1', 'auth-scout', AGENTS)).toEqual({ kind: 'allow', crossCrew: false })
   expect(messageVerdict('L1', 'A2', AGENTS)).toEqual({ kind: 'allow', crossCrew: false })
@@ -108,24 +108,24 @@ test('lets members message their lead and siblings, and leads message main and t
 
 test('refuses a member messaging main, and any crew agent messaging an address nobody has', async () => {
   const toMain = messageVerdict('A2', 'main', AGENTS)
-  expect(toMain.kind === 'deny' && toMain.reason).toContain('your lead, auth')
+  expect(toMain.kind === 'deny' && toMain.reason).toContain('your foreman, auth')
   expect(messageVerdict('A1', 'main [ref]', AGENTS).kind).toBe('deny')
   // no crew-prefix guess: an unknown name is refused, even one that looks like the crew's
   expect(messageVerdict('L1', 'auth-tester', AGENTS).kind).toBe('deny')
   expect(messageVerdict('A1', 'auth-tester', AGENTS).kind).toBe('deny')
 })
 
-test('lets one lead message another, as a cross-crew message', async () => {
+test('lets one foreman message another, as a cross-crew message', async () => {
   expect(messageVerdict('L1', 'billing', AGENTS)).toEqual({ kind: 'allow', crossCrew: true, fromCrew: 'auth', toCrew: 'billing' })
 })
 
-test('refuses a member messaging another crew, and a lead messaging another crew\'s member', async () => {
+test('refuses a member messaging another crew, and a foreman messaging another crew\'s member', async () => {
   const member = messageVerdict('A1', 'billing', AGENTS)
   expect(member.kind).toBe('deny')
-  expect(member.kind === 'deny' && member.reason).toContain('tell your lead, auth')
+  expect(member.kind === 'deny' && member.reason).toContain('tell your foreman, auth')
   expect(messageVerdict('A2', 'billing-builder', AGENTS).kind).toBe('deny')
-  const lead = messageVerdict('L1', 'billing-builder', AGENTS)
-  expect(lead.kind === 'deny' && lead.reason).toContain("that crew's lead, billing")
+  const foreman = messageVerdict('L1', 'billing-builder', AGENTS)
+  expect(foreman.kind === 'deny' && foreman.reason).toContain("that crew's foreman, billing")
   // outside every crew, or not an agent name at all
   expect(messageVerdict('A1', 'helper', AGENTS).kind).toBe('deny')
   expect(messageVerdict('L1', 'stranger', AGENTS).kind).toBe('deny')
@@ -150,17 +150,17 @@ test('shows each crew with its live members by model and its last report', async
   const now = 10 * 3_600_000
   const text = statusText(
     [
-      { crew: 'auth', status: 'running', live: { sonnet: 2, opus: 1 }, lastReportMs: now - 5 * 60_000, dir: 'C:/r/.git/foundry/s1/reports/auth' },
-      { crew: 'billing', status: 'ended', live: {}, dir: 'C:/r/.git/foundry/s1/reports/billing' },
+      { crew: 'auth', status: 'running', live: { sonnet: 2, opus: 1 }, lastReportMs: now - 5 * 60_000, dir: 'C:/r/.git/truss/s1/reports/auth' },
+      { crew: 'billing', status: 'ended', live: {}, dir: 'C:/r/.git/truss/s1/reports/billing' },
     ],
     now,
-    'C:/r/.git/foundry/s1/messages.jsonl',
+    'C:/r/.git/truss/s1/messages.jsonl',
   )
   expect(text).toContain('- auth: running, 3 live members (opus 1, sonnet 2), last report 5m ago')
-  expect(text).toContain('  reports: C:/r/.git/foundry/s1/reports/auth')
+  expect(text).toContain('  reports: C:/r/.git/truss/s1/reports/auth')
   expect(text).toContain('- billing: ended, no live members, no report yet')
-  expect(text).toContain('Messages between leads: C:/r/.git/foundry/s1/messages.jsonl')
-  expect(statusText([], now)).toContain('/foundry:run')
+  expect(text).toContain('Messages between foremen: C:/r/.git/truss/s1/messages.jsonl')
+  expect(statusText([], now)).toContain('/truss:run')
   const asking = statusText([{ crew: 'auth', status: 'idle', live: {}, lastReportMs: now, question: 'Keep the v1 endpoint?' }], now)
   expect(asking).toContain('- auth: idle, no live members, waiting on you: Keep the v1 endpoint?')
 })

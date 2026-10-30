@@ -1,8 +1,8 @@
 // @ts-nocheck
-// foundry ADR-0007 Seam 7 (section 7): evals/run-model.ts, run as a child with CLAUDE pointing at a stub.
-// Written before run-model.ts exists, from the ADR and the lead's decisions. Red by design until evals-build builds it.
+// truss ADR-0007 Seam 7 (section 7): evals/run-model.ts, run as a child with CLAUDE pointing at a stub.
+// Written before run-model.ts exists, from the ADR and the foreman's decisions. Red by design until evals-build builds it.
 //
-// Run with: node --test plugins/foundry/tests/evals-run-model.check.ts
+// Run with: node --test tests/evals-run-model.check.ts
 // Spawn rule pinned here: when CLAUDE ends in .js, .mjs or .cjs, run-model spawns process.execPath with the script as
 // the first argument, then the claude args; else it spawns the path directly. The stub is a .mjs, so it spawns on
 // Windows and Linux with no shell. The stub logs argv WITHOUT the script path (process.argv.slice(2)).
@@ -17,7 +17,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOT = join(PLUGIN, '..', '..')
+const ROOT = PLUGIN
 const RUN_MODEL = join(PLUGIN, 'evals', 'run-model.ts')
 const STUB = join(PLUGIN, 'tests', 'fixtures', 'claude-stub', 'claude.mjs')
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
@@ -26,13 +26,13 @@ const rm = (p: string) => rmSync(p, { recursive: true, force: true, maxRetries: 
 const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 
 // Every `--` flag run-model may pass, plus `-p`. Mirrors ADR-0007 section 7, with `--tools` and `--disallowedTools`
-// added on the lead's word. Anything else on the command line (a permission mode) fails the argv test.
+// added on the foreman's word. Anything else on the command line (a permission mode) fails the argv test.
 const ALLOWED_FLAGS = ['--system-prompt', '--model', '--effort', '--no-session-persistence', '--output-format', '--allowedTools',
   '--tools', '--disallowedTools']
 const ONE_VALUE = ['--system-prompt', '--model', '--effort', '--output-format']
 
-const JUDGE_TOOLS = 'Read Grep Glob Bash(git log:*) Bash(git show:*) Bash(git diff:*) Bash(git rev-parse:*)'
-const CYNIC_TOOLS = 'Read Grep Glob'
+const QC_TOOLS = 'Read Grep Glob Bash(git log:*) Bash(git show:*) Bash(git diff:*) Bash(git rev-parse:*)'
+const CHECKER_TOOLS = 'Read Grep Glob'
 
 const git = (...args: string[]) => {
   const env = { ...process.env }
@@ -52,16 +52,17 @@ function cases() {
   return all
 }
 
-// Every form a .git/foundry path takes in a golden input: repo-relative or absolute, either slash, any run of
+// Every form a .git/truss path takes in a golden input: repo-relative or absolute, either slash, any run of
 // separators (JSON-escaped backslashes are single after JSON.parse). The spec rewrites each to inputs/<basename>.
-const FOUNDRY_PATH = /[^\s"'`()]*\.git[\\/]+foundry[\\/][^\s"'`)]*/g
-function foundryPaths(input: string): string[] { return input.match(FOUNDRY_PATH) ?? [] }
+const TRUSS_PATH = /[^\s"'`()]*\.git[\\/]+truss[\\/][^\s"'`)]*/g
+function trussPaths(input: string): string[] { return input.match(TRUSS_PATH) ?? [] }
 function expectedInput(input: string): string {
-  return input.replace(FOUNDRY_PATH, (p) => `inputs/${basename(p.replace(/\\/g, '/'))}`)
+  return input.replace(TRUSS_PATH, (p) => `inputs/${basename(p.replace(/\\/g, '/'))}`)
 }
 
+const AGENT_FILE: Record<string, string> = { qc: 'qc-engineer', checker: 'checking-engineer' }
 function body(role: string) {
-  const text = readFileSync(join(PLUGIN, 'agents', `${role}.md`), 'utf8').replace(/\r/g, '').replace(/^﻿/, '')
+  const text = readFileSync(join(PLUGIN, 'agents', `${AGENT_FILE[role] ?? role}.md`), 'utf8').replace(/\r/g, '').replace(/^﻿/, '')
   const m = text.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/)
   assert.ok(m, `${role}.md has no frontmatter`)
   return m[1]
@@ -86,7 +87,7 @@ function run(env: Record<string, string> = {}, args: string[] = [], opts: { clau
   // A missing run-model.ts also exits non-zero; without this guard the refusal tests would pass for the wrong reason.
   const runModel = opts.runModel ?? RUN_MODEL
   assert.ok(existsSync(runModel), `${runModel} does not exist`)
-  const logDir = mkdtempSync(join(tmpdir(), 'foundry-stublog-'))
+  const logDir = mkdtempSync(join(tmpdir(), 'truss-stublog-'))
   let outDir: string | undefined
   try {
     const childEnv = { ...process.env, CLAUDE: opts.claude ?? STUB, CLAUDE_STUB_LOG: logDir, ...env }
@@ -97,7 +98,7 @@ function run(env: Record<string, string> = {}, args: string[] = [], opts: { clau
       cwd: opts.cwd ?? ROOT, env: childEnv, encoding: 'utf8', windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024,
     })
     const stdout = (r.stdout ?? '').replace(/\r/g, '')
-    const m = stdout.split('\n').map((l) => l.match(/(\S*foundry-evals-[^\s"'`]*)/)).find(Boolean)
+    const m = stdout.split('\n').map((l) => l.match(/(\S*truss-evals-[^\s"'`]*)/)).find(Boolean)
     outDir = m ? m[1] : undefined
     const calls = readdirSync(logDir)
       .filter((f) => /^\d+\.json$/.test(f))
@@ -110,14 +111,14 @@ function run(env: Record<string, string> = {}, args: string[] = [], opts: { clau
     return { r, stdout, calls, outDir, results, outFiles, raw }
   } finally {
     rm(logDir)
-    if (outDir && basename(outDir).startsWith('foundry-evals-') && norm(dirname(outDir)) === norm(realpathSync.native(tmpdir()))) rm(outDir)
-    else if (outDir && basename(outDir).startsWith('foundry-evals-') && existsSync(outDir)) rm(outDir)
-    // Every run that prints `results <dir>` removes that dir here, so the suite leaves no foundry-evals-* dir behind.
-    if (outDir && basename(outDir).startsWith('foundry-evals-') && existsSync(outDir)) rm(outDir)
+    if (outDir && basename(outDir).startsWith('truss-evals-') && norm(dirname(outDir)) === norm(realpathSync.native(tmpdir()))) rm(outDir)
+    else if (outDir && basename(outDir).startsWith('truss-evals-') && existsSync(outDir)) rm(outDir)
+    // Every run that prints `results <dir>` removes that dir here, so the suite leaves no truss-evals-* dir behind.
+    if (outDir && basename(outDir).startsWith('truss-evals-') && existsSync(outDir)) rm(outDir)
   }
 }
 
-// Throwaway-worktree contract (foreman ruling, option (a) for the run-model answer leak): each case runs in a temp
+// Throwaway-worktree contract (pm ruling, option (a) for the run-model answer leak): each case runs in a temp
 // worktree under os.tmpdir(), never in the checkout, and the worktree is gone once run-model has exited.
 const insideDir = (child: string, parent: string) => norm(child).startsWith(`${norm(parent)}/`)
 function assertThrowawayCwd(cwd: string, label: string) {
@@ -157,7 +158,7 @@ const newOnly = (before: string[], after: string[]) => after.filter((x) => !befo
 // A claude stand-in that records, at call time, what the fixture stub cannot: whether golden and the agents dir exist
 // in its cwd, the files under <cwd>/inputs, and what git says about the cwd. Written to a temp dir by the test.
 function makeProbe() {
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-probe-'))
+  const dir = mkdtempSync(join(tmpdir(), 'truss-probe-'))
   const file = join(dir, 'claude.mjs')
   writeFileSync(file, `import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -170,8 +171,8 @@ const inputsDir = join(cwd, 'inputs')
 const names = existsSync(inputsDir) ? readdirSync(inputsDir) : []
 const rec = {
   argv: process.argv.slice(2), stdin, cwd,
-  golden: existsSync(join(cwd, 'plugins', 'foundry', 'evals', 'golden')),
-  agents: existsSync(join(cwd, 'plugins', 'foundry', 'agents')),
+  golden: existsSync(join(cwd, 'evals', 'golden')),
+  agents: existsSync(join(cwd, 'agents')),
   inputs: names,
   inputText: Object.fromEntries(names.map((f) => [f, readFileSync(join(inputsDir, f), 'utf8')])),
   head: g('rev-parse', 'HEAD'),
@@ -214,18 +215,18 @@ test('run-model: exit 0, one line per golden case sorted by id, then a score lin
 
 test('run-model: results follow the stub reply - PASS reply then FAIL reply flip the ok count (no always-pass scorer)', () => {
   const all = cases()
-  const judges = all.filter((c) => c.role === 'judge')
-  const passes = judges.filter((c) => c.expected.kind === 'PASS').length
-  const fails = judges.filter((c) => c.expected.kind === 'FAIL').length
-  assert.ok(passes >= 1 && fails >= 1, 'need judge PASS and FAIL cases')
+  const qcs = all.filter((c) => c.role === 'qc')
+  const passes = qcs.filter((c) => c.expected.kind === 'PASS').length
+  const fails = qcs.filter((c) => c.expected.kind === 'FAIL').length
+  assert.ok(passes >= 1 && fails >= 1, 'need qc PASS and FAIL cases')
 
   const a = run()
   assert.equal(a.r.status, 0, a.r.stderr)
   const pa = parse(a.stdout)
   for (const [i, m] of pa.rows.entries()) {
     const c = all[i]
-    if (c.role === 'judge' && c.expected.kind === 'PASS') assert.deepEqual([m[2], m[4]], ['ok', 'PASS'], c.id)
-    else if (c.role === 'judge') assert.deepEqual([m[2], m[4]], ['miss', 'PASS'], c.id)
+    if (c.role === 'qc' && c.expected.kind === 'PASS') assert.deepEqual([m[2], m[4]], ['ok', 'PASS'], c.id)
+    else if (c.role === 'qc') assert.deepEqual([m[2], m[4]], ['miss', 'PASS'], c.id)
     else assert.deepEqual([m[2], m[4]], ['miss', 'none'], c.id)
   }
   assert.equal(Number(pa.scoreLine[1]), passes)
@@ -235,13 +236,13 @@ test('run-model: results follow the stub reply - PASS reply then FAIL reply flip
   const pb = parse(b.stdout)
   for (const [i, m] of pb.rows.entries()) {
     const c = all[i]
-    if (c.role === 'judge') assert.deepEqual([m[2], m[4]], [c.expected.kind === 'FAIL' ? 'ok' : 'miss', 'FAIL'], c.id)
+    if (c.role === 'qc') assert.deepEqual([m[2], m[4]], [c.expected.kind === 'FAIL' ? 'ok' : 'miss', 'FAIL'], c.id)
     else assert.deepEqual([m[2], m[4]], ['miss', 'none'], c.id)
   }
   assert.equal(Number(pb.scoreLine[1]), fails)
 })
 
-test('run-model: a reply with a preamble before the VERDICT line scores got=none for judges (stdout is scored as a whole)', () => {
+test('run-model: a reply with a preamble before the VERDICT line scores got=none for qcs (stdout is scored as a whole)', () => {
   const { r, stdout } = run({ CLAUDE_STUB_REPLY: 'thinking out loud\nVERDICT: PASS\n' })
   assert.equal(r.status, 0, r.stderr)
   const { rows, scoreLine } = parse(stdout)
@@ -255,7 +256,7 @@ test('run-model: one claude call per case, with the flags, role prompt, tool lis
   const { r, calls } = run()
   assert.equal(r.status, 0, r.stderr)
   assert.equal(calls.length, all.length, 'one call per case')
-  const roleBody = { judge: body('judge').trim(), cynic: body('cynic').trim() }
+  const roleBody = { qc: body('qc').trim(), checker: body('checker').trim() }
   for (const [i, c] of all.entries()) {
     const { argv, stdin, cwd } = calls[i]
     const val = (flag: string) => {
@@ -275,26 +276,26 @@ test('run-model: one claude call per case, with the flags, role prompt, tool lis
     assert.ok(at >= 0, `${c.id}: --allowedTools`)
     const tools: string[] = []
     for (let j = at + 1; j < argv.length && !argv[j].startsWith('--'); j++) tools.push(argv[j])
-    assert.equal(tools.join(' '), c.role === 'judge' ? JUDGE_TOOLS : CYNIC_TOOLS, `${c.id}: tools`)
+    assert.equal(tools.join(' '), c.role === 'qc' ? QC_TOOLS : CHECKER_TOOLS, `${c.id}: tools`)
     for (const bad of ['Write', 'Edit', 'NotebookEdit']) assert.ok(!tools.join(' ').includes(bad), `${c.id}: ${bad}`)
-    assert.ok(!argv.includes('--max-budget-usd'), 'no budget flag')
-    assert.equal(stdin, expectedInput(c.input), `${c.id}: stdin is the case input with .git/foundry paths rewritten to inputs/<basename>`)
+    assert.ok(!argv.includes('--max-allowance-usd'), 'no allowance flag')
+    assert.equal(stdin, expectedInput(c.input), `${c.id}: stdin is the case input with .git/truss paths rewritten to inputs/<basename>`)
     assertThrowawayCwd(cwd, `${c.id}: cwd`)
   }
 })
 
-test('run-model: prints a foundry-evals-* tmpdir holding results.json and one raw report per case; nothing written in the checkout', () => {
+test('run-model: prints a truss-evals-* tmpdir holding results.json and one raw report per case; nothing written in the checkout', () => {
   const all = cases()
   const status = () =>
     [['--porcelain'], ['--porcelain', '--ignored']].map((f) =>
       git('status', ...f).split('\n').filter((l) => !l.includes('.claude/worktrees/')).join('\n'))
   const statusBefore = status()
-  const foundryBefore = new Set(tree(join(COMMON, 'foundry')))
+  const trussBefore = new Set(tree(join(COMMON, 'truss')))
   const claudeBefore = new Set(tree(join(ROOT, '.claude')))
   const { r, outDir, results, outFiles } = run()
   assert.equal(r.status, 0, r.stderr)
-  assert.ok(outDir, 'no foundry-evals-* path printed')
-  assert.ok(basename(outDir).startsWith('foundry-evals-'))
+  assert.ok(outDir, 'no truss-evals-* path printed')
+  assert.ok(basename(outDir).startsWith('truss-evals-'))
   assert.equal(norm(realpathSync.native(dirname(outDir))), norm(realpathSync.native(tmpdir())), 'under os.tmpdir()')
   assert.ok(Array.isArray(results) || (results && typeof results === 'object'), 'results.json parses')
   const entries = Array.isArray(results) ? results : Object.values(results.cases ?? results)
@@ -302,16 +303,16 @@ test('run-model: prints a foundry-evals-* tmpdir holding results.json and one ra
   const raw = outFiles.filter((f) => f !== 'results.json')
   assert.equal(raw.length, all.length, `one raw report per case, got ${raw.join(',')}`)
   assert.deepEqual(status(), statusBefore, 'checkout status (plain or --ignored) changed')
-  // Live foundry runs write under .git/foundry and .claude/worktrees while this test runs, so the trees are not
+  // Live truss runs write under .git/truss and .claude/worktrees while this test runs, so the trees are not
   // compared whole. No path NEW since before may look like run-model output: results.json, a golden case id as a
-  // basename stem, or foundry-evals.
+  // basename stem, or truss-evals.
   const ids = new Set(all.map((c) => c.id))
   const looksLikeOutput = (p: string) => {
     const base = p.split('/').pop() as string
-    return base === 'results.json' || p.includes('foundry-evals') || ids.has(base.replace(/\.[^.]*$/, ''))
+    return base === 'results.json' || p.includes('truss-evals') || ids.has(base.replace(/\.[^.]*$/, ''))
   }
   for (const [label, before, after] of [
-    ['.git/foundry', foundryBefore, tree(join(COMMON, 'foundry'))],
+    ['.git/truss', trussBefore, tree(join(COMMON, 'truss'))],
     ['.claude', claudeBefore, tree(join(ROOT, '.claude'))],
   ] as const) {
     const bad = after.filter((p) => !before.has(p) && looksLikeOutput(p))
@@ -320,13 +321,13 @@ test('run-model: prints a foundry-evals-* tmpdir holding results.json and one ra
 })
 
 test('run-model: takes no flag that picks cases - an extra --case argument exits non-zero', () => {
-  const { r, stdout } = run({}, ['--case', 'judge-roles-1'])
+  const { r, stdout } = run({}, ['--case', 'qc-roles-1'])
   assert.notEqual(r.status, 0, `exit 0 with output:\n${stdout}`)
   assert.equal(parse(stdout).scoreLine, undefined, 'no score line when the flag is refused')
 })
 
 test('run-model: a missing binary never prints a score with a passing case', () => {
-  const missing = join(tmpdir(), `foundry-no-such-claude-${process.pid}`, 'claude')
+  const missing = join(tmpdir(), `truss-no-such-claude-${process.pid}`, 'claude')
   for (const claude of [missing, `${missing}.mjs`]) {
     const { r, stdout } = run({}, [], { claude })
     const { rows, scoreLine } = parse(stdout)
@@ -336,7 +337,7 @@ test('run-model: a missing binary never prints a score with a passing case', () 
   }
 })
 
-// ---- Red-team gap tests ----
+// ---- Stress-test gap tests ----
 
 // Splits one logged argv into flag -> value tokens. Fails on any token that is not -p, an allowed flag or a value.
 function parseArgv(argv: string[], id: string) {
@@ -370,7 +371,7 @@ test('run-model: argv carries only the allowed flags (no --permission-mode, no w
   }
 })
 
-test('run-model: --tools and --disallowedTools carry the exact values (judge: Read Grep Glob Bash; cynic: Read Grep Glob)', () => {
+test('run-model: --tools and --disallowedTools carry the exact values (qc: Read Grep Glob Bash; checker: Read Grep Glob)', () => {
   const all = cases()
   const { r, calls } = run()
   assert.equal(r.status, 0, r.stderr)
@@ -378,9 +379,9 @@ test('run-model: --tools and --disallowedTools carry the exact values (judge: Re
   const DISALLOWED = ['Bash(git diff --output*)', 'Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git reset:*)', 'Bash(git checkout:*)']
   for (const [i, c] of all.entries()) {
     const flags = parseArgv(calls[i].argv, c.id)
-    assert.deepEqual(flags['--tools'], c.role === 'judge' ? ['Read', 'Grep', 'Glob', 'Bash'] : ['Read', 'Grep', 'Glob'], `${c.id}: --tools`)
+    assert.deepEqual(flags['--tools'], c.role === 'qc' ? ['Read', 'Grep', 'Glob', 'Bash'] : ['Read', 'Grep', 'Glob'], `${c.id}: --tools`)
     assert.deepEqual(flags['--disallowedTools'], DISALLOWED, `${c.id}: --disallowedTools`)
-    assert.equal(flags['--allowedTools'].join(' '), c.role === 'judge' ? JUDGE_TOOLS : CYNIC_TOOLS, `${c.id}: --allowedTools`)
+    assert.equal(flags['--allowedTools'].join(' '), c.role === 'qc' ? QC_TOOLS : CHECKER_TOOLS, `${c.id}: --allowedTools`)
   }
 })
 
@@ -427,7 +428,7 @@ test('run-model: writes nothing under .claude (worktrees excepted) and no run ou
   assert.deepEqual(bad, [], 'new paths under .claude')
   const ids = all.map((c) => c.id)
   const leaked = readdirSync(COMMON).filter(
-    (n) => !commonBefore.has(n) && (n.includes('foundry-evals') || n.includes('results') || ids.some((id) => n.includes(id))))
+    (n) => !commonBefore.has(n) && (n.includes('truss-evals') || n.includes('results') || ids.some((id) => n.includes(id))))
   assert.deepEqual(leaked, [], 'new run output in the git common dir')
 })
 
@@ -453,21 +454,21 @@ test('run-model (source check): the only environment variable it reads by name i
 test('run-model: a case that outlives CASE_TIMEOUT_MS is killed and scored timeout (patched copy at 1.5 s, stub sleeps 5 s)', () => {
   // ADR-0007 section 7: "kills the child and scores the case timeout". The real constant is 600000, so the copy gets 1500.
   assert.ok(readFileSync(RUN_MODEL, 'utf8').includes('CASE_TIMEOUT_MS = 600000'), 'real run-model.ts must keep CASE_TIMEOUT_MS = 600000')
-  const tmp = mkdtempSync(join(tmpdir(), 'foundry-copy-'))
+  const tmp = mkdtempSync(join(tmpdir(), 'truss-copy-'))
   try {
-    const base = join(tmp, 'plugins', 'foundry')
+    const base = tmp
     mkdirSync(join(base, 'hooks'), { recursive: true })
     mkdirSync(join(base, 'agents'), { recursive: true })
     mkdirSync(join(base, 'evals', 'golden'), { recursive: true })
-    // The copy holds only 2 golden cases (one judge, one cynic), so the run costs about 2 x 1.5 s, not one wait per real case.
+    // The copy holds only 2 golden cases (one qc, one checker), so the run costs about 2 x 1.5 s, not one wait per real case.
     const golden = cases()
-    const keep = [golden.find((c) => c.role === 'judge'), golden.find((c) => c.role === 'cynic')]
-    assert.ok(keep.every(Boolean), 'need a judge and a cynic golden case')
+    const keep = [golden.find((c) => c.role === 'qc'), golden.find((c) => c.role === 'checker')]
+    assert.ok(keep.every(Boolean), 'need a qc and a checker golden case')
     for (const f of readdirSync(join(PLUGIN, 'evals'))) if (f !== 'golden') cpSync(join(PLUGIN, 'evals', f), join(base, 'evals', f), { recursive: true })
     for (const c of keep) writeFileSync(join(base, 'evals', 'golden', `${c.id}.json`), JSON.stringify(c))
     cpSync(join(PLUGIN, 'hooks', 'register.ts'), join(base, 'hooks', 'register.ts'))
     cpSync(join(PLUGIN, 'hooks', 'intake.ts'), join(base, 'hooks', 'intake.ts'))
-    for (const a of ['judge', 'cynic']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
+    for (const a of ['qc-engineer', 'checking-engineer']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
     const rp = join(base, 'evals', 'run-model.ts')
     const orig = readFileSync(rp, 'utf8')
     const patched = orig.replace('CASE_TIMEOUT_MS = 600000', 'CASE_TIMEOUT_MS = 1500')
@@ -521,7 +522,7 @@ test('run-model: each raw report is the child stdout, and each results.json entr
 
 test('run-model: honours no environment variable that filters cases', () => {
   const all = cases()
-  const filt = Object.fromEntries(['EVAL_ONLY', 'EVALS_CASE', 'CASE', 'FOUNDRY_EVAL_CASES', 'ONLY'].map((k) => [k, 'judge-roles-1']))
+  const filt = Object.fromEntries(['EVAL_ONLY', 'EVALS_CASE', 'CASE', 'TRUSS_EVAL_CASES', 'ONLY'].map((k) => [k, 'qc-roles-1']))
   const { r, stdout, calls } = run(filt)
   assert.equal(r.status, 0, r.stderr)
   const { rows, scoreLine } = parse(stdout)
@@ -531,16 +532,16 @@ test('run-model: honours no environment variable that filters cases', () => {
 })
 
 test('run-model: model and effort come from each agent frontmatter, not a constant', () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'foundry-copy-'))
+  const tmp = mkdtempSync(join(tmpdir(), 'truss-copy-'))
   try {
-    const base = join(tmp, 'plugins', 'foundry')
+    const base = tmp
     mkdirSync(join(base, 'hooks'), { recursive: true })
     mkdirSync(join(base, 'agents'), { recursive: true })
     cpSync(join(PLUGIN, 'evals'), join(base, 'evals'), { recursive: true })
     cpSync(join(PLUGIN, 'hooks', 'register.ts'), join(base, 'hooks', 'register.ts'))
     cpSync(join(PLUGIN, 'hooks', 'intake.ts'), join(base, 'hooks', 'intake.ts'))
-    for (const a of ['judge', 'cynic']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
-    const jp = join(base, 'agents', 'judge.md')
+    for (const a of ['qc-engineer', 'checking-engineer']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
+    const jp = join(base, 'agents', 'qc-engineer.md')
     writeFileSync(jp, readFileSync(jp, 'utf8').replace(/^model:.*$/m, 'model: sonnet').replace(/^effort:.*$/m, 'effort: low'))
     const env = { ...process.env }
     for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k]
@@ -556,8 +557,8 @@ test('run-model: model and effort come from each agent frontmatter, not a consta
     for (const [i, c] of all.entries()) {
       const { argv } = calls[i]
       const val = (f: string) => argv[argv.indexOf(f) + 1]
-      assert.equal(val('--model'), c.role === 'judge' ? 'sonnet' : 'opus', `${c.id}: model`)
-      assert.equal(val('--effort'), c.role === 'judge' ? 'low' : 'medium', `${c.id}: effort`)
+      assert.equal(val('--model'), c.role === 'qc' ? 'sonnet' : 'opus', `${c.id}: model`)
+      assert.equal(val('--effort'), c.role === 'qc' ? 'low' : 'medium', `${c.id}: effort`)
     }
   } finally {
     rm(tmp)
@@ -603,8 +604,8 @@ test('run-model: at call time the case cwd is a detached worktree of HEAD with t
     assert.equal(r.status, 0, r.stderr)
     assert.equal(calls.length, cases().length)
     for (const c of calls) {
-      assert.equal(c.golden, false, `golden still present in ${c.cwd}/plugins/foundry/evals/golden`)
-      assert.equal(c.agents, true, `plugins/foundry/agents missing in ${c.cwd}`)
+      assert.equal(c.golden, false, `golden still present in ${c.cwd}/evals/golden`)
+      assert.equal(c.agents, true, `agents missing in ${c.cwd}`)
       assert.equal(c.head, HEAD, 'worktree is not at HEAD')
       assert.equal(c.detached, true, 'worktree is not detached')
       assert.ok(c.worktrees.split('\n').some((l: string) => l.startsWith('worktree ') && norm(l.slice(9)) === norm(c.cwd)),
@@ -614,7 +615,7 @@ test('run-model: at call time the case cwd is a detached worktree of HEAD with t
   } finally { rm(probe.dir) }
 })
 
-test('run-model: no .git/foundry (either slash) reaches claude on stdin; named files arrive as inputs/<basename>, copied into the temp tree', () => {
+test('run-model: no .git/truss (either slash) reaches claude on stdin; named files arrive as inputs/<basename>, copied into the temp tree', () => {
   const all = cases()
   const probe = makeProbe()
   try {
@@ -623,11 +624,11 @@ test('run-model: no .git/foundry (either slash) reaches claude on stdin; named f
     let named = 0
     for (const [i, c] of all.entries()) {
       const call = calls[i]
-      assert.ok(!call.stdin.includes('.git/foundry'), `${c.id}: stdin contains .git/foundry`)
-      assert.ok(!call.stdin.includes('.git\\foundry'), `${c.id}: stdin contains .git\\foundry`)
-      assert.ok(!/\.git[\\/]+foundry/.test(call.stdin), `${c.id}: stdin still names a .git/foundry path`)
+      assert.ok(!call.stdin.includes('.git/truss'), `${c.id}: stdin contains .git/truss`)
+      assert.ok(!call.stdin.includes('.git\\truss'), `${c.id}: stdin contains .git\\truss`)
+      assert.ok(!/\.git[\\/]+truss/.test(call.stdin), `${c.id}: stdin still names a .git/truss path`)
       assert.equal(call.stdin, expectedInput(c.input), `${c.id}: stdin is the input with only the paths rewritten`)
-      const paths = foundryPaths(c.input)
+      const paths = trussPaths(c.input)
       for (const p of paths) {
         named++
         const base = basename(p.replace(/\\/g, '/'))
@@ -639,7 +640,7 @@ test('run-model: no .git/foundry (either slash) reaches claude on stdin; named f
         }
       }
     }
-    assert.ok(named >= 1, 'no golden case names a .git/foundry file; this test would pin nothing')
+    assert.ok(named >= 1, 'no golden case names a .git/truss file; this test would pin nothing')
   } finally { rm(probe.dir) }
 })
 
@@ -671,10 +672,10 @@ test('run-model: the temp worktrees are removed even when every claude call fail
   } finally { rm(tmp) }
 })
 
-test('run-model: a missing binary leaves no foundry-evals-* dir in os.tmpdir()', async () => {
-  const list = () => readdirSync(tmpdir()).filter((n) => n.startsWith('foundry-evals-'))
+test('run-model: a missing binary leaves no truss-evals-* dir in os.tmpdir()', async () => {
+  const list = () => readdirSync(tmpdir()).filter((n) => n.startsWith('truss-evals-'))
   const before = new Set(list())
-  const missing = join(tmpdir(), `foundry-no-such-claude-${process.pid}`, 'claude')
+  const missing = join(tmpdir(), `truss-no-such-claude-${process.pid}`, 'claude')
   run({}, [], { claude: missing })
   const fresh = () => list().filter((n) => !before.has(n)).map((n) => join(tmpdir(), n))
     .filter((p) => { try { return statSync(p).isDirectory() && readdirSync(p).length === 0 } catch { return false } })
@@ -684,31 +685,31 @@ test('run-model: a missing binary leaves no foundry-evals-* dir in os.tmpdir()',
   const now = fresh()
   const stuck = first.filter((p) => now.includes(p))
   for (const p of stuck) rm(p)
-  assert.deepEqual(stuck, [], 'empty foundry-evals-* dir left behind')
+  assert.deepEqual(stuck, [], 'empty truss-evals-* dir left behind')
 })
 
 
-// ---- Hardening tests (red team 5): interrupt, punctuation, collisions, directories, busy cleanup ----------------------
+// ---- Hardening tests (stress test 5): interrupt, punctuation, collisions, directories, busy cleanup ----------------------
 const U1 = '11111111-1111-4111-8111-111111111111'
 const U2 = '22222222-2222-4222-8222-222222222222'
 const sleepMs = (ms: number) => new Promise((res) => setTimeout(res, ms))
 const cleanEnv = () => { const e = { ...process.env }; for (const k of Object.keys(e)) if (k.startsWith('GIT_')) delete e[k]; return e }
 
 // Copy of the plugin in a throwaway git repo with only the given golden cases. `sources` maps a path under
-// <git dir>/foundry to its content; they are created unconditionally, so a copy assertion never skips.
+// <git dir>/truss to its content; they are created unconditionally, so a copy assertion never skips.
 function synth(defs: { id: string; input: string }[], sources: Record<string, string>) {
-  const tmp = mkdtempSync(join(tmpdir(), 'foundry-synth-'))
-  const base = join(tmp, 'plugins', 'foundry')
+  const tmp = mkdtempSync(join(tmpdir(), 'truss-synth-'))
+  const base = tmp
   mkdirSync(join(base, 'hooks'), { recursive: true })
   mkdirSync(join(base, 'agents'), { recursive: true })
   mkdirSync(join(base, 'evals', 'golden'), { recursive: true })
   for (const f of readdirSync(join(PLUGIN, 'evals'))) if (f !== 'golden') cpSync(join(PLUGIN, 'evals', f), join(base, 'evals', f), { recursive: true })
   cpSync(join(PLUGIN, 'hooks', 'register.ts'), join(base, 'hooks', 'register.ts'))
   cpSync(join(PLUGIN, 'hooks', 'intake.ts'), join(base, 'hooks', 'intake.ts'))
-  for (const a of ['judge', 'cynic']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
+  for (const a of ['qc-engineer', 'checking-engineer']) cpSync(join(PLUGIN, 'agents', `${a}.md`), join(base, 'agents', `${a}.md`))
   for (const d of defs) {
     writeFileSync(join(base, 'evals', 'golden', `${d.id}.json`), JSON.stringify({
-      id: d.id, source: `.git/foundry/${U1}/a.md`, role: 'judge', input: d.input, expected: { keyword: 'VERDICT', kind: 'PASS' },
+      id: d.id, source: `.git/truss/${U1}/a.md`, role: 'qc', input: d.input, expected: { keyword: 'VERDICT', kind: 'PASS' },
     }))
   }
   const env = cleanEnv()
@@ -718,7 +719,7 @@ function synth(defs: { id: string; input: string }[], sources: Record<string, st
     assert.equal(g.status, 0, `git ${args.join(' ')}: ${g.stderr}`)
   }
   for (const [rel, content] of Object.entries(sources)) {
-    const f = join(tmp, '.git', 'foundry', rel)
+    const f = join(tmp, '.git', 'truss', rel)
     mkdirSync(dirname(f), { recursive: true })
     writeFileSync(f, content)
   }
@@ -733,7 +734,7 @@ const leakRepo = () => synth(LEAK_CASES, {})
 
 // Like makeProbe, but resolves every inputs/... token in stdin (nested paths too) and records the content found.
 function makeResolveProbe() {
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-rprobe-'))
+  const dir = mkdtempSync(join(tmpdir(), 'truss-rprobe-'))
   const file = join(dir, 'claude.mjs')
   writeFileSync(file, `import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -750,11 +751,11 @@ process.stdout.write('VERDICT: PASS\\n\\n## Proof checked\\nprobe\\n')
   return { file, dir }
 }
 
-test('run-model: trailing punctuation after a .git/foundry path stays in the text, not in the file name (comma, full stop, semicolon)', () => {
+test('run-model: trailing punctuation after a .git/truss path stays in the text, not in the file name (comma, full stop, semicolon)', () => {
   const defs = [
-    { id: 'p-comma', input: `See .git/foundry/${U1}/a.md, then judge.\n` },
-    { id: 'p-dot', input: `The brief is at .git/foundry/${U1}/a.md.\n` },
-    { id: 'p-semi', input: `Read .git/foundry/${U1}/a.md; then judge.\n` },
+    { id: 'p-comma', input: `See .git/truss/${U1}/a.md, then qc.\n` },
+    { id: 'p-dot', input: `The brief is at .git/truss/${U1}/a.md.\n` },
+    { id: 'p-semi', input: `Read .git/truss/${U1}/a.md; then qc.\n` },
   ]
   const { tmp, rp } = synth(defs, { [`${U1}/a.md`]: 'CONTENT-A\n' })
   const probe = makeProbe()
@@ -762,7 +763,7 @@ test('run-model: trailing punctuation after a .git/foundry path stays in the tex
     const { r, calls } = run({}, [], { runModel: rp, cwd: tmp, claude: probe.file })
     assert.equal(r.status, 0, r.stderr)
     assert.equal(calls.length, 3)
-    const want = ['See inputs/a.md, then judge.\n', 'The brief is at inputs/a.md.\n', 'Read inputs/a.md; then judge.\n']
+    const want = ['See inputs/a.md, then qc.\n', 'The brief is at inputs/a.md.\n', 'Read inputs/a.md; then qc.\n']
     for (const [i, d] of defs.entries()) {
       assert.equal(calls[i].stdin, want[i], `${d.id}: stdin`)
       assert.deepEqual(calls[i].inputs, ['a.md'], `${d.id}: <cwd>/inputs must hold exactly a.md (no file named with the punctuation)`)
@@ -771,8 +772,8 @@ test('run-model: trailing punctuation after a .git/foundry path stays in the tex
   } finally { rm(probe.dir); rm(tmp) }
 })
 
-test('run-model: two .git/foundry files with the same basename get two distinct inputs/ paths, each with its own content; the same file twice maps to one path', () => {
-  const input = `first .git/foundry/${U1}/decisions.md\nsecond .git/foundry/${U2}/decisions.md\nagain .git/foundry/${U1}/decisions.md\n`
+test('run-model: two .git/truss files with the same basename get two distinct inputs/ paths, each with its own content; the same file twice maps to one path', () => {
+  const input = `first .git/truss/${U1}/decisions.md\nsecond .git/truss/${U2}/decisions.md\nagain .git/truss/${U1}/decisions.md\n`
   const { tmp, rp } = synth([{ id: 'collide', input }], { [`${U1}/decisions.md`]: 'ONE\n', [`${U2}/decisions.md`]: 'TWO\n' })
   const probe = makeResolveProbe()
   try {
@@ -786,7 +787,7 @@ test('run-model: two .git/foundry files with the same basename get two distinct 
     const p2 = lines[1].slice('second '.length)
     assert.notEqual(p2, p1, 'both files were given the same inputs/ path')
     assert.equal(lines[2], `again ${p1}`, 'the same file named twice must map to the same path')
-    assert.ok(!/\.git[\\/]+foundry/.test(calls[0].stdin), 'stdin still names .git/foundry')
+    assert.ok(!/\.git[\\/]+truss/.test(calls[0].stdin), 'stdin still names .git/truss')
     assert.equal(calls[0].files[p1], 'ONE\n', `${p1} must hold the first file's content`)
     assert.equal(calls[0].files[p2], 'TWO\n', `${p2} must hold the second file's content`)
   } finally { rm(probe.dir); rm(tmp) }
@@ -794,7 +795,7 @@ test('run-model: two .git/foundry files with the same basename get two distinct 
 
 test('run-model: a directory named in the input does not abort the run; every case still gets a line and the score line', () => {
   const defs = [
-    { id: 'd-dir', input: `Review .git/foundry/${U1}/reports/foo/ now.\n` },
+    { id: 'd-dir', input: `Review .git/truss/${U1}/reports/foo/ now.\n` },
     { id: 'e-plain', input: 'No paths here.\n' },
   ]
   const { tmp, rp } = synth(defs, { [`${U1}/reports/foo/x.md`]: 'X\n', [`${U1}/reports/foo/sub/y.md`]: 'Y\n' })
@@ -806,7 +807,7 @@ test('run-model: a directory named in the input does not abort the run; every ca
     assert.ok(lines.some((l) => /^score 2\/2 at /.test(l)), `no score line in:\n${stdout}`)
     assert.equal(r.status, 0, r.stderr)
     assert.equal(calls.length, 2)
-    assert.ok(!/\.git[\\/]+foundry/.test(calls[0].stdin), `stdin still names .git/foundry: ${calls[0].stdin}`)
+    assert.ok(!/\.git[\\/]+truss/.test(calls[0].stdin), `stdin still names .git/truss: ${calls[0].stdin}`)
   } finally { rm(tmp) }
 })
 
@@ -840,7 +841,7 @@ async function interruptCase(how: 'SIGINT' | 'SIGTERM' | 'CTRL_BREAK', t: { skip
   }
   const { tmp, rp } = leakRepo()
   const before = tmpWorktrees(tmp)
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-sig-'))
+  const dir = mkdtempSync(join(tmpdir(), 'truss-sig-'))
   const stub = join(dir, 'hang.mjs')
   writeFileSync(stub, `import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -918,7 +919,7 @@ if (process.platform === 'win32') {
 
 test('run-model: cleanup that cannot remove the tree at once (a leftover process holds the cwd) does not abort the run, and nothing is left afterwards', async () => {
   const { tmp, rp } = synth([{ id: 'busy-one', input: 'x\n' }], {})
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-busy-'))
+  const dir = mkdtempSync(join(tmpdir(), 'truss-busy-'))
   const stub = join(dir, 'busy.mjs')
   writeFileSync(stub, `import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync } from 'node:fs'

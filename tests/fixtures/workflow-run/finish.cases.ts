@@ -1,16 +1,16 @@
 // @ts-nocheck
-// `finish` cases for the factory CLI (foundry ADR-0009 Decision 1: record step, session audit, merge step, labels,
+// `finish` cases for the factory CLI (truss ADR-0009 Decision 1: record step, session audit, merge step, labels,
 // gates kept, seams). Loaded by tests/factory.check.ts. Written from the ADR before bin/factory.ts existed.
 //
 // Assumptions the ADR leaves open (each is also listed in the test-writer report):
 // - a run that merges nothing because a gate said no exits 1; a clean merge exits 0;
-// - a step-1 gate refusal lists the crew under `refused`; "newest judge not a clean PASS" only means "not merged, still running";
+// - a step-1 gate refusal lists the crew under `refused`; "newest qc not a clean PASS" only means "not merged, still running";
 // - an `audit` entry for a record-step problem is labelled with the bare Workflow label, a session-audit one `<runId>/<label>`
 //   (tests look for the label as a substring so either spelling passes);
 // - a spawn line's `model` and `effort` are the strings the transcript carries ("claude-sonnet-5-5", "medium");
-// - the `judge` field of a `passed` result is informational: finish reads judge files from reports/;
-// - member worktrees are found through `git worktree list`; the test names them foundry-<crew>-<member>;
-// - `bin/factory.ts` exports `mergeHeadVerdict(plan, judge, head, patch): {block:string}|undefined` and does not run on import.
+// - the `qc` field of a `passed` result is informational: finish reads qc files from reports/;
+// - member worktrees are found through `git worktree list`; the test names them truss-<crew>-<member>;
+// - `bin/factory.ts` exports `mergeHeadVerdict(plan, qc, head, patch): {block:string}|undefined` and does not run on import.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -19,7 +19,7 @@ import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 import * as reg from '../../../hooks/register.ts'
 import {
-  REAL_FACTORY, addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, git, gitStatus, head, judgeReport, mkEnv, mkRun, planObj,
+  REAL_FACTORY, addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, git, gitStatus, head, qcReport, mkEnv, mkRun, planObj,
   putFile, readEvents, readPlan, validateEvent, writePlan, writeReport,
 } from './harness.ts'
 
@@ -44,14 +44,14 @@ const writeCheck = (dir, slug, n, exit, hd) => {
 }
 
 /**
- * One finish world. specs: [{slug, wave, status, spawn (false: no factory spawn line), spawnTs, worktree (false), files [[rel,text]...]
- * (default one file inside owns), doneCheck, owns, amend, red (false: no red record, number: red exit)}].
- * o: {skip (slugs with no agents in the run), config, plan (laid on the plan), judge (false: no judge agent), judgeLabel, judgeText(c), builder (agent overrides),
- * agents(slug, [builder, judge]) -> list, extraAgents, tweak(agent) -> overrides for every agent, runOpts, runId, results}.
+ * One finish world. specs: [{slug, stage, status, spawn (false: no factory spawn line), spawnTs, worktree (false), files [[rel,text]...]
+ * (default one file inside owns), acceptanceTest, owns, amend, red (false: no red record, number: red exit)}].
+ * o: {skip (slugs with no agents in the run), config, plan (laid on the plan), qc (false: no qc agent), qcLabel, qcText(c), builder (agent overrides),
+ * agents(slug, [builder, qc]) -> list, extraAgents, tweak(agent) -> overrides for every agent, runOpts, runId, results}.
  */
 function scenario(specs, o = {}) {
   const env = mkEnv({ config: o.config ?? CFG })
-  const crews = specs.map((sp) => crew(sp.slug, { wave: sp.wave ?? 1, status: sp.status ?? 'running', owns: sp.owns ?? [`src/${sp.slug}/**`], doneCheck: sp.doneCheck ?? 'true' }))
+  const crews = specs.map((sp) => crew(sp.slug, { stage: sp.stage ?? 1, status: sp.status ?? 'running', owns: sp.owns ?? [`src/${sp.slug}/**`], acceptanceTest: sp.acceptanceTest ?? 'true' }))
   writePlan(env.dir, planObj(crews, { approvedAt: APPROVED, ...(o.plan ?? {}) }))
   const c = {}
   for (const sp of specs) {
@@ -77,11 +77,11 @@ function scenario(specs, o = {}) {
   for (const slug of slugs) {
     const cc = c[slug]
     const builder = { label: `${slug}-builder`, agentType: 'general-purpose', metaModel: 'sonnet', model: 'claude-sonnet-5-5', effort: 'medium', result: 'built it', ...(o.builder ?? {}) }
-    const judge = o.judge === false ? undefined : {
-      label: o.judgeLabel ?? `${slug}-judge`, agentType: 'foundry:judge', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium',
-      result: o.judgeText ? o.judgeText(cc) : judgeReport({ head: cc.head, patch: cc.patch }),
+    const qc = o.qc === false ? undefined : {
+      label: o.qcLabel ?? `${slug}-qc`, agentType: 'truss:qc-engineer', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium',
+      result: o.qcText ? o.qcText(cc) : qcReport({ head: cc.head, patch: cc.patch }),
     }
-    const pair = [builder, judge].filter(Boolean)
+    const pair = [builder, qc].filter(Boolean)
     agents.push(...(o.agents ? o.agents(slug, pair) : pair))
   }
   agents.push(...(o.extraAgents ?? []))
@@ -90,7 +90,7 @@ function scenario(specs, o = {}) {
   w.t = run.dir
   w.ids = run.ids
   w.resFile = `${env.dir}/result.json`
-  const results = o.results ?? slugs.map((s) => ({ slug: s, state: 'passed', head: c[s].head, base: c[s].base, judge: `${s}-judge` }))
+  const results = o.results ?? slugs.map((s) => ({ slug: s, state: 'passed', head: c[s].head, base: c[s].base, qc: `${s}-qc` }))
   writeFileSync(w.resFile, JSON.stringify(results))
   w.finish = () => env.run('finish', { transcript: w.t, result: w.resFile })
   w.finishNoResult = () => env.run('finish', { transcript: w.t })
@@ -147,20 +147,20 @@ test('record step: reports, mtimes and schema-valid events for every crew label'
   assertMerged(w, j)
   const bp = `${w.env.dir}/reports/s/s-builder.md`
   assert.equal(readFileSync(bp, 'utf8').trim(), 'REPORT BODY', 'a schema result is written as its report field')
-  assert.equal(readFileSync(`${w.env.dir}/reports/s/s-judge.md`, 'utf8').trim(), judgeReport({ head: w.c.s.head, patch: w.c.s.patch }).trim())
+  assert.equal(readFileSync(`${w.env.dir}/reports/s/s-qc.md`, 'utf8').trim(), qcReport({ head: w.c.s.head, patch: w.c.s.patch }).trim())
   assert.ok(Math.abs(statSync(bp).mtimeMs - Date.parse('2026-10-29T10:07:09.000Z')) < 1500, 'mtime is the last transcript timestamp')
   const ev = readEvents(w.env.dir).filter((e) => e.by === 'workflow:wf_1')
   const spawns = ev.filter((e) => e.event === 'spawn')
   assert.equal(spawns.length, 2)
   const sb = spawns.find((e) => e.agentId === w.ids['s-builder'])
-  const sj = spawns.find((e) => e.agentId === w.ids['s-judge'])
+  const sj = spawns.find((e) => e.agentId === w.ids['s-qc'])
   assert.ok(sb && sj)
   assert.equal(sb.type, 'general-purpose')
-  assert.equal(sj.type, 'foundry:judge')
+  assert.equal(sj.type, 'truss:qc-engineer')
   assert.equal(sb.model, 'claude-sonnet-5-5')
   assert.equal(sb.effort, 'medium')
   assert.equal(sj.model, 'claude-opus-5-5')
-  const reports = readEvents(w.env.dir).filter((e) => e.event === 'report' && e.crew === 's' && ['s-builder', 's-judge'].includes(e.agent))
+  const reports = readEvents(w.env.dir).filter((e) => e.event === 'report' && e.crew === 's' && ['s-builder', 's-qc'].includes(e.agent))
   assert.equal(reports.length, 2)
   assert.ok(reports.some((e) => e.marker === 'VERDICT: PASS'))
   for (const e of readEvents(w.env.dir)) assert.deepEqual(validateEvent(e), [], JSON.stringify(e))
@@ -185,9 +185,9 @@ const AUDITS = [
   ['effort max', { builder: { effort: 'max' } }],
   ['effort high', { builder: { effort: 'high' } }],
   ['effort xhigh', { builder: { effort: 'xhigh' } }],
-  ['judge run as general-purpose', { agents: (s, [b, jd]) => [b, { ...jd, agentType: 'general-purpose' }] }],
-  ['judge with a Write tool use', { agents: (s, [b, jd]) => [b, { ...jd, tools: [{ name: 'Write', file_path: 'x.md' }] }] }],
-  ['judge with an Edit tool use', { agents: (s, [b, jd]) => [b, { ...jd, tools: [{ name: 'Edit', file_path: 'x.md' }] }] }],
+  ['qc run as general-purpose', { agents: (s, [b, jd]) => [b, { ...jd, agentType: 'general-purpose' }] }],
+  ['qc with a Write tool use', { agents: (s, [b, jd]) => [b, { ...jd, tools: [{ name: 'Write', file_path: 'x.md' }] }] }],
+  ['qc with an Edit tool use', { agents: (s, [b, jd]) => [b, { ...jd, tools: [{ name: 'Edit', file_path: 'x.md' }] }] }],
 ]
 for (const [name, opts] of AUDITS) {
   test(`audit: ${name} gives an audit entry naming the agent and the crew is not merged`, () => {
@@ -195,33 +195,33 @@ for (const [name, opts] of AUDITS) {
     const j = assertOneLine(w.finish())
     assert.ok(j.audit.length >= 1, JSON.stringify(j))
     assert.ok(j.audit.every((a) => typeof a.label === 'string' && typeof a.why === 'string' && a.why.length > 0))
-    const label = opts.builder ? 's-builder' : 's-judge'
+    const label = opts.builder ? 's-builder' : 's-qc'
     assert.ok(j.audit.some((a) => String(a.label).includes(label)), `${label} in ${JSON.stringify(j.audit)}`)
     assertHeld(w, j)
   })
 }
 
-test('audit: a redteam label run as a type other than foundry:judge is audited', () => {
-  const w = scenario([{ slug: 's' }], { extraAgents: [{ label: 's-redteam', agentType: 'general-purpose', metaModel: 'opus', effort: 'medium' }] })
+test('audit: a stress label run as a type other than truss:qc-engineer is audited', () => {
+  const w = scenario([{ slug: 's' }], { extraAgents: [{ label: 's-stress', agentType: 'general-purpose', metaModel: 'opus', effort: 'medium' }] })
   const j = assertOneLine(w.finish())
-  assert.ok(j.audit.some((a) => String(a.label).includes('s-redteam')), JSON.stringify(j.audit))
+  assert.ok(j.audit.some((a) => String(a.label).includes('s-stress')), JSON.stringify(j.audit))
   assertHeld(w, j)
 })
 
 test('record step: an existing report with different text is audited and not overwritten; the same text is not', () => {
-  const w = scenario([{ slug: 's' }], { judge: false })
+  const w = scenario([{ slug: 's' }], { qc: false })
   writeReport(w.env.dir, 's', 's-builder', 'DIFFERENT\n', Date.parse('2026-10-29T09:00:00Z'))
   const j = assertOneLine(w.finish())
   assert.equal(readFileSync(`${w.env.dir}/reports/s/s-builder.md`, 'utf8'), 'DIFFERENT\n')
   assert.ok(j.audit.some((a) => String(a.label).includes('s-builder')), JSON.stringify(j.audit))
-  const w2 = scenario([{ slug: 's' }], { judge: false })
+  const w2 = scenario([{ slug: 's' }], { qc: false })
   writeReport(w2.env.dir, 's', 's-builder', 'built it', Date.parse('2026-10-29T09:00:00Z'))
   const j2 = assertOneLine(w2.finish())
   assert.ok(!j2.audit.some((a) => String(a.label).includes('s-builder')), JSON.stringify(j2.audit))
 })
 
 test('finish is idempotent: twice gives the same output, files and event lines', () => {
-  const w = scenario([{ slug: 's' }], { judgeText: (c) => judgeReport({ verdict: 'FAIL', head: c.head, patch: c.patch }) })
+  const w = scenario([{ slug: 's' }], { qcText: (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch }) })
   const r1 = w.finish()
   const snap = () => ({
     files: dirListing(`${w.env.dir}/reports`).map((f) => [f, statSync(`${w.env.dir}/reports/${f}`).isFile() ? readFileSync(`${w.env.dir}/reports/${f}`, 'utf8') : '']),
@@ -274,7 +274,7 @@ test('no --result on an old run: records and audits, merges nothing, writes one 
   assert.deepEqual(j.merged, [])
   assertHeld(w, j, 's')
   assert.equal(statusOf(w, 'u'), 'running')
-  assert.ok(existsSync(`${w.env.dir}/reports/s/s-judge.md`) && existsSync(`${w.env.dir}/reports/u/u-builder.md`), 'record step ran')
+  assert.ok(existsSync(`${w.env.dir}/reports/s/s-qc.md`) && existsSync(`${w.env.dir}/reports/u/u-builder.md`), 'record step ran')
   const inc = readEvents(w.env.dir).filter((e) => e.event === 'incomplete')
   assert.equal(inc.length, 2)
   for (const e of inc) {
@@ -292,11 +292,11 @@ test('no --result on an old run: records and audits, merges nothing, writes one 
 // ---------------------------------------------------------------------------------------------------------------
 // session audit
 
-const stray = (over = {}) => ({ label: 'weird', agentType: 'foundry:judge', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', startTs: '2026-10-29T09:00:00.000Z', ...over })
+const stray = (over = {}) => ({ label: 'weird', agentType: 'truss:qc-engineer', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', startTs: '2026-10-29T09:00:00.000Z', ...over })
 const withRun = (w, runId, agents) => mkRun(w.env.transcripts, runId, agents)
 
-test('session audit: a foundry:* agent in a run that is not foundry\'s audits it, refuses every crew of the wave, merges nothing', () => {
-  const w = scenario([{ slug: 's' }, { slug: 'u' }, { slug: 'late', wave: 2, status: 'planned' }])
+test('session audit: a truss:* agent in a run that is not truss\'s audits it, refuses every crew of the stage, merges nothing', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'u' }, { slug: 'late', stage: 2, status: 'planned' }])
   withRun(w, 'wf_other', [stray()])
   const j = assertOneLine(w.finish())
   assert.ok(j.audit.some((a) => a.label === 'wf_other/weird'), JSON.stringify(j.audit))
@@ -304,29 +304,29 @@ test('session audit: a foundry:* agent in a run that is not foundry\'s audits it
     assert.equal(entry(j, 'refused', s)?.why, 'session audit', JSON.stringify(j))
     assertHeld(w, j, s)
   }
-  assert.ok(!listed(j, 'refused', 'late'), 'a later wave is not part of the wave')
+  assert.ok(!listed(j, 'refused', 'late'), 'a later stage is not part of the stage')
   assert.match(readFileSync(`${w.env.dir}/decisions.md`, 'utf8'), /wf_other\/weird/)
 })
 
-test('session audit: an agent without meta model in a foundry run (plan.js labels) is audited', () => {
+test('session audit: an agent without meta model in a truss run (plan.js labels) is audited', () => {
   const w = scenario([{ slug: 's' }])
-  withRun(w, 'wf_plan', [stray({ label: 'foundry-architect', agentType: 'foundry:architect', metaModel: undefined }), stray({ label: 'foundry-cynic-2', agentType: 'foundry:cynic' })])
+  withRun(w, 'wf_plan', [stray({ label: 'truss-designer', agentType: 'truss:design-engineer', metaModel: undefined }), stray({ label: 'truss-checker-2', agentType: 'truss:checking-engineer' })])
   const j = assertOneLine(w.finish())
-  assert.ok(j.audit.some((a) => a.label === 'wf_plan/foundry-architect'), JSON.stringify(j.audit))
-  assert.ok(!j.audit.some((a) => a.label === 'wf_plan/foundry-cynic-2'))
+  assert.ok(j.audit.some((a) => a.label === 'wf_plan/truss-designer'), JSON.stringify(j.audit))
+  assert.ok(!j.audit.some((a) => a.label === 'wf_plan/truss-checker-2'))
   assert.equal(entry(j, 'refused', 's')?.why, 'session audit')
   assertHeld(w, j)
 })
 
 test('session audit: a clean plan.js run does not block the merge', () => {
   const w = scenario([{ slug: 's' }])
-  withRun(w, 'wf_plan', [stray({ label: 'foundry-architect', agentType: 'foundry:architect' }), stray({ label: 'foundry-cynic-2', agentType: 'foundry:cynic' })])
+  withRun(w, 'wf_plan', [stray({ label: 'truss-designer', agentType: 'truss:design-engineer' }), stray({ label: 'truss-checker-2', agentType: 'truss:checking-engineer' })])
   const j = assertOneLine(w.finish())
   assertMerged(w, j)
   assert.deepEqual(j.audit, [])
 })
 
-test('session audit: an unrelated run with no foundry agent and no foundry labels is ignored', () => {
+test('session audit: an unrelated run with no truss agent and no truss labels is ignored', () => {
   const w = scenario([{ slug: 's' }])
   withRun(w, 'wf_owner', [{ label: 'review-docs', agentType: 'general-purpose', startTs: '2026-10-29T09:00:00.000Z' }])
   const j = assertOneLine(w.finish())
@@ -354,14 +354,14 @@ test('session audit: only runs at or after the newest "## Run" header count', ()
 test('session audit: "audit waived: <run id>" in decisions.md lifts it', () => {
   const w = scenario([{ slug: 's' }])
   withRun(w, 'wf_other', [stray()])
-  writeFileSync(`${w.env.dir}/decisions.md`, '- 11:00 | audit waived: wf_other | owner ruled | none | followed\n')
+  writeFileSync(`${w.env.dir}/decisions.md`, '- 11:00 | audit waived: wf_other | client ruled | none | followed\n')
   assertMerged(w, assertOneLine(w.finish()))
 })
 
 // ---------------------------------------------------------------------------------------------------------------
 // merge step gates
 
-test('gate: no factory spawn line (lead path) leaves the crew untouched', () => {
+test('gate: no factory spawn line (foreman path) leaves the crew untouched', () => {
   const w = scenario([{ slug: 's', spawn: false }])
   assertHeld(w, assertOneLine(w.finish()))
 })
@@ -373,11 +373,11 @@ test('gate: a commit outside owns is refused', () => {
   assertHeld(w, j)
 })
 
-test('gate: judgeFails above repairBudget is refused even with a later PASS; at the budget it merges', () => {
-  const fail = (c) => judgeReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
+test('gate: qcFails above reworkAllowance is refused even with a later PASS; at the allowance it merges', () => {
+  const fail = (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
   const mk = (n) => {
-    const w = scenario([{ slug: 's' }], { judgeLabel: `s-judge-${n + 1}` })
-    for (let i = 1; i <= n; i++) writeReport(w.env.dir, 's', i === 1 ? 's-judge' : `s-judge-${i}`, fail(w.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+    const w = scenario([{ slug: 's' }], { qcLabel: `s-qc-${n + 1}` })
+    for (let i = 1; i <= n; i++) writeReport(w.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(w.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
     return w
   }
   const over = mk(3)
@@ -409,75 +409,75 @@ test('gate: the lowest-numbered checks file decides (numerically), later ones do
   assertMerged(b, assertOneLine(b.finish()))
 })
 
-const judgeCases = [
-  ['FAIL', (c) => judgeReport({ verdict: 'FAIL', head: c.head, patch: c.patch })],
-  ['an UNSCOPED line', (c) => judgeReport({ head: c.head, patch: c.patch, unscoped: 1 })],
-  ['no verdict', (c) => judgeReport({ verdict: null, head: c.head, patch: c.patch })],
+const qcCases = [
+  ['FAIL', (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })],
+  ['an UNSCOPED line', (c) => qcReport({ head: c.head, patch: c.patch, unscoped: 1 })],
+  ['no verdict', (c) => qcReport({ verdict: null, head: c.head, patch: c.patch })],
 ]
-for (const [name, judgeText] of judgeCases) {
-  test(`gate: a newest judge with ${name} is not merged`, () => {
-    const w = scenario([{ slug: 's' }], { judgeText })
+for (const [name, qcText] of qcCases) {
+  test(`gate: a newest qc with ${name} is not merged`, () => {
+    const w = scenario([{ slug: 's' }], { qcText })
     assertHeld(w, assertOneLine(w.finish()))
   })
 }
 
-test('gate: no judge since approvedAt is not merged; an older PASS does not count', () => {
-  const w = scenario([{ slug: 's' }], { judge: false })
-  writeReport(w.env.dir, 's', 's-judge', judgeReport({ head: w.c.s.head, patch: w.c.s.patch }), Date.parse('2026-09-30T00:00:00Z'))
+test('gate: no qc since approvedAt is not merged; an older PASS does not count', () => {
+  const w = scenario([{ slug: 's' }], { qc: false })
+  writeReport(w.env.dir, 's', 's-qc', qcReport({ head: w.c.s.head, patch: w.c.s.patch }), Date.parse('2026-09-30T00:00:00Z'))
   assertHeld(w, assertOneLine(w.finish()))
 })
 
-test('gate: the NEWEST judge rules: PASS then a later FAIL is held, FAIL then a later PASS merges', () => {
-  const a = scenario([{ slug: 's' }], { judgeLabel: 's-judge-2', judgeText: (c) => judgeReport({ verdict: 'FAIL', head: c.head, patch: c.patch }) })
-  writeReport(a.env.dir, 's', 's-judge', judgeReport({ head: a.c.s.head, patch: a.c.s.patch }), Date.parse('2026-10-29T09:00:00Z'))
+test('gate: the NEWEST qc rules: PASS then a later FAIL is held, FAIL then a later PASS merges', () => {
+  const a = scenario([{ slug: 's' }], { qcLabel: 's-qc-2', qcText: (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch }) })
+  writeReport(a.env.dir, 's', 's-qc', qcReport({ head: a.c.s.head, patch: a.c.s.patch }), Date.parse('2026-10-29T09:00:00Z'))
   assertHeld(a, assertOneLine(a.finish()))
-  const b = scenario([{ slug: 's' }], { judgeLabel: 's-judge-2' })
-  writeReport(b.env.dir, 's', 's-judge', judgeReport({ verdict: 'FAIL', head: b.c.s.head, patch: b.c.s.patch }), Date.parse('2026-10-29T09:00:00Z'))
+  const b = scenario([{ slug: 's' }], { qcLabel: 's-qc-2' })
+  writeReport(b.env.dir, 's', 's-qc', qcReport({ verdict: 'FAIL', head: b.c.s.head, patch: b.c.s.patch }), Date.parse('2026-10-29T09:00:00Z'))
   assertMerged(b, assertOneLine(b.finish()))
 })
 
 // ---------------------------------------------------------------------------------------------------------------
 // mergeHeadVerdict, fail closed
 
-test('head: the patch must be defined even when HEAD equals the judge Head; an empty diff is "patch id unavailable"', () => {
-  const w = scenario([{ slug: 's', files: [] }], { judgeText: (c) => judgeReport({ head: c.head, patch: BBB }) })
+test('head: the patch must be defined even when HEAD equals the qc Head; an empty diff is "patch id unavailable"', () => {
+  const w = scenario([{ slug: 's', files: [] }], { qcText: (c) => qcReport({ head: c.head, patch: BBB }) })
   const j = assertOneLine(w.finish())
   assert.equal(entry(j, 'refused', 's')?.why, 'patch id unavailable', JSON.stringify(j))
   assertHeld(w, j)
 })
 
-test('head: a judge file missing Head or missing Patch is "patch id unavailable"', () => {
-  for (const [name, text] of [['Head', (c) => judgeReport({ patch: c.patch })], ['Patch', (c) => judgeReport({ head: c.head })]]) {
-    const w = scenario([{ slug: 's' }], { judgeText: text })
+test('head: a qc file missing Head or missing Patch is "patch id unavailable"', () => {
+  for (const [name, text] of [['Head', (c) => qcReport({ patch: c.patch })], ['Patch', (c) => qcReport({ head: c.head })]]) {
+    const w = scenario([{ slug: 's' }], { qcText: text })
     const j = assertOneLine(w.finish())
     assert.equal(entry(j, 'refused', 's')?.why, 'patch id unavailable', `${name}: ${JSON.stringify(j)}`)
     assertHeld(w, j)
   }
 })
 
-test('head: a version 1 plan with an undefined patch is refused although HEAD equals the judge Head', () => {
-  const w = scenario([{ slug: 's', files: [] }], { plan: { version: 1 }, judgeText: (c) => judgeReport({ head: c.head, patch: BBB }) })
+test('head: a version 1 plan with an undefined patch is refused although HEAD equals the qc Head', () => {
+  const w = scenario([{ slug: 's', files: [] }], { plan: { version: 1 }, qcText: (c) => qcReport({ head: c.head, patch: BBB }) })
   const j = assertOneLine(w.finish())
   assert.equal(entry(j, 'refused', 's')?.why, 'patch id unavailable', JSON.stringify(j))
   assertHeld(w, j)
 })
 
-test('head: HEAD differs but the patch equals the judge Patch and the green check passes: merged', () => {
-  const w = scenario([{ slug: 's', amend: true }], { judgeText: (c) => judgeReport({ head: c.oldHead, patch: c.patch }) })
+test('head: HEAD differs but the patch equals the qc Patch and the green check passes: merged', () => {
+  const w = scenario([{ slug: 's', amend: true }], { qcText: (c) => qcReport({ head: c.oldHead, patch: c.patch }) })
   assert.notEqual(w.c.s.head, w.c.s.oldHead)
   assertMerged(w, assertOneLine(w.finish()))
   assert.equal(mainNow(w), w.c.s.head)
 })
 
 test('head: HEAD differs, the patch equals, but the green check fails: not merged', () => {
-  const w = scenario([{ slug: 's', amend: true, doneCheck: 'false' }], { judgeText: (c) => judgeReport({ head: c.oldHead, patch: c.patch }) })
+  const w = scenario([{ slug: 's', amend: true, acceptanceTest: 'false' }], { qcText: (c) => qcReport({ head: c.oldHead, patch: c.patch }) })
   assertHeld(w, assertOneLine(w.finish()))
 })
 
-test('head: HEAD and patch both differ from the judge: rework "rejudge"', () => {
-  const w = scenario([{ slug: 's', amend: true }], { judgeText: (c) => judgeReport({ head: c.oldHead, patch: AAA }) })
+test('head: HEAD and patch both differ from the qc: rework "reqc"', () => {
+  const w = scenario([{ slug: 's', amend: true }], { qcText: (c) => qcReport({ head: c.oldHead, patch: AAA }) })
   const j = assertOneLine(w.finish())
-  assert.equal(entry(j, 'rework', 's')?.why, 'rejudge', JSON.stringify(j))
+  assert.equal(entry(j, 'rework', 's')?.why, 'reqc', JSON.stringify(j))
   assertHeld(w, j)
 })
 
@@ -487,22 +487,22 @@ test('mergeHeadVerdict (unit): refuses every undefined input where headVerdict p
   const mhv = mod.mergeHeadVerdict
   const H = 'c'.repeat(40)
   const P = 'd'.repeat(40)
-  const v2 = { version: 2, crews: [], repairBudget: 2, approvedAt: APPROVED }
+  const v2 = { version: 2, crews: [], reworkAllowance: 2, approvedAt: APPROVED }
   const v1 = { ...v2, version: 1 }
-  const judge = reg.judgeRuling(judgeReport({ head: H, patch: P }))
-  const noPatch = reg.judgeRuling(judgeReport({ head: H }))
-  const noHead = reg.judgeRuling(judgeReport({ patch: P }))
-  assert.equal(reg.headVerdict(v2, judge, H, undefined), undefined, 'headVerdict is fail-open on an undefined patch')
-  assert.equal(reg.headVerdict(v2, judge, undefined, P), undefined, 'and on an undefined head')
-  assert.equal(reg.headVerdict(v1, judge, H, undefined), undefined, 'and passes a version 1 plan')
-  const refused = [[v2, judge, H, undefined], [v2, judge, undefined, P], [v2, noPatch, H, P], [v2, noHead, H, P], [v1, judge, H, undefined], [v1, judge, H, P], [v1, judge, undefined, undefined]]
+  const qc = reg.qcRuling(qcReport({ head: H, patch: P }))
+  const noPatch = reg.qcRuling(qcReport({ head: H }))
+  const noHead = reg.qcRuling(qcReport({ patch: P }))
+  assert.equal(reg.headVerdict(v2, qc, H, undefined), undefined, 'headVerdict is fail-open on an undefined patch')
+  assert.equal(reg.headVerdict(v2, qc, undefined, P), undefined, 'and on an undefined head')
+  assert.equal(reg.headVerdict(v1, qc, H, undefined), undefined, 'and passes a version 1 plan')
+  const refused = [[v2, qc, H, undefined], [v2, qc, undefined, P], [v2, noPatch, H, P], [v2, noHead, H, P], [v1, qc, H, undefined], [v1, qc, H, P], [v1, qc, undefined, undefined]]
   for (const [plan, jd, hd, pt] of refused.slice(0, 5).concat(refused.slice(6))) {
     assert.ok(mhv(plan, jd, hd, pt)?.block, `refused: ${JSON.stringify([plan.version, jd, hd, pt])}`)
   }
-  assert.equal(mhv(v2, judge, H, P), undefined)
-  assert.equal(mhv(v2, judge, H, 'e'.repeat(40)), undefined, 'HEAD equal passes')
-  assert.equal(mhv(v2, judge, 'f'.repeat(40), P), undefined, 'patch equal passes')
-  assert.ok(mhv(v2, judge, 'f'.repeat(40), 'e'.repeat(40))?.block, 'both differ')
+  assert.equal(mhv(v2, qc, H, P), undefined)
+  assert.equal(mhv(v2, qc, H, 'e'.repeat(40)), undefined, 'HEAD equal passes')
+  assert.equal(mhv(v2, qc, 'f'.repeat(40), P), undefined, 'patch equal passes')
+  assert.ok(mhv(v2, qc, 'f'.repeat(40), 'e'.repeat(40))?.block, 'both differ')
 })
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -511,12 +511,12 @@ test('mergeHeadVerdict (unit): refuses every undefined input where headVerdict p
 test('stale base: a result whose base is an old SHA still merges; finish recomputes the merge-base after merging the target', () => {
   const stale = '1'.repeat(40)
   const w = scenario([{ slug: 's' }])
-  writeFileSync(w.resFile, JSON.stringify([{ slug: 's', state: 'passed', head: w.c.s.head, base: stale, judge: 's-judge' }]))
+  writeFileSync(w.resFile, JSON.stringify([{ slug: 's', state: 'passed', head: w.c.s.head, base: stale, qc: 's-qc' }]))
   assertMerged(w, assertOneLine(w.finish()))
   const moved = scenario([{ slug: 's' }])
   putFile(moved.env.repo, 'other.txt', 'o\n', 'target moves')
   moved.mainBefore = mainNow(moved)
-  writeFileSync(moved.resFile, JSON.stringify([{ slug: 's', state: 'passed', head: moved.c.s.head, base: stale, judge: 's-judge' }]))
+  writeFileSync(moved.resFile, JSON.stringify([{ slug: 's', state: 'passed', head: moved.c.s.head, base: stale, qc: 's-qc' }]))
   assertMerged(moved, assertOneLine(moved.finish()))
   assert.ok(existsSync(`${moved.env.repo}/other.txt`) && existsSync(`${moved.env.repo}/src/s/a.ts`), 'main holds both')
   assert.equal(gitStatus(moved.env.repo, ['merge-base', '--is-ancestor', moved.c.s.head, 'main']), 0)
@@ -577,23 +577,23 @@ test('step 4: an untracked file the fast-forward would overwrite is rework "targ
 // step 5 and never-touched
 
 test('step 5: merged status, a decision line, the crew worktree and merged member worktrees removed; an unmerged member kept', () => {
-  const w = scenario([{ slug: 's' }], { judge: false })
+  const w = scenario([{ slug: 's' }], { qc: false })
   const { repo } = w.env
   const wt = w.c.s.wt
   const member = (name, merge) => {
-    const mwt = `${repo}/.claude/worktrees/foundry-s-${name}`
-    git(repo, ['worktree', 'add', '-q', '-b', `foundry-s-${name}`, mwt, 'foundry-s'])
+    const mwt = `${repo}/.claude/worktrees/truss-s-${name}`
+    git(repo, ['worktree', 'add', '-q', '-b', `truss-s-${name}`, mwt, 'truss-s'])
     git(mwt, ['config', 'user.name', 'T'])
     git(mwt, ['config', 'user.email', 't@e.invalid'])
     putFile(mwt, `src/s/${name}.ts`, `${name}\n`, `member ${name}`)
-    if (merge) git(wt, ['merge', '--no-ff', '-q', '-m', `merge ${name}`, `foundry-s-${name}`])
+    if (merge) git(wt, ['merge', '--no-ff', '-q', '-m', `merge ${name}`, `truss-s-${name}`])
     return mwt
   }
   const done = member('m1', true)
   const open = member('m2', false)
   const hd = head(wt)
   const base = git(wt, ['merge-base', 'main', 'HEAD'])
-  writeReport(w.env.dir, 's', 's-judge', judgeReport({ head: hd, patch: patchId(wt, base, hd) }), Date.now())
+  writeReport(w.env.dir, 's', 's-qc', qcReport({ head: hd, patch: patchId(wt, base, hd) }), Date.now())
   const decBefore = readFileSync(`${w.env.dir}/decisions.md`, 'utf8')
   const j = assertOneLine(w.finish())
   assertMerged(w, j)
@@ -604,8 +604,8 @@ test('step 5: merged status, a decision line, the crew worktree and merged membe
   assert.ok(existsSync(open), 'unmerged member worktree kept')
 })
 
-test('never touched: lead-path crews, later waves, merged and dropped crews; no remote is contacted', () => {
-  const w = scenario([{ slug: 's' }, { slug: 'l', spawn: false }, { slug: 'm', status: 'merged' }, { slug: 'd', status: 'dropped' }, { slug: 'w2', wave: 2, status: 'planned' }], { skip: ['l'] })
+test('never touched: foreman-path crews, later stages, merged and dropped crews; no remote is contacted', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'l', spawn: false }, { slug: 'm', status: 'merged' }, { slug: 'd', status: 'dropped' }, { slug: 'w2', stage: 2, status: 'planned' }], { skip: ['l'] })
   git(w.env.repo, ['remote', 'add', 'origin', 'C:/nonexistent/nowhere/repo.git'])
   const lwt = w.c.l.wt
   const lhead = head(lwt)
@@ -622,7 +622,7 @@ test('never touched: lead-path crews, later waves, merged and dropped crews; no 
 
 test('stopped result: not merged, the crew stays running', () => {
   const w = scenario([{ slug: 's' }])
-  writeFileSync(w.resFile, JSON.stringify([{ slug: 's', state: 'stopped', tag: 'BLOCKED', text: 'needs the owner', at: 'step 4' }]))
+  writeFileSync(w.resFile, JSON.stringify([{ slug: 's', state: 'stopped', tag: 'BLOCKED', text: 'needs the client', at: 'step 4' }]))
   const j = assertOneLine(w.finish())
   assertHeld(w, j)
   assert.ok(existsSync(w.c.s.wt))

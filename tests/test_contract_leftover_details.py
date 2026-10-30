@@ -1,10 +1,10 @@
-"""Contract test for the `leftoverDetails` key of foundry's retro script (ADR-0006 section 1).
+"""Contract test for the `leftoverDetails` key of truss's retro script (ADR-0006 section 1).
 
 Written from the ADR before the producer exists; until retro.py emits the key every test fails on
 "producer missing". Real git in temp repos, never mocks. Events come from fixtures/leftovers (synthetic,
 shared with test_contract_leftovers.py, read only). Every case also checks that a run leaves the repo
 unchanged: `git for-each-ref`, `git worktree list --porcelain` and `git count-objects -v`.
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -59,7 +59,7 @@ class LeftoverDetails(unittest.TestCase):
         os.mkdir(self.repo)
         git(self.repo, "init", "-q")
         self.commit("f.txt", "x\n", "one")
-        self.session = os.path.join(self.repo, ".git", "foundry", SESSION)
+        self.session = os.path.join(self.repo, ".git", "truss", SESSION)
 
     # ---------- helpers ----------
 
@@ -247,7 +247,7 @@ class LeftoverDetails(unittest.TestCase):
         self.assertEqual(out["leftoverDetails"], [])
 
     def test_not_recorded_whenever_leftovers_is(self):
-        for sub in ("elsewhere/foundry/" + SESSION, "repo/foundry/" + SESSION, "repo/.git/other/" + SESSION):
+        for sub in ("elsewhere/truss/" + SESSION, "repo/truss/" + SESSION, "repo/.git/other/" + SESSION):
             with self.subTest(sub):
                 d = self.put_events("spawn-one", os.path.join(self.tmp, *sub.split("/")))
                 out = self.details(d, full=True)

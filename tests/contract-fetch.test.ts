@@ -5,11 +5,11 @@ import { expect } from 'claude-code/testing'
 import * as mod from '../hooks/register'
 import { ROOT, startSession, handBack, test, world } from './harness'
 
-// Contract test for foundry 0.8.0, ADR-0005 section 11 "Fetch gate" (architecture.md): the pure fetchVerdict and the
+// Contract test for truss 0.8.0, ADR-0005 section 11 "Fetch gate" (architecture.md): the pure fetchVerdict and the
 // WebFetch/WebSearch handler that logs a `fetch` line. Written before the producer exists. fetchVerdict is read off
 // the module namespace and asserted to be a function first, so on 0.7.1 each test fails on its own assertion and
 // the file still loads. Synthetic data only (P8).
-// Two groups are REGRESSION GUARDS that pass on 0.7.1 and must keep passing: leadStopPasses with and without a
+// Two groups are REGRESSION GUARDS that pass on 0.7.1 and must keep passing: foremanStopPasses with and without a
 // `## Learned` section, and the plan route writing nothing for an UNCOVERED-only hand-back.
 
 type W = ReturnType<typeof world>
@@ -134,7 +134,7 @@ test('ADR-0005 a WebSearch by a crew member writes a query line cut to 200 chara
   expect(got[0]).not.toHaveProperty('url')
 })
 
-test('ADR-0005 a fetch by a foundry agent outside every crew is logged under crew main and its own name', async ($, on) => {
+test('ADR-0005 a fetch by a truss agent outside every crew is logged under crew main and its own name', async ($, on) => {
   const w = world($, on)
   await startSession($)
   withPlan(w)
@@ -142,7 +142,7 @@ test('ADR-0005 a fetch by a foundry agent outside every crew is logged under cre
   await settle()
   expect(r.deny).toBeUndefined()
   expect(fetches(w)).toHaveLength(1)
-  expect(fetches(w)[0]).toMatchObject({ crew: 'main', agent: 'cynic-1', tool: 'WebFetch', url: 'https://example.com/docs' })
+  expect(fetches(w)[0]).toMatchObject({ crew: 'main', agent: 'checker-1', tool: 'WebFetch', url: 'https://example.com/docs' })
 })
 
 test('ADR-0005 a fetch by the main session is logged with crew main and agent main', async ($, on) => {
@@ -157,7 +157,7 @@ test('ADR-0005 a fetch by the main session is logged with crew main and agent ma
   expect(fetches(w)[0]).toMatchObject({ crew: 'main', agent: 'main', tool: 'WebSearch', query: 'example topic' })
 })
 
-test('ADR-0005 no fetch line is written when the foundry dir holds no plan.json, and the call still goes through', async ($, on) => {
+test('ADR-0005 no fetch line is written when the truss dir holds no plan.json, and the call still goes through', async ($, on) => {
   const w = world($, on)
   await startSession($)
   const r = await web($, 'A1')
@@ -196,25 +196,25 @@ test('ADR-0005 a throwing fs.write never blocks the call, and the failure is log
 
 const REPORT = ['## Summary', 'x', '## Branch', 'b', '## Changes', 'c', '## Proof', 'p', '## Checks run', 'k', '## Open questions', 'none'].join('\n')
 
-test('ADR-0005 regression guard (passes on 0.7.1): leadStopPasses passes a report with ## Proof and no ## Learned', () => {
-  expect(mod.leadStopPasses(REPORT)).toBe(true)
+test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses passes a report with ## Proof and no ## Learned', () => {
+  expect(mod.foremanStopPasses(REPORT)).toBe(true)
 })
 
-test('ADR-0005 regression guard (passes on 0.7.1): leadStopPasses passes a report with ## Proof and a ## Learned section', () => {
+test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses passes a report with ## Proof and a ## Learned section', () => {
   const learned = `${REPORT}\n## Learned\n- Convention: example item\n`
-  expect(mod.leadStopPasses(learned)).toBe(true)
+  expect(mod.foremanStopPasses(learned)).toBe(true)
 })
 
-test('ADR-0005 regression guard (passes on 0.7.1): leadStopPasses still refuses text with no Proof and no marker', () => {
-  expect(mod.leadStopPasses('## Summary\nx\n## Learned\n- y')).toBe(false)
+test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses still refuses text with no Proof and no marker', () => {
+  expect(mod.foremanStopPasses('## Summary\nx\n## Learned\n- y')).toBe(false)
 })
 
-const DIR = 'C:/r/.git/foundry/S1'
+const DIR = 'C:/r/.git/truss/S1'
 test('ADR-0005 regression guard (passes on 0.7.1): a plan-mode hand-back of only UNCOVERED lines writes no plan.json or plan.md', async ($, on) => {
   const w = world($, ((name: string, handler: unknown) => (name === 'session.id' ? undefined : (on as (n: string, h: unknown) => unknown)(name, handler))) as unknown as On)
   on('session.id', async () => ({ value: 'S1' }))
   await startSession($)
-  await w.agentCall(undefined, { subagent_type: 'foundry:architect', prompt: 'Mode: plan\nGoal: example goal', name: 'planner', model: 'opus', effort: 'high' })
+  await w.agentCall(undefined, { subagent_type: 'truss:design-engineer', prompt: 'Mode: plan\nGoal: example goal', name: 'planner', model: 'opus', effort: 'high' })
   await handBack($, 'new1', 'UNCOVERED: payments | no module owns it\nUNCOVERED: search | the doc names no module')
   await settle()
   expect([...w.files.keys()].filter(k => k === `${DIR}/plan.json` || k === `${DIR}/plan.md`)).toEqual([])

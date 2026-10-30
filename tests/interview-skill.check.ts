@@ -1,10 +1,10 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry ADR-0008 Seam 6: contract test for skills/interview/branches.md and skills/interview/SKILL.md.
-// Written from the ADR before either file exists. Checks structure through the merged interview/ledger.ts
+// truss ADR-0008 Seam 6: contract test for skills/brief/branches.md and skills/brief/SKILL.md.
+// Written from the ADR before either file exists. Checks structure through the merged brief/ledger.ts
 // (parseBranches, remainingBranches, parseRequirements) and cli.ts COMMANDS; no whole-file wording greps.
 //
-// Run with: node --test plugins/foundry/tests/interview-skill.check.ts
+// Run with: node --test tests/interview-skill.check.ts
 // The files under test are read inside each test, so a missing file fails that test with a clear message.
 
 import assert from 'node:assert/strict'
@@ -14,10 +14,10 @@ import { describe, test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const BRANCHES_PATH = join(PLUGIN, 'skills', 'interview', 'branches.md')
-const SKILL_PATH = join(PLUGIN, 'skills', 'interview', 'SKILL.md')
-const LEDGER_URL = pathToFileURL(join(PLUGIN, 'interview', 'ledger.ts')).href
-const CLI_URL = pathToFileURL(join(PLUGIN, 'interview', 'cli.ts')).href
+const BRANCHES_PATH = join(PLUGIN, 'skills', 'brief', 'branches.md')
+const SKILL_PATH = join(PLUGIN, 'skills', 'brief', 'SKILL.md')
+const LEDGER_URL = pathToFileURL(join(PLUGIN, 'brief', 'ledger.ts')).href
+const CLI_URL = pathToFileURL(join(PLUGIN, 'brief', 'cli.ts')).href
 
 const read = (path: string, what: string): string => {
   try {
@@ -30,22 +30,22 @@ const ledger = async () => {
   try {
     return await import(LEDGER_URL)
   } catch (e) {
-    assert.fail(`producer missing: interview/ledger.ts (${e?.code ?? e?.message})`)
+    assert.fail(`producer missing: brief/ledger.ts (${e?.code ?? e?.message})`)
   }
 }
 const cliModule = async () => {
   try {
     return await import(CLI_URL)
   } catch (e) {
-    assert.fail(`producer missing: interview/cli.ts (${e?.code ?? e?.message})`)
+    assert.fail(`producer missing: brief/cli.ts (${e?.code ?? e?.message})`)
   }
 }
 const parsed = async () => {
   const l = await ledger()
-  const branches = l.parseBranches(read(BRANCHES_PATH, 'skills/interview/branches.md'))
+  const branches = l.parseBranches(read(BRANCHES_PATH, 'skills/brief/branches.md'))
   return { l, branches, byId: new Map(branches.map((b) => [b.id, b])) }
 }
-const skill = () => read(SKILL_PATH, 'skills/interview/SKILL.md')
+const skill = () => read(SKILL_PATH, 'skills/brief/SKILL.md')
 
 // every ``` fence: { info, body }
 const fences = (md: string): { info: string; body: string }[] => {
@@ -133,7 +133,7 @@ describe('branches.md', () => {
     const hosting = byId.get('hosting')
     assert.ok(hosting, 'hosting missing')
     for (const size of ['standard', 'large']) {
-      const s = state({ size, visits: { hosting: { by: 'owner', note: 'x' } }, opened: hosting.opens })
+      const s = state({ size, visits: { hosting: { by: 'client', note: 'x' } }, opened: hosting.opens })
       const rem = l.remainingBranches(branches, s).map((b) => b.id)
       assert.ok(!rem.includes('hosting'), `hosting still remaining at ${size}`)
       for (const id of ['environments', 'cost']) assert.ok(rem.includes(id), `${id} not a candidate after hosting opened it (${size})`)
@@ -141,7 +141,7 @@ describe('branches.md', () => {
       assert.ok(next.length >= 1 && next.length <= 3)
       assert.ok(!next.some((b) => b.id === 'hosting'))
     }
-    for (const by of ['owner', 'closed', 'default', 'fact']) {
+    for (const by of ['client', 'closed', 'default', 'fact']) {
       const rem = l.remainingBranches(branches, state({ visits: { hosting: { by, note: 'n' } } }))
       assert.ok(!rem.some((b) => b.id === 'hosting'), `visit by ${by} did not remove hosting`)
     }
@@ -164,10 +164,10 @@ describe('branches.md', () => {
 })
 
 describe('SKILL.md', () => {
-  test('frontmatter has name: interview and a non-empty description', () => {
+  test('frontmatter has name: brief and a non-empty description', () => {
     const fm = /^---\n([\s\S]*?)\n---/.exec(skill())
     assert.ok(fm, 'no frontmatter')
-    assert.match(fm[1], /^name:\s*interview\s*$/m)
+    assert.match(fm[1], /^name:\s*brief\s*$/m)
     assert.match(fm[1], /^description:\s*\S/m)
   })
 
@@ -185,7 +185,7 @@ describe('SKILL.md', () => {
   const invocations = () => {
     const out = []
     for (const line of skill().split('\n')) {
-      const re = /interview\/cli\.ts\s+([A-Za-z][\w-]*)([^`\n]*)/g
+      const re = /brief\/cli\.ts\s+([A-Za-z][\w-]*)([^`\n]*)/g
       let m
       while ((m = re.exec(line))) {
         const args = (m[2].match(/(?:<[^>]*>|[^\s<])+/g) ?? []).filter((t) => t !== '\\')
@@ -195,10 +195,10 @@ describe('SKILL.md', () => {
     return out
   }
 
-  test('every interview/cli.ts command named is in COMMANDS; next, remaining and check are named', async () => {
+  test('every brief/cli.ts command named is in COMMANDS; next, remaining and check are named', async () => {
     const { COMMANDS } = await cliModule()
     const inv = invocations()
-    assert.ok(inv.length > 0, 'SKILL.md names no interview/cli.ts command')
+    assert.ok(inv.length > 0, 'SKILL.md names no brief/cli.ts command')
     for (const { command } of inv) assert.ok(Object.hasOwn(COMMANDS, command), `unknown command: ${command}`)
     const names = new Set(inv.map((i) => i.command))
     for (const c of ['next', 'remaining', 'check']) assert.ok(names.has(c), `SKILL.md never names ${c}`)
@@ -210,24 +210,24 @@ describe('SKILL.md', () => {
     for (const { args } of nexts) if (args.length >= 3) assert.match(args[2], /^[123]$/, `next max is ${args[2]}`)
   })
 
-  test('every Agent({ fence sets model sonnet|opus and effort low|medium; one is interview-facts on sonnet/low', () => {
+  test('every Agent({ fence sets model sonnet|opus and effort low|medium; one is brief-facts on sonnet/low', () => {
     const agents = fences(skill()).filter((f) => f.body.trimStart().startsWith('Agent({'))
     assert.ok(agents.length >= 1, 'no Agent({ fence')
     for (const f of agents) {
       assert.match(f.body, /\bmodel:\s*"(sonnet|opus)"/, 'Agent fence model')
       assert.match(f.body, /\beffort:\s*"(low|medium)"/, 'Agent fence effort')
     }
-    const facts = agents.find((f) => /\bname:\s*"interview-facts"/.test(f.body))
-    assert.ok(facts, 'no interview-facts Agent fence')
+    const facts = agents.find((f) => /\bname:\s*"brief-facts"/.test(f.body))
+    assert.ok(facts, 'no brief-facts Agent fence')
     assert.match(facts.body, /\bmodel:\s*"sonnet"/)
     assert.match(facts.body, /\beffort:\s*"low"/)
   })
 
-  test('Fill with defaults: the Stop the interview section writes Source: default and runs remaining', () => {
+  test('Fill with defaults: the Stop the client brief section writes Source: default and runs remaining', () => {
     const sections = skill().split(/^## /m)
     assert.ok(
-      sections.some((s) => s.includes('Stop the interview') && s.includes('Source: default') && s.includes('remaining')),
-      'no section holds Stop the interview, Source: default and remaining together',
+      sections.some((s) => s.includes('Stop the client brief') && s.includes('Source: default') && s.includes('remaining')),
+      'no section holds Stop the client brief, Source: default and remaining together',
     )
   })
 })

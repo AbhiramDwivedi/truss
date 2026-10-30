@@ -1,6 +1,6 @@
-"""Extra edge cases for retro's 0.8.0 per-run keys (fetches, extendPasses, defaultDecisions, openOwnerActions).
+"""Extra edge cases for retro's 0.8.0 per-run keys (fetches, extendPasses, defaultDecisions, openClientActions).
 Complements test_contract_retro_080.py. Everything is built in a tempdir; names are invented.
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -13,8 +13,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.normpath(os.path.join(HERE, "..", "scripts", "retro.py"))
 NR = "not recorded"
-DECISIONS = ("# Decisions\n## Run 2026-10-27T09:00:00Z | first\n- 09:05 | a | b | cynic: none | followed\n"
-             "## Run 2026-10-28T09:00:00Z | second\n- 09:05 | a | b | cynic: none | followed\n")
+DECISIONS = ("# Decisions\n## Run 2026-10-27T09:00:00Z | first\n- 09:05 | a | b | checker: none | followed\n"
+             "## Run 2026-10-28T09:00:00Z | second\n- 09:05 | a | b | checker: none | followed\n")
 SPAWN = ('{"v":1,"ts":"2026-10-27T09:01:00.000Z","event":"spawn","crew":"c","agent":"c","agentId":"e0",'
          '"type":"x","model":"opus","effort":"high","by":"main"}\n')
 
@@ -62,7 +62,7 @@ class Retro080Edges(unittest.TestCase):
             put(os.path.join(repo, rel), data)
         for date, subject in commits:
             git(repo, date, "commit", "-q", "--allow-empty", "-m", subject)
-        sess = os.path.join(repo, ".git", "foundry", "s")
+        sess = os.path.join(repo, ".git", "truss", "s")
         put(os.path.join(sess, "decisions.md"), DECISIONS)
         put(os.path.join(sess, "events.jsonl"), events)
         return sess
@@ -87,7 +87,7 @@ class Retro080Edges(unittest.TestCase):
         for run in runs:
             self.assertEqual(run["extendPasses"], NR)
             self.assertEqual(run["defaultDecisions"], NR)
-            self.assertEqual(run["openOwnerActions"], NR)
+            self.assertEqual(run["openClientActions"], NR)
         self.assertEqual(runs[0]["fetches"]["total"], 1)
 
     def test_git_readable_without_matching_subject_is_zero(self):
@@ -95,22 +95,22 @@ class Retro080Edges(unittest.TestCase):
         self.assertEqual([r["extendPasses"] for r in self.runs(sess)], [0, 0])
 
     def test_adr_key_pointing_at_missing_dir_is_not_recorded(self):
-        sess = self.repo(SPAWN, {".claude/foundry.json": json.dumps({"adr": "docs/nope"})})
+        sess = self.repo(SPAWN, {".claude/truss.json": json.dumps({"adr": "docs/nope"})})
         self.assertEqual(self.runs(sess)[0]["defaultDecisions"], NR)
 
     def test_crlf_adr_counts_and_non_md_ignored(self):
-        sess = self.repo(SPAWN, {".claude/foundry.json": json.dumps({"adr": "adr"}),
+        sess = self.repo(SPAWN, {".claude/truss.json": json.dumps({"adr": "adr"}),
                                  "adr/0001-a.md": "# A\r\nDecided by: default\r\n",
-                                 "adr/0002-b.md": "# B\r\nDecided by: owner\r\n",
+                                 "adr/0002-b.md": "# B\r\nDecided by: client\r\n",
                                  "adr/notes.txt": "Decided by: default\n"})
         self.assertEqual(self.runs(sess)[0]["defaultDecisions"], 1)
 
     def test_checked_and_other_heading_boxes_not_counted(self):
-        doc = ("# Arch\n## Notes\n- [ ] not mine\n## Owner actions\n- [x] done\n- [ ] open one\n"
-               "- [ ] open two\n### Sub\n- [ ] under sub heading\n# Owner actions\r\n- [ ] top level\r\n")
-        sess = self.repo(SPAWN, {".claude/foundry.json": json.dumps({"architecture": "arch.md"}),
+        doc = ("# Arch\n## Notes\n- [ ] not mine\n## Client actions\n- [x] done\n- [ ] open one\n"
+               "- [ ] open two\n### Sub\n- [ ] under sub heading\n# Client actions\r\n- [ ] top level\r\n")
+        sess = self.repo(SPAWN, {".claude/truss.json": json.dumps({"architecture": "arch.md"}),
                                  "arch.md": doc})
-        self.assertEqual(self.runs(sess)[0]["openOwnerActions"], 3)
+        self.assertEqual(self.runs(sess)[0]["openClientActions"], 3)
 
 
 if __name__ == "__main__":

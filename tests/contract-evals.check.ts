@@ -1,10 +1,10 @@
 // @ts-nocheck
-// foundry ADR-0007 Seams 1-7: the scorer, the snippet runner and the golden set. Written before evals/*.ts exist,
+// truss ADR-0007 Seams 1-7: the scorer, the snippet runner and the golden set. Written before evals/*.ts exist,
 // from the ADR text only. Red by design until the evals-build crew builds evals/score.ts and evals/snippets.ts.
 //
-// Run with: node --test plugins/foundry/tests/contract-evals.check.ts
+// Run with: node --test tests/contract-evals.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs.
-// Needs no model, no network and no .git/foundry run dir. Paths come from this file's location, not cwd.
+// Needs no model, no network and no .git/truss run dir. Paths come from this file's location, not cwd.
 
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -16,7 +16,7 @@ import { extractSnippet, parseSnippets, runSnippet } from '../evals/snippets.ts'
 import { PATCH_COMMAND } from '../hooks/register.ts'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOT = join(PLUGIN, '..', '..')
+const ROOT = PLUGIN
 const ADR = readFileSync(join(PLUGIN, 'docs', 'adr', '0007-behaviour-evals.md'), 'utf8').replace(/\r/g, '')
 const SCHEMA = JSON.parse(readFileSync(join(PLUGIN, 'evals', 'case.schema.json'), 'utf8'))
 
@@ -55,10 +55,10 @@ test('score: VERDICT is read from the first non-empty line only', () => {
 // ---- Seam 2: RECOMMEND ----
 const forms: Array<[string, string, string]> = [
   ['answer', 'RECOMMEND: answer', 'plain'],
-  ['defer', 'cynic-4: RECOMMEND: defer (x2)', 'cynic-N: with count'],
-  ['pass', 'cynic-1 RECOMMEND pass: because the seam is shared', 'cynic-N no colon'],
-  ['answer', 'cynic-3 RECOMMEND: answer', 'cynic-N colon'],
-  ['pass', 'cynic-4: RECOMMEND: pass, option (a)', 'cynic-N: with option'],
+  ['defer', 'checker-4: RECOMMEND: defer (x2)', 'checker-N: with count'],
+  ['pass', 'checker-1 RECOMMEND pass: because the seam is shared', 'checker-N no colon'],
+  ['answer', 'checker-3 RECOMMEND: answer', 'checker-N colon'],
+  ['pass', 'checker-4: RECOMMEND: pass, option (a)', 'checker-N: with option'],
   ['defer', '  RECOMMEND: defer', 'leading spaces'],
   ['answer', 'RECOMMEND answer', 'no colon'],
 ]
@@ -101,25 +101,25 @@ test('parseSnippets: ADR-0007 yields at least the five listed lines, in order, w
   assert.ok(lines.length >= 5, `got ${lines.length}`)
   const first5 = lines.slice(0, 5)
   assert.deepEqual(first5.map((l) => [l.file, l.opening, l.form]), [
-    ['plugins/foundry/agents/judge.md', 'git diff --no-color', 'fenced'],
-    ['plugins/foundry/agents/lead.md', 'git diff --no-color', 'fenced'],
-    ['plugins/foundry/skills/run/SKILL.md', 'git diff --no-color', 'inline'],
-    ['plugins/foundry/agents/judge.md', 'git rev-parse --path-format=absolute --git-dir', 'inline'],
-    ['plugins/foundry/agents/judge.md', 'git rev-parse --path-format=absolute --git-common-dir', 'inline'],
+    ['agents/qc-engineer.md', 'git diff --no-color', 'fenced'],
+    ['agents/foreman.md', 'git diff --no-color', 'fenced'],
+    ['skills/run/SKILL.md', 'git diff --no-color', 'inline'],
+    ['agents/qc-engineer.md', 'git rev-parse --path-format=absolute --git-dir', 'inline'],
+    ['agents/qc-engineer.md', 'git rev-parse --path-format=absolute --git-common-dir', 'inline'],
   ])
   assert.deepEqual(first5[0].fills, { '<base>': 'HEAD~1', '<head>': 'HEAD' })
   assert.deepEqual(first5[3].fills, {})
 })
 
 test('parseSnippets: reads only the ## Snippets section and skips prose', () => {
-  const text = '# t\n- plugins/foundry/agents/x.md: `a` (fenced; placeholders: none)\n\n## Snippets\n\nprose line\n- plugins/foundry/agents/y.md: `b c` (inline; placeholders: <q>=1, <r-s>=two)\n## Next\n- plugins/foundry/agents/z.md: `d` (fenced; placeholders: none)\n'
+  const text = '# t\n- agents/x.md: `a` (fenced; placeholders: none)\n\n## Snippets\n\nprose line\n- agents/y.md: `b c` (inline; placeholders: <q>=1, <r-s>=two)\n## Next\n- agents/z.md: `d` (fenced; placeholders: none)\n'
   const lines = parseSnippets(text)
   assert.equal(lines.length, 1)
-  assert.deepEqual(lines[0], { file: 'plugins/foundry/agents/y.md', opening: 'b c', form: 'inline', fills: { '<q>': '1', '<r-s>': 'two' } })
+  assert.deepEqual(lines[0], { file: 'agents/y.md', opening: 'b c', form: 'inline', fills: { '<q>': '1', '<r-s>': 'two' } })
 })
 
 test('parseSnippets: a malformed - line throws an Error that quotes the line', () => {
-  const bad = ['- plugins/foundry/agents/x.md: `a` (fenced)', '- not a snippet line', '- plugins/foundry/agents/x.md: `a` (other; placeholders: none)', '- plugins/foundry/agents/x.md: `a` (fenced; placeholders: base=HEAD)', '- plugins/foundry/agents/x.md: `a` (fenced; placeholders: <B>=1)']
+  const bad = ['- agents/x.md: `a` (fenced)', '- not a snippet line', '- agents/x.md: `a` (other; placeholders: none)', '- agents/x.md: `a` (fenced; placeholders: base=HEAD)', '- agents/x.md: `a` (fenced; placeholders: <B>=1)']
   for (const line of bad) {
     assert.throws(() => parseSnippets(`## Snippets\n\n${line}\n`), (e: Error) => e instanceof Error && e.message.includes(line), line)
   }
@@ -149,7 +149,7 @@ SNIPPETS.forEach((line, i) => {
 
 test('extractSnippet: undefined for a missing file and for a missing opening', () => {
   const line = SNIPPETS[0]
-  assert.equal(extractSnippet(join(ROOT, 'plugins/foundry/agents/no-such-file.md'), line), undefined)
+  assert.equal(extractSnippet(join(ROOT, 'agents/no-such-file.md'), line), undefined)
   assert.equal(extractSnippet(join(ROOT, line.file), { ...line, opening: 'zzz no such opening zzz' }), undefined)
 })
 
@@ -217,8 +217,8 @@ test('git-dir check: the 4e43d5c script passes at root and in subdir, fails in a
   assert.equal(runSnippet(FIXED, {}, 'subdir').ok, true)
   assert.equal(runSnippet(FIXED, {}, 'worktree').ok, false)
 })
-test('git-dir check: the same comparison built from judge.md spans gives the fixed results', () => {
-  const [gd, gc] = SNIPPETS.filter((l) => l.file === 'plugins/foundry/agents/judge.md' && /git rev-parse --path-format=absolute --git-(dir|common-dir)$/.test(l.opening))
+test('git-dir check: the same comparison built from qc-engineer.md spans gives the fixed results', () => {
+  const [gd, gc] = SNIPPETS.filter((l) => l.file === 'agents/qc-engineer.md' && /git rev-parse --path-format=absolute --git-(dir|common-dir)$/.test(l.opening))
   assert.ok(gd && gc, 'ADR lists both git-dir spans')
   const a = extractSnippet(join(ROOT, gd.file), gd)
   const b = extractSnippet(join(ROOT, gc.file), gc)
@@ -237,14 +237,14 @@ const cases = files.map((f) => ({ file: f, data: JSON.parse(readFileSync(join(GO
 const idRe = new RegExp(SCHEMA.properties.id.pattern)
 const sourceRe = new RegExp(SCHEMA.properties.source.pattern)
 
-test('golden: counts - at least 18 cases, 12 judge (4 FAIL), 6 cynic over 2 kinds', () => {
+test('golden: counts - at least 18 cases, 12 qc (4 FAIL), 6 checker over 2 kinds', () => {
   assert.ok(cases.length >= 18, `${cases.length} cases`)
-  const judge = cases.filter((c) => c.data.role === 'judge')
-  const cynic = cases.filter((c) => c.data.role === 'cynic')
-  assert.ok(judge.length >= 12, `${judge.length} judge`)
-  assert.ok(judge.filter((c) => c.data.expected?.kind === 'FAIL').length >= 4, 'fewer than 4 FAIL judge cases')
-  assert.ok(cynic.length >= 6, `${cynic.length} cynic`)
-  assert.ok(new Set(cynic.map((c) => c.data.expected?.kind)).size >= 2, 'cynic cases cover fewer than 2 kinds')
+  const qc = cases.filter((c) => c.data.role === 'qc')
+  const checker = cases.filter((c) => c.data.role === 'checker')
+  assert.ok(qc.length >= 12, `${qc.length} qc`)
+  assert.ok(qc.filter((c) => c.data.expected?.kind === 'FAIL').length >= 4, 'fewer than 4 FAIL qc cases')
+  assert.ok(checker.length >= 6, `${checker.length} checker`)
+  assert.ok(new Set(checker.map((c) => c.data.expected?.kind)).size >= 2, 'checker cases cover fewer than 2 kinds')
 })
 
 test('golden: every case carries each key the schema requires, by hand, and no others', () => {
@@ -264,7 +264,8 @@ test('golden: id equals the file name, matches the id pattern; role in the enum;
     assert.equal(data.id, file.replace(/\.json$/, ''), file)
     assert.match(data.id, idRe, file)
     assert.ok(SCHEMA.properties.role.enum.includes(data.role), `${file} role ${data.role}`)
-    assert.ok(data.source.startsWith('.git/foundry/'), `${file} source ${data.source}`)
+    // the cases record real runs made before 0.12.0, whose run dirs were .git/foundry/<run-id>/ (ADR-0007 section 3 table)
+    assert.ok(/^\.git\/(truss|foundry)\//.test(data.source), `${file} source ${data.source}`)
     assert.ok(!data.source.includes('..'), `${file} source has ..`)
     assert.ok(!data.source.includes('\\'), `${file} source has a backslash`)
     assert.ok(!/^[A-Za-z]:/.test(data.source) && !data.source.startsWith('/'), `${file} source is absolute`)
@@ -275,7 +276,7 @@ test('golden: id equals the file name, matches the id pattern; role in the enum;
 test('golden: expected pairs the role with its keyword and a kind of that keyword', () => {
   assert.ok(cases.length > 0, 'no golden cases')
   for (const { file, data } of cases) {
-    if (data.role === 'judge') {
+    if (data.role === 'qc') {
       assert.equal(data.expected.keyword, 'VERDICT', file)
       assert.ok(['PASS', 'FAIL'].includes(data.expected.kind), file)
     } else {
@@ -286,25 +287,26 @@ test('golden: expected pairs the role with its keyword and a kind of that keywor
 })
 
 const REQUIRED: Array<[string, string, string, string]> = [
-  ['judge-redteam-reset', 'judge', 'VERDICT', 'PASS'],
-  ...[1, 2, 3, 4, 5, 6, 7].map((n): [string, string, string, string] => [`judge-roles-${n}`, 'judge', 'VERDICT', 'FAIL']),
-  ['judge-foundry-protocol-1', 'judge', 'VERDICT', 'FAIL'],
-  ['judge-foundry-protocol-2', 'judge', 'VERDICT', 'PASS'],
-  ['cynic-answer-case-fold', 'cynic', 'RECOMMEND', 'answer'],
-  ['cynic-defer-log-promise', 'cynic', 'RECOMMEND', 'defer'],
-  ['cynic-pass-seam-route', 'cynic', 'RECOMMEND', 'pass'],
+  ['judge-redteam-reset', 'qc', 'VERDICT', 'PASS'],
+  ...[1, 2, 3, 4, 5, 6, 7].map((n): [string, string, string, string] => [`judge-roles-${n}`, 'qc', 'VERDICT', 'FAIL']),
+  ['judge-foundry-protocol-1', 'qc', 'VERDICT', 'FAIL'],
+  ['judge-foundry-protocol-2', 'qc', 'VERDICT', 'PASS'],
+  ['cynic-answer-case-fold', 'checker', 'RECOMMEND', 'answer'],
+  ['cynic-defer-log-promise', 'checker', 'RECOMMEND', 'defer'],
+  ['cynic-pass-seam-route', 'checker', 'RECOMMEND', 'pass'],
 ]
-test('golden: the ADR section 3 ids exist with their role and kind, and the judge ones with the listed source', () => {
+test('golden: the ADR section 3 ids exist with their role and kind, and the qc ones with the listed source', () => {
   // the table is read from the ADR so the test and the ADR cannot drift
-  const rows = [...ADR.matchAll(/^\| `((?:judge|cynic)-[a-z0-9-]+)` \| (judge|cynic) \| `(\.git\/foundry\/[^`]+)`[^|]*\| `(VERDICT|RECOMMEND)` `([A-Za-z]+)` \|$/gm)]
-  assert.deepEqual(rows.map((m) => [m[1], m[2], m[4], m[5]]), REQUIRED)
+  const rows = [...ADR.matchAll(/^\| `((?:judge|cynic)-[a-z0-9-]+)` \| (QC engineer|checking engineer) \| `(\.git\/foundry\/[^`]+)`[^|]*\| `(VERDICT|RECOMMEND)` `([A-Za-z]+)` \|$/gm)]
+  const ROLE_OF: Record<string, string> = { 'QC engineer': 'qc', 'checking engineer': 'checker' }
+  assert.deepEqual(rows.map((m) => [m[1], ROLE_OF[m[2]], m[4], m[5]]), REQUIRED)
   const byId = new Map(cases.map((c) => [c.data.id, c.data]))
   for (const m of rows) {
     const c = byId.get(m[1])
     assert.ok(c, `missing case ${m[1]}`)
-    assert.equal(c.role, m[2], m[1])
+    assert.equal(c.role, ROLE_OF[m[2]], m[1])
     assert.deepEqual(c.expected, { keyword: m[4], kind: m[5] }, m[1])
-    if (m[2] === 'judge') assert.equal(c.source, m[3], m[1])
+    if (ROLE_OF[m[2]] === 'qc') assert.equal(c.source, m[3], m[1])
     else assert.ok(c.source.startsWith(m[3].replace(/decisions\.md.*/, 'decisions.md')), m[1])
   }
 })
@@ -318,10 +320,10 @@ test("golden: score of each case's own expected line is ok", () => {
   }
 })
 
-test('golden: no judge input line starts with VERDICT:, no cynic input contains RECOMMEND', () => {
+test('golden: no qc input line starts with VERDICT:, no checker input contains RECOMMEND', () => {
   assert.ok(cases.length > 0, 'no golden cases')
   for (const { file, data } of cases) {
-    if (data.role === 'judge') for (const l of data.input.replace(/\r/g, '').split('\n')) assert.ok(!/^\s*VERDICT:/.test(l), `${file}: ${l}`)
+    if (data.role === 'qc') for (const l of data.input.replace(/\r/g, '').split('\n')) assert.ok(!/^\s*VERDICT:/.test(l), `${file}: ${l}`)
     else assert.ok(!data.input.includes('RECOMMEND'), `${file} input contains RECOMMEND`)
   }
 })

@@ -1,13 +1,13 @@
-"""Edge-case tests for retro's 0.5.0 per-run key `budgetsSpent` (ADR-0004 sections 5 and 8).
+"""Edge-case tests for retro's 0.5.0 per-run key `allowancesSpent` (ADR-0004 sections 5 and 8).
 
 Beyond test_contract_retro_050.py. Written from the ADR before reading retro.py.
 Readings where the ADR is silent follow test_retro.py: retro skips only lines that are not JSON
 objects, not v 1, have no parsable ts, or exceed the line cap; wrong-typed or missing fields are
-ignored, not skipped. So a budget line with a missing or non-string crew adds no crew and is not
+ignored, not skipped. So a allowance line with a missing or non-string crew adds no crew and is not
 counted in eventsSkipped; extra keys or a missing agent do not matter, because retro counts
 distinct crews only.
 Fixtures: fixtures/retro-050/ (synthetic); other data goes to temp dirs.
-Run: python -m unittest discover -s plugins/foundry/tests -p "test_*retro*.py"
+Run: python -m unittest discover -s tests -p "test_*retro*.py"
 """
 import hashlib
 import json
@@ -26,14 +26,14 @@ HEAD = "## Run 2026-10-27T09:00:00Z | g\n"
 
 
 def bl(ts, crew="auth", **kw):
-    d = {"v": 1, "ts": ts, "event": "budget-spent", "crew": crew, "agent": str(crew) + "-judge-3"}
+    d = {"v": 1, "ts": ts, "event": "allowance-spent", "crew": crew, "agent": str(crew) + "-qc-3"}
     d.update(kw)
     return json.dumps(d)
 
 
 def sp(ts, crew="auth"):
     return json.dumps({"v": 1, "ts": ts, "event": "spawn", "crew": crew, "agent": crew, "agentId": "x",
-                       "type": "foundry:lead", "model": "opus", "effort": "high", "by": "main"})
+                       "type": "truss:foreman", "model": "opus", "effort": "high", "by": "main"})
 
 
 class Base(unittest.TestCase):
@@ -44,11 +44,11 @@ class Base(unittest.TestCase):
 
 
 class Fixtures(Base):
-    def test_budget_line_in_second_run_belongs_to_second_run_only(self):
+    def test_allowance_line_in_second_run_belongs_to_second_run_only(self):
         out = self.go(os.path.join(FIX, "tworuns"))
         first, second = out["runs"]
-        self.assertEqual(first["budgetsSpent"], NR)
-        self.assertEqual(second["budgetsSpent"], 1)
+        self.assertEqual(first["allowancesSpent"], NR)
+        self.assertEqual(second["allowancesSpent"], 1)
         self.assertEqual(first["spawns"]["total"], 1)
         self.assertEqual(second["spawns"]["total"], 1)
         self.assertEqual(out["eventsSkipped"], 0)
@@ -56,7 +56,7 @@ class Fixtures(Base):
     def test_same_crew_in_two_events_files_counts_once_and_new_crew_adds_one(self):
         # events.1.jsonl: auth; events.jsonl: auth (other agent) and billing.
         out = self.go(os.path.join(FIX, "twofiles"))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 2)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 2)
         self.assertEqual(out["eventsSkipped"], 0)
 
 
@@ -77,96 +77,96 @@ class Edges(Base):
         self.write("events.jsonl", "\n".join(lines) + "\n")
         return self.go(self.dir)
 
-    def test_single_budget_line_is_one(self):
-        self.assertEqual(self.events(bl("2026-10-27T09:30:00Z"))["runs"][0]["budgetsSpent"], 1)
+    def test_single_allowance_line_is_one(self):
+        self.assertEqual(self.events(bl("2026-10-27T09:30:00Z"))["runs"][0]["allowancesSpent"], 1)
 
     def test_repeated_lines_for_one_crew_stay_one(self):
         out = self.events(*[bl("2026-10-27T09:3%d:00Z" % i) for i in range(5)])
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
 
     def test_same_crew_name_with_different_agents_is_one_crew(self):
-        out = self.events(bl("2026-10-27T09:30:00Z", agent="auth-judge-3"),
-                          bl("2026-10-27T09:31:00Z", agent="auth-judge-4"))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        out = self.events(bl("2026-10-27T09:30:00Z", agent="auth-qc-3"),
+                          bl("2026-10-27T09:31:00Z", agent="auth-qc-4"))
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
 
     def test_distinct_crew_values_are_distinct(self):
         out = self.events(bl("2026-10-27T09:30:00Z", "auth"), bl("2026-10-27T09:31:00Z", "auth-2"))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 2)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 2)
 
     def test_same_crew_in_two_runs_counts_in_each(self):
         self.write("decisions.md", HEAD + "## Run 2026-10-27T12:00:00Z | g2\n")
         self.write("events.jsonl", bl("2026-10-27T09:30:00Z") + "\n" + bl("2026-10-27T12:30:00Z") + "\n")
         runs = self.go(self.dir)["runs"]
-        self.assertEqual([r["budgetsSpent"] for r in runs], [1, 1])
+        self.assertEqual([r["allowancesSpent"] for r in runs], [1, 1])
 
-    def test_budget_line_before_first_heading_is_outside_every_run(self):
+    def test_allowance_line_before_first_heading_is_outside_every_run(self):
         out = self.events(bl("2026-10-27T08:00:00Z"), sp("2026-10-27T09:01:00Z"))
         self.assertEqual(out["eventsOutsideRuns"], 1)
-        self.assertEqual(out["runs"][0]["budgetsSpent"], NR)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], NR)
 
-    def test_budget_lines_without_run_heading_are_not_recorded(self):
+    def test_allowance_lines_without_run_heading_are_not_recorded(self):
         out = self.events(bl("2026-10-27T09:30:00Z"), head="- 09:00 | a | b | c | followed\n")
         run = out["runs"][0]
         self.assertEqual(out["split"], NR)
-        self.assertIn("budgetsSpent", run)
-        self.assertEqual(run["budgetsSpent"], NR)
+        self.assertIn("allowancesSpent", run)
+        self.assertEqual(run["allowancesSpent"], NR)
         self.assertEqual(out["eventsOutsideRuns"], 1)
 
-    def test_budget_line_with_extra_key_still_counts(self):
+    def test_allowance_line_with_extra_key_still_counts(self):
         out = self.events(bl("2026-10-27T09:30:00Z", reason="x", n=3))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
         self.assertEqual(out["eventsSkipped"], 0)
 
-    def test_budget_line_missing_agent_still_counts_its_crew(self):
+    def test_allowance_line_missing_agent_still_counts_its_crew(self):
         d = json.loads(bl("2026-10-27T09:30:00Z"))
         del d["agent"]
         out = self.events(json.dumps(d))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
         self.assertEqual(out["eventsSkipped"], 0)
 
-    def test_budget_lines_missing_or_wrong_typed_crew_add_no_crew_and_are_not_skipped(self):
+    def test_allowance_lines_missing_or_wrong_typed_crew_add_no_crew_and_are_not_skipped(self):
         d = json.loads(bl("2026-10-27T09:30:00Z"))
         del d["crew"]
         out = self.events(json.dumps(d), bl("2026-10-27T09:31:00Z", crew=["auth"]),
                           bl("2026-10-27T09:32:00Z", crew={"a": 1}), bl("2026-10-27T09:33:00Z", crew="billing"))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
         self.assertEqual(out["eventsSkipped"], 0)
 
-    def test_budget_line_with_bad_ts_or_wrong_v_is_skipped_and_not_counted(self):
-        wrong_v = json.dumps({"v": 2, "ts": "2026-10-27T09:30:00Z", "event": "budget-spent",
-                              "crew": "y", "agent": "y-judge"})
+    def test_allowance_line_with_bad_ts_or_wrong_v_is_skipped_and_not_counted(self):
+        wrong_v = json.dumps({"v": 2, "ts": "2026-10-27T09:30:00Z", "event": "allowance-spent",
+                              "crew": "y", "agent": "y-qc"})
         out = self.events(bl("not a time", "x"), wrong_v, bl("2026-10-27T09:30:00Z", "auth"))
         self.assertEqual(out["eventsSkipped"], 2)
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
 
-    def test_only_skipped_budget_lines_leave_not_recorded(self):
+    def test_only_skipped_allowance_lines_leave_not_recorded(self):
         out = self.events(bl("garbage", "x"))
-        self.assertEqual(out["runs"][0]["budgetsSpent"], NR)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], NR)
 
-    def test_budget_lines_are_not_spawns_and_do_not_move_other_categories(self):
+    def test_allowance_lines_are_not_spawns_and_do_not_move_other_categories(self):
         base = self.events(sp("2026-10-27T09:01:00Z"))["runs"][0]
-        with_budget = self.events(sp("2026-10-27T09:01:00Z"), bl("2026-10-27T09:30:00Z"))["runs"][0]
-        self.assertEqual(with_budget["budgetsSpent"], 1)
+        with_allowance = self.events(sp("2026-10-27T09:01:00Z"), bl("2026-10-27T09:30:00Z"))["runs"][0]
+        self.assertEqual(with_allowance["allowancesSpent"], 1)
         for k in base:
-            if k != "budgetsSpent":
-                self.assertEqual(base[k], with_budget[k], k)
-        self.assertEqual(with_budget["spawns"]["total"], 1)
+            if k != "allowancesSpent":
+                self.assertEqual(base[k], with_allowance[k], k)
+        self.assertEqual(with_allowance["spawns"]["total"], 1)
 
     def test_spawns_only_run_is_not_recorded_not_zero(self):
         run = self.events(sp("2026-10-27T09:01:00Z"))["runs"][0]
-        self.assertEqual(run["budgetsSpent"], NR)
+        self.assertEqual(run["allowancesSpent"], NR)
 
     def test_empty_events_file_with_heading_is_not_recorded_never_zero(self):
         self.write("decisions.md", HEAD)
         self.write("events.jsonl", "")
         run = self.go(self.dir)["runs"][0]
-        self.assertEqual(run["budgetsSpent"], NR)
-        self.assertEqual(run["stalls"], {"agent": 0, "idleLead": 0})
+        self.assertEqual(run["allowancesSpent"], NR)
+        self.assertEqual(run["stalls"], {"agent": 0, "idleForeman": 0})
 
-    def test_key_order_budgetsSpent_right_after_judges_and_old_keys_remain(self):
+    def test_key_order_allowancesSpent_right_after_qcs_and_old_keys_remain(self):
         run = self.events(bl("2026-10-27T09:30:00Z"))["runs"][0]
         keys = list(run)
-        self.assertEqual(keys[keys.index("judges") + 1], "budgetsSpent")
+        self.assertEqual(keys[keys.index("qcs") + 1], "allowancesSpent")
         other = list(self.go(os.path.join(FIX, "twofiles"))["runs"][0])
         self.assertEqual(keys, other)
 
@@ -175,21 +175,21 @@ class Edges(Base):
         out = self.go(self.dir)
         for run in out["runs"]:
             keys = list(run)
-            self.assertIn("budgetsSpent", keys)
-            self.assertEqual(run["budgetsSpent"], NR)
-            self.assertEqual(keys[keys.index("judges") + 1], "budgetsSpent")
+            self.assertIn("allowancesSpent", keys)
+            self.assertEqual(run["allowancesSpent"], NR)
+            self.assertEqual(keys[keys.index("qcs") + 1], "allowancesSpent")
 
-    def test_retro_version_stays_1_with_budget_lines(self):
+    def test_retro_version_stays_1_with_allowance_lines(self):
         self.assertEqual(self.events(bl("2026-10-27T09:30:00Z"))["retro"], 1)
 
-    def test_oversize_budget_line_is_skipped_by_line_cap(self):
+    def test_oversize_allowance_line_is_skipped_by_line_cap(self):
         self.write("decisions.md", HEAD)
-        big = (b'{"v":1,"ts":"2026-10-27T09:30:00Z","event":"budget-spent","crew":"big","agent":"'
+        big = (b'{"v":1,"ts":"2026-10-27T09:30:00Z","event":"allowance-spent","crew":"big","agent":"'
                + b"x" * (3 << 20) + b'"}\n')
         self.write("events.jsonl", big + bl("2026-10-27T09:31:00Z").encode() + b"\n")
         out = self.go(self.dir)
         self.assertEqual(out["eventsSkipped"], 1)
-        self.assertEqual(out["runs"][0]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][0]["allowancesSpent"], 1)
 
     def snapshot(self, root):
         snap = {}
@@ -205,12 +205,12 @@ class Edges(Base):
                     snap[rel] = None
         return snap
 
-    def test_script_writes_nothing_into_the_foundry_dir(self):
+    def test_script_writes_nothing_into_the_truss_dir(self):
         d = os.path.join(self.dir, "d")
         shutil.copytree(os.path.join(FIX, "tworuns"), d)
         before = self.snapshot(d)
         out = self.go(d)
-        self.assertEqual(out["runs"][1]["budgetsSpent"], 1)
+        self.assertEqual(out["runs"][1]["allowancesSpent"], 1)
         self.assertEqual(self.snapshot(d), before)
 
 

@@ -1,10 +1,10 @@
-"""Contract test for foundry's retro script, foundry ADR-0003 section 3 and "Seams" 2.
+"""Contract test for truss's retro script, truss ADR-0003 section 3 and "Seams" 2.
 
-Written from the ADR before plugins/foundry/scripts/retro.py exists, so until it does every test
+Written from the ADR before scripts/retro.py exists, so until it does every test
 fails on "retro.py not found". The fixtures under fixtures/ are synthetic (P8), shaped like the two
 real pre-0.4.0 session dirs and like a 0.4.0 dir; the expected counts are worked out by hand from
 them and written here, not computed.
-Run: python -m unittest discover -s plugins/foundry/tests
+Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -20,8 +20,8 @@ FIXTURES = os.path.join(HERE, "fixtures")
 PRE = os.path.join(FIXTURES, "retro-pre040")
 NEW = os.path.join(FIXTURES, "retro-040")
 NR = "not recorded"
-TOP_KEYS = {"leftovers", "leftoverDetails", "retro", "dir", "split", "runs", "judgeFiles", "plan", "eventsSkipped", "eventsOutsideRuns"}
-RUN_KEYS = {"started", "goal", "decisions", "freeform", "recommendations", "messages", "spawns", "stalls", "escalations", "judges", "budgetsSpent", "fetches", "extendPasses", "defaultDecisions", "openOwnerActions"}
+TOP_KEYS = {"leftovers", "leftoverDetails", "retro", "dir", "split", "runs", "qcFiles", "plan", "eventsSkipped", "eventsOutsideRuns"}
+RUN_KEYS = {"started", "goal", "decisions", "freeform", "recommendations", "messages", "spawns", "stalls", "escalations", "qcs", "allowancesSpent", "fetches", "extendPasses", "defaultDecisions", "openClientActions"}
 
 
 def snapshot(root):
@@ -66,12 +66,12 @@ class RetroContract(unittest.TestCase):
         self.run_retro(NEW)
         self.assertEqual((snapshot(PRE), snapshot(NEW)), before)
 
-    def test_missing_dir_exits_2_no_foundry_dir(self):
+    def test_missing_dir_exits_2_no_truss_dir(self):
         tmp = tempfile.mkdtemp(prefix="retro-contract-")
         try:
             r = self.run_retro(os.path.join(tmp, "no-such-dir"))
             self.assertEqual(r.returncode, 2)
-            self.assertTrue(r.stderr.startswith("retro: NO_FOUNDRY_DIR:"), "stderr: %r" % r.stderr)
+            self.assertTrue(r.stderr.startswith("retro: NO_TRUSS_DIR:"), "stderr: %r" % r.stderr)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -102,20 +102,20 @@ class RetroContract(unittest.TestCase):
 
     def test_pre040_event_categories_not_recorded(self):
         run = self.retro(PRE)["runs"][0]
-        for key in ("spawns", "stalls", "escalations", "judges"):
+        for key in ("spawns", "stalls", "escalations", "qcs"):
             with self.subTest(key):
                 self.assertEqual(run[key], NR)
         self.assertEqual(self.retro(PRE)["eventsSkipped"], 0)
         self.assertEqual(self.retro(PRE)["eventsOutsideRuns"], 0)
 
-    def test_pre040_judge_files(self):
-        # quartz-judge FAIL, quartz-judge-2 PASS, lantern-judge PASS, ferry-judge CHECKPOINT;
-        # not .interim.md, not builder/redteam reports, not a report saved under an agent id.
-        self.assertEqual(self.retro(PRE)["judgeFiles"], {"files": 4, "pass": 2, "fail": 1, "other": 1})
+    def test_pre040_qc_files(self):
+        # quartz-qc FAIL, quartz-qc-2 PASS, lantern-qc PASS, ferry-qc CHECKPOINT;
+        # not .interim.md, not builder/stress reports, not a report saved under an agent id.
+        self.assertEqual(self.retro(PRE)["qcFiles"], {"files": 4, "pass": 2, "fail": 1, "other": 1})
 
     def test_pre040_plan(self):
-        # Read as: crews = len(crews), waves = distinct wave values, estAgents = sum (see report: ADR gap).
-        self.assertEqual(self.retro(PRE)["plan"], {"crews": 3, "waves": 2, "estAgents": 12, "agentCap": 20, "status": {"merged": 2, "failed": 1}})
+        # Read as: crews = len(crews), stages = distinct stage values, estAgents = sum (see report: ADR gap).
+        self.assertEqual(self.retro(PRE)["plan"], {"crews": 3, "stages": 2, "estAgents": 12, "agentCap": 20, "status": {"merged": 2, "failed": 1}})
 
     # ---------- 0.4.0 dir: two headings and an event log ----------
 
@@ -158,25 +158,25 @@ class RetroContract(unittest.TestCase):
 
     def test_040_stalls_per_run(self):
         runs = self.retro(NEW)["runs"]
-        self.assertEqual([r["stalls"] for r in runs], [NR, {"agent": 2, "idleLead": 1}, {"agent": 0, "idleLead": 0}])
+        self.assertEqual([r["stalls"] for r in runs], [NR, {"agent": 2, "idleForeman": 1}, {"agent": 0, "idleForeman": 0}])
 
     def test_040_escalations_per_run(self):
         runs = self.retro(NEW)["runs"]
         # the v:2 PROPOSAL line is skipped, not counted
         self.assertEqual([r["escalations"] for r in runs], [NR, {"QUESTION": 1, "BLOCKED": 1, "PROPOSAL": 0}, {"QUESTION": 0, "BLOCKED": 0, "PROPOSAL": 1}])
 
-    def test_040_judges_count_only_judge_named_reports(self):
+    def test_040_qcs_count_only_qc_named_reports(self):
         runs = self.retro(NEW)["runs"]
-        self.assertEqual([r["judges"] for r in runs], [NR, {"pass": 1, "fail": 1}, {"pass": 1, "fail": 0}])
+        self.assertEqual([r["qcs"] for r in runs], [NR, {"pass": 1, "fail": 1}, {"pass": 1, "fail": 0}])
 
     def test_040_skipped_and_outside_events(self):
         out = self.retro(NEW)
         self.assertEqual(out["eventsSkipped"], 2)
         self.assertEqual(out["eventsOutsideRuns"], 1)
 
-    def test_040_judge_files_and_no_plan(self):
+    def test_040_qc_files_and_no_plan(self):
         out = self.retro(NEW)
-        self.assertEqual(out["judgeFiles"], {"files": 3, "pass": 2, "fail": 1, "other": 0})
+        self.assertEqual(out["qcFiles"], {"files": 3, "pass": 2, "fail": 1, "other": 0})
         self.assertEqual(out["plan"], NR)
 
     def test_crlf_and_bom_are_stripped(self):

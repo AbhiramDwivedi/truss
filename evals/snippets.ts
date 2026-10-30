@@ -1,4 +1,4 @@
-// foundry ADR-0007 section 5: pull the listed shell snippets out of the shipped prompts and run them in a temp git repo.
+// truss ADR-0007 section 5: pull the listed shell snippets out of the shipped prompts and run them in a temp git repo.
 import { execFileSync, spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -8,7 +8,7 @@ export type Where = 'root' | 'subdir' | 'worktree'
 export type SnippetLine = { file: string; opening: string; form: 'fenced' | 'inline'; fills: Record<string, string> }
 export type RunResult = { ok: boolean; code: number | null; stdout: string; stderr: string }
 
-const LINE = /^- (plugins\/foundry\/\S+\.md): `([^`]+)` \((fenced|inline); placeholders: (.+)\)$/
+const LINE = /^- (\S+\.md): `([^`]+)` \((fenced|inline); placeholders: (.+)\)$/
 const PAIR = /^(<[a-z][a-z0-9-]*>)=(\S+)$/
 
 export function parseSnippets(adrText: string): SnippetLine[] {
@@ -84,7 +84,7 @@ export function runSnippet(script: string, fills: Readonly<Record<string, string
   if (left) return { ok: false, code: null, stdout: '', stderr: `unfilled placeholder ${left[0]}\n` }
 
   const env = cleanEnv()
-  const tmp = fs.realpathSync.native(fs.mkdtempSync(join(os.tmpdir(), 'foundry-snippet-')))
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(join(os.tmpdir(), 'truss-snippet-')))
   try {
     const repo = join(tmp, 'repo')
     fs.mkdirSync(join(repo, 'sub'), { recursive: true })

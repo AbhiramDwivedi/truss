@@ -1,10 +1,10 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry ADR-0010 section 1 (as amended by the intake-gates spec: NO crew `after`): the plan.schema.json
+// truss ADR-0010 section 1 (as amended by the intake-gates spec: NO crew `after`): the plan.schema.json
 // v3 edit, pinned by reading the schema as JSON and asserting its keywords. No validator, no dependency,
 // no network.
 //
-// Run with: node --test plugins/foundry/tests/intake-schema.check.ts
+// Run with: node --test tests/intake-schema.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` gives tests no fs (see contract.check.ts).
 
 import assert from 'node:assert/strict'
@@ -65,20 +65,20 @@ test('version enum is [1, 2, 3]', () => {
   assert.deepEqual(props.version?.enum, [1, 2, 3])
 })
 
-test('repairBudget is required in versions 2 and 3, not in 1', () => {
-  const req = allOf.filter((e: any) => e.then?.required?.includes('repairBudget'))
-  assert.ok(req.length > 0, 'no allOf entry requires repairBudget')
+test('reworkAllowance is required in versions 2 and 3, not in 1', () => {
+  const req = allOf.filter((e: any) => e.then?.required?.includes('reworkAllowance'))
+  assert.ok(req.length > 0, 'no allOf entry requires reworkAllowance')
   assert.ok(
     req.some((e: any) => versionAccepts(e.if, 2) && versionAccepts(e.if, 3) && !versionAccepts(e.if, 1)),
-    'the conditional that requires repairBudget must cover versions 2 and 3 and not 1',
+    'the conditional that requires reworkAllowance must cover versions 2 and 3 and not 1',
   )
 })
 
-test('version 1 still forbids repairBudget', () => {
-  const forb = allOf.filter((e: any) => forbidsKey(e.then, 'repairBudget'))
+test('version 1 still forbids reworkAllowance', () => {
+  const forb = allOf.filter((e: any) => forbidsKey(e.then, 'reworkAllowance'))
   assert.ok(
     forb.some((e: any) => versionAccepts(e.if, 1) && !versionAccepts(e.if, 2) && !versionAccepts(e.if, 3)),
-    'no conditional forbids repairBudget for version 1 only',
+    'no conditional forbids reworkAllowance for version 1 only',
   )
 })
 
@@ -109,8 +109,8 @@ test('goals[].addedAt is a date-time string', () => {
   assert.equal(goalProps.addedAt?.format, 'date-time')
 })
 
-test('goals[].approval is auto or owner', () => {
-  assert.deepEqual([...(goalProps.approval?.enum ?? [])].sort(), ['auto', 'owner'])
+test('goals[].approval is auto or client', () => {
+  assert.deepEqual([...(goalProps.approval?.enum ?? [])].sort(), ['auto', 'client'])
 })
 
 test('goals[].approvedAt is a date-time string or null, and approval auto requires a string', () => {
@@ -172,12 +172,12 @@ test('top-level required list and additionalProperties are unchanged', () => {
 test('crew required list and additionalProperties are unchanged', () => {
   assert.deepEqual(crew.required, [
     'slug',
-    'wave',
+    'stage',
     'verdict',
     'modules',
     'owns',
-    'doneCheck',
-    'doneCheckProved',
+    'acceptanceTest',
+    'acceptanceTestProved',
     'estAgents',
     'status',
   ])

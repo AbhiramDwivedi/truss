@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Shared harness for the factory CLI tests (foundry ADR-0009): tests/factory.check.ts and the *.cases.ts files in this
+// Shared harness for the factory CLI tests (truss ADR-0009): tests/factory.check.ts and the *.cases.ts files in this
 // folder import it. Node built-ins only. Every helper is documented by the comment above it.
 
 import assert from 'node:assert/strict'
@@ -10,10 +10,10 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const HERE = fileURLToPath(new URL('.', import.meta.url)).replace(/\\/g, '/')
-/** The real plugin dir (plugins/foundry) of this checkout, forward slashes. */
+/** The real plugin dir (plugins/truss) of this checkout, forward slashes. */
 export const REAL_PLUGIN = resolve(HERE, '../../..').replace(/\\/g, '/')
 /** The real checkout root. */
-export const REAL_REPO = resolve(REAL_PLUGIN, '../..').replace(/\\/g, '/')
+export const REAL_REPO = resolve(REAL_PLUGIN).replace(/\\/g, '/')
 export const REAL_FACTORY = `${REAL_PLUGIN}/bin/factory.ts`
 export const SCHEMA_PATH = `${REAL_PLUGIN}/docs/events.schema.json`
 
@@ -62,7 +62,7 @@ export function putFile(root: string, rel: string, text: string, msg?: string): 
   return head(root)
 }
 
-/** A temp git repo: `git init -b main`, local user.name/email, an initial commit holding README.md (plus `.claude/foundry.json` when `config` is given and any `files` {path: text}, all committed). */
+/** A temp git repo: `git init -b main`, local user.name/email, an initial commit holding README.md (plus `.claude/truss.json` when `config` is given and any `files` {path: text}, all committed). */
 export function mkRepo(opts: { config?: unknown; files?: Record<string, string> } = {}): string {
   const repo = tmp('fcli-repo-')
   git(repo, ['init', '-q', '-b', 'main'])
@@ -72,7 +72,7 @@ export function mkRepo(opts: { config?: unknown; files?: Record<string, string> 
   writeFileSync(`${repo}/README.md`, 'readme\n')
   if (opts.config !== undefined) {
     mkdirSync(`${repo}/.claude`, { recursive: true })
-    writeFileSync(`${repo}/.claude/foundry.json`, JSON.stringify(opts.config, null, 2) + '\n')
+    writeFileSync(`${repo}/.claude/truss.json`, JSON.stringify(opts.config, null, 2) + '\n')
   }
   for (const [rel, text] of Object.entries(opts.files ?? {})) {
     mkdirSync(dirname(`${repo}/${rel}`), { recursive: true })
@@ -83,27 +83,27 @@ export function mkRepo(opts: { config?: unknown; files?: Record<string, string> 
   return repo
 }
 
-/** Adds the crew worktree `<repo>/.claude/worktrees/foundry-<slug>` on branch `foundry-<slug>` from `from` (default main); returns its path. */
+/** Adds the crew worktree `<repo>/.claude/worktrees/truss-<slug>` on branch `truss-<slug>` from `from` (default main); returns its path. */
 export function addCrewWorktree(repo: string, slug: string, from = 'main'): string {
-  const wt = `${repo}/.claude/worktrees/foundry-${slug}`
-  git(repo, ['worktree', 'add', '-q', '-b', `foundry-${slug}`, wt, from])
+  const wt = `${repo}/.claude/worktrees/truss-${slug}`
+  git(repo, ['worktree', 'add', '-q', '-b', `truss-${slug}`, wt, from])
   git(wt, ['config', 'user.name', 'Test Writer'])
   git(wt, ['config', 'user.email', 'tw@example.invalid'])
   return wt
 }
 
-/** A plan crew entry with schema-valid defaults (wave 1, verdict change, owns src/<slug>/**, doneCheck "true", proved, planned). */
+/** A plan crew entry with schema-valid defaults (stage 1, verdict change, owns src/<slug>/**, acceptanceTest "true", proved, planned). */
 export function crew(slug: string, over: Record<string, unknown> = {}): Record<string, unknown> {
-  return { slug, wave: 1, verdict: 'change', modules: [slug], owns: [`src/${slug}/**`], doneCheck: 'true', doneCheckProved: true, estAgents: 1, status: 'planned', ...over }
+  return { slug, stage: 1, verdict: 'change', modules: [slug], owns: [`src/${slug}/**`], acceptanceTest: 'true', acceptanceTestProved: true, estAgents: 1, status: 'planned', ...over }
 }
 
-/** A plan object (version 2, approval auto, approvedAt now, maxParallelCrews 4, repairBudget 2) with `over` laid on top. For an unapproved plan pass `approvedAt: null, approval: 'owner'` and include a wave-0 `verdict: 'design'` crew. */
+/** A plan object (version 2, approval auto, approvedAt now, maxParallelCrews 4, reworkAllowance 2) with `over` laid on top. For an unapproved plan pass `approvedAt: null, approval: 'client'` and include a stage-0 `verdict: 'design'` crew. */
 export function planObj(crews: unknown[], over: Record<string, unknown> = {}): Record<string, unknown> {
-  return { version: 2, goal: 'test goal', architecture: 'docs/architecture.md', approval: 'auto', approvedAt: new Date().toISOString(), maxParallelCrews: 4, repairBudget: 2, crews, ...over }
+  return { version: 2, goal: 'test goal', architecture: 'docs/architecture.md', approval: 'auto', approvedAt: new Date().toISOString(), maxParallelCrews: 4, reworkAllowance: 2, crews, ...over }
 }
 
-/** A temp foundry dir (with reports/, checks/ and goals/ made on use, plus empty decisions.md and events.jsonl). */
-export function mkFoundryDir(): string {
+/** A temp truss dir (with reports/, checks/ and goals/ made on use, plus empty decisions.md and events.jsonl). */
+export function mkTrussDir(): string {
   const d = tmp('fcli-fdir-')
   writeFileSync(`${d}/decisions.md`, '')
   writeFileSync(`${d}/events.jsonl`, '')
@@ -118,10 +118,10 @@ export function writePlan(dir: string, plan: unknown): void {
 /** Reads `<dir>/plan.json` parsed. */
 export const readPlan = (dir: string): any => JSON.parse(readFileSync(`${dir}/plan.json`, 'utf8'))
 
-/** Writes `<dir>/goals/<slug>.md` with `## Approved scope`, `## High-impact paths`, `## Red team` and `## Engine` sections (defaults: scope text, no paths, "no", "workflow"). */
-export function writeGoal(dir: string, slug: string, s: { goal?: string; scope?: string; highImpact?: string; redTeam?: string; engine?: string } = {}): string {
+/** Writes `<dir>/goals/<slug>.md` with `## Approved scope`, `## High-impact paths`, `## Stress test` and `## Engine` sections (defaults: scope text, no paths, "no", "workflow"). */
+export function writeGoal(dir: string, slug: string, s: { goal?: string; scope?: string; highImpact?: string; stressTest?: string; engine?: string } = {}): string {
   mkdirSync(`${dir}/goals`, { recursive: true })
-  const text = `# Goal: ${slug}\n\n${s.goal ?? `Build ${slug}.`}\n\n## Approved scope\n\n${s.scope ?? `Build ${slug} only.`}\n\n## High-impact paths\n\n${s.highImpact ?? 'None.'}\n\n## Red team\n\n${s.redTeam ?? 'no'}\n\n## Engine\n\n${s.engine ?? 'workflow'}\n`
+  const text = `# Goal: ${slug}\n\n${s.goal ?? `Build ${slug}.`}\n\n## Approved scope\n\n${s.scope ?? `Build ${slug} only.`}\n\n## High-impact paths\n\n${s.highImpact ?? 'None.'}\n\n## Stress test\n\n${s.stressTest ?? 'no'}\n\n## Engine\n\n${s.engine ?? 'workflow'}\n`
   writeFileSync(`${dir}/goals/${slug}.md`, text)
   return `${dir}/goals/${slug}.md`
 }
@@ -142,8 +142,8 @@ export function factorySpawn(slug: string, ts = new Date().toISOString()): Recor
   return { v: 1, ts, event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' }
 }
 
-/** A judge report body: first line the verdict, `## Findings` with `unscoped` UNSCOPED lines, `## Proof checked` with Head:/Patch: lines when given. */
-export function judgeReport(o: { verdict?: 'PASS' | 'FAIL' | null; head?: string; patch?: string; unscoped?: number } = {}): string {
+/** A qc report body: first line the verdict, `## Findings` with `unscoped` UNSCOPED lines, `## Proof checked` with Head:/Patch: lines when given. */
+export function qcReport(o: { verdict?: 'PASS' | 'FAIL' | null; head?: string; patch?: string; unscoped?: number } = {}): string {
   const lines: string[] = []
   if (o.verdict !== null) lines.push(`VERDICT: ${o.verdict ?? 'PASS'}`, '')
   lines.push('## Findings')
@@ -166,7 +166,7 @@ export function writeReport(dir: string, slug: string, name: string, text: strin
 export type RunAgent = {
   /** the agent id, e.g. "a1b2" (default derived from the label) */
   id?: string
-  /** the Workflow label, e.g. "s-judge-2" */
+  /** the Workflow label, e.g. "s-qc-2" */
   label: string
   /** meta agentType (default "general-purpose") */
   agentType?: string
@@ -233,14 +233,14 @@ export function mkRun(transcripts: string, runId: string, agents: RunAgent[], op
 const COPY_DIRS = ['bin', 'hooks', 'docs', 'workflows']
 let sharedCopy: string | undefined
 
-/** A temp copy of the plugin (bin, hooks, docs, workflows from this checkout) where workflows/plan.js and wave.js are stub files (so tests do not depend on another crew's scripts); returns its dir. Built once per process and shared, so never write inside it. */
+/** A temp copy of the plugin (bin, hooks, docs, workflows from this checkout) where workflows/plan.js and stage.js are stub files (so tests do not depend on another crew's scripts); returns its dir. Built once per process and shared, so never write inside it. */
 export function pluginCopy(): string {
   if (sharedCopy) return sharedCopy
   const d = tmp('fcli-plugin-')
   for (const sub of COPY_DIRS) if (existsSync(`${REAL_PLUGIN}/${sub}`)) cpSync(`${REAL_PLUGIN}/${sub}`, `${d}/${sub}`, { recursive: true })
   mkdirSync(`${d}/workflows`, { recursive: true })
   writeFileSync(`${d}/workflows/plan.js`, '// stub plan.js for factory tests\nexport default async function () {}\n')
-  writeFileSync(`${d}/workflows/wave.js`, '// stub wave.js for factory tests\nexport default async function () {}\n')
+  writeFileSync(`${d}/workflows/stage.js`, '// stub stage.js for factory tests\nexport default async function () {}\n')
   sharedCopy = d
   return d
 }
@@ -290,10 +290,10 @@ export type Env = {
   run(command: string, flags?: Record<string, unknown>, extra?: string[], cwd?: string): CliResult
 }
 
-/** One test world: a temp repo (optionally with .claude/foundry.json `config`), a temp foundry dir, a transcripts root, and the CLI bound to the shared plugin copy (or `useRealPlugin`: this checkout's own bin, hooks, docs and workflows). */
+/** One test world: a temp repo (optionally with .claude/truss.json `config`), a temp truss dir, a transcripts root, and the CLI bound to the shared plugin copy (or `useRealPlugin`: this checkout's own bin, hooks, docs and workflows). */
 export function mkEnv(opts: { config?: unknown; files?: Record<string, string>; useRealPlugin?: boolean } = {}): Env {
   const repo = mkRepo({ config: opts.config, files: opts.files })
-  const dir = mkFoundryDir()
+  const dir = mkTrussDir()
   const transcripts = tmp('fcli-tr-')
   const plugin = opts.useRealPlugin ? REAL_PLUGIN : pluginCopy()
   const factory = `${plugin}/bin/factory.ts`
@@ -313,7 +313,7 @@ export function mkEnv(opts: { config?: unknown; files?: Record<string, string>; 
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// A small JSON Schema validator for plugins/foundry/docs/events.schema.json: only the keywords that file uses.
+// A small JSON Schema validator for docs/events.schema.json: only the keywords that file uses.
 
 const typeOk = (t: string, v: unknown): boolean => {
   switch (t) {

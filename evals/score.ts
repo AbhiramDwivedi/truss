@@ -1,5 +1,5 @@
-// foundry ADR-0007 section 4: the deterministic scorer. No I/O.
-import { judgeRuling } from '../hooks/register.ts'
+// truss ADR-0007 section 4: the deterministic scorer. No I/O.
+import { qcRuling } from '../hooks/register.ts'
 
 export type Expected =
   | { keyword: 'VERDICT'; kind: 'PASS' | 'FAIL' }
@@ -7,7 +7,7 @@ export type Expected =
 export type Kind = Expected['kind']
 export type Score = { ok: boolean; got: Kind | undefined }
 
-const RECOMMEND = /^\s*(?:cynic-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b/
+const RECOMMEND = /^\s*(?:checker-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b/
 
 export function score(report: string, expected: Expected): Score {
   const e = expected as { keyword?: unknown; kind?: unknown } | null
@@ -19,7 +19,7 @@ export function score(report: string, expected: Expected): Score {
   if (!valid) throw new TypeError(`bad expected: ${JSON.stringify(expected)}`)
   let got: Kind | undefined
   if (expected.keyword === 'VERDICT') {
-    got = judgeRuling(report).verdict
+    got = qcRuling(report).verdict
   } else {
     for (const line of report.replace(/\r/g, '').split('\n')) {
       const m = RECOMMEND.exec(line)

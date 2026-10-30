@@ -1,6 +1,6 @@
-"""Contract test for the `leftovers` key of foundry's retro script.
+"""Contract test for the `leftovers` key of truss's retro script.
 
-Spec: retro.py's JSON gains a top-level "leftovers". For a session dir D = <git common dir>/foundry/<session>,
+Spec: retro.py's JSON gains a top-level "leftovers". For a session dir D = <git common dir>/truss/<session>,
 every distinct agentId of a `spawn` event in D/events.jsonl may leave a branch `worktree-agent-<id>` and a
 folder `.claude/worktrees/agent-<id>` (relative to the main checkout). leftovers is
 {"branches": [sorted], "folders": [sorted, forward slashes, relative], "count": distinct agent ids with a
@@ -8,7 +8,7 @@ branch or a folder or both}. Other sessions' agents never count, slots.json is n
 changed. A dir not in that shape gives the string "not recorded".
 
 Written before the producer exists; until retro.py emits the key every test fails on "producer missing".
-Fixtures under fixtures/leftovers are synthetic (P8). Run: python -m unittest discover -s plugins/foundry/tests
+Fixtures under fixtures/leftovers are synthetic (P8). Run: python -m unittest discover -s tests
 """
 import json
 import os
@@ -63,7 +63,7 @@ class Leftovers(unittest.TestCase):
             fh.write("x\n")
         git(self.repo, "add", "f.txt")
         git(self.repo, "commit", "-q", "-m", "one")
-        self.session = os.path.join(self.repo, ".git", "foundry", SESSION)
+        self.session = os.path.join(self.repo, ".git", "truss", SESSION)
 
     # ---------- helpers ----------
 
@@ -170,7 +170,7 @@ class Leftovers(unittest.TestCase):
         self.assertEqual(self.repo_state(), before)
 
     def test_not_under_a_common_dir_is_not_recorded(self):
-        for sub in ("elsewhere/foundry/" + SESSION, "repo/foundry/" + SESSION, "repo/.git/other/" + SESSION):
+        for sub in ("elsewhere/truss/" + SESSION, "repo/truss/" + SESSION, "repo/.git/other/" + SESSION):
             with self.subTest(sub):
                 d = self.put_events("spawn-one", os.path.join(self.tmp, *sub.split("/")))
                 self.assertEqual(self.leftovers(d), "not recorded")

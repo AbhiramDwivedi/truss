@@ -5,26 +5,26 @@ import { expect } from 'claude-code/testing'
 import { parsePlan } from '../hooks/register'
 import { handBack, startSession, test, world } from './harness'
 
-// ADR-0015 item 9 and cases 18-21: the plan-file route. The foreman's plan-mode foundry:architect hands its plan back in
-// two four-backtick blocks and foundry's hook writes <foundry dir>/plan.json and plan.md. Written from the ADR alone.
+// ADR-0015 item 9 and cases 18-21: the plan-file route. The pm's plan-mode truss:design-engineer hands its plan back in
+// two four-backtick blocks and truss's hook writes <truss dir>/plan.json and plan.md. Written from the ADR alone.
 
 type W = ReturnType<typeof world>
 
-const DIR = 'C:/r/.git/foundry/S1'
+const DIR = 'C:/r/.git/truss/S1'
 const PLAN_JSON = `${DIR}/plan.json`
 const PLAN_MD = `${DIR}/plan.md`
 const FENCE = '````'
-const KEPT = 'foundry: plan-file route kept the existing plan:'
-const NOTHING = 'foundry: plan-file route wrote nothing:'
+const KEPT = 'truss: plan-file route kept the existing plan:'
+const NOTHING = 'truss: plan-file route wrote nothing:'
 
-const crew = (slug: string, wave: number, verdict: string) => ({
+const crew = (slug: string, stage: number, verdict: string) => ({
   slug,
-  wave,
+  stage,
   verdict,
   modules: [slug],
   owns: [`src/${slug}/**`],
-  doneCheck: `pnpm test -- ${slug}`,
-  doneCheckProved: true,
+  acceptanceTest: `pnpm test -- ${slug}`,
+  acceptanceTestProved: true,
   estAgents: 4,
   status: 'planned',
 })
@@ -34,24 +34,24 @@ const planWith = (approvedAt: string | null) => ({
   version: 1,
   goal: 'Add rate limiting to the public API',
   architecture: 'docs/architecture.md',
-  approval: 'owner',
+  approval: 'client',
   approvedAt,
   agentCap: 40,
   maxParallelCrews: 4,
   crews: [crew('quotas', 0, 'change'), crew('gateway', 1, 'extend')],
 })
 const CARRIED = planWith('2026-10-28T15:00:00Z')
-const MD = '# Plan\n\nWave 0: quotas.\nWave 1: gateway.'
+const MD = '# Plan\n\nStage 0: quotas.\nStage 1: gateway.'
 
 const message = (json: string | undefined = JSON.stringify(CARRIED, null, 2), md: string | undefined = MD) =>
   [
     'VERDICT: plan ready, both files below.',
     ...(json === undefined ? [] : [`${FENCE}json plan.json`, json, FENCE]),
     ...(md === undefined ? [] : [`${FENCE}markdown plan.md`, md, FENCE]),
-    'Report: two crews, one wave each.',
+    'Report: two crews, one stage each.',
   ].join('\n')
 
-// the harness answers session.id 's1'; the ADR's foundry dir is under S1
+// the harness answers session.id 's1'; the ADR's truss dir is under S1
 const setup = async ($: Engine, on: On): Promise<W> => {
   const w = world($, ((name: string, handler: unknown) => (name === 'session.id' ? undefined : (on as (n: string, h: unknown) => unknown)(name, handler))) as unknown as On)
   on('session.id', async () => ({ value: 'S1' }))
@@ -70,45 +70,45 @@ test('fixture: the synthetic plan P8 is one parsePlan accepts', async () => {
   expect(parsePlan('{"crews": 3}')).toBeUndefined()
 })
 
-test('case 18: the foreman plan-mode architect hand-back writes plan.json and plan.md', async ($, on) => {
+test('case 18: the pm plan-mode designer hand-back writes plan.json and plan.md', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(w.files.has(PLAN_JSON)).toBe(true)
   expect(w.files.has(PLAN_MD)).toBe(true)
 })
 
-test('case 18 negative: an architect started inside a crew (agentId set) is not written', async ($, on) => {
+test('case 18 negative: an designer started inside a crew (agentId set) is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, 'L1', 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, 'L1', 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })
 
-test('case 18 negative: an architect whose prompt starts Mode: design is not written', async ($, on) => {
+test('case 18 negative: an designer whose prompt starts Mode: design is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: design\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: design\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })
 
-test('case 18 negative: an architect whose prompt starts Mode: init is not written', async ($, on) => {
+test('case 18 negative: an designer whose prompt starts Mode: init is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: init\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: init\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })
 
-test('case 18 negative: a foundry:judge from the main session with Mode: plan is not written', async ($, on) => {
+test('case 18 negative: a truss:qc-engineer from the main session with Mode: plan is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:judge', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:qc-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })
 
-test('case 18 negative: a foundry:lead with Mode: plan is not written', async ($, on) => {
+test('case 18 negative: a truss:foreman with Mode: plan is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:lead', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:foreman', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })
@@ -124,7 +124,7 @@ test('case 19: an approved plan on disk is never overwritten, and the keep is lo
   const w = await setup($, on)
   const existing = JSON.stringify(planWith('2026-10-28T15:11:50Z'), null, 2) + '\n'
   w.files.set(PLAN_JSON, existing)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(w.files.get(PLAN_JSON)).toBe(existing)
   expect(w.files.has(PLAN_MD)).toBe(false)
@@ -134,7 +134,7 @@ test('case 19: an approved plan on disk is never overwritten, and the keep is lo
 test('case 19: an existing plan with approvedAt null is replaced, both files written', async ($, on) => {
   const w = await setup($, on)
   w.files.set(PLAN_JSON, JSON.stringify(planWith(null), null, 2) + '\n')
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(w.files.get(PLAN_MD)).toBe(MD)
   expect(JSON.parse(w.files.get(PLAN_JSON) ?? '{}')).toEqual({ ...CARRIED, approvedAt: null })
@@ -144,7 +144,7 @@ test('case 19: an existing plan with approvedAt null is replaced, both files wri
 test('case 19: an unreadable existing plan is kept', async ($, on) => {
   const w = await setup($, on)
   w.files.set(PLAN_JSON, '{not json')
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(w.files.get(PLAN_JSON)).toBe('{not json')
   expect(w.files.has(PLAN_MD)).toBe(false)
@@ -153,7 +153,7 @@ test('case 19: an unreadable existing plan is kept', async ($, on) => {
 
 test('case 20: plan.json is written with approvedAt null and the rest of the carried plan; plan.md is the block text', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   const text = w.files.get(PLAN_JSON) ?? ''
   expect(text).not.toBe('')
@@ -166,7 +166,7 @@ test('case 20: plan.json is written with approvedAt null and the rest of the car
 
 test('case 21: a plan.json block of {"crews": 3} writes nothing and logs why', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message('{"crews": 3}'))
   expect(planWrites(w)).toEqual([])
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)
@@ -174,7 +174,7 @@ test('case 21: a plan.json block of {"crews": 3} writes nothing and logs why', a
 
 test('case 21: a plan.json block of {not json writes nothing and logs why', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message('{not json'))
   expect(planWrites(w)).toEqual([])
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)
@@ -182,9 +182,9 @@ test('case 21: a plan.json block of {not json writes nothing and logs why', asyn
 
 test('case 21: a hand-back with no plan.md block writes nothing and logs why', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'foundry:architect', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:design-engineer', 'Mode: plan\nGoal: rate limiting')
   // built inline: an explicit undefined argument takes message()'s default, which would send both blocks
-  const noMd = ['VERDICT: plan ready, both files below.', `${FENCE}json plan.json`, JSON.stringify(CARRIED, null, 2), FENCE, 'Report: two crews, one wave each.'].join('\n')
+  const noMd = ['VERDICT: plan ready, both files below.', `${FENCE}json plan.json`, JSON.stringify(CARRIED, null, 2), FENCE, 'Report: two crews, one stage each.'].join('\n')
   await handBack($, 'new1', noMd)
   expect(planWrites(w)).toEqual([])
   expect(logged(w, NOTHING).length).toBeGreaterThan(0)

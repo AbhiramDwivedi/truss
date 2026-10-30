@@ -3,8 +3,8 @@ import { expect } from 'claude-code/testing'
 import { HEARTBEAT_MS, MODEL_REFUSAL, STALL_MS } from '../hooks/register'
 import { NOW, ROOT, startSession, world, test } from './harness'
 
-// Contract test for foundry ADR-0003 "Seams" 1 and 3: the event log at <foundry dir>/events.jsonl
-// (shape: docs/events.schema.json) and the HH:MM stamp. Written by foundry run 2's design crew before
+// Contract test for truss ADR-0003 "Seams" 1 and 3: the event log at <truss dir>/events.jsonl
+// (shape: docs/events.schema.json) and the HH:MM stamp. Written by truss run 2's design crew before
 // the producer exists; it imports only names register.ts exports today.
 
 type W = ReturnType<typeof world>
@@ -12,7 +12,7 @@ type W = ReturnType<typeof world>
 const EVENTS = `${ROOT}/events.jsonl`
 const LOG = `${ROOT}/decisions.md`
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
-const FAILED = 'foundry: event log failed, letting the call through:'
+const FAILED = 'truss: event log failed, letting the call through:'
 const pad = (n: number) => String(n).padStart(2, '0')
 const at = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`
 
@@ -109,7 +109,7 @@ test('with fs.write failing for events.jsonl, the Agent call still goes through 
   await settle()
   expect(r.deny).toBeUndefined()
   expect(w.ran.filter(c => c.tool === 'Agent').length).toBe(before + 1)
-  expect(r.context).toEqual([`[foundry] If auth-tester's report does not reach you, read ${ROOT}/reports/auth/auth-tester.md once it stops.`])
+  expect(r.context).toEqual([`[truss] If auth-tester's report does not reach you, read ${ROOT}/reports/auth/auth-tester.md once it stops.`])
   expect(w.logs.filter(l => l.startsWith(FAILED)).length).toBe(1)
 })
 

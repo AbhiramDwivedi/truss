@@ -1,8 +1,8 @@
 // @ts-nocheck
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
-// foundry ADR-0006 section 3: skills/retro/SKILL.md carries the root-cause step. Written before the skill changes.
+// truss ADR-0006 section 3: skills/retro/SKILL.md carries the root-cause step. Written before the skill changes.
 //
-// Run with: node --test plugins/foundry/tests/retro-cause.check.ts
+// Run with: node --test tests/retro-cause.check.ts
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs. Every read returns ''
 // for a missing path, so each test fails on its own assertion. Every failure says "producer missing".
 
@@ -26,13 +26,13 @@ const HEADING3 = '## 3. Find the causes'
 const HEADING4 = '## 4. Propose changes'
 const CAUSE_FORM = 'CAUSE: <anomaly> | <evidence> | <fix location>'
 const NOT_FOUND = 'CAUSE: <anomaly> | not found | none'
-const KINDS = ['leftover', 'judge fail', 'stall', 'overrule', 'spent budget']
+const KINDS = ['leftover', 'QC engineer fail', 'stall', 'overrule', 'spent allowance']
 const NOT_ANOMALY = 'Spawns over estAgents are not an anomaly; give them no CAUSE line.'
-const SOURCES = "Its only sources are git, the disk, decisions.md, the judge files' VERDICT: and finding lines, and the plugin's own files."
+const SOURCES = "Its only sources are git, the disk, decisions.md, the QC engineer files' VERDICT: and finding lines, and the plugin's own files."
 const P24 = 'It never reads message, prompt or report bodies (P24).'
 const BOUND = 'at most 3 reads per anomaly'
 const PLUGIN_PREFIX = 'plugin: '
-const NEVER_WRITTEN = 'Plugin-level causes go to the owner as plugin findings and are never written (ADR-0005 section 1).'
+const NEVER_WRITTEN = 'Plugin-level causes go to the client as plugin findings and are never written (ADR-0005 section 1).'
 const DESC = 'why crews stalled or got rejected'
 
 // the body of section 3: from its heading to the next `## ` heading ('' when the heading is missing)
