@@ -1,0 +1,14 @@
+{
+  "name": "truss-ui",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server/main.ts",
+    "test": "node --test contract/state.check.ts contract/session.check.ts contract/http.check.ts test/*/*.test.ts",
+    "e2e": "playwright test",
+    "check:live": "node --test contract/live.check.ts"
+  },
+  "dependencies": { "@anthropic-ai/claude-agent-sdk": "0.3.314" },
+  "devDependencies": { "@playwright/test": "1.64.1" }
+}
