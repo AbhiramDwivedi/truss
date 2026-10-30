@@ -1,4 +1,4 @@
-// foundry ADR-0009 Decision 1: the factory CLI. Run as `node <plugin>/bin/factory.ts <command> [flags]`. Every command
+// truss ADR-0009 Decision 1: the factory CLI. Run as `node <plugin>/bin/factory.ts <command> [flags]`. Every command
 // prints one JSON object on one line; exit 0 = done, 1 = a gate or expectation refused, 2 = usage or I/O error
 // ({"error": "..."}). Node built-ins and ../hooks/register.ts only.
 import { spawnSync } from 'node:child_process'
@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
-import { fencedBlock, judgeFails, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
-import type { JudgeFile } from '../hooks/register.ts'
+import { fencedBlock, qcFails, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
+import type { QcFile } from '../hooks/register.ts'
 
 // ==== core ====
 
@@ -132,7 +132,7 @@ export function savePlan(dir: string, plan: Obj): void {
 // The repo's merge mode and target branch, and where they came from, as `settings` prints them.
 export function settingsOf(repo: string): { merge: string; target: string; source: string } {
   let cfg: Obj = {}
-  const p = `${repo}/.claude/foundry.json`
+  const p = `${repo}/.claude/truss.json`
   if (existsSync(p)) {
     const v = readJson(p)
     if (isObj(v)) cfg = v
@@ -140,20 +140,20 @@ export function settingsOf(repo: string): { merge: string; target: string; sourc
   const hasMerge = typeof cfg.merge === 'string' && cfg.merge !== ''
   const hasTarget = typeof cfg.target === 'string' && cfg.target !== ''
   const target = hasTarget ? cfg.target : run(repo, ['branch', '--show-current']).out
-  return { merge: hasMerge ? cfg.merge : 'sequential', target, source: hasMerge && hasTarget ? '.claude/foundry.json' : hasMerge || hasTarget ? 'mixed' : 'default' }
+  return { merge: hasMerge ? cfg.merge : 'sequential', target, source: hasMerge && hasTarget ? '.claude/truss.json' : hasMerge || hasTarget ? 'mixed' : 'default' }
 }
-// The repo's .claude/foundry.json as an object ({} when absent).
+// The repo's .claude/truss.json as an object ({} when absent).
 function configOf(repo: string): Obj {
-  const p = `${repo}/.claude/foundry.json`
+  const p = `${repo}/.claude/truss.json`
   if (!existsSync(p)) return {}
   const v = readJson(p)
   return isObj(v) ? v : {}
 }
 const intOr = (v: unknown, dflt: number, min: number): number => (Number.isInteger(v) && (v as number) >= min ? (v as number) : dflt)
 
-// The crew worktree path <repo>/.claude/worktrees/foundry-<slug>.
+// The crew worktree path <repo>/.claude/worktrees/truss-<slug>.
 export function crewWorktree(repo: string, slug: string): string {
-  return `${repo}/.claude/worktrees/foundry-${slug}`
+  return `${repo}/.claude/worktrees/truss-${slug}`
 }
 // `git merge-base <target> HEAD` in the worktree: the target head last merged into the crew branch.
 export function baseOf(worktree: string, target: string): string {
@@ -249,17 +249,17 @@ export function isLive(spawnTs: string | number, runDir: string | undefined, now
   return !(now - spawn > STALE_MS && now - newest > STALE_MS)
 }
 
-// The crew's report files D/reports/<slug>/*.md as JudgeFile[] ({name with .md, text, mtimeMs}), sorted by name.
-export function reportsOf(dir: string, slug: string): JudgeFile[] {
+// The crew's report files D/reports/<slug>/*.md as QcFile[] ({name with .md, text, mtimeMs}), sorted by name.
+export function reportsOf(dir: string, slug: string): QcFile[] {
   const d = `${dir}/reports/${slug}`
   if (!existsSync(d)) return []
   return readdirSync(d).filter((n) => n.endsWith('.md')).sort().map((name) => ({ name, text: readFileSync(`${d}/${name}`, 'utf8'), mtimeMs: statSync(`${d}/${name}`).mtimeMs }))
 }
-// The crew's repair spend: its judge FAIL reports only (owner ruling: red-team rounds add nothing).
+// The crew's repair spend: its QC FAIL reports only (client ruling: stress-test rounds add nothing).
 export function spentOf(dir: string, slug: string, since = 0): number {
-  return judgeFails(slug, reportsOf(dir, slug), since)
+  return qcFails(slug, reportsOf(dir, slug), since)
 }
-// {role: next free label number} from the crew's report files: `<slug>-judge.md` and `-judge-2.md` give {"judge": 3}.
+// {role: next free label number} from the crew's report files: `<slug>-qc.md` and `-qc-2.md` give {"qc": 3}.
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
   const out: Record<string, number> = {}
   for (const f of reportsOf(dir, slug)) {
@@ -290,17 +290,17 @@ function rolesWithTypes(plugin: string, types: string[]): Obj {
   for (const r of Object.values(roles)) if (isObj(r) && typeof r.typeFromProject === 'string' && isObj(roles[r.typeFromProject])) r.agentType = roles[r.typeFromProject].agentType
   return roles
 }
-// Copies <plugin>/workflows/<script> byte for byte to <scriptsDir>/foundry-<script> and returns that path; without scriptsDir returns the plugin path.
+// Copies <plugin>/workflows/<script> byte for byte to <scriptsDir>/truss-<script> and returns that path; without scriptsDir returns the plugin path.
 function scriptPathFor(plugin: string, script: string, scriptsDir: string | undefined): string {
   const src = `${plugin}/workflows/${script}`
   if (scriptsDir === undefined) return src
   if (!existsSync(src)) throw usage(`${src} does not exist`)
   mkdirSync(scriptsDir, { recursive: true })
-  const to = `${flat(scriptsDir)}/foundry-${script}`
+  const to = `${flat(scriptsDir)}/truss-${script}`
   copyFileSync(src, to)
   return to
 }
-// The architecture doc as an absolute path (the key `architecture` of foundry.json, repo-relative, default docs/architecture.md).
+// The architecture doc as an absolute path (the key `architecture` of truss.json, repo-relative, default docs/architecture.md).
 const archPath = (repo: string, rel: unknown): string => path.isAbsolute(String(rel)) ? flat(String(rel)) : `${repo}/${typeof rel === 'string' && rel !== '' ? rel : 'docs/architecture.md'}`
 
 function cmdSettings(f: Flags): Obj {
@@ -315,9 +315,9 @@ function cmdPlanArgs(f: Flags): Obj {
   if (fix !== undefined) readText(fix)
   const cfg = configOf(repo)
   return {
-    foundry: {
+    truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
-      maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), repairBudget: intOr(cfg.repairBudget, 2, 0), roles: readRoles(PLUGIN),
+      maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: readRoles(PLUGIN),
       scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')),
     },
     brief,
@@ -382,19 +382,19 @@ function cmdPlanCheck(f: Flags): Obj {
           else goalIds.push(g.id)
           if (typeof g.goal !== 'string' || g.goal === '') errors.push(`plan: goals[${i}] (${id}) goal must be a non-empty string`)
           if (typeof g.addedAt !== 'string') errors.push(`plan: goals[${i}] (${id}) addedAt must be a date-time string`)
-          if (g.approval !== 'auto' && g.approval !== 'owner') errors.push(`plan: goals[${i}] (${id}) approval must be auto or owner`)
+          if (g.approval !== 'auto' && g.approval !== 'client') errors.push(`plan: goals[${i}] (${id}) approval must be auto or client`)
           if (g.approvedAt !== null && typeof g.approvedAt !== 'string') errors.push(`plan: goals[${i}] (${id}) approvedAt must be a date-time string or null`)
           else if (g.approval === 'auto' && g.approvedAt === null) errors.push(`plan: goals[${i}] (${id}) approvedAt must be a string on an auto goal`)
         })
       }
     }
   }
-  const hasWave0 = crews.some((c) => c.wave === 0 && goalOf(c) === RUN_GOAL)
-  if ((plan.approval === 'owner') !== hasWave0) errors.push(`plan: approval must be owner exactly when a wave-0 crew exists (approval ${JSON.stringify(plan.approval)}, wave-0 crews ${hasWave0 ? 'exist' : 'do not'})`)
+  const hasStage0 = crews.some((c) => c.stage === 0 && goalOf(c) === RUN_GOAL)
+  if ((plan.approval === 'client') !== hasStage0) errors.push(`plan: approval must be client exactly when a stage-0 crew exists (approval ${JSON.stringify(plan.approval)}, stage-0 crews ${hasStage0 ? 'exist' : 'do not'})`)
   for (const c of crews) {
     const s = name(c)
     if (typeof c.slug !== 'string' || !SLUG.test(c.slug)) errors.push(`${s}: slug does not match the slug pattern`)
-    else if (c.slug === 'foundry') errors.push(`${s}: foundry is a reserved slug`)
+    else if (c.slug === 'truss') errors.push(`${s}: truss is a reserved slug`)
     if (c.goal !== undefined) {
       if (plan.version === 2) errors.push(`${s}: goal is version 3 only`)
       else if (plan.version === 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
@@ -403,22 +403,22 @@ function cmdPlanCheck(f: Flags): Obj {
   }
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
-      if (crews[i].wave !== crews[j].wave || goalOf(crews[i]) !== goalOf(crews[j])) continue
+      if (crews[i].stage !== crews[j].stage || goalOf(crews[i]) !== goalOf(crews[j])) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
         for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
-          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(`${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in wave ${crews[i].wave}`)
+          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(`${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}`)
         }
       }
     }
   }
   if (errors.length > 0) throw refuse({ ok: false, errors })
-  return { ok: true, unproved: crews.filter((c) => c.doneCheckProved === false).map(name) }
+  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name) }
 }
 
 function cmdApprove(f: Flags): Obj {
   const dir = dirOf(f)
   const by = need(f, 'by')
-  if (by !== 'owner' && by !== 'auto') throw usage('--by must be owner or auto')
+  if (by !== 'client' && by !== 'auto') throw usage('--by must be client or auto')
   const repo = repoOf(f)
   const plan = loadPlan(dir)
   if (plan.approvedAt !== null && plan.approvedAt !== undefined) throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
@@ -437,13 +437,13 @@ function cmdCheck(f: Flags): Obj {
   if (expect !== 'red' && expect !== 'green') throw usage('--expect must be red or green')
   const crew = loadPlan(dir).crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  if (typeof crew.doneCheck !== 'string' || crew.doneCheck === '') throw usage(`crew ${slug} has no doneCheck`)
+  if (typeof crew.acceptanceTest !== 'string' || crew.acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   let text: string
   let exit: number
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
-    const r = spawnSync('bash', ['-c', crew.doneCheck], { cwd, stdio: ['ignore', fd, fd] })
+    const r = spawnSync('bash', ['-c', crew.acceptanceTest], { cwd, stdio: ['ignore', fd, fd] })
     closeSync(fd)
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
     exit = r.status ?? 1
@@ -458,7 +458,7 @@ function cmdCheck(f: Flags): Obj {
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.doneCheck, exit, head, tail }) + '\n', { flag: 'wx' })
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 : exit === 0
   const body = { ok, exit, head, tail }
   if (!ok) throw refuse(body)
@@ -522,23 +522,23 @@ function goalSections(text: string): Record<string, string> {
   out[key] = buf.join('\n').trim()
   return out
 }
-// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else lead with the reason.
-function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'lead'; reason: string } {
-  if (merge === 'single') return { engine: 'lead', reason: 'merge mode single runs on the lead path' }
-  if (noWorkflow) return { engine: 'lead', reason: 'no Workflow tool in this session' }
+// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else foreman with the reason.
+function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'foreman'; reason: string } {
+  if (merge === 'single') return { engine: 'foreman', reason: 'merge mode single runs on the foreman path' }
+  if (noWorkflow) return { engine: 'foreman', reason: 'no Workflow tool in this session' }
   const text = sections.Engine
-  if (text === undefined || text === '') return { engine: 'lead', reason: 'the goal file has no ## Engine section' }
+  if (text === undefined || text === '') return { engine: 'foreman', reason: 'the goal file has no ## Engine section' }
   const m = /^(\w+)[\s:,.\-]*([\s\S]*)$/.exec(text)
   if (m?.[1].toLowerCase() === 'workflow') return { engine: 'workflow', reason: '' }
-  return { engine: 'lead', reason: (m?.[2] ?? '').trim() || 'the goal file says lead' }
+  return { engine: 'foreman', reason: (m?.[2] ?? '').trim() || 'the goal file says foreman' }
 }
 
-// Creates the crew worktree on branch foundry-<slug> from the target head, or reuses it when it is already there.
+// Creates the crew worktree on branch truss-<slug> from the target head, or reuses it when it is already there.
 function ensureWorktree(repo: string, slug: string, target: string): string {
   const wt = crewWorktree(repo, slug)
   if (existsSync(wt)) return wt
   mkdirSync(path.dirname(wt), { recursive: true })
-  const branch = `foundry-${slug}`
+  const branch = `truss-${slug}`
   const exists = run(repo, ['rev-parse', '-q', '--verify', `refs/heads/${branch}`]).status === 0
   gitOrFail(repo, exists ? ['worktree', 'add', '-q', wt, branch] : ['worktree', 'add', '-q', '-b', branch, wt, target])
   return wt
@@ -547,23 +547,23 @@ function ensureWorktree(repo: string, slug: string, target: string): string {
 type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[] }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
-// A crew entry for wave.js; `resume`, `tasks`, `done` and `answers` are the restart facts (fresh start: null and empty).
+// A crew entry for stage.js; `resume`, `tasks`, `done` and `answers` are the restart facts (fresh start: null and empty).
 function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[] }): Obj {
   const slug = String(crew.slug)
   const goalFile = `${c.dir}/goals/${slug}.md`
   const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
   return {
-    slug, wave: crew.wave, goalFile, goal: (sections[''] ?? '').replace(/^# .*\n?/, '').trim(), owns: crew.owns ?? [], doneCheck: crew.doneCheck ?? '',
+    slug, stage: crew.stage, goalFile, goal: (sections[''] ?? '').replace(/^# .*\n?/, '').trim(), owns: crew.owns ?? [], acceptanceTest: crew.acceptanceTest ?? '',
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
-    redTeam: /^(yes|true)\b/i.test(sections['Red team'] ?? ''), scope: sections['Approved scope'] ?? '', worktree: wt, branch: `foundry-${slug}`,
+    stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), scope: sections['Approved scope'] ?? '', worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
   }
 }
-function waveOut(c: StartCtx, entries: Obj[], leads: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[]): Obj {
+function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[]): Obj {
   return {
-    foundry: { kind: 'wave', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, repairBudget: intOr(c.plan.repairBudget, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    leads, refused, stale, unfinished,
+    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
+    foremen, refused, stale, unfinished,
   }
 }
 
@@ -617,7 +617,7 @@ function doneTasks(wfRun: WfRun | undefined, slug: string, wt: string): string[]
   for (const a of wfRun?.agents ?? []) {
     const r = a.result
     if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
-    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `foundry-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
+    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
   }
   return done
 }
@@ -648,8 +648,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
   const rebuild = kind !== 'merge-ready' && !noWork
   const entry = crewEntry(c, crew, wt, { resume: kind, tasks: rebuild ? plannerTasks(wfRun, slug) : [], done: rebuild ? doneTasks(wfRun, slug, wt) : [], answers })
-  // The crew's first red team report (label <slug>-redteam, wave.js nextLabel :108-112): its ## Notes bullets, parsed as wave.js redteam() :479 and sectionOf :466-473.
-  const rtFile = `${c.dir}/reports/${slug}/${slug}-redteam.md`
+  // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
+  const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
     let section: string | undefined
     entry.deferred = []
@@ -660,9 +660,9 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   }
   if (kind === 'stale') {
     appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
-    appendDecision(c.dir, `restarted stale workflow crew ${slug} | its wave.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
+    appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
   }
-  return waveOut(c, [entry], [], [], [], [])
+  return stageOut(c, [entry], [], [], [], [])
 }
 
 function cmdStart(f: Flags): Obj {
@@ -671,7 +671,7 @@ function cmdStart(f: Flags): Obj {
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'))
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
-  const scriptPath = scriptPathFor(PLUGIN, 'wave.js', str(f, 'scripts-dir'))
+  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
@@ -682,29 +682,29 @@ function cmdStart(f: Flags): Obj {
     if (!slugFlag || !resumeFlag) throw usage('start --slug and --resume go together')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
   }
-  const waveArg = need(f, 'wave')
+  const stageArg = need(f, 'stage')
   const noWorkflow = f['no-workflow'] === true
   const crews: Obj[] = plan.crews.filter(isObj)
-  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.wave).filter((w) => typeof w === 'number')
-  if (open.length === 0) throw refuse({ error: 'no wave has a planned or running crew' })
+  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
+  if (open.length === 0) throw refuse({ error: 'no stage has a planned or running crew' })
   const next = Math.min(...open)
-  // A plan with a goals array gets per-goal waves; a plan without one takes the single global next wave, as before.
+  // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
   const hasGoals = Array.isArray(plan.goals) && plan.goals.length > 0
   const goalNext = new Map<string, number>()
   for (const c of crews) {
-    if ((c.status !== 'planned' && c.status !== 'running') || typeof c.wave !== 'number') continue
+    if ((c.status !== 'planned' && c.status !== 'running') || typeof c.stage !== 'number') continue
     const g = goalOf(c)
-    goalNext.set(g, Math.min(goalNext.get(g) ?? Infinity, c.wave))
+    goalNext.set(g, Math.min(goalNext.get(g) ?? Infinity, c.stage))
   }
-  if (!hasGoals && waveArg !== 'next' && Number(waveArg) !== next) throw refuse({ error: `wave ${waveArg} is not the next wave: ${next}` })
-  if (hasGoals && waveArg !== 'next' && ![...goalNext.values()].includes(Number(waveArg))) {
-    throw refuse({ error: `wave ${waveArg} is not the next wave of any goal: ${[...goalNext].map(([g, w]) => `${g} ${w}`).join(', ')}` })
+  if (!hasGoals && stageArg !== 'next' && Number(stageArg) !== next) throw refuse({ error: `stage ${stageArg} is not the next stage: ${next}` })
+  if (hasGoals && stageArg !== 'next' && ![...goalNext.values()].includes(Number(stageArg))) {
+    throw refuse({ error: `stage ${stageArg} is not the next stage of any goal: ${[...goalNext].map(([g, w]) => `${g} ${w}`).join(', ')}` })
   }
-  const startsNow = (crew: Obj): boolean => (hasGoals ? goalNext.get(goalOf(crew)) === crew.wave && (waveArg === 'next' || Number(waveArg) === crew.wave) : crew.wave === next)
+  const startsNow = (crew: Obj): boolean => (hasGoals ? goalNext.get(goalOf(crew)) === crew.stage && (stageArg === 'next' || Number(stageArg) === crew.stage) : crew.stage === next)
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   let slots = cap - crews.filter((c) => c.status === 'running').length
   const wasRunning = crews.filter((c) => c.status === 'running')
-  const leads: Obj[] = []
+  const foremen: Obj[] = []
   const refused: Obj[] = []
   const entries: Obj[] = []
   for (const crew of crews) {
@@ -714,13 +714,13 @@ function cmdStart(f: Flags): Obj {
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
     const { engine, reason } = engineOf(sections, settings.merge, noWorkflow)
-    if (engine === 'lead') {
-      const leadVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
-      if (leadVerdict !== undefined) {
-        refused.push({ slug, reason: leadVerdict.deny })
+    if (engine === 'foreman') {
+      const foremanVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
+      if (foremanVerdict !== undefined) {
+        refused.push({ slug, reason: foremanVerdict.deny })
         continue
       }
-      leads.push({ slug, reason })
+      foremen.push({ slug, reason })
       slots--
       continue
     }
@@ -733,7 +733,7 @@ function cmdStart(f: Flags): Obj {
     crew.status = 'running'
     savePlan(dir, plan)
     appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
-    appendDecision(dir, `started workflow crew ${slug} in wave ${crew.wave}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree foundry-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
+    appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--
     entries.push(crewEntry(ctx, crew, wt, { resume: null }))
   }
@@ -748,23 +748,23 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return waveOut(ctx, entries, leads, refused, stale, unfinished)
+  return stageOut(ctx, entries, foremen, refused, stale, unfinished)
 }
 
 // ==== finish ====
 
 import { utimesSync } from 'node:fs'
-import { NO_HEAD_REASON, NO_PASS_REASON, PATCH_COMMAND, family, headVerdict, judgeRuling, latestJudge, markerOf, patchIdOf, planAtLeastV2, runStart } from '../hooks/register.ts'
-import type { JudgeRuling } from '../hooks/register.ts'
+import { NO_HEAD_REASON, NO_PASS_REASON, PATCH_COMMAND, family, headVerdict, qcRuling, latestQc, markerOf, patchIdOf, planAtLeastV2, runStart } from '../hooks/register.ts'
+import type { QcRuling } from '../hooks/register.ts'
 
 // The merge step's head rule (ADR-0009 step 3), failing closed. headVerdict is fail-open for the stop gate (it passes an undefined head
-// or patch, and a plan below v2), so this refuses first when the judge, head or patch is missing, whatever the plan version, and then
+// or patch, and a plan below v2), so this refuses first when the QC, head or patch is missing, whatever the plan version, and then
 // asks headVerdict about a v2 view of the plan. Returns {block} to refuse, undefined when the PASS stands.
-export function mergeHeadVerdict(plan: any, judge: JudgeRuling | undefined, head: string | undefined, patch: string | undefined): { block: string } | undefined {
-  if (judge === undefined || judge.verdict !== 'PASS' || judge.unscoped > 0) return { block: NO_PASS_REASON }
-  if (judge.head === undefined || judge.patch === undefined) return { block: NO_HEAD_REASON }
+export function mergeHeadVerdict(plan: any, qc: QcRuling | undefined, head: string | undefined, patch: string | undefined): { block: string } | undefined {
+  if (qc === undefined || qc.verdict !== 'PASS' || qc.unscoped > 0) return { block: NO_PASS_REASON }
+  if (qc.head === undefined || qc.patch === undefined) return { block: NO_HEAD_REASON }
   if (head === undefined || patch === undefined) return { block: 'Refused: patch id unavailable: the merged head or its patch id could not be computed.' }
-  return headVerdict(planAtLeastV2(plan) ? plan : { ...(isObj(plan) ? plan : {}), version: 2 }, judge, head, patch)
+  return headVerdict(planAtLeastV2(plan) ? plan : { ...(isObj(plan) ? plan : {}), version: 2 }, qc, head, patch)
 }
 
 type Audit = { label: string; why: string; slug?: string }
@@ -790,8 +790,8 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     if (fam !== 'opus' && fam !== 'sonnet') bad(`the transcript model family is ${fam}, not opus or sonnet`)
     if (facts.effort === 'max') bad('effort max')
     if ((facts.effort === 'high' || facts.effort === 'xhigh') && parsed !== undefined) bad(`effort ${facts.effort} on role ${parsed.role}`)
-    if (parsed !== undefined && (parsed.role === 'judge' || parsed.role === 'redteam') && agentType !== 'foundry:judge') bad(`${parsed.role} ran as ${agentType ?? 'an unknown type'}, not foundry:judge`)
-    if (parsed !== undefined && parsed.role === 'judge' && facts.tools.some((t) => t.name === 'Write' || t.name === 'Edit')) bad('a judge used Write or Edit')
+    if (parsed !== undefined && (parsed.role === 'qc' || parsed.role === 'stress') && agentType !== 'truss:qc-engineer') bad(`${parsed.role} ran as ${agentType ?? 'an unknown type'}, not truss:qc-engineer`)
+    if (parsed !== undefined && parsed.role === 'qc' && facts.tools.some((t) => t.name === 'Write' || t.name === 'Edit')) bad('a QC used Write or Edit')
     if (parsed === undefined) {
       bad('the label does not parse as <slug>-<role>')
       continue
@@ -838,15 +838,15 @@ function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySl
     if (waived.has(r.id)) continue
     const firsts = r.agents.map((a) => Date.parse(transcriptFacts(a.transcript).firstTs ?? '')).filter((n) => Number.isFinite(n))
     if (start !== undefined && firsts.length > 0 && Math.min(...firsts) < start) continue
-    const foundryRun = r.agents.every((a) => {
+    const trussRun = r.agents.every((a) => {
       const p = parseLabel(a.label)
-      return p !== undefined && (p.slug === 'foundry' || factorySlugs.has(p.slug))
+      return p !== undefined && (p.slug === 'truss' || factorySlugs.has(p.slug))
     })
     const typeOf = (a: RunAgent): string => (typeof a.meta?.agentType === 'string' ? a.meta.agentType : '')
-    if (!foundryRun && !r.agents.some((a) => typeOf(a).startsWith('foundry:'))) continue
+    if (!trussRun && !r.agents.some((a) => typeOf(a).startsWith('truss:'))) continue
     for (const a of r.agents) {
       const label = `${r.id}/${a.label}`
-      if (!foundryRun && typeOf(a).startsWith('foundry:')) audits.push({ label, why: `${typeOf(a)} agent in a run that is not foundry's` })
+      if (!trussRun && typeOf(a).startsWith('truss:')) audits.push({ label, why: `${typeOf(a)} agent in a run that is not truss's` })
       if (typeof a.meta?.model !== 'string' || a.meta.model === '') audits.push({ label, why: 'the meta file has no model' })
       else {
         const fam = family(transcriptFacts(a.transcript).model)
@@ -901,8 +901,8 @@ function redRecord(dir: string, slug: string): Obj | undefined {
 
 type Outcome = { merged?: true; rework?: string; blocked?: string; refused?: string }
 
-// Merge step for one crew whose newest judge is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: JudgeRuling, audits: Audit[], fails: number): Outcome {
+// Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling, audits: Audit[], fails: number): Outcome {
   const slug: string = crew.slug
   const wt = crewWorktree(repo, slug)
   const plan = loadPlan(dir)
@@ -915,11 +915,11 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   } catch (e) {
     return { refused: e instanceof CliError && Array.isArray(e.body.outside) ? `owns-check: outside ${(e.body.outside as string[]).join(', ')}` : `owns-check failed: ${(e as Error).message}` }
   }
-  const budget = intOr(plan.repairBudget, 2, 0)
-  if (fails > budget) return { refused: `repair budget spent: ${fails} judge FAILs, budget ${budget}` }
+  const allowance = intOr(plan.reworkAllowance, 2, 0)
+  if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }
   const red = redRecord(dir, slug)
   if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
-  if (run(wt, ['rev-parse', `refs/heads/foundry-${slug}`]).out !== run(wt, ['rev-parse', 'HEAD']).out) return { refused: `the crew worktree is not on branch foundry-${slug}` }
+  if (run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out !== run(wt, ['rev-parse', 'HEAD']).out) return { refused: `the crew worktree is not on branch truss-${slug}` }
   // step 2: resolve the target once, fully qualified (a same-named tag must not win), and merge that commit in, never a rebase
   const targetRef = `refs/heads/${target}`
   const resolved = run(repo, ['rev-parse', '--verify', `${targetRef}^{commit}`])
@@ -936,12 +936,12 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   const base = run(wt, ['merge-base', oldSha, 'HEAD']).out
   const patch = head === '' || base === '' ? undefined : patchOf(wt, base, head)
   if (ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined) return { refused: 'patch id unavailable' }
-  if (mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'rejudge' }
+  if (mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
   if (head !== ruling.head) {
     try {
       cmdCheck({ dir, slug, cwd: wt, expect: 'green' })
     } catch {
-      return { rework: 'rejudge' }
+      return { rework: 'reqc' }
     }
   }
   // step 4: fast-forward the target
@@ -950,18 +950,18 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     const dirty = run(onTarget.path, ['status', '--porcelain', '--untracked-files=no']).out
     if (dirty !== '') return { blocked: `target checked out dirty: ${dirty.split('\n')[0]?.trim().replace(/^\S+\s+/, '')}` }
     if (run(onTarget.path, ['rev-parse', 'HEAD']).out !== oldSha) return { rework: 'target moved' }
-    if (run(onTarget.path, ['merge', '--ff-only', `refs/heads/foundry-${slug}`]).status !== 0) return { rework: 'target moved' }
+    if (run(onTarget.path, ['merge', '--ff-only', `refs/heads/truss-${slug}`]).status !== 0) return { rework: 'target moved' }
   } else if (run(repo, ['update-ref', targetRef, head, oldSha]).status !== 0) return { rework: 'target moved' }
   // step 5: record, then clean up
   const fresh = loadPlan(dir)
   const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (entry !== undefined) entry.status = 'merged'
   savePlan(dir, fresh)
-  appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | judge PASS on ${ruling.head}, red record exit ${red.exit}, patch ${patch}, done-check green on the merged head`)
-  const own = new Set(fresh.crews.filter(isObj).map((c: Obj) => `foundry-${c.slug}`))
+  appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling.head}, red record exit ${red.exit}, patch ${patch}, acceptance test green on the merged head`)
+  const own = new Set(fresh.crews.filter(isObj).map((c: Obj) => `truss-${c.slug}`))
   for (const w of worktreesOf(repo)) {
-    if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`foundry-${slug}-`)) continue
-    if (run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/foundry-${slug}`]).status === 0) run(repo, ['worktree', 'remove', w.path])
+    if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`truss-${slug}-`)) continue
+    if (run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/truss-${slug}`]).status === 0) run(repo, ['worktree', 'remove', w.path])
   }
   run(repo, ['worktree', 'remove', wt])
   return { merged: true }
@@ -971,14 +971,14 @@ function cmdFinish(f: Flags): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
   const settings = settingsOf(repo)
-  if (settings.merge === 'single') throw usage('single merge mode runs on the lead path')
+  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
   const dir = dirOf(f)
   const tdir = flat(need(f, 'transcript')).replace(/\/+$/, '')
   const resultPath = str(f, 'result')
   let results: Obj[] | undefined
   if (resultPath !== undefined) {
     const v = readJson(flat(resultPath))
-    if (!Array.isArray(v)) throw usage('--result must hold the JSON array wave.js returned')
+    if (!Array.isArray(v)) throw usage('--result must hold the JSON array stage.js returned')
     results = v.filter(isObj)
   }
   const plan = loadPlan(dir)
@@ -1020,7 +1020,7 @@ function cmdFinish(f: Flags): Obj {
   for (const a of stand) if (!out.audit.some((x) => x.label === a.label && x.why === a.why)) out.audit.push({ label: a.label, why: a.why })
   if (stand.length > 0) {
     const what = `session audit stands, nothing merged: ${stand.map((a) => `${a.label} (${a.why})`).join('; ')}`
-    if (!log.includes(what)) appendDecision(dir, `${what} | the owner rules, then a decision line "audit waived: <run id>" or the offending run goes`)
+    if (!log.includes(what)) appendDecision(dir, `${what} | the client rules, then a decision line "audit waived: <run id>" or the offending run goes`)
     for (const c of inRun) out.refused.push({ slug: c.slug, why: 'session audit' })
     return finishWith()
   }
@@ -1030,10 +1030,10 @@ function cmdFinish(f: Flags): Obj {
     const res = results.find((r) => r.slug === c.slug)
     if (res === undefined || res.state !== 'passed') continue
     const files = reportsOf(dir, c.slug)
-    const newest = latestJudge(c.slug, files, since)
-    const ruling = newest === undefined ? undefined : judgeRuling(newest.text)
+    const newest = latestQc(c.slug, files, since)
+    const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, judgeFails(c.slug, files, since))
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, files, since))
     if (r.merged) out.merged.push(c.slug)
     else if (r.rework !== undefined) out.rework.push({ slug: c.slug, why: r.rework })
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })

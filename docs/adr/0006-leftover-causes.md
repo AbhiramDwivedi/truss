@@ -1,15 +1,15 @@
-# ADR-0006: why each leftover stayed, a red team that leaves nothing, and retro's root-cause step
+# ADR-0006: why each leftover stayed, a stress test that leaves nothing, and retro's root-cause step
 
-Status: proposed, 2026-10-29. Written by the design crew `leftover-design` (wave 0), for foundry 0.9.0. It becomes accepted when the foreman merges the wave-0 crew under the owner-approved plan; no owner trigger applies (no principle breaks, no external service, retro's JSON is not stored, P15).
+Status: proposed, 2026-10-29. Written by the design crew `leftover-design` (stage 0), for foundry 0.9.0. It becomes accepted when the PM (project manager) merges the stage-0 crew under the client-approved plan; no client trigger applies (no principle breaks, no external service, retro's JSON is not stored, P15).
 
 ## Context
 
-Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a red team's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts:1324`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The red team was detached because `agents/judge.md:78` tells it to run `git checkout --detach <sha>`.
+Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a stress test's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts:1324`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The stress test was detached because `agents/qc-engineer.md:78` tells it to run `git checkout --detach <sha>`.
 
 Three fixes follow, and this ADR decides all three:
 
 1. retro reports, per leftover, the facts self-clean looks at and the reason it would give (section 1);
-2. the red team resets its own branch instead of detaching, and leaves its worktree clean (section 2);
+2. the stress test resets its own branch instead of detaching, and leaves its worktree clean (section 2);
 3. the retro skill gets a root-cause step behind its description's "why crews stalled or got rejected" (section 3).
 
 **The interface that can't take the work.** `leftovers` is `{"branches": [...], "folders": [...], "count": n}`, and every test compares that whole dict: `tests/test_contract_leftovers.py`, `tests/test_retro_leftovers.py` and the root e2e test `tests/e2e/cleanup.e2e.ts`. A field nested inside it breaks all three. The top-level key set is pinned by set equality (`TOP_KEYS` in `tests/test_contract_retro.py:23` and `tests/test_contract_retro_050.py:69`). So the new facts go in one new top-level key, and `leftovers` and every other old key stay exactly as they are.
@@ -86,24 +86,24 @@ The leftovers contract forbids reading `slots.json`, and retro never reads trans
 
 **A detached leftover.** Its `skip` is `not on a worktree-* branch (detached)`: what `decideSelfClean` would say. The sweep never asks it: it drops a worktree not on a `worktree-*` branch at `register.ts:1324`, before `decideSelfClean` runs, and logs nothing. retro's string is the reason the sweep's silence stands for.
 
-**`"not recorded"`.** The whole key is `"not recorded"` whenever `leftovers` is, by the same rules (no event file, a dir not shaped `<git common dir>/foundry/<session>`, or `git for-each-ref` failing), and also when `git worktree list --porcelain` fails. When `leftovers` is a dict with `count` 0, `leftoverDetails` is `[]`. Inside an entry a git failure is never `"not recorded"`: a failed `status` makes `dirty` `true`, a failed `merge-base`, `merge-tree` or `cherry` means that `inMain` check doesn't hold, and a failed `branch --show-current` means no branch.
+**`"not recorded"`.** The whole key is `"not recorded"` whenever `leftovers` is, by the same rules (no event file, a dir not shaped `<git common dir>/truss/<session>`, or `git for-each-ref` failing), and also when `git worktree list --porcelain` fails. When `leftovers` is a dict with `count` 0, `leftoverDetails` is `[]`. Inside an entry a git failure is never `"not recorded"`: a failed `status` makes `dirty` `true`, a failed `merge-base`, `merge-tree` or `cherry` means that `inMain` check doesn't hold, and a failed `branch --show-current` means no branch.
 
-**The git commands retro may run for this key**, all with `GIT_OPTIONAL_LOCKS=0` through `git_out`: `worktree list --porcelain`, `status --porcelain --untracked-files=all`, `merge-base --is-ancestor`, `rev-parse HEAD^{tree}`, `merge-tree --write-tree` (quarantined as above), `cherry`, `branch --show-current`. None changes a ref, the index, a worktree or config. retro.py's docstring, which says "rev-parse and for-each-ref only", is updated by the wave-1 crew to name these.
+**The git commands retro may run for this key**, all with `GIT_OPTIONAL_LOCKS=0` through `git_out`: `worktree list --porcelain`, `status --porcelain --untracked-files=all`, `merge-base --is-ancestor`, `rev-parse HEAD^{tree}`, `merge-tree --write-tree` (quarantined as above), `cherry`, `branch --show-current`. None changes a ref, the index, a worktree or config. retro.py's docstring, which says "rev-parse and for-each-ref only", is updated by the stage-1 crew to name these.
 
-**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts:734-752`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts:1244-1349`) and `parseWorktrees` (`register.ts:571-586`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a foundry test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
+**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts:734-752`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts:1244-1349`) and `parseWorktrees` (`register.ts:571-586`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a Truss test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
 
-### 2. The red team's start and end state
+### 2. the stress test's start and end state
 
-`agents/judge.md` red-team mode (now line 78) changes. The wave-1 crew `redteam-reset` writes the prompt; these are its literals.
+`agents/qc-engineer.md` stress-test mode (now line 78) changes. The stage-1 crew `redteam-reset` writes the prompt; these are its literals.
 
-- **Start.** The first step is `git reset --hard <sha>` in its own worktree, in place of `git checkout --detach <sha>`. The worktree stays on its `worktree-agent-<id>` branch, which then points at the crew head, so once the crew merges the branch is an ancestor of main and the sweep removes it with `-d`. If the reset fails, or `git status --porcelain --untracked-files=all` prints anything afterwards, it stops with the first line `REDTEAM: not run` and the reason. The literal `git checkout --detach` is gone from `judge.md`.
-- **End.** Before it reports, the red team runs `git reset --hard <sha>` again and `git clean -fd` in its own worktree, then confirms `git status --porcelain --untracked-files=all` prints nothing.
-- **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts:812`) and then commits the leftovers for it (`commitLeftovers`, `register.ts:1021`, called at 1853); for a red team that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
+- **Start.** The first step is `git reset --hard <sha>` in its own worktree, in place of `git checkout --detach <sha>`. The worktree stays on its `worktree-agent-<id>` branch, which then points at the crew head, so once the crew merges the branch is an ancestor of main and the sweep removes it with `-d`. If the reset fails, or `git status --porcelain --untracked-files=all` prints anything afterwards, it stops with the first line `STRESSTEST: not run` and the reason. The literal `git checkout --detach` is gone from `qc-engineer.md`.
+- **End.** Before it reports, the stress test runs `git reset --hard <sha>` again and `git clean -fd` in its own worktree, then confirms `git status --porcelain --untracked-files=all` prints nothing.
+- **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts:812`) and then commits the leftovers for it (`commitLeftovers`, `register.ts:1021`, called at 1853); for a stress test that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
 - **Probes.** It prefers temp dirs outside the worktree for probe files. A file in a gitignored path doesn't count as dirty either.
 
-`agents/lead.md:64`'s red-team bullet no longer says the red team "checks out" the SHA: it says the red team first resets its own worktree to that SHA (`git reset --hard <sha>`).
+`agents/foreman.md:64`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
 
-The literals the wave-0 check `tests/redteam-reset.check.ts` pins, each a substring of `judge.md`'s red-team section (from the line starting `When your brief opens with the line \`Red team:\`` to the next `##` heading or the `REDTEAM: <n> findings` paragraph):
+The literals the stage-0 check `tests/redteam-reset.check.ts` pins, each a substring of `qc-engineer.md`'s stress-test section (from the line starting `When your brief opens with the line \`Stress test:\`` to the next `##` heading or the `STRESSTEST: <n> findings` paragraph):
 
 | Literal | Present or absent |
 | --- | --- |
@@ -115,36 +115,36 @@ The literals the wave-0 check `tests/redteam-reset.check.ts` pins, each a substr
 | `temp dir` | present |
 | `git checkout --detach` | absent from the whole file |
 
-In `lead.md`, the bullet starting `- **Red team, when the brief says yes.**` doesn't contain `checks out` and does contain `git reset --hard <sha>`.
+In `foreman.md`, the bullet starting `- **Stress test, when the brief says yes.**` doesn't contain `checks out` and does contain `git reset --hard <sha>`.
 
 ### 3. The retro skill's root-cause step
 
-`skills/retro/SKILL.md` gets a new section between "Report the counts" and "Propose changes", headed exactly `## 3. Find the causes`; "Propose changes" becomes `## 4.` and "Write only what the owner approves" `## 5.`. The description keeps "why crews stalled or got rejected"; this section is the body step behind it. The wave-1 crew `retro-causes` writes it; these are its rules and literals.
+`skills/retro/SKILL.md` gets a new section between "Report the counts" and "Propose changes", headed exactly `## 3. Find the causes`; "Propose changes" becomes `## 4.` and "Write only what the client approves" `## 5.`. The description keeps "why crews stalled or got rejected"; this section is the body step behind it. The stage-1 crew `retro-causes` writes it; these are its rules and literals.
 
-- **Anomalies.** Five kinds, by these exact names: `leftover`, `judge fail`, `stall`, `overrule`, `spent budget`. One line per anomaly: each `leftoverDetails` entry; each judge file whose first line starts `VERDICT: FAIL`; and, per run, a non-zero `stalls` count (`agent` or `idleLead`), a non-zero `decisions.overruled` and a non-zero `budgetsSpent`.
+- **Anomalies.** Five kinds, by these exact names: `leftover`, `qc fail`, `stall`, `overrule`, `spent allowance`. One line per anomaly: each `leftoverDetails` entry; each QC file whose first line starts `VERDICT: FAIL`; and, per run, a non-zero `stalls` count (`agent` or `idleForeman`), a non-zero `decisions.overruled` and a non-zero `allowancesSpent`.
 - **Not an anomaly.** Spawns over `estAgents` never get a line. Sentence: `Spawns over estAgents are not an anomaly; give them no CAUSE line.`
-- **Form.** Each line is exactly `CAUSE: <anomaly> | <evidence> | <fix location>`. `<anomaly>` starts with one of the five names (for example `leftover a0123456789abcdef`, `judge fail auth-judge-2`). `<evidence>` is a fact from an allowed source, such as the entry's `skip` string or a judge finding line. `<fix location>` is a file and a key, line or section. When the allowed sources don't show a cause, the line is `CAUSE: <anomaly> | not found | none`.
-- **Sources.** Sentence: `Its only sources are git, the disk, decisions.md, the judge files' VERDICT: and finding lines, and the plugin's own files.` A finding line is a line under a judge file's `## Findings` heading that starts `- `.
-- **P24.** Sentence: `It never reads message, prompt or report bodies (P24).` The judge files' `VERDICT:` and finding lines are the only report text it reads.
+- **Form.** Each line is exactly `CAUSE: <anomaly> | <evidence> | <fix location>`. `<anomaly>` starts with one of the five names (for example `leftover a0123456789abcdef`, `qc fail auth-qc-2`). `<evidence>` is a fact from an allowed source, such as the entry's `skip` string or a QC engineer finding line. `<fix location>` is a file and a key, line or section. When the allowed sources don't show a cause, the line is `CAUSE: <anomaly> | not found | none`.
+- **Sources.** Sentence: `Its only sources are git, the disk, decisions.md, the qc files' VERDICT: and finding lines, and the plugin's own files.` A finding line is a line under a QC file's `## Findings` heading that starts `- `.
+- **P24.** Sentence: `It never reads message, prompt or report bodies (P24).` The QC files' `VERDICT:` and finding lines are the only report text it reads.
 - **Bound.** One `CAUSE:` line per anomaly, and `at most 3 reads per anomaly` (a git command, a file read or a grep each count as one).
-- **Plugin-level causes.** A cause whose fix location is a file of the foundry plugin, not of the project, has `<fix location>` starting `plugin: `. Sentence: `Plugin-level causes go to the owner as plugin findings and are never written (ADR-0005 section 1).` Only project files (`.claude/foundry.json`, prompt-override files) can become section 4 proposals.
+- **Plugin-level causes.** A cause whose fix location is a file of the Truss plugin, not of the project, has `<fix location>` starting `plugin: `. Sentence: `Plugin-level causes go to the client as plugin findings and are never written (ADR-0005 section 1).` Only project files (`.claude/truss.json`, prompt-override files) can become section 4 proposals.
 
-The wave-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `## 3. Find the causes`, before `## 4. Propose changes`; the literal `CAUSE: <anomaly> | <evidence> | <fix location>`; each of the five kind names in backticks in that section; the not-an-anomaly sentence; `CAUSE: <anomaly> | not found | none`; the sources sentence; the P24 sentence; `at most 3 reads per anomaly`; `plugin: `; the plugin-level sentence; and that the frontmatter description still contains `why crews stalled or got rejected`.
+The stage-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `## 3. Find the causes`, before `## 4. Propose changes`; the literal `CAUSE: <anomaly> | <evidence> | <fix location>`; each of the five kind names in backticks in that section; the not-an-anomaly sentence; `CAUSE: <anomaly> | not found | none`; the sources sentence; the P24 sentence; `at most 3 reads per anomaly`; `plugin: `; the plugin-level sentence; and that the frontmatter description still contains `why crews stalled or got rejected`.
 
 ## Seams
 
 | Seam | Producer | Consumer | Contract | Pinned by |
 | --- | --- | --- | --- | --- |
-| retro's `leftoverDetails` | `scripts/retro.py` | the `foundry:retro` skill's root-cause step | section 1 | `tests/test_contract_leftover_details.py` |
-| retro's top-level key set | `scripts/retro.py` | the `foundry:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py:23`, `tests/test_contract_retro_050.py:69` |
-| The red team's start and end state | `agents/judge.md`, `agents/lead.md` | the red-team judge; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
-| The root-cause step | `skills/retro/SKILL.md` | the model running `/foundry:retro` | section 3 | `tests/retro-cause.check.ts` |
+| retro's `leftoverDetails` | `scripts/retro.py` | the `truss:retro` skill's root-cause step | section 1 | `tests/test_contract_leftover_details.py` |
+| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py:23`, `tests/test_contract_retro_050.py:69` |
+| the stress test's start and end state | `agents/qc-engineer.md`, `agents/foreman.md` | the stress-test QC engineer; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
+| The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | section 3 | `tests/retro-cause.check.ts` |
 
 ## Consequences
 
 - A leftover now comes with the reason it stayed, read from git, the disk and the main checkout only. retro still never reads `slots.json`, transcripts or the worktrees plugin.
-- retro writes one temp dir (the merge-tree quarantine) and removes it. The repo and the foundry dir are unchanged. If the quarantine pair ever lets an object through, the contract test's `git count-objects -v` check fails.
+- retro writes one temp dir (the merge-tree quarantine) and removes it. The repo and the Truss dir are unchanged. If the quarantine pair ever lets an object through, the contract test's `git count-objects -v` check fails.
 - retro's `skip` can drift from worktrees' `decideSelfClean` without any test failing (section 1, "The source, and the drift risk").
-- A red team's worktree is removed by the sweep at the first merge after it stops, once its branch is in main. A rejected crew never merges, so its red team's worktree stays, with `skip` `worktree-agent-<id> is not in the main checkout's HEAD yet`; that is correct, not a leak.
+- A stress test's worktree is removed by the sweep at the first merge after it stops, once its branch is in main. A rejected crew never merges, so its stress test's worktree stays, with `skip` `worktree-agent-<id> is not in the main checkout's HEAD yet`; that is correct, not a leak.
 - The `passes every check retro can see` string can stand for an entry the sweep still keeps, because of a check retro can't see; the root-cause step says so in its evidence rather than guessing.
 - Not done here, out of scope: a sweep log line for a detached worktree at `register.ts:1324`, and the dead `forget` field of `SelfCleanPlan` (set at `register.ts:736-737`, read nowhere). Both are worktrees changes.

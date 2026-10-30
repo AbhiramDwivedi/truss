@@ -1,11 +1,11 @@
-// The owner interview's command line (ADR-0008 Seam 5): next, remaining, check and trace over the branches file,
-// the interview state file and the requirements ledger. `main` returns the text and exit code; running the file
+// The client brief's command line (ADR-0008 Seam 5): next, remaining, check and trace over the branches file,
+// the brief state file and the requirements ledger. `main` returns the text and exit code; running the file
 // prints the text and sets the code. Erasable TypeScript only, Node standard library only (P19).
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkTrace, nextBranches, parseBranches, parseRequirements, remainingBranches } from './ledger.ts'
-import type { Branch, InterviewState } from './ledger.ts'
+import type { Branch, BriefState } from './ledger.ts'
 
 // argument counts after the command name
 export const COMMANDS = {
@@ -28,7 +28,7 @@ const read = (path: string): string => {
   }
 }
 
-const loadState = (path: string): InterviewState => {
+const loadState = (path: string): BriefState => {
   let s: Record<string, unknown>
   try {
     s = JSON.parse(read(path))
@@ -43,7 +43,7 @@ const loadState = (path: string): InterviewState => {
   for (const k of ['packs', 'opened', 'requirements']) if (!Array.isArray(s[k])) throw bad(`${k} must be an array`)
   if (s.visits === null || typeof s.visits !== 'object' || Array.isArray(s.visits)) throw bad('visits must be an object')
   if (typeof s.stopped !== 'boolean') throw bad('stopped must be a boolean')
-  return s as unknown as InterviewState
+  return s as unknown as BriefState
 }
 
 const loadBranches = (path: string): Branch[] => {
@@ -93,7 +93,7 @@ export const main = (argv: string[]): Result => {
   const [cmd, ...args] = argv
   try {
     if (cmd === undefined || !Object.hasOwn(COMMANDS, cmd)) {
-      throw new Fatal(`USAGE: interview/cli.ts <${Object.keys(COMMANDS).join('|')}> <args>`)
+      throw new Fatal(`USAGE: brief/cli.ts <${Object.keys(COMMANDS).join('|')}> <args>`)
     }
     const { min, max } = COMMANDS[cmd as keyof typeof COMMANDS]
     if (args.length < min || args.length > max) throw new Fatal(`USAGE: ${cmd} takes ${min === max ? min : `${min}-${max}`} arguments, got ${args.length}`)

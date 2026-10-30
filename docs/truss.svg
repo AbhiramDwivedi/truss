@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="t d" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<title id="t">Truss: intelligence, engineered together</title>
+<desc id="d">A truss bridge whose members are the roles in a Truss run. The top chord is the PM, the main Claude session that plans, scopes for the client, starts crews and signs off merges. The bottom chord is main, the target branch every crew's work lands on. Three panels are three crews (auth, billing, docs); each panel's vertical is its foreman and its diagonals are the members: builder, test-writer, writer. The left abutment is the design engineer, who writes the architecture doc, ADRs and plan. The right abutment is the QC engineer, who passes or fails each crew on proof and in stress-test mode tries to break the work. A goal load presses on every node, so no single member carries it. Off to the side, the checking engineer advises, checking design verdicts and triaging questions before they reach the client, who rules on scope changes and production.</desc>
+<style>
+.s{stroke:#57606a}.a{stroke:#0969da}.q{stroke:#bc4c00}
+.gs{fill:#57606a}.fs{fill:#57606a;fill-opacity:.14}.fq{fill:#bc4c00;fill-opacity:.12}
+.t{fill:#1f2328}.m{fill:#57606a}.ta{fill:#0969da}.tq{fill:#bc4c00}
+@media (prefers-color-scheme:dark){
+.s{stroke:#8b949e}.a{stroke:#4493f8}.q{stroke:#f0883e}
+.gs{fill:#8b949e}.fs{fill:#8b949e;fill-opacity:.16}.fq{fill:#f0883e;fill-opacity:.14}
+.t{fill:#e6edf3}.m{fill:#9198a1}.ta{fill:#4493f8}.tq{fill:#f0883e}
+}
+text{font-size:12px}.b{font-weight:600;font-size:13px}
+</style>
+
+<!-- header -->
+<text x="24" y="38" class="t" style="font-size:24px;font-weight:700">Truss</text>
+<text x="100" y="38" class="m" style="font-size:15px">Intelligence, engineered together.</text>
+
+<!-- goal: load spread over every top node -->
+<text x="385" y="66" text-anchor="middle" class="t"><tspan class="b">goal</tspan><tspan class="m"> · shared across every node</tspan></text>
+<g class="s" stroke-width="2.5" stroke-linecap="round" fill="none">
+<path d="M70 78H700"/>
+<path d="M70 79V131M175 79V131M385 79V131M595 79V131M700 79V131"/>
+</g>
+<g class="gs">
+<path d="M65 131h10l-5 10zM170 131h10l-5 10zM380 131h10l-5 10zM590 131h10l-5 10zM695 131h10l-5 10z"/>
+</g>
+
+<!-- PM caption (top chord) -->
+<text x="280" y="104" text-anchor="middle" class="m">plans, scopes for the client,</text>
+<text x="280" y="120" text-anchor="middle" class="m">starts crews, signs off merges</text>
+<text x="280" y="138" text-anchor="middle" class="t b" style="font-size:14px">PM</text>
+
+<!-- abutments -->
+<path d="M38 285H102L114 345H26Z" class="fs s" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M668 285H732L744 345H656Z" class="fq q" stroke-width="2.5" stroke-linejoin="round"/>
+
+<!-- crews: diagonals (members) and verticals (foremen) -->
+<g class="a" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path stroke-width="6" d="M70 280L175 150L280 280L385 150L490 280L595 150L700 280"/>
+<path stroke-width="7" d="M175 150V280M385 150V280M595 150V280"/>
+</g>
+
+<!-- chords and end posts (structure) -->
+<g class="s" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+<path d="M70 280V150H700V280"/>
+<path d="M70 280H700"/>
+</g>
+
+<!-- gusset plates -->
+<g class="gs">
+<circle cx="70" cy="150" r="7"/><circle cx="175" cy="150" r="7"/><circle cx="385" cy="150" r="7"/><circle cx="595" cy="150" r="7"/><circle cx="700" cy="150" r="7"/>
+<circle cx="70" cy="280" r="7"/><circle cx="175" cy="280" r="7"/><circle cx="280" cy="280" r="7"/><circle cx="385" cy="280" r="7"/><circle cx="490" cy="280" r="7"/><circle cx="595" cy="280" r="7"/><circle cx="700" cy="280" r="7"/>
+</g>
+
+<!-- foreman labels, along each vertical -->
+<g class="ta" style="font-weight:600" text-anchor="middle">
+<text transform="translate(197 211) rotate(-90)">foreman</text>
+<text transform="translate(407 211) rotate(-90)">foreman</text>
+<text transform="translate(617 211) rotate(-90)">foreman</text>
+</g>
+
+<!-- member labels, inside each panel -->
+<g class="t">
+<text x="167" y="268" text-anchor="end">builder</text>
+<text x="183" y="268">test-writer</text>
+<text x="377" y="268" text-anchor="end">builder</text>
+<text x="393" y="268">test-writer</text>
+<text x="587" y="268" text-anchor="end">writer</text>
+<text x="603" y="268">builder</text>
+</g>
+
+<!-- crew spans under the deck -->
+<g class="a" stroke-width="2" fill="none" stroke-linecap="round">
+<path d="M76 291V296H274V291M286 291V296H484V291M496 291V296H694V291"/>
+</g>
+<g class="ta b" text-anchor="middle">
+<text x="175" y="314">crew: auth</text>
+<text x="385" y="314">crew: billing</text>
+<text x="595" y="314">crew: docs</text>
+</g>
+
+<!-- deck = main -->
+<text x="385" y="342" text-anchor="middle" class="t b">main · target branch</text>
+<text x="385" y="358" text-anchor="middle" class="m">the deck every crew's work lands on</text>
+
+<!-- design engineer (left abutment) -->
+<text x="26" y="368" class="t b">design engineer</text>
+<text x="26" y="384" class="m">writes the architecture doc,</text>
+<text x="26" y="400" class="m">ADRs and the plan</text>
+
+<!-- QC engineer (right abutment) -->
+<text x="744" y="368" text-anchor="end" class="tq b">QC engineer</text>
+<text x="744" y="384" text-anchor="end" class="m">passes or fails each crew on proof</text>
+<text x="744" y="400" text-anchor="end" class="m">stress-test mode tries to break it</text>
+
+<!-- side callouts: client and checking engineer -->
+<g class="s" stroke-width="2" fill="none" stroke-linecap="round">
+<circle cx="760" cy="55" r="5.5"/><path d="M751 72a9 9 0 0 1 18 0"/>
+<circle cx="760" cy="141" r="5.5"/><path d="M751 158a9 9 0 0 1 18 0"/>
+<path d="M760 104V126M712 150H744" stroke-dasharray="3 5"/>
+</g>
+<text x="776" y="62" class="t b">client</text>
+<text x="776" y="78" class="m">rules on scope changes</text>
+<text x="776" y="94" class="m">and production</text>
+<text x="776" y="150" class="t b">checking engineer</text>
+<text x="776" y="166" class="m">independent advisor</text>
+<text x="776" y="182" class="m">checks design verdicts,</text>
+<text x="776" y="198" class="m">triages questions first,</text>
+<text x="776" y="214" class="m">recommends, never decides</text>
+</svg>

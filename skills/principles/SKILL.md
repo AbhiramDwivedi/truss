@@ -1,6 +1,6 @@
 ---
 name: principles
-description: Holds foundry's architecture principle packs, one file per domain (core, service, frontend, data, ai, infra, library), each a list of rules with a one-line test a reviewer can check against a diff. Use when designing, planning or reviewing a change against architecture principles, or when writing the principles section of a project's architecture doc.
+description: Holds truss's architecture principle packs, one file per domain (core, service, frontend, data, ai, infra, library), each a list of rules with a one-line test a reviewer can check against a diff. Use when designing, planning or reviewing a change against architecture principles, or when writing the principles section of a project's architecture doc.
 ---
 
 # Principle packs
@@ -22,7 +22,7 @@ Each pack is a numbered list of rules. Every rule has a one-line test that names
 ## Pick the packs
 
 1. Always load `core.md`.
-2. Add each pack whose domain the work touches. Judge by the paths and files the work changes, not by what the project calls itself:
+2. Add each pack whose domain the work touches. QC engineer by the paths and files the work changes, not by what the project calls itself:
    - an HTTP route, request handler, worker entry point, or service deploy config means `service.md`;
    - UI components, pages, or stylesheets mean `frontend.md`;
    - a pipeline step, a migration, or a schema file between stages means `data.md`;
@@ -37,4 +37,4 @@ The Skill tool's result for this skill gives its base directory. Read `<base dir
 
 ## How the rules are used
 
-The project's architecture doc owns the principles (foundry's design ADR, `docs/adr/0001-design-phase.md` in the foundry plugin, section 1). It adopts the pack rules that fit, adapts them to the repo's paths, languages and tools, and gives a reason for each rule it drops. A pack rule is a default, not law over the doc: where the doc adapts or drops a rule, the doc wins. When you review a diff, check it against the doc's principles; use a pack directly only for a rule the doc doesn't address.
+The project's architecture doc owns the principles (truss's design ADR, `docs/adr/0001-design-phase.md` in the truss plugin, section 1). It adopts the pack rules that fit, adapts them to the repo's paths, languages and tools, and gives a reason for each rule it drops. A pack rule is a default, not law over the doc: where the doc adapts or drops a rule, the doc wins. When you review a diff, check it against the doc's principles; use a pack directly only for a rule the doc doesn't address.

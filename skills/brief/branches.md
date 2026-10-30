@@ -1,6 +1,6 @@
-# Interview branches
+# Client brief branches
 
-The question catalogue for `foundry:interview` (ADR-0008, section 5). The ledger parses this file with `parseBranches`; the skill never reads it by hand, it runs `next` and `remaining` over it.
+The question catalogue for `truss:brief` (ADR-0008, section 5). The ledger parses this file with `parseBranches`; the skill never reads it by hand, it runs `next` and `remaining` over it.
 
 Each `## <id>` section is one branch. Text before the first `## ` is ignored. Fields, one per line:
 
@@ -103,7 +103,7 @@ Pack: core
 Visit: standard, large
 Fact: existing load figures, batch sizes, seed data or test volumes (`docs/`, `tests/`, `scripts/`, monitoring config)
 Ask: How much will it handle: how many users, records or requests per day, now and in a year?
-Recommend: Recommend a number taken from existing data volumes, scaled up tenfold for the one-year figure. With no facts, recommend a small figure for an internal tool and ask the owner to confirm it.
+Recommend: Recommend a number taken from existing data volumes, scaled up tenfold for the one-year figure. With no facts, recommend a small figure for an internal tool and ask the client to confirm it.
 Writes: nfr
 
 ## latency
@@ -119,7 +119,7 @@ Pack: core
 Visit: standard, large
 Fact: replicas, health checks, uptime or on-call docs (`docs/runbook*`, `k8s/`, status-page config)
 Ask: How bad is it if this is down for an hour, and how much downtime per month is acceptable?
-Recommend: Recommend the target in the runbook or health-check config. With none, recommend "business hours, a few hours of downtime a month" for an internal tool and ask the owner to confirm.
+Recommend: Recommend the target in the runbook or health-check config. With none, recommend "business hours, a few hours of downtime a month" for an internal tool and ask the client to confirm.
 Writes: nfr
 
 ## cost
@@ -231,7 +231,7 @@ Pack: ai
 Visit: large
 Fact: evaluation sets, golden files and scoring scripts (`evals/`, `tests/fixtures/`, `benchmarks/`)
 Ask: How will you know the AI part is good enough: do you have examples of right and wrong answers, and what score is acceptable?
-Recommend: Recommend the existing eval set with its current score as the bar. With none, recommend writing about 20 labelled examples from the `acceptance` example, with a passing score set by the owner.
+Recommend: Recommend the existing eval set with its current score as the bar. With none, recommend writing about 20 labelled examples from the `acceptance` example, with a passing score set by the client.
 Writes: nfr
 
 ## model-cost

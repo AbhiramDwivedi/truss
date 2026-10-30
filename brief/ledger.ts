@@ -1,4 +1,4 @@
-// The owner interview's two files, read as data (ADR-0008 Seams 1-5): the branches the interview skill asks,
+// The client brief's two files, read as data (ADR-0008 Seams 1-5): the branches the brief skill asks,
 // and the requirements ledger it writes. Pure functions over text and a state object; no I/O.
 // Erasable TypeScript only, Node standard library only (P19).
 
@@ -24,7 +24,7 @@ export type Branch = {
 
 export type Size = 'small' | 'standard' | 'large'
 
-export type InterviewState = {
+export type BriefState = {
   goal: string
   size: Size
   packs: string[]
@@ -94,7 +94,7 @@ export const parseBranches = (md: string): Branch[] => {
   return out
 }
 
-const isCandidate = (b: Branch, state: InterviewState): boolean => {
+const isCandidate = (b: Branch, state: BriefState): boolean => {
   if (Object.hasOwn(state.visits, b.id)) return false
   if (state.opened.includes(b.id)) return true
   // ADR-0008 s5: "the size is in its Visit", read literally (a standard-only branch is not asked at large)
@@ -102,11 +102,11 @@ const isCandidate = (b: Branch, state: InterviewState): boolean => {
 }
 
 // every branch still to ask, in file order, whatever `stopped` says and with no cap
-export const remainingBranches = (branches: Branch[], state: InterviewState): Branch[] =>
+export const remainingBranches = (branches: Branch[], state: BriefState): Branch[] =>
   branches.filter((b) => isCandidate(b, state))
 
 // the next batch: up to `max` candidates, ending at the first one that has Opens (its answer can change the queue)
-export const nextBranches = (branches: Branch[], state: InterviewState, max: number): Branch[] => {
+export const nextBranches = (branches: Branch[], state: BriefState, max: number): Branch[] => {
   if (!(max >= 1)) throw new RangeError(`max must be at least 1, got ${max}`)
   if (state.size === 'small' || state.stopped) return []
   const out: Branch[] = []
@@ -194,7 +194,7 @@ export const parseRequirements = (md: string): Ledger => {
     }
     if (f.Kind !== undefined && !KINDS.includes(f.Kind)) e(`bad Kind: ${f.Kind}`)
     if (f.Added !== undefined && !ADDED_RE.test(f.Added)) e(`bad Added: ${f.Added}`)
-    if (f.Source !== undefined && !/^(?:owner|default|goal|repo:\S.*)$/.test(f.Source)) e(`bad Source: ${f.Source}`)
+    if (f.Source !== undefined && !/^(?:client|default|goal|repo:\S.*)$/.test(f.Source)) e(`bad Source: ${f.Source}`)
     if (f.Kind === 'functional' && req.examples.length === 0) e('functional needs an Example')
     if (f.Kind === 'nfr' && !/\d/.test(f.Measure ?? '')) e('nfr needs a Measure with a number')
   }

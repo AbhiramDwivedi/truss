@@ -1,5 +1,5 @@
-// Mid-run intake (ADR-0010): the goal a crew belongs to, the goal text /foundry prints, and the pure merge of an
-// amend-mode architect's hand-back into plan.json. Imports nothing from register.ts.
+// Mid-run intake (ADR-0010): the goal a crew belongs to, the goal text /truss prints, and the pure merge of an
+// amend-mode design engineer's hand-back into plan.json. Imports nothing from register.ts.
 
 export const RUN_GOAL = 'run'
 
@@ -13,7 +13,7 @@ export function goalOf(crew: unknown): string {
   return isRecord(crew) && typeof crew.goal === 'string' ? crew.goal : RUN_GOAL
 }
 
-// A goal's text as /foundry prints it: whitespace runs collapsed, cut to 99 characters plus an ellipsis when longer than 100.
+// A goal's text as /truss prints it: whitespace runs collapsed, cut to 99 characters plus an ellipsis when longer than 100.
 export function goalLine(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length > 100 ? `${one.slice(0, 99)}…` : one
@@ -24,7 +24,7 @@ export function goalLine(text: string): string {
 export function amendPlan(existing: unknown, amend: unknown, now: string): { plan: Record<string, unknown>; id: string } | { reason: string } {
   const refuse = (reason: string) => ({ reason })
   if (!isRecord(existing) || !Array.isArray(existing.crews) || typeof existing.approvedAt !== 'string') {
-    return refuse(`the plan isn't approved; give the goal to the plan architect instead`)
+    return refuse(`the plan isn't approved; give the goal to the plan design engineer instead`)
   }
   const version = existing.version
   if (typeof version !== 'number' || version < 2) {
@@ -39,7 +39,7 @@ export function amendPlan(existing: unknown, amend: unknown, now: string): { pla
   if (id === RUN_GOAL) return refuse('goal.id run is reserved for the run')
   if (typeof goal.goal !== 'string' || goal.goal.trim() === '') return refuse('goal.goal is not a non-empty string')
   const approval = goal.approval
-  if (approval !== 'auto' && approval !== 'owner') return refuse('goal.approval is neither auto nor owner')
+  if (approval !== 'auto' && approval !== 'client') return refuse('goal.approval is neither auto nor client')
   const crews = amend.crews
   if (!Array.isArray(crews) || crews.length === 0) return refuse('crews is not a non-empty array')
   const old = existing.crews

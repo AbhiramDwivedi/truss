@@ -1,11 +1,11 @@
 export const meta = {
-  name: 'foundry-plan',
-  description: 'Runs the foundry architect in plan mode, has a cynic review its verdicts.',
+  name: 'truss-plan',
+  description: 'Runs the truss design engineer in plan mode, has a checking engineer review its verdicts.',
 }
 
-// ADR-0009 Decision 3. Every agent() call goes through spawn(); the roles table comes from args.foundry.roles.
-const F = args.foundry
-const BAD_TYPES = ['foundry:lead', 'foundry:devops', 'foundry:integrator']
+// ADR-0009 Decision 3. Every agent() call goes through spawn(); the roles table comes from args.truss.roles.
+const F = args.truss
+const BAD_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
 
 function spawn(role, label, prompt, opts) {
   const r = F.roles && F.roles[role]
@@ -25,7 +25,7 @@ const SCHEMA = {
 }
 const linesOf = (text, re) => String(text ?? '').split('\n').map((l) => l.trim()).filter((l) => re.test(l))
 
-function architectPrompt(extra) {
+function designerPrompt(extra) {
   return [
     'Mode: plan',
     '',
@@ -36,9 +36,9 @@ function architectPrompt(extra) {
   ].join('\n')
 }
 
-function cynicPrompt(a) {
+function checkerPrompt(a) {
   return [
-    'Your job: the verdict review of the foreman skill\'s section 4 ("Have a cynic review the verdicts"). Review the architect\'s extend/change verdicts in this plan against the architecture doc and the code.',
+    'Your job: the verdict review of the run skill\'s section 4 ("Have a checking engineer review the verdicts"). Review the design engineer\'s extend/change verdicts in this plan against the architecture doc and the code.',
     '',
     `Architecture doc: ${F.architecture}`,
     '',
@@ -48,30 +48,30 @@ function cynicPrompt(a) {
     'planMd:',
     a.planMd,
     '',
-    'For each module give one `REVIEW: agree` or `REVIEW: disagree` line, and the owner triggers that hold as `Owner:` lines (`Owner: none` when no trigger holds).',
+    'For each module give one `REVIEW: agree` or `REVIEW: disagree` line, and the client triggers that hold as `Client:` lines (`Client: none` when no trigger holds).',
   ].join('\n')
 }
 
 const fix = F.fix === true
-const architectLabel = fix ? 'foundry-architect-3' : 'foundry-architect'
-const cynicLabel = fix ? 'foundry-cynic-3' : 'foundry-cynic'
+const designerLabel = fix ? 'truss-designer-3' : 'truss-designer'
+const checkerLabel = fix ? 'truss-checker-3' : 'truss-checker'
 
 phase('Plan')
-const a = await spawn('architect', architectLabel, architectPrompt(), { schema: SCHEMA })
-if (!a || typeof a.planJson !== 'string') throw new Error(`${architectLabel} returned no plan`)
+const a = await spawn('designer', designerLabel, designerPrompt(), { schema: SCHEMA })
+if (!a || typeof a.planJson !== 'string') throw new Error(`${designerLabel} returned no plan`)
 
 const uncovered = linesOf(a.report, /^UNCOVERED:/)
 if (uncovered.length) return { uncovered }
 
 phase('Review')
-const owner = []
-const addOwner = (text) => {
-  for (const l of linesOf(text, /^Owner:/)) if (!/^Owner:\s*none\b/i.test(l) && !owner.includes(l)) owner.push(l)
+const client = []
+const addClient = (text) => {
+  for (const l of linesOf(text, /^Client:/)) if (!/^Client:\s*none\b/i.test(l) && !client.includes(l)) client.push(l)
 }
-const review = await spawn('cynic', cynicLabel, cynicPrompt(a))
-if (review == null) throw new Error(`${cynicLabel} returned nothing`)
-addOwner(review)
+const review = await spawn('checker', checkerLabel, checkerPrompt(a))
+if (review == null) throw new Error(`${checkerLabel} returned nothing`)
+addClient(review)
 const reviews = linesOf(review, /^REVIEW:/)
 const disagrees = () => reviews.some((l) => /^REVIEW:\s*disagree\b/i.test(l))
 
-return { architectLabel, reviews, owner, stillDisagree: disagrees() }
+return { designerLabel, reviews, client, stillDisagree: disagrees() }

@@ -1,14 +1,14 @@
 export const meta = {
-  name: 'foundry-wave',
-  description: 'Runs every crew of a foundry wave at once: red check, split, members, green, red team, scope check and judge, as ADR-0009 Decision 4. Returns one result per crew; never merges, pushes or asks the owner.',
+  name: 'truss-stage',
+  description: 'Runs every crew of a truss stage at once: red check, split, members, green, stress test, scope check and QC, as ADR-0009 Decision 4. Returns one result per crew; never merges, pushes or asks the client.',
 }
 
-// wave.js plays the lead's orchestration role as code. Every agent call goes through spawn(), which takes the
+// stage.js plays the foreman's orchestration role as code. Every agent call goes through spawn(), which takes the
 // agent type, model, effort and isolation from the roles table and throws before the call when the table is bad.
 
-const F = args.foundry
+const F = args.truss
 const ROLE_EFFORTS = ['low', 'medium']
-const BANNED_TYPES = ['foundry:lead', 'foundry:devops', 'foundry:integrator']
+const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
 const TRAILER_ROLE = { tester: 'test-writer', builder: 'builder', writer: 'writer', resolver: 'resolver' }
 
 const BRAVE = "Be brave: take the hard path, keep going when it gets difficult, don't ask permission for anything in scope. Never be brave with the truth: proof or it didn't happen."
@@ -95,7 +95,7 @@ class Stop {
 }
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], redteam: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null }
 }
 
 function stopResult(crew, err) {
@@ -117,14 +117,14 @@ function ask(crew, role, prompt, opts) {
 
 const spendOf = (crew) => crew.e.spent + crew.fails
 
-function budgetStop(crew, at, findings) {
-  const head = `BLOCKED: repair budget spent: ${crew.slug}, spend ${spendOf(crew)}, repairBudget ${F.repairBudget}`
+function allowanceStop(crew, at, findings) {
+  const head = `BLOCKED: rework allowance spent: ${crew.slug}, spend ${spendOf(crew)}, reworkAllowance ${F.reworkAllowance}`
   return new Stop('BLOCKED', findings ? `${head}\n${findings}` : head, at)
 }
 
-// before every judge, red-team or fix-builder spawn
-function guardBudget(crew, at) {
-  if (spendOf(crew) > F.repairBudget) throw budgetStop(crew, at)
+// before every QC, stress-test or fix-builder spawn
+function guardAllowance(crew, at) {
+  if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, at)
 }
 
 // ---------------------------------------------------------------- runner
@@ -166,7 +166,7 @@ function memberPrompt(crew, role, parts) {
   const e = crew.e
   const lines = [`You are the ${role} for crew ${crew.slug}. ${BRAVE}`, '']
   lines.push(...parts.start)
-  lines.push(`Approved scope: ${e.scope}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '', `Done-check: ${e.doneCheck}`, '')
+  lines.push(`Approved scope: ${e.scope}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '', `Acceptance test: ${e.acceptanceTest}`, '')
   lines.push(...parts.body)
   lines.push(
     '',
@@ -177,8 +177,8 @@ function memberPrompt(crew, role, parts) {
     'Run each long command once with run_in_background and wait for its completion notification; no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
     '',
     'Every commit you make ends with these trailers:',
-    `Foundry-Crew: ${crew.slug}`,
-    `Foundry-Role: ${TRAILER_ROLE[role]}`,
+    `Truss-Crew: ${crew.slug}`,
+    `Truss-Role: ${TRAILER_ROLE[role]}`,
     '',
     'You have no Agent tool; do the work yourself.',
     'Commit on your branch and report the branch and commit. Put your proof in the proof field. marker is DONE when finished, CHECKPOINT when you must stop early (put a handoff note in text), QUESTION, BLOCKED or PROPOSAL when you cannot go on.',
@@ -210,7 +210,7 @@ function resolverPrompt(crew, what, conflicts) {
     `Work in the crew worktree ${e.worktree} (branch ${e.branch}). Do not make a new worktree.`,
     `Conflicting files: ${conflicts.length ? conflicts.join(', ') : 'none listed; run git status to find them'}`,
     `Run git as git -C ${e.worktree} <command> so it acts on the crew worktree whatever your working directory is.`,
-    'Resolve every conflict, keep both sides intent, run the done-check, and commit the merge. Never edit a done-check test file to make it pass.',
+    'Resolve every conflict, keep both sides intent, run the acceptance test, and commit the merge. Never edit an acceptance-test file to make it pass.',
   ]
   return memberPrompt(crew, 'resolver', { start: [], body })
 }
@@ -291,10 +291,10 @@ async function runMembers(crew, tasks) {
   if (crew.halted) throw crew.halted
 }
 
-// fix builder for a failing check, a judge finding or a red-team finding; integrates its branch
+// fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
 async function fixBuilder(crew, what, detail) {
   const at = crew.step
-  guardBudget(crew, at)
+  guardAllowance(crew, at)
   const report = await runMember(crew, 'builder', (note) => fixPrompt(crew, what, note ? `${detail}\n\nCheckpoint note from the member before you:\n${note}` : detail), {}, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
@@ -410,7 +410,7 @@ async function split(crew) {
   return tasks
 }
 
-// ---------------------------------------------------------------- green, red team, scope, judge
+// ---------------------------------------------------------------- green, stress test, scope, QC
 
 async function green(crew) {
   for (let attempt = 1; ; attempt++) {
@@ -425,22 +425,22 @@ async function green(crew) {
     if (attempt < 3) {
       await fixBuilder(crew, 'green check', `The green check failed. Its output tail:\n${clip(g.out)}`)
     } else {
-      const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Done-check: ${crew.e.doneCheck}`, 'Failing output:', clip(g.out)].join('\n'))
+      const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${crew.e.acceptanceTest}`, 'Failing output:', clip(g.out)].join('\n'))
       await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing. Root-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
     }
   }
 }
 
-const redteamCount = (text) => {
+const stressTestCount = (text) => {
   const first = String(text || '').replace(/\r/g, '').split('\n').find((l) => l.trim() !== '')
-  const m = first && first.trim().match(/^REDTEAM: (\d+) findings$/)
+  const m = first && first.trim().match(/^STRESSTEST: (\d+) findings$/)
   return m ? Number(m[1]) : null
 }
 
-function redteamPrompt(crew) {
+function stressTestPrompt(crew) {
   const e = crew.e
   return [
-    'Red team:',
+    'Stress test:',
     `Try to break crew ${crew.slug}'s work at head ${crew.head} on branch ${e.branch}.`,
     `Goal file: ${e.goalFile}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
@@ -448,17 +448,17 @@ function redteamPrompt(crew) {
     `Architecture doc: ${e.architecture}`,
     '',
     'Each finding names a plausible producer: the real caller or input that would produce the break.',
-    'Class each finding as a real defect or a test gap. Only real defects count in REDTEAM <n> and go under ## Findings; test gaps go under ## Notes and are not fixed.',
+    'Class each finding as a real defect or a test gap. Only real defects count in STRESSTEST <n> and go under ## Findings; test gaps go under ## Notes and are not fixed.',
   ].join('\n')
 }
 
-async function runRedteam(crew) {
-  crew.step = 'redteam'
-  guardBudget(crew, 'redteam')
-  let text = await ask(crew, 'redteam', redteamPrompt(crew))
-  if (redteamCount(text) === null) {
-    text = await ask(crew, 'redteam', redteamPrompt(crew))
-    if (redteamCount(text) === null) throw new Stop('BLOCKED', `the red team gave no REDTEAM line twice:\n${text || 'no result'}`, 'redteam')
+async function runStressTest(crew) {
+  crew.step = 'stress'
+  guardAllowance(crew, 'stress')
+  let text = await ask(crew, 'stress', stressTestPrompt(crew))
+  if (stressTestCount(text) === null) {
+    text = await ask(crew, 'stress', stressTestPrompt(crew))
+    if (stressTestCount(text) === null) throw new Stop('BLOCKED', `the stress test gave no STRESSTEST line twice:\n${text || 'no result'}`, 'stress')
   }
   return text
 }
@@ -474,16 +474,16 @@ function sectionOf(text, heading) {
   return out
 }
 
-// one red-team round: real defects go to one fix builder and one green run; test gaps (## Notes) are only handed back
-async function redteam(crew) {
-  const text = await runRedteam(crew)
-  crew.redteam = text
+// one stress-test round: real defects go to one fix builder and one green run; test gaps (## Notes) are only handed back
+async function stressTest(crew) {
+  const text = await runStressTest(crew)
+  crew.stressTest = text
   crew.deferred = sectionOf(text, '## Notes').filter((l) => l.startsWith('- ')).map((l) => l.slice(2))
-  if (redteamCount(text) === 0) return
-  crew.step = 'redteam'
-  // a report with no ## Findings heading (bullets straight after the REDTEAM line) goes whole, less its ## Notes section
+  if (stressTestCount(text) === 0) return
+  crew.step = 'stress'
+  // a report with no ## Findings heading (bullets straight after the STRESSTEST line) goes whole, less its ## Notes section
   const findings = /^## Findings\s*$/m.test(text) ? sectionOf(text, '## Findings').join('\n') : String(text).replace(/\r/g, '').split('\n## Notes')[0]
-  await fixBuilder(crew, 'red-team findings', `A red team reported these findings:\n${findings}`)
+  await fixBuilder(crew, 'stress-test findings', `A stress test reported these findings:\n${findings}`)
   await green(crew)
 }
 
@@ -496,7 +496,7 @@ async function scope(crew) {
   throw new Stop('QUESTION', `Files changed outside the crew owns: ${names}. Extend owns?`, 'scope')
 }
 
-// the same rule as register.ts judgeRuling and markerOf: the first non-empty line decides
+// the same rule as register.ts qcRuling and markerOf: the first non-empty line decides
 function verdictOf(text) {
   const lines = String(text || '').replace(/^﻿/, '').replace(/\r/g, '').split('\n')
   const first = (lines.find((l) => l.trim() !== '') || '').trimStart()
@@ -505,10 +505,10 @@ function verdictOf(text) {
   return undefined
 }
 
-// mirrors register.ts UNSCOPED (wave.js cannot import it)
+// mirrors register.ts UNSCOPED (stage.js cannot import it)
 const UNSCOPED = '- UNSCOPED: '
 
-// the UNSCOPED lines under ## Findings; a section runs from its "## " heading to the next line starting "## " (register.ts judgeRuling)
+// the UNSCOPED lines under ## Findings; a section runs from its "## " heading to the next line starting "## " (register.ts qcRuling)
 function unscopedOf(text) {
   const out = []
   let section
@@ -526,15 +526,15 @@ function earlierReports(crew) {
   const paths = []
   for (const role of Object.keys(from).sort()) {
     for (let n = 1; n < from[role]; n++) {
-      if (role === 'redteam' && n === from[role] - 1) continue
+      if (role === 'stress' && n === from[role] - 1) continue
       paths.push(path(role, n))
     }
   }
-  const last = from.redteam > 1 ? path('redteam', from.redteam - 1) : null
+  const last = from.stress > 1 ? path('stress', from.stress - 1) : null
   return { paths, last }
 }
 
-function judgePrompt(crew) {
+function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
   const earlier = earlierReports(crew)
@@ -549,13 +549,13 @@ function judgePrompt(crew) {
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
-    `Done-check: ${e.doneCheck}`,
+    `Acceptance test: ${e.acceptanceTest}`,
     '',
     'Member proofs:',
     ...(crew.proofs.length ? crew.proofs : ['none']),
     '',
-    'Last red-team report:',
-    crew.redteam || 'none',
+    'Last stress-test report:',
+    crew.stressTest || 'none',
     '',
     `Approved scope: ${e.scope}`,
     '',
@@ -566,39 +566,39 @@ function judgePrompt(crew) {
       ? [
           'Reports of earlier members (from before this run):',
           ...earlier.paths,
-          ...(earlier.last ? [`Earlier red-team report: ${earlier.last}`] : []),
+          ...(earlier.last ? [`Earlier stress-test report: ${earlier.last}`] : []),
           'Read each path. A path that does not exist means no report, never a failed proof.',
           '',
         ]
       : []),
-    'A commit with Foundry-Role: resolver that touches a done-check test file is a FAIL, the same as one with Foundry-Role: builder.',
+    'A commit with Truss-Role: resolver that touches an acceptance-test file is a FAIL, the same as one with Truss-Role: builder.',
     'State the head SHA and the patch id of the diff under ## Proof checked, as the lines "Head: <sha>" and "Patch: <patch id>".',
   ].join('\n')
 }
 
-async function runJudge(crew) {
-  const label = nextLabel(crew, 'judge')
-  const text = await spawn('judge', label, judgePrompt(crew))
+async function runQc(crew) {
+  const label = nextLabel(crew, 'qc')
+  const text = await spawn('qc', label, qcPrompt(crew))
   return { label, text: text || '', verdict: verdictOf(text) }
 }
 
-async function judge(crew) {
+async function qc(crew) {
   for (;;) {
-    crew.step = 'judge'
-    guardBudget(crew, 'judge')
-    let j = await runJudge(crew)
+    crew.step = 'qc'
+    guardAllowance(crew, 'qc')
+    let j = await runQc(crew)
     if (!j.verdict) {
-      j = await runJudge(crew)
-      if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two judges:\n${j.text || 'no result'}`, 'judge')
+      j = await runQc(crew)
+      if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, judge: j.label, ...(crew.e.redTeam ? { deferred: crew.deferred || [] } : {}) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}) }
     crew.fails++
-    if (spendOf(crew) > F.repairBudget) throw budgetStop(crew, 'judge', j.text)
+    if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
-      ? `The judge passed the work but left claims with no stated scope:\n${unscoped.join('\n')}\nFor each claim, state its scope (in ## Examined or beside the claim) or withdraw it.`
-      : `The judge ruled FAIL:\n${j.text}`
-    await fixBuilder(crew, 'judge findings', detail)
+      ? `The QC passed the work but left claims with no stated scope:\n${unscoped.join('\n')}\nFor each claim, state its scope (in ## Examined or beside the claim) or withdraw it.`
+      : `The QC ruled FAIL:\n${j.text}`
+    await fixBuilder(crew, 'QC findings', detail)
     await green(crew)
   }
 }
@@ -618,7 +618,7 @@ async function syncStep(crew) {
 async function redStep(crew) {
   crew.step = 'red'
   const r = await check(crew, 'red')
-  if (!r.met) throw new Stop('BLOCKED', `the done-check is not red at the start:\n${r.out}`, 'red')
+  if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:\n${r.out}`, 'red')
 }
 
 async function chain(crew) {
@@ -627,7 +627,7 @@ async function chain(crew) {
     await syncStep(crew)
     await green(crew)
     await scope(crew)
-    return judge(crew)
+    return qc(crew)
   }
   let tasks = e.tasks || []
   if (e.resume !== 'answers' && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
@@ -640,9 +640,9 @@ async function chain(crew) {
   }
   await runMembers(crew, tasks)
   await green(crew)
-  if (e.redTeam) await redteam(crew)
+  if (e.stressTest) await stressTest(crew)
   await scope(crew)
-  return judge(crew)
+  return qc(crew)
 }
 
 async function runCrew(entry) {
@@ -655,5 +655,5 @@ async function runCrew(entry) {
 }
 
 const results = await Promise.all(F.crews.map(runCrew))
-log(`wave done: ${results.map((r) => `${r.slug} ${r.state}`).join(', ')}`)
+log(`stage done: ${results.map((r) => `${r.slug} ${r.state}`).join(', ')}`)
 return results

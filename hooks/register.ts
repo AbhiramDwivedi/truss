@@ -2,13 +2,13 @@ import type { AgentInfo, ClassicResult, EngineInterface, Register, Timer, ToolCa
 
 import { amendPlan, goalLine, goalOf, RUN_GOAL } from './intake.ts'
 
-// the agent type every crew lead runs as; only a lead the main thread started heads a crew
-export const LEAD_TYPE = 'foundry:lead'
+// the agent type every crew foreman runs as; only a foreman the main thread started heads a crew
+export const FOREMAN_TYPE = 'truss:foreman'
 // marks text this mod wrote
-export const MARK = '[foundry]'
+export const MARK = '[truss]'
 // the main session, as SendMessage addresses it
 export const MAIN = 'main'
-// how a lead's question to the person begins
+// how a foreman's question to the person begins
 export const QUESTION = 'QUESTION:'
 // past this size the message log is rolled to messages.<n>.jsonl, well under what one $.fs.read takes
 export const ROLL_BYTES = 3 * 1024 * 1024
@@ -23,19 +23,19 @@ export const STALL_MS = 15 * 60_000
 export const HEARTBEAT_MS = 60_000
 // wake this long after a usage window's resetsAt
 export const RESET_GRACE_MS = 2 * 60_000
-// most blocks per lead per stop streak
-export const LEAD_STOP_BLOCKS = 2
-export const STALLED = '[foundry] stalled:'
-export const IDLE_LEAD = '[foundry] idle lead:'
-export const LIMIT_RESET = '[foundry] limit reset:'
-// how a lead says it cannot go on without help, proposes a change, or stops part-way
+// most blocks per foreman per stop streak
+export const FOREMAN_STOP_BLOCKS = 2
+export const STALLED = '[truss] stalled:'
+export const IDLE_FOREMAN = '[truss] idle foreman:'
+export const LIMIT_RESET = '[truss] limit reset:'
+// how a foreman says it cannot go on without help, proposes a change, or stops part-way
 export const BLOCKED = 'BLOCKED:'
 export const PROPOSAL = 'PROPOSAL:'
 export const CHECKPOINT = 'CHECKPOINT:'
 // a hand-back shorter than this, once trimmed, is not a report
 export const HANDBACK_MIN = 40
-// the note the main session gets at its start, naming this session's foundry folder
-export const DIR_NOTE = '[foundry] dir:'
+// the note the main session gets at its start, naming this session's truss folder
+export const DIR_NOTE = '[truss] dir:'
 // statuses of an agent that is still working or can still be woken
 const LIVE = new Set(['pending', 'running', 'waiting', 'idle'])
 
@@ -50,11 +50,11 @@ export type Agent = Pick<AgentInfo, 'id' | 'type' | 'status' | 'description'> & 
   seq?: number
 }
 
-// the crew an agent works in: the lead at its top, the crew's name, and whether the agent is that lead
-export type Crew = { crew: string; leadId: string; leadName: string; isLead: boolean }
+// the crew an agent works in: the foreman at its top, the crew's name, and whether the agent is that foreman
+export type Crew = { crew: string; foremanId: string; foremanName: string; isForeman: boolean }
 
-export function isLead(agent: Agent): boolean {
-  return agent.type === LEAD_TYPE && agent.parentId === undefined
+export function isForeman(agent: Agent): boolean {
+  return agent.type === FOREMAN_TYPE && agent.parentId === undefined
 }
 
 // the one name an agent's crew, report file and notes go by: its spawn name, else its id
@@ -63,17 +63,17 @@ export function labelOf(agent: Agent): string {
   return agent.name !== undefined && agent.name !== '' ? agent.name : agent.id
 }
 
-// the crew's name is its lead's label
-export function crewName(lead: Agent): string {
-  return labelOf(lead)
+// the crew's name is its foreman's label
+export function crewName(foreman: Agent): string {
+  return labelOf(foreman)
 }
 
 function isLive(agent: Agent): boolean {
   return agent.live ?? LIVE.has(agent.status)
 }
 
-// The crew `id` works in: it is a lead the main thread started, or one of its ancestors is. Undefined for every
-// other agent, including the main thread and agents of a lead some other agent started.
+// The crew `id` works in: it is a foreman the main thread started, or one of its ancestors is. Undefined for every
+// other agent, including the main thread and agents of a foreman some other agent started.
 export function crewOf(id: string | undefined, agents: readonly Agent[]): Crew | undefined {
   if (id === undefined) return undefined
   const byId = new Map(agents.map(a => [a.id, a]))
@@ -82,8 +82,8 @@ export function crewOf(id: string | undefined, agents: readonly Agent[]): Crew |
   while (at !== undefined && !seen.has(at.id)) {
     seen.add(at.id)
     if (at.parentId === undefined) {
-      if (!isLead(at)) return undefined
-      return { crew: crewName(at), leadId: at.id, leadName: crewName(at), isLead: at.id === id }
+      if (!isForeman(at)) return undefined
+      return { crew: crewName(at), foremanId: at.id, foremanName: crewName(at), isForeman: at.id === id }
     }
     at = byId.get(at.parentId)
   }
@@ -105,7 +105,7 @@ export function descendantsOf(id: string, agents: readonly Agent[]): Agent[] {
   })
 }
 
-// A lead's stop is interim while it still has work out: a live descendant, or a running or pending background task
+// A foreman's stop is interim while it still has work out: a live descendant, or a running or pending background task
 // whose id is one of its descendants'. The session-wide task list also holds other crews' tasks; those are ignored.
 export function isInterimStop(descendants: readonly Agent[], tasks: readonly { id: string; status: string }[] | undefined): boolean {
   if (descendants.some(isLive)) return true
@@ -123,11 +123,11 @@ function slashed(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
-// Where this session's foundry files live: in the repo's git common dir, so every worktree of it shares one place,
+// Where this session's truss files live: in the repo's git common dir, so every worktree of it shares one place,
 // or under the home folder outside git. Undefined when neither is known.
-export function foundryDir(gitCommonDir: string | undefined, home: string | undefined, sessionId: string): string | undefined {
+export function trussDir(gitCommonDir: string | undefined, home: string | undefined, sessionId: string): string | undefined {
   const base = gitCommonDir !== undefined && gitCommonDir !== '' ? slashed(gitCommonDir) : home !== undefined && home !== '' ? `${slashed(home)}/.claude` : undefined
-  return base === undefined ? undefined : `${base}/foundry/${safeName(sessionId)}`
+  return base === undefined ? undefined : `${base}/truss/${safeName(sessionId)}`
 }
 
 export function reportDir(dir: string, crew: string): string {
@@ -138,7 +138,7 @@ export function reportPath(dir: string, crew: string, agent: string): string {
   return `${reportDir(dir, crew)}/${safeName(agent)}.md`
 }
 
-// where an interim stop's text goes, beside the report, so the report the foreman is told to read stays the last real one
+// where an interim stop's text goes, beside the report, so the report the PM is told to read stays the last real one
 export function interimPath(dir: string, crew: string, agent: string): string {
   return `${reportDir(dir, crew)}/${safeName(agent)}.interim.md`
 }
@@ -166,12 +166,12 @@ export function rolledEventsPath(dir: string, n: number): string {
 
 // One event-log line past the fields every line carries (v, ts, crew, agent). No field holds message, prompt or
 // report text (P8).
-export type FoundryEvent =
+export type TrussEvent =
   | { event: 'spawn'; crew: string; agent: string; agentId: string | null; type: string; model: string | null; effort: string | null; by: string }
-  | { event: 'stall'; crew: string; agent: string; kind: 'agent' | 'idle-lead'; minutes: number }
+  | { event: 'stall'; crew: string; agent: string; kind: 'agent' | 'idle-foreman'; minutes: number }
   | { event: 'tag'; crew: string; agent: string; tag: 'QUESTION' | 'BLOCKED' | 'PROPOSAL' }
   | { event: 'report'; crew: string; agent: string; marker: ReportMarker | null }
-  | { event: typeof BUDGET_SPENT_EVENT; crew: string; agent: string }
+  | { event: typeof ALLOWANCE_SPENT_EVENT; crew: string; agent: string }
   | FetchEvent
 
 // The fetch gate (ADR-0005 s11): every WebFetch and WebSearch call passes this one pure function. It allows every call
@@ -204,7 +204,7 @@ export function fetchVerdict(tool: 'WebFetch' | 'WebSearch', input: { readonly u
   return { kind: 'allow', line: { event: 'fetch', crew, agent, tool, query: typeof input.query === 'string' ? input.query.slice(0, 200) : '' } }
 }
 
-const MARKERS = ['VERDICT: PASS', 'VERDICT: FAIL', 'REDTEAM', 'CHECKPOINT', 'BLOCKED', 'QUESTION', 'PROPOSAL'] as const
+const MARKERS = ['VERDICT: PASS', 'VERDICT: FAIL', 'STRESSTEST', 'CHECKPOINT', 'BLOCKED', 'QUESTION', 'PROPOSAL'] as const
 export type ReportMarker = (typeof MARKERS)[number]
 
 // the marker a report's first non-empty line starts with, or null
@@ -233,32 +233,32 @@ export type MessageVerdict =
   | { kind: 'allow'; crossCrew: true; fromCrew: string; toCrew: string }
   | { kind: 'deny'; reason: string }
 
-const MEMBER_RULE = 'crew members message only their own lead and the other members of their crew'
+const MEMBER_RULE = 'crew members message only their own foreman and the other members of their crew'
 
-// Who a crew agent may message. A member: its own lead and its crew's other members. A lead: "main", its own
-// members, and the other leads. Anything else from inside a crew is refused, including an address no agent of this
+// Who a crew agent may message. A member: its own foreman and its crew's other members. A foreman: "main", its own
+// members, and the other foremen. Anything else from inside a crew is refused, including an address no agent of this
 // session has had; agents outside every crew are not this mod's business.
 export function messageVerdict(senderId: string | undefined, to: unknown, agents: readonly Agent[]): MessageVerdict {
   const sender = crewOf(senderId, agents)
   if (sender === undefined) return { kind: 'pass' }
   const address = typeof to === 'string' ? to.trim() : ''
   if (address === MAIN || address.startsWith(`${MAIN} [`)) {
-    if (sender.isLead) return { kind: 'allow', crossCrew: false }
-    return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. Put your question in a message to your lead, ${sender.leadName}, which asks "main" for you.` }
+    if (sender.isForeman) return { kind: 'allow', crossCrew: false }
+    return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. Put your question in a message to your foreman, ${sender.foremanName}, which asks "main" for you.` }
   }
   const targets = address === '' ? [] : recipientsOf(address, agents)
   const crews = targets.map(t => crewOf(t.id, agents))
-  if (new Set(crews.map(c => c?.leadId)).size > 1) {
+  if (new Set(crews.map(c => c?.foremanId)).size > 1) {
     return { kind: 'deny', reason: `${MARK} Refused: more than one live agent is named "${address}", in different crews. Address it by its agent id.` }
   }
   const target = crews[0]
-  if (target !== undefined && target.leadId === sender.leadId) return { kind: 'allow', crossCrew: false }
-  if (sender.isLead && target?.isLead) return { kind: 'allow', crossCrew: true, fromCrew: sender.crew, toCrew: target.crew }
-  if (sender.isLead) {
-    const via = target === undefined ? 'Message "main", your own members, or another crew\'s lead.' : `Send it to that crew's lead, ${target.leadName}, instead.`
-    return { kind: 'deny', reason: `${MARK} Refused: a lead reaches another crew only through its lead. ${via}` }
+  if (target !== undefined && target.foremanId === sender.foremanId) return { kind: 'allow', crossCrew: false }
+  if (sender.isForeman && target?.isForeman) return { kind: 'allow', crossCrew: true, fromCrew: sender.crew, toCrew: target.crew }
+  if (sender.isForeman) {
+    const via = target === undefined ? 'Message "main", your own members, or another crew\'s foreman.' : `Send it to that crew's foreman, ${target.foremanName}, instead.`
+    return { kind: 'deny', reason: `${MARK} Refused: a foreman reaches another crew only through its foreman. ${via}` }
   }
-  return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. To reach anyone else, tell your lead, ${sender.leadName}.` }
+  return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. To reach anyone else, tell your foreman, ${sender.foremanName}.` }
 }
 
 export const MODEL_REFUSAL = `${MARK} Refused: inside a crew, every Agent call sets \`model\`: "opus" for judgment-heavy work (design, debugging, review, tricky code), "sonnet" for mechanical or well-specified work. Call Agent again with model set.`
@@ -281,8 +281,8 @@ export function effortVerdict(callerId: string | undefined, effort: unknown, age
   return typeof effort === 'string' && EFFORTS.includes(effort) ? undefined : { deny: EFFORT_REFUSAL }
 }
 
-// plan.json as the hooks read it (ADR-0001 s8): only the fields the gates and /foundry use, each left unchecked
-export type Plan = { approval: unknown; approvedAt: unknown; maxParallelCrews: unknown; crews: unknown[]; version: unknown; repairBudget: unknown; goal: unknown; goals: unknown }
+// plan.json as the hooks read it (ADR-0001 s8): only the fields the gates and /truss use, each left unchecked
+export type Plan = { approval: unknown; approvedAt: unknown; maxParallelCrews: unknown; crews: unknown[]; version: unknown; reworkAllowance: unknown; goal: unknown; goals: unknown }
 type PlanCrew = Record<string, unknown>
 
 const DEFAULT_CAP = 4
@@ -292,7 +292,7 @@ export function planPath(dir: string): string {
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isWave = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isStage = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 // The plan, or undefined when the text is not one the gates can read: empty, not JSON, not an object, or with no
 // crews array. Undefined means no gate and no plan lines, as in 0.2.1. A leading UTF-8 BOM is stripped first.
@@ -304,10 +304,10 @@ export function parsePlan(text: string): Plan | undefined {
     return undefined
   }
   if (!isRecord(value) || !Array.isArray(value.crews)) return undefined
-  return { approval: value.approval, approvedAt: value.approvedAt, maxParallelCrews: value.maxParallelCrews, crews: value.crews, version: value.version, repairBudget: value.repairBudget, goal: value.goal, goals: value.goals }
+  return { approval: value.approval, approvedAt: value.approvedAt, maxParallelCrews: value.maxParallelCrews, crews: value.crews, version: value.version, reworkAllowance: value.reworkAllowance, goal: value.goal, goals: value.goals }
 }
 
-// The plan entry a lead's name is gated as. A name that is a plan slug is that crew. Otherwise the successor rule: a
+// The plan entry a foreman's name is gated as. A name that is a plan slug is that crew. Otherwise the successor rule: a
 // name `<base>-<n>`, n an integer >= 2, whose base is a plan slug, is gated as that base crew, so restarting a crew
 // under a fresh name can't slip past its gates. That holds for the name successorCrew suggests; plain nextCrew can
 // slip (phase-1 -> phase-2 is another crew's slug), so the idle prompt uses successorCrew. One suffix only is
@@ -322,32 +322,32 @@ export function planCrewFor(plan: Plan, name: string): { slug: string; crew: Pla
   return base === undefined ? undefined : { slug: m[1], crew: base }
 }
 
-// Why the plan refuses starting the lead `name`, and what /foundry says that crew waits for, or undefined when it may
+// Why the plan refuses starting the foreman `name`, and what /truss says that crew waits for, or undefined when it may
 // start. The gates, first match wins (ADR-0010 s3): run approval, a reserved goal id, a crew goal the plan doesn't
-// have, goal approval, crew approval, the wave gate within the crew's goal, the parallel cap across goals. The crew
-// being started is every entry with the target's slug (the schema allows duplicate slugs; wave and ownerApproval come
+// have, goal approval, crew approval, the stage gate within the crew's goal, the parallel cap across goals. The crew
+// being started is every entry with the target's slug (the schema allows duplicate slugs; stage and clientApproval come
 // from the first). None of them counts as running, since its own entry may already say running (a restart, or a
-// successor gated as its base), and none of them is in the earlier-wave check, so a crew can't hold itself back.
+// successor gated as its base), and none of them is in the earlier-stage check, so a crew can't hold itself back.
 export function gateOf(plan: Plan, name: string): { deny: string; waits: string } | undefined {
   const target = planCrewFor(plan, name)
   if (target === undefined) return undefined
   const stop = (deny: string, waits: string) => ({ deny, waits })
-  if (plan.approval === 'owner' && plan.approvedAt === null) return stop(`this run changes the design; get the owner's approval first`, `waits for the owner's approval of the plan`)
+  if (plan.approval === 'client' && plan.approvedAt === null) return stop(`this run changes the design; get the client's approval first`, `waits for the client's approval of the plan`)
   const goals = Array.isArray(plan.goals) ? plan.goals.filter(isRecord) : []
   if (goals.some(g => g.id === RUN_GOAL)) return stop(`goal id run is reserved for the run's first goal; rename it in plan.json`, `waits for a fix: goal id run is reserved`)
   const goal = goalOf(target.crew)
   const entry = goals.find(g => g.id === goal)
   if (goal !== RUN_GOAL && entry === undefined) return stop(`${target.slug} names goal ${goal}, which isn't in the plan`, `waits for a fix: goal ${goal} isn't in the plan`)
-  if (entry !== undefined && entry.approval === 'owner' && entry.approvedAt === null) return stop(`goal ${goal} changes the design; get the owner's approval first`, `waits for the owner's approval of goal ${goal}`)
-  if (target.crew.ownerApproval === 'pending') return stop(`${target.slug} waits for the owner's approval`, `waits for the owner's approval`)
+  if (entry !== undefined && entry.approval === 'client' && entry.approvedAt === null) return stop(`goal ${goal} changes the design; get the client's approval first`, `waits for the client's approval of goal ${goal}`)
+  if (target.crew.clientApproval === 'pending') return stop(`${target.slug} waits for the client's approval`, `waits for the client's approval`)
   const others = plan.crews.filter(isRecord).filter(c => c.slug !== target.slug)
-  const wave = target.crew.wave
-  if (isWave(wave)) {
-    const open = others.filter(c => goalOf(c) === goal && isWave(c.wave) && c.wave < wave && c.status !== 'merged' && c.status !== 'dropped')
+  const stage = target.crew.stage
+  if (isStage(stage)) {
+    const open = others.filter(c => goalOf(c) === goal && isStage(c.stage) && c.stage < stage && c.status !== 'merged' && c.status !== 'dropped')
     if (open.length > 0) {
-      const lowest = Math.min(...open.map(c => c.wave as number))
-      const list = open.filter(c => c.wave === lowest).map(c => planField(c.slug)).join(', ')
-      return stop(`wave ${lowest} ${goal === RUN_GOAL ? '' : `of goal ${goal} `}isn't merged yet: ${list}`, `waits for wave ${lowest} to merge: ${list}`)
+      const lowest = Math.min(...open.map(c => c.stage as number))
+      const list = open.filter(c => c.stage === lowest).map(c => planField(c.slug)).join(', ')
+      return stop(`stage ${lowest} ${goal === RUN_GOAL ? '' : `of goal ${goal} `}isn't merged yet: ${list}`, `waits for stage ${lowest} to merge: ${list}`)
     }
   }
   const max = plan.maxParallelCrews
@@ -362,27 +362,27 @@ export function planVerdict(plan: Plan, name: string): { deny: string } | undefi
   return gate === undefined ? undefined : { deny: `${MARK} Refused: ${gate.deny}` }
 }
 
-// a plan field as /foundry prints it: a string or a number as is, anything else (missing included) as ?
+// a plan field as /truss prints it: a string or a number as is, anything else (missing included) as ?
 function planField(v: unknown): string {
-  return typeof v === 'string' || isWave(v) ? String(v) : '?'
+  return typeof v === 'string' || isStage(v) ? String(v) : '?'
 }
 
-// the lines /foundry shows above the 0.2.1 output: one per crew, by wave, ties in the plan's queue order; with goals,
+// the lines /truss shows above the 0.2.1 output: one per crew, by stage, ties in the plan's queue order; with goals,
 // grouped under a line per goal (ADR-0010 s5)
 export function planLines(plan: Plan): string[] {
-  const waiting = plan.approval === 'owner' && plan.approvedAt === null ? ', waiting for the owner' : ''
+  const waiting = plan.approval === 'client' && plan.approvedAt === null ? ', waiting for the client' : ''
   const goals = Array.isArray(plan.goals) ? plan.goals : []
   const grouped = goals.length > 0
   const counts = grouped ? `${plan.crews.length} crews, ${1 + goals.length} goals` : `${plan.crews.length} crews`
   const lines = [`Plan (${counts}, approval ${planField(plan.approval)}${waiting}):`]
-  const order = (c: unknown) => (isRecord(c) && isWave(c.wave) ? c.wave : Number.POSITIVE_INFINITY)
+  const order = (c: unknown) => (isRecord(c) && isStage(c.stage) ? c.stage : Number.POSITIVE_INFINITY)
   const sorted = plan.crews.map((c, i) => ({ c, i })).sort((a, b) => order(a.c) - order(b.c) || a.i - b.i)
   const crewLine = (c: unknown) => {
     const crew = isRecord(c) ? c : {}
     const planned = crew.status === 'planned'
     const gate = planned ? gateOf(plan, planField(crew.slug)) : undefined
     const suffix = planned ? `, ${gate === undefined ? 'ready to start' : gate.waits}` : ''
-    return `- wave ${planField(crew.wave)}: ${planField(crew.slug)}, ${planField(crew.verdict)}, ${planField(crew.status)}${suffix}`
+    return `- stage ${planField(crew.stage)}: ${planField(crew.slug)}, ${planField(crew.verdict)}, ${planField(crew.status)}${suffix}`
   }
   if (!grouped) {
     for (const { c } of sorted) lines.push(crewLine(c))
@@ -396,9 +396,9 @@ export function planLines(plan: Plan): string[] {
     if (known.includes(id)) {
       const entry = id === RUN_GOAL ? plan : goals.find(g => isRecord(g) && g.id === id)
       const e = isRecord(entry) ? entry : {}
-      const owner = e.approval === 'owner' && e.approvedAt === null ? ', waiting for the owner' : ''
+      const client = e.approval === 'client' && e.approvedAt === null ? ', waiting for the client' : ''
       const done = mine.every(({ c }) => isRecord(c) && (c.status === 'merged' || c.status === 'dropped')) ? ', done' : ''
-      lines.push(`Goal ${planField(id)} (approval ${planField(e.approval)}${owner}${done}): ${typeof e.goal === 'string' ? goalLine(e.goal) : ''}`)
+      lines.push(`Goal ${planField(id)} (approval ${planField(e.approval)}${client}${done}): ${typeof e.goal === 'string' ? goalLine(e.goal) : ''}`)
     } else {
       lines.push(`Goal ${planField(id)} (not in the plan):`)
     }
@@ -411,7 +411,7 @@ export function reportNote(who: string, path: string): string {
   return `${MARK} If ${who}'s report does not reach you, read ${path} once it stops.`
 }
 
-// The tags a lead's message to main, or its report, can start with, and what /foundry shows for each.
+// The tags a foreman's message to main, or its report, can start with, and what /truss shows for each.
 export type Tag = { kind: 'waiting on you' | 'blocked' | 'proposal'; text: string }
 
 const TAGS: readonly [string, Tag['kind']][] = [
@@ -434,14 +434,14 @@ export function tagOf(text: string): Tag | undefined {
   return undefined
 }
 
-// A lead's final text that may end its run: a checkpoint, a blocker, a question or a proposal, or a report with a
+// A foreman's final text that may end its run: a checkpoint, a blocker, a question or a proposal, or a report with a
 // Proof section.
-export function leadStopPasses(text: string): boolean {
+export function foremanStopPasses(text: string): boolean {
   const trimmed = text.trimStart()
   return [CHECKPOINT, BLOCKED, QUESTION, PROPOSAL].some(p => trimmed.startsWith(p)) || /^##\s+Proof\b/m.test(text)
 }
 
-export const LEAD_STOP_REASON = `${MARK} Not done yet: finish with your report, in the sections Summary, Branch, Changes, Proof, Checks run and Open questions (each a "## " heading), or, if you cannot finish, start your final message with CHECKPOINT:, BLOCKED:, QUESTION: or PROPOSAL:.`
+export const FOREMAN_STOP_REASON = `${MARK} Not done yet: finish with your report, in the sections Summary, Branch, Changes, Proof, Checks run and Open questions (each a "## " heading), or, if you cannot finish, start your final message with CHECKPOINT:, BLOCKED:, QUESTION: or PROPOSAL:.`
 
 // ADR-0004: scope-bounded claims, the bounded repair loop, the patch-bound head guard and the main-session effort
 // rule. Every rule asks planAtLeastV2 first; anything else is 0.4.3 behaviour. The literals are written once, in the
@@ -451,20 +451,20 @@ export const PATCH_LINE = 'Patch: '
 export const EXAMINED = '## Examined'
 export const NOT_EXAMINED = '## Not examined'
 export const UNSCOPED = '- UNSCOPED: '
-export const BUDGET_BLOCKED = 'BLOCKED: repair budget spent'
-export const BUDGET_SPENT_EVENT = 'budget-spent'
+export const ALLOWANCE_BLOCKED = 'BLOCKED: rework allowance spent'
+export const ALLOWANCE_SPENT_EVENT = 'allowance-spent'
 export const PATCH_COMMAND = 'git diff --no-color --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ <base>...<head> | git patch-id --stable'
 
-export const BUDGET_REFUSAL = `${MARK} Refused: repair budget spent:`
-export const NO_PASS_REASON = `${MARK} Not done yet: the crew's latest judge file this run is not a clean VERDICT: PASS. Send your final report only after a judge's PASS with no UNSCOPED finding, or start your final message with BLOCKED: or CHECKPOINT:.`
-export const NO_HEAD_REASON = `${MARK} Not done yet: the crew's latest judge PASS has no "${HEAD_LINE.trim()}" and "${PATCH_LINE.trim()}" lines under ## Proof checked, so no hook can tell which head it ruled on. Start a fresh judge under the next unused name.`
+export const ALLOWANCE_REFUSAL = `${MARK} Refused: rework allowance spent:`
+export const NO_PASS_REASON = `${MARK} Not done yet: the crew's latest QC file this run is not a clean VERDICT: PASS. Send your final report only after a QC's PASS with no UNSCOPED finding, or start your final message with BLOCKED: or CHECKPOINT:.`
+export const NO_HEAD_REASON = `${MARK} Not done yet: the crew's latest QC PASS has no "${HEAD_LINE.trim()}" and "${PATCH_LINE.trim()}" lines under ## Proof checked, so no hook can tell which head it ruled on. Start a fresh QC under the next unused name.`
 export const HEAD_MOVED = `${MARK} Not done yet: the head moved:`
 export const EXAMINED_REASON = `${MARK} Not done yet: on this plan your final report also needs the sections "${EXAMINED}" (what the crew checked, each with its scope) and "${NOT_EXAMINED}" (what nobody checked, or None.), each a heading of its own.`
-export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every foundry:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`
-export const MAIN_EFFORT_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every foundry:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the owner's call. Call Agent again with effort set.`
+export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`
+export const MAIN_EFFORT_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.`
 
-export type JudgeFile = { name: string; text: string; mtimeMs: number }
-export type JudgeRuling = { verdict: 'PASS' | 'FAIL' | undefined; head: string | undefined; patch: string | undefined; unscoped: number }
+export type QcFile = { name: string; text: string; mtimeMs: number }
+export type QcRuling = { verdict: 'PASS' | 'FAIL' | undefined; head: string | undefined; patch: string | undefined; unscoped: number }
 
 const SHA40 = /^[0-9a-f]{40}$/
 
@@ -473,10 +473,10 @@ export function planAtLeastV2(plan: Plan | undefined): boolean {
   return plan !== undefined && Number.isInteger(plan.version) && (plan.version as number) >= 2
 }
 
-// the plan's integer repair budget >= 0 on a v>=2 plan; else undefined, which means no budget rule
-export function repairBudgetOf(plan: Plan | undefined): number | undefined {
+// the plan's integer rework allowance >= 0 on a v>=2 plan; else undefined, which means no allowance rule
+export function reworkAllowanceOf(plan: Plan | undefined): number | undefined {
   if (plan === undefined || !planAtLeastV2(plan)) return undefined
-  const b = plan.repairBudget
+  const b = plan.reworkAllowance
   return Number.isInteger(b) && (b as number) >= 0 ? (b as number) : undefined
 }
 
@@ -487,64 +487,64 @@ export function runStart(plan: Plan | undefined): number | undefined {
   return Number.isFinite(ms) ? ms : undefined
 }
 
-// a spawn name whose report file is one of the crew's judge files
-export function isJudgeName(crew: string, name: unknown): boolean {
-  return typeof name === 'string' && name !== '' && isJudgeFile(crew, `${safeName(name)}.md`)
+// a spawn name whose report file is one of the crew's QC files
+export function isQcName(crew: string, name: unknown): boolean {
+  return typeof name === 'string' && name !== '' && isQcFile(crew, `${safeName(name)}.md`)
 }
 
-// a judge file of the crew this run: judge-named, not interim, modified at or after `since`
-function thisRun(crew: string, f: JudgeFile, since: number): boolean {
-  return isJudgeFile(crew, f.name) && !isInterimFile(f.name) && f.mtimeMs >= since
+// a QC file of the crew this run: QC-named, not interim, modified at or after `since`
+function thisRun(crew: string, f: QcFile, since: number): boolean {
+  return isQcFile(crew, f.name) && !isInterimFile(f.name) && f.mtimeMs >= since
 }
 
-// how many of the crew's judge files this run rule FAIL, or rule PASS with an UNSCOPED finding
-export function judgeFails(crew: string, files: readonly JudgeFile[], since: number): number {
+// how many of the crew's QC files this run rule FAIL, or rule PASS with an UNSCOPED finding
+export function qcFails(crew: string, files: readonly QcFile[], since: number): number {
   return files.filter(f => {
     if (!thisRun(crew, f, since)) return false
-    const r = judgeRuling(f.text)
+    const r = qcRuling(f.text)
     return r.verdict === 'FAIL' || (r.verdict === 'PASS' && r.unscoped > 0)
   }).length
 }
 
-// the k of <crew>-judge-<k>.md; the bare <crew>-judge.md is 1
-const judgeK = (name: string): number => Number(/-judge-(\d+)\.md$/.exec(name)?.[1] ?? 1)
+// the k of <crew>-qc-<k>.md; the bare <crew>-qc.md is 1
+const qcK = (name: string): number => Number(/-qc-(\d+)\.md$/.exec(name)?.[1] ?? 1)
 
-// the crew's newest judge file this run; ties go to the higher -judge-<k>
-export function latestJudge(crew: string, files: readonly JudgeFile[], since: number): JudgeFile | undefined {
-  let latest: JudgeFile | undefined
+// the crew's newest QC file this run; ties go to the higher -qc-<k>
+export function latestQc(crew: string, files: readonly QcFile[], since: number): QcFile | undefined {
+  let latest: QcFile | undefined
   for (const f of files) {
     if (!thisRun(crew, f, since)) continue
-    if (latest === undefined || f.mtimeMs > latest.mtimeMs || (f.mtimeMs === latest.mtimeMs && judgeK(f.name) > judgeK(latest.name))) latest = f
+    if (latest === undefined || f.mtimeMs > latest.mtimeMs || (f.mtimeMs === latest.mtimeMs && qcK(f.name) > qcK(latest.name))) latest = f
   }
   return latest
 }
 
-// the budget is spent when the FAILs are more than it; no budget rule, never spent
-export function budgetSpent(plan: Plan | undefined, fails: number): boolean {
-  const budget = repairBudgetOf(plan)
-  return budget !== undefined && fails > budget
+// the allowance is spent when the FAILs are more than it; no allowance rule, never spent
+export function allowanceSpent(plan: Plan | undefined, fails: number): boolean {
+  const allowance = reworkAllowanceOf(plan)
+  return allowance !== undefined && fails > allowance
 }
 
-export function budgetRefusal(crew: string, fails: number, budget: number): string {
-  return `${BUDGET_REFUSAL} ${crew} has ${fails} judge FAILs this run and repairBudget is ${budget}. Start no more judges: send main a message that starts with "${BUDGET_BLOCKED}", with the last judge's findings.`
+export function allowanceRefusal(crew: string, fails: number, allowance: number): string {
+  return `${ALLOWANCE_REFUSAL} ${crew} has ${fails} QC FAILs this run and reworkAllowance is ${allowance}. Start no more QCs: send main a message that starts with "${ALLOWANCE_BLOCKED}", with the last QC's findings.`
 }
 
-// a judge-named spawn of a crew whose budget is spent is refused
-export function judgeBudgetVerdict(plan: Plan | undefined, crew: string, name: unknown, fails: number): { deny: string } | undefined {
-  const budget = repairBudgetOf(plan)
-  if (budget === undefined || !isJudgeName(crew, name) || !budgetSpent(plan, fails)) return undefined
-  return { deny: budgetRefusal(crew, fails, budget) }
+// a QC-named spawn of a crew whose allowance is spent is refused
+export function qcAllowanceVerdict(plan: Plan | undefined, crew: string, name: unknown, fails: number): { deny: string } | undefined {
+  const allowance = reworkAllowanceOf(plan)
+  if (allowance === undefined || !isQcName(crew, name) || !allowanceSpent(plan, fails)) return undefined
+  return { deny: allowanceRefusal(crew, fails, allowance) }
 }
 
 const trimEnd = (line: string) => line.replace(/[ \t]+$/, '')
 const linesOf = (text: string) => text.replace(/^﻿/, '').replace(/\r/g, '').split('\n')
 
-// What a judge report rules: the verdict from its marker; the first full-line head and patch under ## Proof checked;
+// What a QC report rules: the verdict from its marker; the first full-line head and patch under ## Proof checked;
 // the UNSCOPED lines under ## Findings. A section runs to the next line starting "## ".
-export function judgeRuling(text: string): JudgeRuling {
+export function qcRuling(text: string): QcRuling {
   const lines = linesOf(text)
   const marker = markerOf(lines.join('\n'))
-  const ruling: JudgeRuling = { verdict: marker === 'VERDICT: PASS' ? 'PASS' : marker === 'VERDICT: FAIL' ? 'FAIL' : undefined, head: undefined, patch: undefined, unscoped: 0 }
+  const ruling: QcRuling = { verdict: marker === 'VERDICT: PASS' ? 'PASS' : marker === 'VERDICT: FAIL' ? 'FAIL' : undefined, head: undefined, patch: undefined, unscoped: 0 }
   let section: string | undefined
   const sha = (line: string, literal: string) => {
     if (!line.startsWith(literal)) return undefined
@@ -596,35 +596,35 @@ export function examinedVerdict(plan: Plan | undefined, text: string): { block: 
 }
 
 export function headMovedReason(judged: string, head: string): string {
-  return `${HEAD_MOVED} the judge ruled on ${judged}, the branch is at ${head}, and its patch id differs. Start a fresh judge under the next unused name on ${head}, and send your final report on its PASS.`
+  return `${HEAD_MOVED} the QC ruled on ${judged}, the branch is at ${head}, and its patch id differs. Start a fresh QC under the next unused name on ${head}, and send your final report on its PASS.`
 }
 
 // ADR-0004 section 6's table: a clean PASS with head and patch lines whose head is the branch's, or whose patch is
-export function headVerdict(plan: Plan | undefined, judge: JudgeRuling | undefined, head: string | undefined, patch: string | undefined): { block: string } | undefined {
+export function headVerdict(plan: Plan | undefined, qc: QcRuling | undefined, head: string | undefined, patch: string | undefined): { block: string } | undefined {
   if (!planAtLeastV2(plan)) return undefined
-  if (judge === undefined || judge.verdict !== 'PASS' || judge.unscoped > 0) return { block: NO_PASS_REASON }
-  if (judge.head === undefined || judge.patch === undefined) return { block: NO_HEAD_REASON }
-  if (head === undefined || head === judge.head || patch === undefined || patch === judge.patch) return undefined
-  return { block: headMovedReason(judge.head, head) }
+  if (qc === undefined || qc.verdict !== 'PASS' || qc.unscoped > 0) return { block: NO_PASS_REASON }
+  if (qc.head === undefined || qc.patch === undefined) return { block: NO_HEAD_REASON }
+  if (head === undefined || head === qc.head || patch === undefined || patch === qc.patch) return undefined
+  return { block: headMovedReason(qc.head, head) }
 }
 
-// on a v>=2 plan, a main-session foundry:* Agent call sets a model, then an effort other than max
+// on a v>=2 plan, a main-session truss:* Agent call sets a model, then an effort other than max
 export function mainCallVerdict(plan: Plan | undefined, callerId: string | undefined, type: unknown, model: unknown, effort: unknown): { deny: string } | undefined {
-  if (!planAtLeastV2(plan) || callerId !== undefined || typeof type !== 'string' || !type.startsWith('foundry:')) return undefined
+  if (!planAtLeastV2(plan) || callerId !== undefined || typeof type !== 'string' || !type.startsWith('truss:')) return undefined
   if (typeof model !== 'string' || model === '') return { deny: MAIN_MODEL_REFUSAL }
   return typeof effort === 'string' && EFFORTS.includes(effort) ? undefined : { deny: MAIN_EFFORT_REFUSAL }
 }
 
-// ADR-0009 Decision 6. The role table a foundry Workflow script is given (Decision 2): opus or sonnet, low or medium
-// effort, no lead, devops or integrator, keys that match ^[a-z]+$. Undefined means the table is allowed.
+// ADR-0009 Decision 6. The role table a truss Workflow script is given (Decision 2): opus or sonnet, low or medium
+// effort, no foreman, commissioning or integrator, keys that match ^[a-z]+$. Undefined means the table is allowed.
 export function workflowRoleVerdict(roles: unknown): { deny: string } | undefined {
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
-  if (!isRecord(roles)) return refuse('the Workflow needs a roles table in args.foundry.roles')
+  if (!isRecord(roles)) return refuse('the Workflow needs a roles table in args.truss.roles')
   for (const [key, role] of Object.entries(roles)) {
     if (!/^[a-z]+$/.test(key)) return refuse(`Workflow role "${key}" is not a lowercase name`)
-    if (key === 'lead' || key === 'devops' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
+    if (key === 'foreman' || key === 'commissioning' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
     if (!isRecord(role)) return refuse(`Workflow role ${key} is not an object`)
-    if (role.agentType === 'foundry:lead' || role.agentType === 'foundry:devops' || role.agentType === 'foundry:integrator') return refuse(`Workflow role ${key} never runs as ${role.agentType}`)
+    if (role.agentType === 'truss:foreman' || role.agentType === 'truss:commissioning-engineer' || role.agentType === 'truss:integrator') return refuse(`Workflow role ${key} never runs as ${role.agentType}`)
     if (role.model !== 'opus' && role.model !== 'sonnet') return refuse(`Workflow role ${key} needs model opus or sonnet`)
     if (role.effort !== 'low' && role.effort !== 'medium') return refuse(`Workflow role ${key} needs effort low or medium`)
   }
@@ -643,32 +643,32 @@ export function workflowCallVerdict(
   const dir = flat(input.pluginDir)
   const path = typeof input.scriptPath === 'string' ? flat(input.scriptPath) : undefined
   const text = typeof input.scriptText === 'string' ? input.scriptText : undefined
-  // pluginScriptTexts is positional: index 0 is plan.js's text, index 1 is wave.js's. An undefined entry matches nothing.
+  // pluginScriptTexts is positional: index 0 is plan.js's text, index 1 is stage.js's. An undefined entry matches nothing.
   const isPlanJs = (path !== undefined && path === `${dir}/workflows/plan.js`) || (text !== undefined && input.pluginScriptTexts[0] !== undefined && text === input.pluginScriptTexts[0])
-  const isWaveJs = (path !== undefined && path === `${dir}/workflows/wave.js`) || (text !== undefined && input.pluginScriptTexts[1] !== undefined && text === input.pluginScriptTexts[1])
-  const byPath = path !== undefined && (path === `${dir}/workflows/plan.js` || path === `${dir}/workflows/wave.js`)
+  const isStageJs = (path !== undefined && path === `${dir}/workflows/stage.js`) || (text !== undefined && input.pluginScriptTexts[1] !== undefined && text === input.pluginScriptTexts[1])
+  const byPath = path !== undefined && (path === `${dir}/workflows/plan.js` || path === `${dir}/workflows/stage.js`)
   const byText = text !== undefined && input.pluginScriptTexts.some((t) => t !== undefined && t === text)
   if (!byPath && !byText) {
     if (input.scriptPath !== undefined && text === undefined) return refuse(ONLY_FROM_PLUGIN)
-    if (text === undefined || text.includes('foundry:')) return refuse(ONLY_FROM_PLUGIN)
+    if (text === undefined || text.includes('truss:')) return refuse(ONLY_FROM_PLUGIN)
     return undefined
   }
   const args = input.args
-  const foundry = isRecord(args) ? args.foundry : undefined
-  if (!isRecord(foundry)) return refuse('a foundry Workflow needs args.foundry')
-  const roles = workflowRoleVerdict(foundry.roles)
+  const truss = isRecord(args) ? args.truss : undefined
+  if (!isRecord(truss)) return refuse('a truss Workflow needs args.truss')
+  const roles = workflowRoleVerdict(truss.roles)
   if (roles !== undefined) return roles
-  if (isPlanJs && isWaveJs) return refuse('the script matches both plan.js and wave.js')
-  const shown = typeof foundry.kind === 'string' ? `"${foundry.kind}"` : JSON.stringify(foundry.kind)
-  if (isPlanJs && foundry.kind !== 'plan') return refuse(`plan.js runs only with kind "plan", not ${shown}`)
-  if (isWaveJs && foundry.kind !== 'wave') return refuse(`wave.js runs only with kind "wave", not ${shown}`)
-  if (foundry.kind === 'plan') return plan.approvedAt ? refuse('the plan is already approved; a plan Workflow would replace it') : undefined
-  if (foundry.kind !== 'wave') return refuse('a foundry Workflow runs only with kind "plan" or "wave"')
-  const crews = foundry.crews
-  if (!Array.isArray(crews)) return refuse('a wave Workflow needs args.foundry.crews as a list')
+  if (isPlanJs && isStageJs) return refuse('the script matches both plan.js and stage.js')
+  const shown = typeof truss.kind === 'string' ? `"${truss.kind}"` : JSON.stringify(truss.kind)
+  if (isPlanJs && truss.kind !== 'plan') return refuse(`plan.js runs only with kind "plan", not ${shown}`)
+  if (isStageJs && truss.kind !== 'stage') return refuse(`stage.js runs only with kind "stage", not ${shown}`)
+  if (truss.kind === 'plan') return plan.approvedAt ? refuse('the plan is already approved; a plan Workflow would replace it') : undefined
+  if (truss.kind !== 'stage') return refuse('a truss Workflow runs only with kind "plan" or "stage"')
+  const crews = truss.crews
+  if (!Array.isArray(crews)) return refuse('a stage Workflow needs args.truss.crews as a list')
   for (const entry of crews) {
     const slug = isRecord(entry) ? entry.slug : undefined
-    if (typeof slug !== 'string') return refuse('a wave Workflow crew has no slug')
+    if (typeof slug !== 'string') return refuse('a stage Workflow crew has no slug')
     const target = planCrewFor(plan, slug)
     if (target === undefined || target.crew.status !== 'running') return refuse(`${slug} is not a running crew in the plan`)
     const verdict = planVerdict(plan, slug)
@@ -676,10 +676,10 @@ export function workflowCallVerdict(
   }
   return undefined
 }
-const ONLY_FROM_PLUGIN = `foundry agents run in a Workflow only from the plugin's plan.js and wave.js`
+const ONLY_FROM_PLUGIN = `truss agents run in a Workflow only from the plugin's plan.js and stage.js`
 
 export function stallText(label: string, crew: string, minutes: number): string {
-  return `${STALLED} ${label} in crew ${crew}, no activity for ${minutes}m. Check /foundry and message the ${crew} lead. Read its transcript tail before you stop it; a resumed agent may be compacting.`
+  return `${STALLED} ${label} in crew ${crew}, no activity for ${minutes}m. Check /truss and message the ${crew} foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.`
 }
 
 // the name a successor crew takes: auth -> auth-2, gateway-3 -> gateway-4
@@ -702,12 +702,12 @@ export function successorCrew(plan: Plan | undefined, crew: string): string {
   return `${target.slug}-${k}`
 }
 
-export function idleLeadText(label: string, crew: string, minutes: number, next: string = nextCrew(crew)): string {
-  return `${IDLE_LEAD} ${label} in crew ${crew}, no report for ${minutes}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`
+export function idleForemanText(label: string, crew: string, minutes: number, next: string = nextCrew(crew)): string {
+  return `${IDLE_FOREMAN} ${label} in crew ${crew}, no report for ${minutes}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`
 }
 
-// A lead's captured report that ends its work: one with a Proof section, a checkpoint or a blocker. A question or a
-// proposal waits on the foreman instead, and shows as a waiting tag.
+// A foreman's captured report that ends its work: one with a Proof section, a checkpoint or a blocker. A question or a
+// proposal waits on the PM instead, and shows as a waiting tag.
 export function isFinalReport(text: string): boolean {
   const trimmed = text.trimStart()
   return trimmed.startsWith(CHECKPOINT) || trimmed.startsWith(BLOCKED) || /^##\s+Proof\b/m.test(text)
@@ -732,10 +732,10 @@ export function isEmptyHandBack(message: string): boolean {
   return trimmed.length < HANDBACK_MIN || STAND_INS.has(trimmed.toLowerCase())
 }
 
-// `- HH:MM |` at the start of a decision-log line: the time the foreman typed, or the literal HH:MM placeholder,
+// `- HH:MM |` at the start of a decision-log line: the time the PM typed, or the literal HH:MM placeholder,
 // which the clock's replaces (ADR-0003 s2)
 const DECISION_TIME = /^- (\d{1,2}:\d{2}|HH:MM) \|/
-// the placeholder the run skill tells the foreman to type: it marks no time, so it is always stamped
+// the placeholder the run skill tells the PM to type: it marks no time, so it is always stamped
 const UNSTAMPED = 'HH:MM'
 
 // 10:04 for a clock reading, in the machine's local time
@@ -759,18 +759,18 @@ export function stampDecisions(text: string, logged: string, time: string): stri
     .join('\n')
 }
 
-// the decision log of session `sessionId`, wherever its foundry folder is
+// the decision log of session `sessionId`, wherever its truss folder is
 export function isDecisionLog(path: string, sessionId: string): boolean {
-  return slashed(path).endsWith(`/foundry/${safeName(sessionId)}/decisions.md`)
+  return slashed(path).endsWith(`/truss/${safeName(sessionId)}/decisions.md`)
 }
 
 export function limitResetText(resetsAt: string): string {
-  return `${LIMIT_RESET} the five-hour usage window reset at ${resetsAt}. Check /foundry and message each lead whose crew isn't done to resume.`
+  return `${LIMIT_RESET} the five-hour usage window reset at ${resetsAt}. Check /truss and message each foreman whose crew isn't done to resume.`
 }
 
-// a crew's judge report files: <crew>-judge.md and <crew>-judge-<n>.md
-export function isJudgeFile(crew: string, file: string): boolean {
-  const prefix = `${safeName(crew)}-judge`
+// a crew's QC report files: <crew>-qc.md and <crew>-qc-<n>.md
+export function isQcFile(crew: string, file: string): boolean {
+  const prefix = `${safeName(crew)}-qc`
   if (!file.startsWith(prefix) || !file.endsWith('.md')) return false
   const middle = file.slice(prefix.length, -'.md'.length)
   return middle === '' || /^-\d+$/.test(middle)
@@ -787,24 +787,24 @@ export type CrewStatus = {
   status: string
   live: Record<string, number>
   lastReportMs?: number
-  // a lead's open question to the person; `tag` wins when both are set
+  // a foreman's open question to the person; `tag` wins when both are set
   question?: string
   tag?: Tag
-  // the lead ended its turn (or its run) while its members still work
+  // the foreman ended its turn (or its run) while its members still work
   waitingOnMembers?: boolean
-  // when the lead last did anything, as far as this mod saw
+  // when the foreman last did anything, as far as this mod saw
   lastActiveMs?: number
   // the crew's agents flagged as stalled, and for how many whole minutes
   stalled?: { label: string; minutes: number }[]
-  judge?: string
+  qc?: string
   dir?: string
-  // the crew's live members, lead left out: what a waiting lead waits on
+  // the crew's live members, foreman left out: what a waiting foreman waits on
   members?: { label: string; status: string; runningMs: number; model: string; lastActiveMs?: number }[]
 }
 
 export function statusText(crews: readonly CrewStatus[], now: number, messages?: string, root?: string): string {
-  const dirLine = root === undefined ? [] : [`Foundry dir: ${root}`]
-  if (crews.length === 0) return ['No foundry crews in this session. Start them with /foundry:run.', ...dirLine].join('\n')
+  const dirLine = root === undefined ? [] : [`Truss dir: ${root}`]
+  if (crews.length === 0) return ['No truss crews in this session. Start them with /truss:run.', ...dirLine].join('\n')
   const lines = [`Crews (${crews.length}):`]
   for (const c of crews) {
     const total = Object.values(c.live).reduce((a, b) => a + b, 0)
@@ -822,14 +822,14 @@ export function statusText(crews: readonly CrewStatus[], now: number, messages?:
     const active = c.lastActiveMs === undefined ? '' : `, last active ${ago(now - c.lastActiveMs)}`
     lines.push(`- ${c.crew}: ${c.status}, ${members}, ${report}${active}`)
     for (const s of c.stalled ?? []) lines.push(`  ${s.label}: stalled ${s.minutes}m`)
-    if (c.judge !== undefined) lines.push(`  judge: ${c.judge}`)
+    if (c.qc !== undefined) lines.push(`  qc: ${c.qc}`)
     if (c.dir !== undefined) lines.push(`  reports: ${c.dir}`)
     for (const m of c.members ?? []) {
       const last = m.lastActiveMs === undefined ? 'no activity seen' : `last activity ${ago(now - m.lastActiveMs)}`
       lines.push(`  ${m.label} ${m.status} ${Math.floor(m.runningMs / 60_000)}m (${m.model}), ${last}`)
     }
   }
-  if (messages !== undefined) lines.push(`Messages between leads: ${messages}`)
+  if (messages !== undefined) lines.push(`Messages between foremen: ${messages}`)
   lines.push(...dirLine)
   return lines.join('\n')
 }
@@ -863,7 +863,7 @@ async function safely<T>($: $, what: string, step: () => Promise<T>): Promise<T 
     return await step()
   } catch (error) {
     try {
-      $.ui.log(`foundry: ${what} failed, letting the call through: ${String(error)}`, { to: 'debug' })
+      $.ui.log(`truss: ${what} failed, letting the call through: ${String(error)}`, { to: 'debug' })
     } catch {
       // nothing left to do
     }
@@ -872,10 +872,10 @@ async function safely<T>($: $, what: string, step: () => Promise<T>): Promise<T 
 }
 
 // A hook that throws or overruns its budget anyway: answering undefined leaves the hook absent, so the call goes on
-// as if foundry were not installed.
+// as if truss were not installed.
 const failOpen = ($: $, _e: unknown, next: { error?: unknown }) => {
   try {
-    $.ui.log(`foundry: a hook failed and was skipped: ${String(next.error)}`, { to: 'debug' })
+    $.ui.log(`truss: a hook failed and was skipped: ${String(next.error)}`, { to: 'debug' })
   } catch {
     // nothing left to do
   }
@@ -889,7 +889,7 @@ function withNote(result: ToolCallResult, note: string): ToolCallResult {
 
 // what the mod keeps for the session; a reload or /clear starts it over (the armed limit reset lives in $.state)
 type State = {
-  // every agent seen this session, so a member whose lead has ended still resolves to its crew
+  // every agent seen this session, so a member whose foreman has ended still resolves to its crew
   known: Map<string, Agent>
   // the order agents were first seen in
   seq: number
@@ -899,40 +899,40 @@ type State = {
   models: Map<string, string>
   // agents whose report was captured from their hand-back; their next stop leaves the file alone, once
   handedBack: Set<string>
-  planArchitects: Map<string, 'plan' | 'amend'>
+  planDesigners: Map<string, 'plan' | 'amend'>
   planRoute: Promise<unknown>
   pendingPlanCalls: Map<string, 'plan' | 'amend'>
-  // each pending hand-back's message, by agent: what a lead's stop is judged on
+  // each pending hand-back's message, by agent: what a foreman's stop is judged on
   handBacks: Map<string, string>
-  // leads whose pending hand-back was held back from the report file by the Examined check (ADR-0004 s6); the stop
+  // foremen whose pending hand-back was held back from the report file by the Examined check (ADR-0004 s6); the stop
   // that goes through writes it
   withheld: Set<string>
-  // the tag (question, blocker, proposal) each lead shows in /foundry until answered or replaced, by lead id
+  // the tag (question, blocker, proposal) each foreman shows in /truss until answered or replaced, by foreman id
   waiting: Map<string, Tag>
   // when each agent last made a tool call or a model request, by id
   activity: Map<string, number>
   // agents already reported as stalled; new activity takes them off
   stalled: Set<string>
-  // how many stops of each lead's current stop streak were blocked
+  // how many stops of each foreman's current stop streak were blocked
   streaks: Map<string, number>
-  // when each agent was spawned, else when the mod first saw it: how long /foundry says it has been running
+  // when each agent was spawned, else when the mod first saw it: how long /truss says it has been running
   started: Map<string, number>
   // each listed agent's status at the last heartbeat pass; undefined before the first, so no agent counts as resumed
   lastPass?: Map<string, string>
-  // when each lead's current idle period began: the first pass that saw it not running with nothing at work
+  // when each foreman's current idle period began: the first pass that saw it not running with nothing at work
   idleSince: Map<string, number>
-  // leads already prompted for in their current idle period
+  // foremen already prompted for in their current idle period
   idlePrompted: Set<string>
-  // when each lead's latest final report was captured
+  // when each foreman's latest final report was captured
   finals: Map<string, number>
   // when each agent's current stint began: the pass that saw it running again after one that didn't. None for an
   // agent first seen running, whose stint began before the mod could tell
   stints: Map<string, number>
-  // leads a pass saw go from running to stopped since they last ran: the only leads the idle check prompts for
+  // foremen a pass saw go from running to stopped since they last ran: the only foremen the idle check prompts for
   stopped: Set<string>
   // when the main session last made a tool call or a model request
   mainActive?: number
-  // this session's foundry folder, resolved once from the session's working directory
+  // this session's truss folder, resolved once from the session's working directory
   root?: string
   // appends to the event log, one at a time, each starting once the one before has settled; /clear leaves it be
   events: Promise<unknown>
@@ -940,13 +940,13 @@ type State = {
   eventsPending: number
 }
 
-const LIMIT_RESET_REF = { plugin: 'foundry', key: 'limitReset' } as const
+const LIMIT_RESET_REF = { plugin: 'truss', key: 'limitReset' } as const
 
-// The session's foundry folder: worked out once, from the session's own working directory, so the path a note
+// The session's truss folder: worked out once, from the session's own working directory, so the path a note
 // names and the path a report is written to always agree. Not cached while it cannot be found.
 async function rootOf($: $, state: State): Promise<string | undefined> {
   if (state.root !== undefined) return state.root
-  const root = foundryDir(await gitCommonDir($, await $.session.cwd()), await homeDir($), await $.session.id())
+  const root = trussDir(await gitCommonDir($, await $.session.cwd()), await homeDir($), await $.session.id())
   if (root !== undefined) state.root = root
   return root
 }
@@ -961,7 +961,7 @@ export function fencedBlock(message: string, open: string): string | undefined {
   return end < 0 ? undefined : lines.slice(start + 1, end).join('\n')
 }
 
-// A plan-mode architect's hand-back, written to the two fixed paths under the foundry dir; never over a plan that is
+// A plan-mode design engineer's hand-back, written to the two fixed paths under the truss dir; never over a plan that is
 // approved or unreadable. Says why in the debug log when it writes nothing.
 // Why the plan on disk must be kept, read fresh: undefined when there is none or it is unapproved.
 async function keepReason($: $, dir: string): Promise<string | undefined> {
@@ -990,7 +990,7 @@ async function routePlanFiles($: $, state: State, message: string): Promise<void
   if (json === undefined || md === undefined) return logRule($, `plan-file route wrote nothing: ${json === undefined ? 'no plan.json block' : 'no plan.md block'}`)
   if (parsePlan(json) === undefined) return logRule($, 'plan-file route wrote nothing: the plan.json block is not a plan')
   const dir = await rootOf($, state)
-  if (dir === undefined) return logRule($, 'plan-file route wrote nothing: no foundry dir')
+  if (dir === undefined) return logRule($, 'plan-file route wrote nothing: no truss dir')
   let carried: unknown
   try {
     carried = JSON.parse(json.startsWith('\uFEFF') ? json.slice(1) : json)
@@ -999,7 +999,7 @@ async function routePlanFiles($: $, state: State, message: string): Promise<void
   }
   if (!isRecord(carried)) return logRule($, 'plan-file route wrote nothing: the plan.json block is not an object')
   // Read inside the serialised route, right before the write, so an approval that lands while this route waits its turn
-  // is kept. An approval landing between this read and the write is still overwritten: the foreman's edit shares no
+  // is kept. An approval landing between this read and the write is still overwritten: the PM's edit shares no
   // lock with the hook.
   const kept = await keepReason($, dir)
   if (kept !== undefined) return logRule($, `plan-file route kept the existing plan: ${kept}`)
@@ -1011,7 +1011,7 @@ async function routePlanFiles($: $, state: State, message: string): Promise<void
   }
 }
 
-// An amend-mode architect's hand-back (ADR-0010 s2): the goal merged into the approved plan.json, its readable plan
+// An amend-mode design engineer's hand-back (ADR-0010 s2): the goal merged into the approved plan.json, its readable plan
 // written to plan-<id>.md. Shares the plan route's chain, so the two never interleave. Says why in the debug log when it
 // writes nothing.
 function writeAmendFiles($: $, state: State, message: string): Promise<void> {
@@ -1026,14 +1026,14 @@ async function routeAmendFiles($: $, state: State, message: string): Promise<voi
   const md = fencedBlock(message, '````markdown plan.md')
   if (json === undefined || md === undefined) return nothing(json === undefined ? 'no plan-amend.json block' : 'no plan.md block')
   const dir = await rootOf($, state)
-  if (dir === undefined) return nothing('no foundry dir')
+  if (dir === undefined) return nothing('no truss dir')
   let amend: unknown
   try {
     amend = JSON.parse(json.startsWith('﻿') ? json.slice(1) : json)
   } catch {
     return nothing('the plan-amend.json block is not JSON')
   }
-  // read inside the serialised route, right before the write, so the foreman's approval edits count
+  // read inside the serialised route, right before the write, so the PM's approval edits count
   let existing: unknown
   try {
     if (await $.fs.exists(planPath(dir))) {
@@ -1055,8 +1055,8 @@ async function routeAmendFiles($: $, state: State, message: string): Promise<voi
   }
 }
 
-// The session's plan, read fresh on every call so the foreman's edits count at once; never written here. Undefined
-// when there is no foundry dir or no readable plan.
+// The session's plan, read fresh on every call so the PM's edits count at once; never written here. Undefined
+// when there is no truss dir or no readable plan.
 async function planOf($: $, state: State): Promise<Plan | undefined> {
   const dir = await rootOf($, state)
   if (dir === undefined || !(await $.fs.exists(planPath(dir)))) return undefined
@@ -1165,16 +1165,16 @@ function noteMainActivity($: $, state: State) {
   }
 }
 
-// what the stop gate needs of a stopping agent: whether it is a lead the main thread started, and its descendants
+// what the stop gate needs of a stopping agent: whether it is a foreman the main thread started, and its descendants
 // as last listed. One not yet listed is taken at its event's type.
-async function stopperOf($: $, state: State, id: string, type: string | undefined): Promise<{ lead: boolean; descendants: Agent[] }> {
+async function stopperOf($: $, state: State, id: string, type: string | undefined): Promise<{ foreman: boolean; descendants: Agent[] }> {
   const all = (await agentsOf($, state)).all
   const known = all.find(a => a.id === id)
-  const lead = known === undefined ? type === LEAD_TYPE : isLead(known)
-  return { lead, descendants: lead ? descendantsOf(id, all) : [] }
+  const foreman = known === undefined ? type === FOREMAN_TYPE : isForeman(known)
+  return { foreman, descendants: foreman ? descendantsOf(id, all) : [] }
 }
 
-const RULINGS: ReadonlySet<string> = new Set(['VERDICT: PASS', 'VERDICT: FAIL', 'REDTEAM'])
+const RULINGS: ReadonlySet<string> = new Set(['VERDICT: PASS', 'VERDICT: FAIL', 'STRESSTEST'])
 
 const isRuling = (text: string) => RULINGS.has(markerOf(text) ?? '')
 
@@ -1183,26 +1183,26 @@ async function heldRuling($: $, path: string): Promise<boolean> {
 }
 
 // `tags` false: an interim stop's text goes to <label>.interim.md, leaving the report alone, and neither sets nor
-// clears what /foundry shows
+// clears what /truss shows
 async function writeReport($: $, state: State, crew: Crew, id: string, text: string, tags = true) {
   const dir = await rootOf($, state)
   if (dir === undefined) return
   // an agent started before the mod loaded has no spawn name on record: its listed name, else its id
   const known = state.known.get(id)
   const label = state.labels.get(id) ?? (known === undefined ? id : labelOf(known))
-  // a report that holds a ruling is kept: a later stop by the same agent with no ruling of its own (a resumed judge's
-  // follow-up) is interim, since the merge gate and /foundry read the ruling from this file. A new ruling replaces it.
+  // a report that holds a ruling is kept: a later stop by the same agent with no ruling of its own (a resumed QC's
+  // follow-up) is interim, since the merge gate and /truss read the ruling from this file. A new ruling replaces it.
   if (tags && !isRuling(text) && (await heldRuling($, reportPath(dir, crew.crew, label)))) tags = false
   await $.fs.write(tags ? reportPath(dir, crew.crew, label) : interimPath(dir, crew.crew, label), text)
   if (tags) await logEvent($, state, { event: 'report', crew: crew.crew, agent: label, marker: markerOf(text) })
-  // a judge's FAIL that spends the crew's repair budget is recorded once more, as its own event (ADR-0004 s5)
-  if (tags && markerOf(text) === 'VERDICT: FAIL' && isJudgeName(crew.crew.toLowerCase(), label.toLowerCase())) await safely($, 'repair budget record', () => budgetRecord($, state, crew.crew, label))
-  if (!crew.isLead || !tags) return
-  // a lead's captured text tells whether it stopped on a question, a blocker or a proposal
+  // a QC's FAIL that spends the crew's rework allowance is recorded once more, as its own event (ADR-0004 s5)
+  if (tags && markerOf(text) === 'VERDICT: FAIL' && isQcName(crew.crew.toLowerCase(), label.toLowerCase())) await safely($, 'rework allowance record', () => allowanceRecord($, state, crew.crew, label))
+  if (!crew.isForeman || !tags) return
+  // a foreman's captured text tells whether it stopped on a question, a blocker or a proposal
   const tag = tagOf(text)
   if (tag === undefined) state.waiting.delete(id)
   else state.waiting.set(id, tag)
-  // a captured report ends the lead's idle period; a final one excuses it until the lead runs again
+  // a captured report ends the foreman's idle period; a final one excuses it until the foreman runs again
   state.idleSince.delete(id)
   state.idlePrompted.delete(id)
   if (isFinalReport(text)) state.finals.set(id, await $.clock.now())
@@ -1217,7 +1217,7 @@ async function appendMessage($: $, state: State, entry: { from: string; to: stri
 }
 
 // one line onto the event log, under docs/events.schema.json; rolls as the message log does
-async function appendEvent($: $, state: State, event: FoundryEvent) {
+async function appendEvent($: $, state: State, event: TrussEvent) {
   const dir = await rootOf($, state)
   if (dir === undefined) return
   const { event: name, ...fields } = event
@@ -1254,10 +1254,10 @@ function settledWithin($: $, ms: number, step: Promise<unknown>, late: () => voi
 // append starts only once the one before it has settled, so a slow write that completes late can't clobber a newer
 // line. A caller whose wait runs out logs it and goes on; its line still lands later, in order, if the fs answers.
 // Past EVENT_BACKLOG_MAX queued appends, a new event is dropped and logged.
-function logEvent($: $, state: State, event: FoundryEvent): Promise<void> {
+function logEvent($: $, state: State, event: TrussEvent): Promise<void> {
   const failed = (reason: string) => {
     try {
-      $.ui.log(`foundry: event log failed, letting the call through: ${reason}`, { to: 'debug' })
+      $.ui.log(`truss: event log failed, letting the call through: ${reason}`, { to: 'debug' })
     } catch {
       // nothing left to do
     }
@@ -1312,20 +1312,20 @@ async function lastModified($: $, dir: string): Promise<number | undefined> {
 // the line lands before the call it explains returns, but at most EVENT_WAIT_MS: a hung log never holds a call.
 async function logRule($: $, line: string): Promise<void> {
   try {
-    await settledWithin($, EVENT_WAIT_MS, Promise.resolve().then(() => $.ui.log(`foundry: ${line}`, { to: 'debug' })))
+    await settledWithin($, EVENT_WAIT_MS, Promise.resolve().then(() => $.ui.log(`truss: ${line}`, { to: 'debug' })))
   } catch {
     // nothing left to do
   }
 }
 
-// The crew's judge files modified at or after `since`, from reports/<crew>/. Texts are read only when `withText`.
-// No folder means no judge files (ADR-0004 s5: 0 FAILs; s6: no PASS). A list, stat or read that throws rejects, and
+// The crew's QC files modified at or after `since`, from reports/<crew>/. Texts are read only when `withText`.
+// No folder means no QC files (ADR-0004 s5: 0 FAILs; s6: no PASS). A list, stat or read that throws rejects, and
 // the caller's safely lets the call through.
-async function judgeFilesOf($: $, dir: string, crew: string, since: number, withText: boolean): Promise<(JudgeFile & { path: string })[]> {
-  const files: (JudgeFile & { path: string })[] = []
+async function qcFilesOf($: $, dir: string, crew: string, since: number, withText: boolean): Promise<(QcFile & { path: string })[]> {
+  const files: (QcFile & { path: string })[] = []
   if (!(await $.fs.exists(dir))) return files
   for (const f of await $.fs.list(dir)) {
-    if (f.kind !== 'file' || isInterimFile(f.name) || !isJudgeFile(crew.toLowerCase(), f.name.toLowerCase())) continue
+    if (f.kind !== 'file' || isInterimFile(f.name) || !isQcFile(crew.toLowerCase(), f.name.toLowerCase())) continue
     const { mtimeMs } = await $.fs.stat(`${dir}/${f.name}`)
     if (!(mtimeMs >= since)) continue
     files.push({ name: f.name.toLowerCase(), text: withText ? String(await $.fs.read(`${dir}/${f.name}`)) : '', mtimeMs, path: `${dir}/${f.name}` })
@@ -1333,38 +1333,38 @@ async function judgeFilesOf($: $, dir: string, crew: string, since: number, with
   return files
 }
 
-// The crew's judge FAILs this run, with the plan's budget rule; undefined when the plan sets none (v1, no or a bad
-// repairBudget, an approvedAt that doesn't parse, no foundry dir).
-// A plan read or judge-folder read that overruns its bound counts as no rule.
+// The crew's QC FAILs this run, with the plan's allowance rule; undefined when the plan sets none (v1, no or a bad
+// reworkAllowance, an approvedAt that doesn't parse, no truss dir).
+// A plan read or QC-folder read that overruns its bound counts as no rule.
 async function failsOf($: $, state: State, crew: string): Promise<{ plan: Plan; fails: number } | undefined> {
   const plan = await planWithin($, state, PLAN_READ_MS)
   const since = runStart(plan)
-  if (plan === undefined || repairBudgetOf(plan) === undefined || since === undefined) return undefined
+  if (plan === undefined || reworkAllowanceOf(plan) === undefined || since === undefined) return undefined
   const dir = await rootOf($, state)
   if (dir === undefined) return undefined
-  const files = await within($, EVENT_WAIT_MS, () => judgeFilesOf($, reportDir(dir, crew), crew, since, true))
-  return files === undefined ? undefined : { plan, fails: judgeFails(crew.toLowerCase(), files, since) }
+  const files = await within($, EVENT_WAIT_MS, () => qcFilesOf($, reportDir(dir, crew), crew, since, true))
+  return files === undefined ? undefined : { plan, fails: qcFails(crew.toLowerCase(), files, since) }
 }
 
-// ADR-0004 s5: a judge-named Agent call from inside a crew whose repair budget is spent is refused
-async function budgetGate($: $, state: State, crew: string, name: unknown): Promise<{ deny: string } | undefined> {
-  // NTFS names are case-insensitive, so judge names and the crew compare case-folded; the refusal names the crew as given
+// ADR-0004 s5: a QC-named Agent call from inside a crew whose rework allowance is spent is refused
+async function allowanceGate($: $, state: State, crew: string, name: unknown): Promise<{ deny: string } | undefined> {
+  // NTFS names are case-insensitive, so QC names and the crew compare case-folded; the refusal names the crew as given
   const folded = typeof name === 'string' ? name.toLowerCase() : name
-  if (!isJudgeName(crew.toLowerCase(), folded)) return undefined
+  if (!isQcName(crew.toLowerCase(), folded)) return undefined
   const counted = await failsOf($, state, crew)
-  const verdict = counted === undefined ? undefined : judgeBudgetVerdict(counted.plan, crew.toLowerCase(), folded, counted.fails)
-  const budget = counted === undefined ? undefined : repairBudgetOf(counted.plan)
-  const refused = verdict === undefined || budget === undefined ? undefined : { deny: budgetRefusal(crew, counted?.fails ?? 0, budget) }
-  if (refused !== undefined) await logRule($, `repair budget gate refused a judge spawn in crew ${crew}: ${counted?.fails} judge FAILs this run`)
+  const verdict = counted === undefined ? undefined : qcAllowanceVerdict(counted.plan, crew.toLowerCase(), folded, counted.fails)
+  const allowance = counted === undefined ? undefined : reworkAllowanceOf(counted.plan)
+  const refused = verdict === undefined || allowance === undefined ? undefined : { deny: allowanceRefusal(crew, counted?.fails ?? 0, allowance) }
+  if (refused !== undefined) await logRule($, `rework allowance gate refused a QC spawn in crew ${crew}: ${counted?.fails} QC FAILs this run`)
   return refused
 }
 
-// ADR-0004 s5: a saved judge FAIL that leaves the crew's budget spent appends one budget-spent line
-async function budgetRecord($: $, state: State, crew: string, agent: string) {
+// ADR-0004 s5: a saved QC FAIL that leaves the crew's allowance spent appends one allowance-spent line
+async function allowanceRecord($: $, state: State, crew: string, agent: string) {
   const counted = await failsOf($, state, crew)
-  if (counted === undefined || !budgetSpent(counted.plan, counted.fails)) return
-  await logRule($, `repair budget spent in crew ${crew} by judge ${agent}`)
-  await logEvent($, state, { event: BUDGET_SPENT_EVENT, crew, agent })
+  if (counted === undefined || !allowanceSpent(counted.plan, counted.fails)) return
+  await logRule($, `rework allowance spent in crew ${crew} by QC ${agent}`)
+  await logEvent($, state, { event: ALLOWANCE_SPENT_EVENT, crew, agent })
 }
 
 const GIT_MS = 15_000
@@ -1402,9 +1402,9 @@ async function patchOf($: $, cwd: string | undefined, base: string, branch: stri
   }
 }
 
-// ADR-0004 s4 and s6, on a lead's text that would pass by its Proof section: on a v>=2 plan, the Examined headings,
+// ADR-0004 s4 and s6, on a foreman's text that would pass by its Proof section: on a v>=2 plan, the Examined headings,
 // then, for an untagged report, the head guard. Undefined: the stop goes through.
-// A plan read or judge-folder read that overruns its bound lets the stop through.
+// A plan read or QC-folder read that overruns its bound lets the stop through.
 async function finalReportVerdict($: $, state: State, id: string, text: string): Promise<{ block: string; rule: string } | undefined> {
   const plan = await planWithin($, state, PLAN_READ_MS)
   if (!planAtLeastV2(plan)) return undefined
@@ -1416,14 +1416,14 @@ async function finalReportVerdict($: $, state: State, id: string, text: string):
   if (isTagged(text) || since === undefined || crew === undefined || dir === undefined) return undefined
   const reports = reportDir(dir, crew.crew)
   const read = await within($, EVENT_WAIT_MS, async () => {
-    const latest = latestJudge(crew.crew.toLowerCase(), await judgeFilesOf($, reports, crew.crew, since, false), since)
-    return { ruling: latest === undefined ? undefined : judgeRuling(String(await $.fs.read((latest as JudgeFile & { path: string }).path))) }
+    const latest = latestQc(crew.crew.toLowerCase(), await qcFilesOf($, reports, crew.crew, since, false), since)
+    return { ruling: latest === undefined ? undefined : qcRuling(String(await $.fs.read((latest as QcFile & { path: string }).path))) }
   })
   if (read === undefined) return undefined
   const { ruling } = read
   // the rows that need no git: no clean PASS, or a PASS without its head lines
   const early = headVerdict(plan, ruling, undefined, undefined)
-  if (early !== undefined) return { ...early, rule: early.block === NO_HEAD_REASON ? 'judge PASS has no head lines' : 'no clean judge PASS this run' }
+  if (early !== undefined) return { ...early, rule: early.block === NO_HEAD_REASON ? 'QC PASS has no head lines' : 'no clean QC PASS this run' }
   const where = branchOf(text)
   if (ruling === undefined || where === undefined || checkoutRelativeRef(where.branch) || checkoutRelativeRef(where.base)) return undefined
   const cwd = await $.session.cwd()
@@ -1435,23 +1435,23 @@ async function finalReportVerdict($: $, state: State, id: string, text: string):
 
 async function statusOf($: $, state: State): Promise<string> {
   const { all, listed } = await agentsOf($, state)
-  // a listed lead shows its own status, completed or killed included; one the list dropped shows as ended
+  // a listed foreman shows its own status, completed or killed included; one the list dropped shows as ended
   const listedIds = new Set(listed.map(a => a.id))
   const dir = await rootOf($, state)
   const now = await $.clock.now()
   const crews: CrewStatus[] = []
   const plan = await safely($, 'plan lines', () => planOf($, state))
   const since = runStart(plan) ?? 0
-  for (const lead of all.filter(isLead)) {
-    const crew = crewName(lead)
+  for (const foreman of all.filter(isForeman)) {
+    const crew = crewName(foreman)
     const counts: Record<string, number> = {}
     const stalled: { label: string; minutes: number }[] = []
     const members: NonNullable<CrewStatus['members']> = []
     for (const a of listed) {
-      if (crewOf(a.id, all)?.leadId !== lead.id) continue
+      if (crewOf(a.id, all)?.foremanId !== foreman.id) continue
       const last = state.activity.get(a.id)
       if (state.stalled.has(a.id) && a.status === 'running' && last !== undefined) stalled.push({ label: labelOf(a), minutes: Math.floor((now - last) / 60_000) })
-      if (a.id === lead.id || !LIVE.has(a.status)) continue
+      if (a.id === foreman.id || !LIVE.has(a.status)) continue
       const m = family(state.models.get(a.id))
       counts[m] = (counts[m] ?? 0) + 1
       // an agent the mod never saw spawn counts from the first time it was seen
@@ -1461,20 +1461,20 @@ async function statusOf($: $, state: State): Promise<string> {
     }
     const reports = dir === undefined ? undefined : reportDir(dir, crew)
     const lastReportMs = reports === undefined ? undefined : await lastModified($, reports)
-    const judge = reports === undefined ? undefined : await safely($, 'judge verdict', async () => {
-      const latest = latestJudge(crew.toLowerCase(), await judgeFilesOf($, reports, crew, since, false), since)
-      return latest === undefined ? undefined : judgeRuling(String(await $.fs.read(latest.path))).verdict
+    const qc = reports === undefined ? undefined : await safely($, 'QC verdict', async () => {
+      const latest = latestQc(crew.toLowerCase(), await qcFilesOf($, reports, crew, since, false), since)
+      return latest === undefined ? undefined : qcRuling(String(await $.fs.read(latest.path))).verdict
     })
     crews.push({
       crew,
-      status: listedIds.has(lead.id) ? lead.status : 'ended',
+      status: listedIds.has(foreman.id) ? foreman.status : 'ended',
       live: counts,
       lastReportMs,
-      tag: state.waiting.get(lead.id),
-      waitingOnMembers: !(listedIds.has(lead.id) && lead.status === 'running') && descendantsOf(lead.id, all).some(isLive),
-      lastActiveMs: state.activity.get(lead.id),
+      tag: state.waiting.get(foreman.id),
+      waitingOnMembers: !(listedIds.has(foreman.id) && foreman.status === 'running') && descendantsOf(foreman.id, all).some(isLive),
+      lastActiveMs: state.activity.get(foreman.id),
       stalled,
-      judge,
+      qc,
       dir: reports,
       members,
     })
@@ -1485,16 +1485,16 @@ async function statusOf($: $, state: State): Promise<string> {
   return plan === undefined ? text : [...planLines(plan), text].join('\n')
 }
 
-// Whether the lead's report on disk, written in its current stint, is final or tagged. It is what a reloaded mod has
-// in place of `finals` and `waiting`. A report it cannot read excuses the lead: a missed prompt beats a wrong one,
+// Whether the foreman's report on disk, written in its current stint, is final or tagged. It is what a reloaded mod has
+// in place of `finals` and `waiting`. A report it cannot read excuses the foreman: a missed prompt beats a wrong one,
 // and the next pass reads again.
-async function excusedOnDisk($: $, state: State, lead: Agent, crew: Crew): Promise<boolean> {
-  const excused = await safely($, 'idle lead report', async () => {
+async function excusedOnDisk($: $, state: State, foreman: Agent, crew: Crew): Promise<boolean> {
+  const excused = await safely($, 'idle foreman report', async () => {
     const dir = await rootOf($, state)
     if (dir === undefined) return false
-    const path = reportPath(dir, crew.crew, state.labels.get(lead.id) ?? labelOf(lead))
+    const path = reportPath(dir, crew.crew, state.labels.get(foreman.id) ?? labelOf(foreman))
     if (!(await $.fs.exists(path))) return false
-    const stint = state.stints.get(lead.id)
+    const stint = state.stints.get(foreman.id)
     if (stint !== undefined && (await $.fs.stat(path)).mtimeMs < stint) return false
     const text = String(await $.fs.read(path))
     return isFinalReport(text) || tagOf(text) !== undefined
@@ -1502,31 +1502,31 @@ async function excusedOnDisk($: $, state: State, lead: Agent, crew: Crew): Promi
   return excused !== false
 }
 
-// A lead a pass saw go from running to stopped, now `idle` (a normal end of turn: never waiting, killed, failed or
+// A foreman a pass saw go from running to stopped, now `idle` (a normal end of turn: never waiting, killed, failed or
 // completed), with nothing of its crew at work, no waiting tag and no final report in its current stint, is prompted
 // for once per idle period, STALL_MS into it. Activity alone doesn't start a stint, so a sign-off after a final
 // hand-back doesn't undo it; a resume does. The heartbeat has no task list, so a member's background work counts
 // through the member's own entry in the agent list.
-async function idleLeadCheck($: $, state: State, lead: Agent, crew: Crew, all: readonly Agent[], now: number) {
-  const final = state.finals.get(lead.id)
-  const stint = state.stints.get(lead.id)
+async function idleForemanCheck($: $, state: State, foreman: Agent, crew: Crew, all: readonly Agent[], now: number) {
+  const final = state.finals.get(foreman.id)
+  const stint = state.stints.get(foreman.id)
   const excused =
-    !state.stopped.has(lead.id) ||
-    lead.status !== 'idle' ||
-    state.waiting.has(lead.id) ||
+    !state.stopped.has(foreman.id) ||
+    foreman.status !== 'idle' ||
+    state.waiting.has(foreman.id) ||
     (final !== undefined && (stint === undefined || final >= stint)) ||
-    isInterimStop(descendantsOf(lead.id, all), undefined) ||
-    (await excusedOnDisk($, state, lead, crew))
+    isInterimStop(descendantsOf(foreman.id, all), undefined) ||
+    (await excusedOnDisk($, state, foreman, crew))
   if (excused) {
-    state.idleSince.delete(lead.id)
-    state.idlePrompted.delete(lead.id)
+    state.idleSince.delete(foreman.id)
+    state.idlePrompted.delete(foreman.id)
     return
   }
-  const since = state.idleSince.get(lead.id) ?? now
-  state.idleSince.set(lead.id, since)
-  if (state.idlePrompted.has(lead.id) || now - since < STALL_MS) return
+  const since = state.idleSince.get(foreman.id) ?? now
+  state.idleSince.set(foreman.id, since)
+  if (state.idlePrompted.has(foreman.id) || now - since < STALL_MS) return
   // flagged before any await, so an overlapping check never prompts twice
-  state.idlePrompted.add(lead.id)
+  state.idlePrompted.add(foreman.id)
   let next = nextCrew(crew.crew)
   try {
     next = successorCrew(await planWithin($, state, PLAN_READ_MS), crew.crew)
@@ -1534,14 +1534,14 @@ async function idleLeadCheck($: $, state: State, lead: Agent, crew: Crew, all: r
     // fails open: any error reading the plan gives the 0.2.1 name
   }
   const minutes = Math.floor((now - since) / 60_000)
-  const text = idleLeadText(labelOf(lead), crew.crew, minutes, next)
+  const text = idleForemanText(labelOf(foreman), crew.crew, minutes, next)
   // queued, not awaited: the wake never waits on the event log
-  void logEvent($, state, { event: 'stall', crew: crew.crew, agent: labelOf(lead), kind: 'idle-lead', minutes })
-  await safely($, 'idle lead wake', () => $.prompt.submit({ text }))
+  void logEvent($, state, { event: 'stall', crew: crew.crew, agent: labelOf(foreman), kind: 'idle-foreman', minutes })
+  await safely($, 'idle foreman wake', () => $.prompt.submit({ text }))
 }
 
 // One pass of the heartbeat: every running crew agent idle STALL_MS or more is reported once, with a toast and a
-// prompt to the main session, and every idle lead goes through idleLeadCheck. An agent with nothing on record
+// prompt to the main session, and every idle foreman goes through idleForemanCheck. An agent with nothing on record
 // counts as active from now, and so does one that is running again after a pass that saw it stopped or unlisted.
 async function stallCheck($: $, state: State) {
   const now = await $.clock.now()
@@ -1552,15 +1552,15 @@ async function stallCheck($: $, state: State) {
     if (!state.started.has(a.id)) state.started.set(a.id, now)
     const crew = crewOf(a.id, all)
     if (crew === undefined) continue
-    // a listed agent that is idle, waiting or done is never stalled; a lead may be idle with its report lost
+    // a listed agent that is idle, waiting or done is never stalled; a foreman may be idle with its report lost
     if (a.status !== 'running') {
-      if (crew.isLead) {
+      if (crew.isForeman) {
         if (before?.get(a.id) === 'running') state.stopped.add(a.id)
-        await idleLeadCheck($, state, a, crew, all, now)
+        await idleForemanCheck($, state, a, crew, all, now)
       }
       continue
     }
-    // running: any idle period of a lead is over
+    // running: any idle period of a foreman is over
     state.idleSince.delete(a.id)
     state.idlePrompted.delete(a.id)
     state.stopped.delete(a.id)
@@ -1603,7 +1603,7 @@ type Wakes = {
   checking: boolean
   // the limit-reset timer and the resetsAt it is for
   reset?: { resetsAt: string; timer: Timer }
-  // the resetsAt values this module has woken the foreman for
+  // the resetsAt values this module has woken the PM for
   fired: Set<string>
   // limit-reset work runs one step at a time, so two triggers for one reset never both arm
   work: Promise<unknown>
@@ -1664,11 +1664,11 @@ async function scheduleReset($: $, state: State, wakes: Wakes, resetsAt: string)
   wakes.reset = { resetsAt, timer }
 }
 
-// a five-hour window at its limit while a crew is live: wake the foreman once it resets, once per resetsAt
+// a five-hour window at its limit while a crew is live: wake the PM once it resets, once per resetsAt
 async function armReset($: $, state: State, wakes: Wakes, resetsAt: string) {
   if (Number.isNaN(Date.parse(resetsAt))) return
-  // a lead still at work, not one that is listed but completed, failed or killed
-  if (!(await agentsOf($, state)).listed.some(a => isLead(a) && isLive(a))) return
+  // a foreman still at work, not one that is listed but completed, failed or killed
+  if (!(await agentsOf($, state)).listed.some(a => isForeman(a) && isLive(a))) return
   const held = await $.state.get(LIMIT_RESET_REF)
   if (held.value?.resetsAt === resetsAt) {
     // fired already, or a timer is running; one a reload took is armed again by session.start
@@ -1702,7 +1702,7 @@ export const register: Register = on => {
     labels: new Map(),
     models: new Map(),
     handedBack: new Set(),
-    planArchitects: new Map(),
+    planDesigners: new Map(),
     planRoute: Promise.resolve(),
     pendingPlanCalls: new Map(),
     handBacks: new Map(),
@@ -1729,7 +1729,7 @@ export const register: Register = on => {
     state.labels.clear()
     state.models.clear()
     state.handedBack.clear()
-    state.planArchitects.clear()
+    state.planDesigners.clear()
     state.pendingPlanCalls.clear()
     state.handBacks.clear()
     state.withheld.clear()
@@ -1751,19 +1751,19 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
     const id = started.agentId
-    // a plan-mode architect's spawn is bound by its Agent call's tool_use_id, never by order (ADR-0015 s9)
+    // a plan-mode design engineer's spawn is bound by its Agent call's tool_use_id, never by order (ADR-0015 s9)
     const call = (e as unknown as { tool_use_id?: unknown }).tool_use_id
     const mode = typeof call === 'string' ? state.pendingPlanCalls.get(call) : undefined
     if (id !== undefined && typeof call === 'string' && mode !== undefined) {
       state.pendingPlanCalls.delete(call)
-      state.planArchitects.set(id, mode)
+      state.planDesigners.set(id, mode)
     }
     if (id !== undefined) {
       const label = e.name !== undefined && e.name !== '' ? e.name : id
       state.labels.set(id, label)
       state.known.set(id, { id, type: e.subagentType, status: 'running', description: e.description, name: e.name, parentId: e.parentAgentId, label, live: true, seq: state.seq++ })
       state.models.set(id, started.model)
-      // a start is activity, and where the running time /foundry shows begins
+      // a start is activity, and where the running time /truss shows begins
       await safely($, 'spawn time', async () => {
         const at = await $.clock.now()
         state.started.set(id, at)
@@ -1776,7 +1776,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'SendMessage' }, async ($, e, next) => {
     const input = e as unknown as { to?: unknown; summary?: unknown; message?: unknown }
     if (e.agentId === undefined) {
-      // the foreman answering a lead: that lead is no longer waiting on the person
+      // the PM answering a foreman: that foreman is no longer waiting on the person
       const result = await next(e)
       if (result.deny === undefined && typeof input.to === 'string' && state.waiting.size > 0) {
         const to = input.to
@@ -1792,14 +1792,14 @@ export const register: Register = on => {
     const result = await next(e)
     if (decided?.kind !== 'allow' || result.deny !== undefined) return result
     if (input.to === MAIN && typeof input.message === 'string') {
-      // a tagged message to main sets what /foundry shows for the lead; an untagged one replaces it with nothing
+      // a tagged message to main sets what /truss shows for the foreman; an untagged one replaces it with nothing
       const tag = tagOf(input.message)
       if (tag !== undefined) state.waiting.set(sender, tag)
       else state.waiting.delete(sender)
-      // only a lead may message main from inside a crew; its crew is as the verdict above just listed it, and a
-      // lead goes by its crew's name
-      const lead = tag === undefined ? undefined : crewOf(sender, [...state.known.values()])
-      if (tag !== undefined && lead?.isLead === true) await logEvent($, state, { event: 'tag', crew: lead.crew, agent: lead.leadName, tag: tagName(tag) })
+      // only a foreman may message main from inside a crew; its crew is as the verdict above just listed it, and a
+      // foreman goes by its crew's name
+      const foreman = tag === undefined ? undefined : crewOf(sender, [...state.known.values()])
+      if (tag !== undefined && foreman?.isForeman === true) await logEvent($, state, { event: 'tag', crew: foreman.crew, agent: foreman.foremanName, tag: tagName(tag) })
     }
     if (decided.crossCrew) {
       const entry = { from: decided.fromCrew, to: decided.toCrew, summary: typeof input.summary === 'string' ? input.summary : '' }
@@ -1808,7 +1808,7 @@ export const register: Register = on => {
       appending = appending.then(() => safely($, 'message log', () => appendMessage($, state, entry)))
       await settledWithin($, EVENT_WAIT_MS, appending, () => {
         try {
-          $.ui.log(`foundry: message log failed, letting the call through: no answer in ${EVENT_WAIT_MS}ms`, { to: 'debug' })
+          $.ui.log(`truss: message log failed, letting the call through: no answer in ${EVENT_WAIT_MS}ms`, { to: 'debug' })
         } catch {
           // nothing left to do
         }
@@ -1818,9 +1818,9 @@ export const register: Register = on => {
   }).catch(failOpen)
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
-    // ADR-0004 s7: on a v>=2 plan, the main session's foundry:* calls set a model and an effort, before the plan gates
+    // ADR-0004 s7: on a v>=2 plan, the main session's truss:* calls set a model and an effort, before the plan gates
     const type: unknown = e.subagent_type
-    if (e.agentId === undefined && typeof type === 'string' && type.startsWith('foundry:')) {
+    if (e.agentId === undefined && typeof type === 'string' && type.startsWith('truss:')) {
       const refused = await safely($, 'main-session rule', async () => {
         const verdict = mainCallVerdict(await planWithin($, state, PLAN_READ_MS), e.agentId, type, e.model, e.effort)
         if (verdict !== undefined) await logRule($, `main-session rule refused a ${type} call: ${verdict.deny === MAIN_MODEL_REFUSAL ? 'no model' : 'no allowed effort'}`)
@@ -1839,15 +1839,15 @@ export const register: Register = on => {
       }
     })
     if (caller?.refused !== undefined) return caller.refused
-    // ADR-0004 s5: a judge-named call from inside a crew whose repair budget is spent
+    // ADR-0004 s5: a QC-named call from inside a crew whose rework allowance is spent
     const callerCrew = caller?.crew?.crew
-    if (callerCrew !== undefined && isJudgeName(callerCrew.toLowerCase(), typeof e.name === 'string' ? e.name.toLowerCase() : e.name)) {
-      const spent = await safely($, 'repair budget gate', () => budgetGate($, state, callerCrew, e.name))
+    if (callerCrew !== undefined && isQcName(callerCrew.toLowerCase(), typeof e.name === 'string' ? e.name.toLowerCase() : e.name)) {
+      const spent = await safely($, 'rework allowance gate', () => allowanceGate($, state, callerCrew, e.name))
       if (spent !== undefined) return spent
     }
-    const startsLead = e.agentId === undefined && e.subagent_type === LEAD_TYPE
-    // the plan gates (ADR-0001 s9): only the main thread starting a named lead; any failure lets the call through
-    const gated = !startsLead || typeof e.name !== 'string' || e.name === '' ? undefined : e.name
+    const startsForeman = e.agentId === undefined && e.subagent_type === FOREMAN_TYPE
+    // the plan gates (ADR-0001 s9): only the main thread starting a named foreman; any failure lets the call through
+    const gated = !startsForeman || typeof e.name !== 'string' || e.name === '' ? undefined : e.name
     if (gated !== undefined) {
       const refused = await safely($, 'plan gate', async () => {
         const plan = await planOf($, state)
@@ -1855,9 +1855,9 @@ export const register: Register = on => {
       })
       if (refused !== undefined) return refused
     }
-    // a plan-mode architect from the main session (ADR-0015 s9): its hand-back is the plan to write. Marked before the
+    // a plan-mode design engineer from the main session (ADR-0015 s9): its hand-back is the plan to write. Marked before the
     // call runs, since a foreground agent spawns and hands back inside it; agent.spawn binds the id by this tool_use_id.
-    const first = e.agentId === undefined && e.subagent_type === 'foundry:architect' && typeof e.prompt === 'string' ? e.prompt.split('\n')[0].replace(/[\r ]+$/, '') : undefined
+    const first = e.agentId === undefined && e.subagent_type === 'truss:design-engineer' && typeof e.prompt === 'string' ? e.prompt.split('\n')[0].replace(/[\r ]+$/, '') : undefined
     const planCall: 'plan' | 'amend' | undefined = first === 'Mode: plan' ? 'plan' : first === 'Mode: amend' ? 'amend' : undefined
     const callId = (e as unknown as { tool_use_id?: unknown }).tool_use_id
     const pending = planCall !== undefined && typeof callId === 'string' && callId !== '' ? callId : undefined
@@ -1871,8 +1871,8 @@ export const register: Register = on => {
     if (result.deny !== undefined) return result
     const raw = (result.result as { agentId?: unknown } | undefined)?.agentId
     const id = typeof raw === 'string' ? raw : undefined
-    if (planCall !== undefined && id !== undefined) state.planArchitects.set(id, planCall)
-    if (caller?.crew === undefined && !startsLead) return result
+    if (planCall !== undefined && id !== undefined) state.planDesigners.set(id, planCall)
+    if (caller?.crew === undefined && !startsForeman) return result
     // the name agent.spawn recorded, which the report file will carry
     const name = (id === undefined ? undefined : state.labels.get(id)) ?? (typeof e.name === 'string' && e.name !== '' ? e.name : id)
     const note = await safely($, 'report note', async () => {
@@ -1895,7 +1895,7 @@ export const register: Register = on => {
   }).catch(failOpen)
 
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
-    // ADR-0009 s6: on a v>=2 plan, the main session's Workflow calls run foundry agents only from the plugin's scripts
+    // ADR-0009 s6: on a v>=2 plan, the main session's Workflow calls run truss agents only from the plugin's scripts
     if (e.agentId === undefined) {
       const refused = await safely($, 'Workflow gate', async () => {
         const plan = await planWithin($, state, PLAN_READ_MS)
@@ -1910,7 +1910,7 @@ export const register: Register = on => {
           }
         }
         const pluginDir = pluginDirOf()
-        const texts = pluginDir === undefined ? [undefined, undefined] : await Promise.all([`${pluginDir}/workflows/plan.js`, `${pluginDir}/workflows/wave.js`].map(readText))
+        const texts = pluginDir === undefined ? [undefined, undefined] : await Promise.all([`${pluginDir}/workflows/plan.js`, `${pluginDir}/workflows/stage.js`].map(readText))
         const script: unknown = e.script
         const scriptPath: unknown = e.scriptPath
         const verdict = workflowCallVerdict(plan, {
@@ -1919,7 +1919,7 @@ export const register: Register = on => {
           scriptText: typeof script === 'string' ? script : await readText(scriptPath),
           args: e.args,
           pluginDir: pluginDir ?? ' ',
-          pluginScriptTexts: texts, // positional: [plan.js text, wave.js text]
+          pluginScriptTexts: texts, // positional: [plan.js text, stage.js text]
         })
         if (verdict !== undefined) await logRule($, `Workflow gate refused a call: ${verdict.deny}`)
         return verdict
@@ -1955,14 +1955,14 @@ export const register: Register = on => {
         const all = (await agentsOf($, state)).all
         const crew = crewOf(id, all)
         if (crew === undefined) return
-        // a lead's report the stop gate will send back is not its report: the stop that goes through writes it
-        if (crew.isLead && !leadStopPasses(message)) return
+        // a foreman's report the stop gate will send back is not its report: the stop that goes through writes it
+        if (crew.isForeman && !foremanStopPasses(message)) return
         // on a v>=2 plan, one the Examined check will send back is not its report either (ADR-0004 s6); no git here
-        if (crew.isLead && !isTagged(message)) {
+        if (crew.isForeman && !isTagged(message)) {
           const held = await safely($, 'examined check', async () => examinedVerdict(await planWithin($, state, PLAN_READ_MS), message))
           if (held !== undefined) {
             state.withheld.add(id)
-            await logRule($, `examined check held back the hand-back of the lead of crew ${crew.crew}: headings missing`)
+            await logRule($, `examined check held back the hand-back of the foreman of crew ${crew.crew}: headings missing`)
             return
           }
         }
@@ -1971,7 +1971,7 @@ export const register: Register = on => {
     }
     const passed = await next(e)
     // the plan-file route runs only for a hand-back that went through, not denied and not an error
-    const route = state.planArchitects.get(id)
+    const route = state.planDesigners.get(id)
     if (passed.deny === undefined && !(passed as { isError?: unknown }).isError && route === 'plan') {
       await safely($, 'plan-file route', () => writePlanFiles($, state, message))
     } else if (passed.deny === undefined && !(passed as { isError?: unknown }).isError && route === 'amend') {
@@ -1991,7 +1991,7 @@ export const register: Register = on => {
     return yield* next(e)
   })
 
-  // The decision log's times come from the clock: a `- HH:MM |` the foreman typed on a new line is replaced with the
+  // The decision log's times come from the clock: a `- HH:MM |` the PM typed on a new line is replaced with the
   // real local time before the write lands. Lines the log already holds keep theirs, unless still a literal HH:MM.
   on('tool.call', { tool: ['Write', 'Edit'] }, async ($, e, next) => {
     const stamped = await safely($, 'decision time', async () => {
@@ -2034,37 +2034,37 @@ export const register: Register = on => {
   on('classic.SubagentStop', async ($, e, next) => {
     const result = await next(e)
     const id = e.agent_id
-    // A lead may stop only on a finished report or a tagged hand-off, at most LEAD_STOP_BLOCKS times a streak. A stop
+    // A foreman may stop only on a finished report or a tagged hand-off, at most FOREMAN_STOP_BLOCKS times a streak. A stop
     // while its members still work is interim: it goes through and leaves the streak and the tag alone.
-    const gate = await safely($, 'lead stop gate', async () => {
+    const gate = await safely($, 'foreman stop gate', async () => {
       const stopper = await stopperOf($, state, id, e.agent_type)
-      if (!stopper.lead) return { lead: false, interim: false }
-      if (isInterimStop(stopper.descendants, e.background_tasks)) return { lead: true, interim: true }
+      if (!stopper.foreman) return { foreman: false, interim: false }
+      if (isInterimStop(stopper.descendants, e.background_tasks)) return { foreman: true, interim: true }
       const count = e.stop_hook_active ? (state.streaks.get(id) ?? 0) : 0
       const text = state.handBacks.get(id) ?? e.last_assistant_message ?? ''
-      if (count >= LEAD_STOP_BLOCKS) {
+      if (count >= FOREMAN_STOP_BLOCKS) {
         state.streaks.delete(id)
-        return { lead: true, interim: false }
+        return { foreman: true, interim: false }
       }
-      if (leadStopPasses(text)) {
+      if (foremanStopPasses(text)) {
         // ADR-0004 s4 and s6 on a v>=2 plan; these send-backs share the streak, and an unanswered tag doesn't excuse them
         const sent = await safely($, 'final report gate', () => finalReportVerdict($, state, id, text))
         if (sent === undefined) {
           state.streaks.delete(id)
-          return { lead: true, interim: false }
+          return { foreman: true, interim: false }
         }
         state.streaks.set(id, count + 1)
-        await logRule($, `lead stop gate sent back the lead of crew ${crewOf(id, [...state.known.values()])?.crew ?? id}: ${sent.rule}`)
-        return { lead: true, interim: false, block: sent.block }
+        await logRule($, `foreman stop gate sent back the foreman of crew ${crewOf(id, [...state.known.values()])?.crew ?? id}: ${sent.rule}`)
+        return { foreman: true, interim: false, block: sent.block }
       }
-      // a lead whose tagged message to main is unanswered has asked through that one channel: its stop goes through
-      // as interim, so it neither needs a tagged hand-back too nor loses the tag /foundry shows
+      // a foreman whose tagged message to main is unanswered has asked through that one channel: its stop goes through
+      // as interim, so it neither needs a tagged hand-back too nor loses the tag /truss shows
       if (state.waiting.has(id)) {
         state.streaks.delete(id)
-        return { lead: true, interim: true }
+        return { foreman: true, interim: true }
       }
       state.streaks.set(id, count + 1)
-      return { lead: true, interim: false, block: LEAD_STOP_REASON }
+      return { foreman: true, interim: false, block: FOREMAN_STOP_REASON }
     })
     const handBack = state.handBacks.get(id)
     state.handBacks.delete(id)
@@ -2077,9 +2077,9 @@ export const register: Register = on => {
     const tags = gate?.interim !== true
     // the hand-back already holds this stop's report; the agent's next stop is captured again
     if (state.handedBack.delete(id)) {
-      // a lead's hand-back the gate could have sent back was held; this stop went through, so it is the report. One
+      // a foreman's hand-back the gate could have sent back was held; this stop went through, so it is the report. One
       // the Examined check held is written even when the gate step failed (P5), by the agents last seen if the list fails
-      if (handBack !== undefined && (withheld || (gate?.lead === true && !leadStopPasses(handBack)))) {
+      if (handBack !== undefined && (withheld || (gate?.foreman === true && !foremanStopPasses(handBack)))) {
         await safely($, 'report capture', async () => {
           const all = (await safely($, 'agent list', async () => (await agentsOf($, state)).all)) ?? [...state.known.values()]
           const crew = crewOf(id, all)
@@ -2111,7 +2111,7 @@ export const register: Register = on => {
     return result
   }).catch(failOpen)
 
-  // the main session learns where this session's foundry files live
+  // the main session learns where this session's truss files live
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
     if (e.agent_id !== undefined) return result
@@ -2122,15 +2122,15 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await safely($, 'command register', () =>
-      $.command.register({ name: 'foundry', description: 'Show the foundry crews in this session: status, live members by model, last report', argumentHint: '[status]' }),
+      $.command.register({ name: 'truss', description: 'Show the truss crews in this session: status, live members by model, last report', argumentHint: '[status]' }),
     )
     await safely($, 'stall timer', async () => startHeartbeat($, state, wakes))
     await queueLimit($, wakes, 'limit reset re-arm', () => rearmReset($, state, wakes))
     return started
   })
 
-  on('command.run', { command: 'foundry' }, async ($, e) => {
+  on('command.run', { command: 'truss' }, async ($, e) => {
     const text = await safely($, 'status', () => statusOf($, state))
-    return { text: text ?? 'foundry could not read the crews; see the debug log.' }
+    return { text: text ?? 'truss could not read the crews; see the debug log.' }
   })
 }

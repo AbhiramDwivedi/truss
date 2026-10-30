@@ -1,6 +1,44 @@
-# foundry version history
+# Truss version history
 
-Newest first. The [README](README.md) covers what foundry does and how to use it.
+Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
+
+## 0.12.0
+
+- **foundry is now Truss, in its own repo.** It moved out of `plugins/foundry` in [claude-ops](https://github.com/AbhiramDwivedi/claude-ops) with its history. Install it with `claude plugin marketplace add AbhiramDwivedi/claude-ops` and `claude plugin install truss@claude-ops`. kit and worktrees stay in claude-ops as optional companions.
+- **The roles are named after engineering jobs.** Behaviour is unchanged; only names change:
+
+| Old | New |
+|---|---|
+| plugin `foundry`, `/foundry:run`, `:init`, `:retro`, `:principles` | `truss`, `/truss:run`, `:init`, `:retro`, `:principles` |
+| `.claude/foundry.json`, `.claude/foundry/prompts/` | `.claude/truss.json`, `.claude/truss/prompts/` |
+| `<git common dir>/foundry/<session>/`, `~/.claude/foundry/<session>/` | `<git common dir>/truss/<session>/`, `~/.claude/truss/<session>/` |
+| `FOUNDRY_*` env vars | `TRUSS_*` |
+| owner (you) | client |
+| foreman (the main session) | PM (project manager) |
+| `foundry:lead` | `truss:foreman` |
+| `foundry:judge` | `truss:qc-engineer` (QC engineer) |
+| judge red-team mode | stress test, stress-test mode |
+| `foundry:cynic` | `truss:checking-engineer` |
+| `foundry:architect` | `truss:design-engineer` |
+| `foundry:devops` | `truss:commissioning-engineer` |
+| `foundry:crew-planner` | `truss:planning-engineer` |
+| `foundry:interview` skill, interview | `truss:brief` skill, client brief |
+| wave | stage (plan field `wave` is now `stage`; `workflows/wave.js` is `workflows/stage.js`) |
+| done-check (`doneCheck`) | acceptance test (`acceptanceTest`) |
+| repair budget (`repairBudget`) | rework allowance (`reworkAllowance`) |
+| report files `<crew>-judge.md`, `-redteam-<n>.md`; spawn names `cynic-<n>` | `<crew>-qc.md`, `-stress-<n>.md`; `checker-<n>` |
+| markers `REDTEAM`, `ARCHITECT:`, `Owner:`, `Red team:`, `Owner actions` | `STRESSTEST`, `DESIGNER:`, `Client:`, `Stress test:`, `Client actions` |
+| trailers `Foundry-Crew`, `Foundry-Role` | `Truss-Crew`, `Truss-Role` (role values `commissioning`, `stress`, `designer`) |
+| rework kind `rejudge`, stall kind `idle-lead`, event `budget-spent` | `reqc`, `idle-foreman`, `allowance-spent` |
+| `interview.json` | `brief.json` |
+| retro keys `judges`, `judgeFiles`, `idleLead`, `openOwnerActions`, `budgetsSpent` | `qcs`, `qcFiles`, `idleForeman`, `openClientActions`, `allowancesSpent` |
+
+**Migrating a project.**
+
+1. Rename `.claude/foundry.json` to `.claude/truss.json`. Rename the key `repairBudget` to `reworkAllowance`, and the role keys in `roles` and `promptOverrides` from `lead`, `judge`, `cynic`, `writer`, `devops`, `architect` to `foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`.
+2. Move `.claude/foundry/prompts/` to `.claude/truss/prompts/`, renaming each role file the same way (`judge.md` to `qc-engineer.md`), and update the paths in `promptOverrides`.
+3. If kit's manifest declares `foundry:judge` and `foundry:cynic` read-only, re-declare them: run `kit:init` with `declare read-only: truss:qc-engineer, truss:checking-engineer`. If worktrees' `noIsolateAgents` setting lists the old types, change them to `truss:qc-engineer,truss:checking-engineer`.
+4. Old session dirs under `.git/foundry/` and `~/.claude/foundry/` are not read. Finish or abandon a foundry run before you upgrade.
 
 ## 0.11.1
 

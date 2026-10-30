@@ -2,14 +2,14 @@
   "version": 2,
   "goal": "Add rate limiting to the public API, with per-key quotas stored in Postgres",
   "architecture": "docs/architecture.md",
-  "approval": "owner",
+  "approval": "client",
   "approvedAt": null,
   "maxParallelCrews": 4,
-  "repairBudget": 2,
+  "reworkAllowance": 2,
   "crews": [
     {
       "slug": "ratelimit-design",
-      "wave": 0,
+      "stage": 0,
       "verdict": "design",
       "modules": ["gateway", "quotas"],
       "owns": [
@@ -17,30 +17,30 @@
         "docs/adr/0007-rate-limiting.md",
         "tests/contract/quota-store.test.ts"
       ],
-      "doneCheck": "pnpm test -- tests/contract/quota-store.test.ts",
-      "doneCheckProved": true,
+      "acceptanceTest": "pnpm test -- tests/contract/quota-store.test.ts",
+      "acceptanceTestProved": true,
       "estAgents": 5,
       "status": "planned"
     },
     {
       "slug": "quotas",
-      "wave": 1,
+      "stage": 1,
       "verdict": "change",
       "modules": ["quotas"],
       "owns": ["src/quotas/**", "migrations/0012_quotas.sql", "tests/quotas/**"],
-      "doneCheck": "pnpm test -- quotas",
-      "doneCheckProved": true,
+      "acceptanceTest": "pnpm test -- quotas",
+      "acceptanceTestProved": true,
       "estAgents": 8,
       "status": "planned"
     },
     {
       "slug": "gateway",
-      "wave": 1,
+      "stage": 1,
       "verdict": "extend",
       "modules": ["gateway"],
       "owns": ["src/gateway/middleware/ratelimit.ts", "tests/gateway/ratelimit.test.ts"],
-      "doneCheck": "pnpm test -- gateway/ratelimit",
-      "doneCheckProved": true,
+      "acceptanceTest": "pnpm test -- gateway/ratelimit",
+      "acceptanceTestProved": true,
       "estAgents": 6,
       "status": "planned"
     }

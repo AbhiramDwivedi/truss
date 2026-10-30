@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""foundry retro: count what a foundry session dir recorded. See foundry ADR-0003, section 3.
+"""truss retro: count what a truss session dir recorded. See truss ADR-0003, section 3.
 
-Usage: python retro.py <foundry dir>
+Usage: python retro.py <truss dir>
 
-Reads decisions.md, events*.jsonl, messages*.jsonl, reports/*/*-judge*.md and plan.json; writes
+Reads decisions.md, events*.jsonl, messages*.jsonl, reports/*/*-qc*.md and plan.json; writes
 nothing; prints one JSON object on stdout and exits 0. A missing dir exits 2 with
-"retro: NO_FOUNDRY_DIR: <path>" on stderr. Python 3.9+, standard library only.
+"retro: NO_TRUSS_DIR: <path>" on stderr. Python 3.9+, standard library only.
 
-Also reports "leftovers": for a dir shaped <git common dir>/foundry/<session>, the spawned agents whose
+Also reports "leftovers": for a dir shaped <git common dir>/truss/<session>, the spawned agents whose
 worktree-agent-<id> branch or .claude/worktrees/agent-<id> folder is still there, read from git and the disk.
 Also "leftoverDetails": one entry per such agent. retro runs only these git commands, all with
 GIT_OPTIONAL_LOCKS=0: rev-parse and for-each-ref, worktree list --porcelain, status --porcelain
 --untracked-files=all, merge-base --is-ancestor, rev-parse HEAD^{tree}, merge-tree --write-tree (under a
-temporary object directory, removed before it returns), cherry and branch --show-current. See foundry
+temporary object directory, removed before it returns), cherry and branch --show-current. See truss
 ADR-0006, section 1.
 
 The script counts and the skill judges. Where the log does not say, the output says "not recorded"
-and never a zero. Message, prompt and report text is never printed (P8): a judge report is read
+and never a zero. Message, prompt and report text is never printed (P8): a QC report is read
 only as far as its first non-empty line.
 """
 import datetime
@@ -38,18 +38,18 @@ CLOCK = r"\d{1,2}:\d{2}"
 DATE = r"\d{4}-\d{2}-\d{2}"
 DATETIME = DATE + r"[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})"
 STRUCTURED = re.compile(r"^- (" + DATETIME + "|" + DATE + "|" + CLOCK + r"|HH:MM) \| (.*)$")
-RECOMMEND = re.compile(r"^\s*cynic-\d+ RECOMMEND (answer|defer|pass)\b")
-# A RECOMMEND in a decision line's cynic field: "RECOMMEND: answer (soft)", "cynic-3 RECOMMEND:
-# answer", "cynic-4: RECOMMEND: defer (x2)". An "(xN)" right after the outcome is N of them.
-CYNIC_FIELD = re.compile(
-    r"^(?:cynic-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b(?:\s*\(x([1-9]\d{0,2})\))?"
+RECOMMEND = re.compile(r"^\s*checker-\d+ RECOMMEND (answer|defer|pass)\b")
+# A RECOMMEND in a decision line's checker field: "RECOMMEND: answer (soft)", "checker-3 RECOMMEND:
+# answer", "checker-4: RECOMMEND: defer (x2)". An "(xN)" right after the outcome is N of them.
+CHECKER_FIELD = re.compile(
+    r"^(?:checker-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b(?:\s*\(x([1-9]\d{0,2})\))?"
 )
 HEADING = re.compile(r"^## Run[ \t]+(.*)$")
 RFC3339 = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$"
 )
-JUDGE_NAME = re.compile(r"^(.+)-judge(-\d+)?$")
-JUDGE_FILE = re.compile(r"^.+-judge(-\d+)?\.md$")
+QC_NAME = re.compile(r"^(.+)-qc(-\d+)?$")
+QC_FILE = re.compile(r"^.+-qc(-\d+)?\.md$")
 
 
 INT_CAP = 10 ** 18  # a count above this is not a plausible agent count; treated as invalid
@@ -174,10 +174,10 @@ def new_run(started, goal, start_dt):
         "recommendations": {"total": 0, "answer": 0, "defer": 0, "pass": 0},
         "messages": 0,
         "_spawns": {"total": 0, "byModelEffort": {}},
-        "_stalls": {"agent": 0, "idleLead": 0},
+        "_stalls": {"agent": 0, "idleForeman": 0},
         "_esc": {"QUESTION": 0, "BLOCKED": 0, "PROPOSAL": 0},
-        "_judges": {"pass": 0, "fail": 0},
-        "_budget_crews": set(),
+        "_qcs": {"pass": 0, "fail": 0},
+        "_allowance_crews": set(),
         "_fetches": {"total": 0, "perAgent": {}},
         "_goals": {},
     }
@@ -233,7 +233,7 @@ def read_decisions(path):
         tag = GOAL_TAG.match(fields[0].strip())
         if tag:
             cur["_goals"][tag.group(1)] = cur["_goals"].get(tag.group(1), 0) + 1
-        cyn = CYNIC_FIELD.match(fields[-2].strip()) if len(fields) >= 4 else None
+        cyn = CHECKER_FIELD.match(fields[-2].strip()) if len(fields) >= 4 else None
         if cyn:
             n = int(cyn.group(2) or 1)
             cur["recommendations"]["total"] += n
@@ -311,24 +311,24 @@ def process_events(files, runs):
             elif kind == "stall":
                 if ev.get("kind") == "agent":
                     run["_stalls"]["agent"] += 1
-                elif ev.get("kind") == "idle-lead":
-                    run["_stalls"]["idleLead"] += 1
+                elif ev.get("kind") == "idle-foreman":
+                    run["_stalls"]["idleForeman"] += 1
             elif kind == "tag":
                 tag = ev.get("tag")
                 if isinstance(tag, str) and tag in run["_esc"]:
                     run["_esc"][tag] += 1
-            elif kind == "budget-spent":
+            elif kind == "allowance-spent":
                 crew = ev.get("crew")
                 if isinstance(crew, str) and crew:
-                    run["_budget_crews"].add(crew)
+                    run["_allowance_crews"].add(crew)
             elif kind == "report":
                 agent = ev.get("agent")
-                m = JUDGE_NAME.match(agent) if isinstance(agent, str) else None
+                m = QC_NAME.match(agent) if isinstance(agent, str) else None
                 if m and m.group(1) == ev.get("crew"):
                     if ev.get("marker") == "VERDICT: PASS":
-                        run["_judges"]["pass"] += 1
+                        run["_qcs"]["pass"] += 1
                     elif ev.get("marker") == "VERDICT: FAIL":
-                        run["_judges"]["fail"] += 1
+                        run["_qcs"]["fail"] += 1
     return skipped, outside, fetch_seen
 
 
@@ -353,7 +353,7 @@ def process_messages(files, runs, pre):
     return used
 
 
-def judge_files(directory):
+def qc_files(directory):
     out = {"files": 0, "pass": 0, "fail": 0, "other": 0}
     root = os.path.join(directory, "reports")
     try:
@@ -370,7 +370,7 @@ def judge_files(directory):
             continue
         for n in names:
             p = os.path.join(sub, n)
-            if not JUDGE_FILE.match(n) or not os.path.isfile(p):
+            if not QC_FILE.match(n) or not os.path.isfile(p):
                 continue
             first = ""
             for line in read_lines(p):
@@ -400,20 +400,20 @@ def read_plan(directory):
         return NR
     crews = plan.get("crews")
     crews = [c for c in crews if isinstance(c, dict)] if isinstance(crews, list) else []
-    waves = set()
+    stages = set()
     est = 0
     status = {}
     for c in crews:
-        w = c.get("wave")
+        w = c.get("stage")
         if isinstance(w, (int, float, str)) and not isinstance(w, bool):
-            waves.add(w)
+            stages.add(w)
         e = c.get("estAgents")
         if good_int(e):  # NaN, Infinity, floats, bools and absurd ints are skipped
             est += e
         st = c.get("status")
         key = st if isinstance(st, str) and st else "unset"
         status[key] = status.get(key, 0) + 1
-    return {"crews": len(crews), "waves": len(waves), "estAgents": est,
+    return {"crews": len(crews), "stages": len(stages), "estAgents": est,
             "agentCap": plan.get("agentCap") if good_int(plan.get("agentCap")) else "not recorded", "status": status}
 
 
@@ -513,9 +513,9 @@ def spawned_ids(files):
 
 
 def repo_root(directory):
-    """The repo root for a dir shaped <repo>/.git/foundry/<session>, or None when it is not."""
+    """The repo root for a dir shaped <repo>/.git/truss/<session>, or None when it is not."""
     common = os.path.dirname(os.path.dirname(directory))
-    if os.path.basename(os.path.dirname(directory)) != "foundry" or os.path.basename(common) != ".git":
+    if os.path.basename(os.path.dirname(directory)) != "truss" or os.path.basename(common) != ".git":
         return None
     top = git_out(common, "rev-parse", "--path-format=absolute", "--git-common-dir")
     if top is None or not same_path(top.strip(), common):
@@ -675,9 +675,9 @@ def leftover_details(directory, event_files, left):
 
 
 def read_config_path(root, key):
-    """The absolute path foundry.json's string `key` names under root, or None."""
+    """The absolute path truss.json's string `key` names under root, or None."""
     try:
-        with open(os.path.join(root, ".claude", "foundry.json"), encoding="utf-8-sig") as f:
+        with open(os.path.join(root, ".claude", "truss.json"), encoding="utf-8-sig") as f:
             cfg = json.load(f)
     except (OSError, ValueError):
         return None
@@ -727,7 +727,7 @@ def count_default_decisions(root):
     return n
 
 
-def count_open_owner_actions(root):
+def count_open_client_actions(root):
     if root is None:
         return NR
     path = read_config_path(root, "architecture")
@@ -740,7 +740,7 @@ def count_open_owner_actions(root):
             continue
         h = re.match(r"^#{1,6}[ 	]+(.*?)[ 	#]*$", line)
         if h:
-            under = h.group(1).strip() == "Owner actions"
+            under = h.group(1).strip() == "Client actions"
         elif under and line.startswith("- [ ] "):
             n += 1
     return n
@@ -757,7 +757,7 @@ def retro(directory):
     root = repo_root(directory)
     log = commit_log(root)
     defaults = count_default_decisions(root)
-    owner_open = count_open_owner_actions(root)
+    client_open = count_open_client_actions(root)
     starts = sorted(r["_dt"] for r in runs if r["_dt"] is not None)
 
     ordered = ([pre] if pre_used or pre_msgs else []) + runs if has_headings else [pre]
@@ -778,12 +778,12 @@ def retro(directory):
             "spawns": r["_spawns"] if placed else NR,
             "stalls": r["_stalls"] if placed else NR,
             "escalations": r["_esc"] if placed else NR,
-            "judges": r["_judges"] if placed else NR,
-            "budgetsSpent": len(r["_budget_crews"]) if placed and r["_budget_crews"] else NR,
+            "qcs": r["_qcs"] if placed else NR,
+            "allowancesSpent": len(r["_allowance_crews"]) if placed and r["_allowance_crews"] else NR,
             "fetches": r["_fetches"] if placed and fetch_seen else NR,
             "extendPasses": extend,
             "defaultDecisions": defaults,
-            "openOwnerActions": owner_open,
+            "openClientActions": client_open,
         })
     left = leftovers(directory, event_files)
     goals = read_goals(directory, runs[-1] if has_headings else pre)
@@ -792,7 +792,7 @@ def retro(directory):
         "dir": directory,
         "split": "headings" if has_headings else NR,
         "runs": out_runs,
-        "judgeFiles": judge_files(directory),
+        "qcFiles": qc_files(directory),
         "plan": read_plan(directory),
         "eventsSkipped": skipped,
         "eventsOutsideRuns": outside,
@@ -806,11 +806,11 @@ def retro(directory):
 
 def main(argv):
     if len(argv) != 2:
-        sys.stderr.write("retro: usage: retro.py <foundry dir>\n")
+        sys.stderr.write("retro: usage: retro.py <truss dir>\n")
         return 2
     directory = os.path.abspath(argv[1])
     if not os.path.isdir(directory):
-        sys.stderr.write("retro: NO_FOUNDRY_DIR: %s\n" % directory)
+        sys.stderr.write("retro: NO_TRUSS_DIR: %s\n" % directory)
         return 2
     sys.stdout.write(json.dumps(retro(directory), indent=2, ensure_ascii=True, allow_nan=False) + "\n")
     return 0

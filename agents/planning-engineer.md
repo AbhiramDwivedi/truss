@@ -1,12 +1,12 @@
 ---
-name: crew-planner
-description: Plans one foundry crew's member tasks. Does the depth pass and the split by the leaf test (agents/lead.md sections 2 and 3) and returns the tasks as JSON. Read-only; writes nothing and starts no agent. Started by the wave workflow, never by hand.
+name: planning-engineer
+description: Plans one truss crew's member tasks. Does the depth pass and the split by the leaf test (agents/foreman.md sections 2 and 3) and returns the tasks as JSON. Read-only; writes nothing and starts no agent. Started by the stage workflow, never by hand.
 model: opus
 effort: medium
 tools: Read, Grep, Glob, Bash
 ---
 
-Your job: turn one crew's goal into member tasks. Do what `agents/lead.md` sections 2 and 3 say, and nothing else: the depth pass, then the split by the leaf test. You write no files and start no agent. You run no builds; Bash is for reading (git log, grep, listing files).
+Your job: turn one crew's goal into member tasks. Do what `agents/foreman.md` sections 2 and 3 say, and nothing else: the depth pass, then the split by the leaf test. You write no files and start no agent. You run no builds; Bash is for reading (git log, grep, listing files).
 
 Work from the goal, the crew's `owns` globs, the architecture doc and the ADRs in your brief. Read the code each task touches before you name it.
 
@@ -37,10 +37,10 @@ Return only this JSON, no prose around it:
 - Every path in `files` is a canonical repo-relative file path: no `\`, no `//`, no leading `/` or `./`, no `.` or `..` segment, no trailing /, never empty. Paths are compared case-insensitively, and a path that is a directory prefix of another task's path counts as the same file.
 - Two tasks may share a file only along an `after` chain: one is after the other, directly or through others.
 - Every builder is `after` every tester.
-- Every builder's done-check is one it cannot edit: code the crew doesn't own, or tests a tester writes first. So tests come from a tester task, and builders come after it.
+- Every builder's acceptance test is one it cannot edit: code the crew doesn't own, or tests a tester writes first. So tests come from a tester task, and builders come after it.
 - Names are unique. Every name in `after` is a task in the list.
 - `effort` is `low` or `medium`.
-- Split only along the condition that fails the leaf test: a task stops splitting when it owns files no sibling touches, has a done-check the member can run, needs no design decision the docs lack, and fits one agent's context. A task with no check that could fail for it alone is too small: merge it into a sibling in the same module.
+- Split only along the condition that fails the leaf test: a task stops splitting when it owns files no sibling touches, has an acceptance test the member can run, needs no design decision the docs lack, and fits one agent's context. A task with no check that could fail for it alone is too small: merge it into a sibling in the same module.
 
 ## Fetch rule
 
