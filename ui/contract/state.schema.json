@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AbhiramDwivedi/truss/ui/contract/state.schema.json",
+  "title": "Truss local web UI: the snapshot and delta messages from ui/server to the browser",
+  "description": "ADR-0011, Decision 5. The data of every SSE event on GET /api/events is one of these messages, as compact JSON. ui-state (ui/server/state) produces them, ui-server (ui/server/http) carries them, ui-web (ui/web) applies them. v stays 1 until a field is renamed, retyped or removed; adding an optional field keeps 1.",
+  "oneOf": [
+    { "$ref": "#/$defs/snapshot" },
+    { "$ref": "#/$defs/delta" }
+  ],
+  "$defs": {
+    "snapshot": {
+      "description": "The whole state. Sent first on a new SSE connection, and on a reconnect whose Last-Event-ID the replay ring can't serve. Its SSE id is `<instance>:<seq>`.",
+      "type": "object",
+      "required": ["type", "instance", "seq", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "snapshot" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "seq": { "description": "The seq of the last delta this state includes; 0 before the first delta.", "type": "integer", "minimum": 0 },
+        "state": { "$ref": "#/$defs/state" }
+      }
+    },
+    "delta": {
+      "description": "One change to the state. Its SSE id is `<instance>:<seq>`. The browser replaces each key in `set` whole, then appends `append.transcript` to its transcript and keeps the last 500 entries.",
+      "type": "object",
+      "required": ["type", "seq"],
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["set"] },
+        { "required": ["append"] }
+      ],
+      "properties": {
+        "type": { "const": "delta" },
+        "seq": { "description": "1 for the first delta of a server process, then +1 per delta, no gaps.", "type": "integer", "minimum": 1 },
+        "set": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "trussDir": { "$ref": "#/$defs/trussDir" },
+            "session": { "$ref": "#/$defs/session" },
+            "requests": { "$ref": "#/$defs/requests" },
+            "run": { "$ref": "#/$defs/run" },
+            "decisions": { "$ref": "#/$defs/decisions" },
+            "adrs": { "$ref": "#/$defs/adrs" },
+            "design": { "$ref": "#/$defs/design" },
+            "notices": { "$ref": "#/$defs/notices" }
+          }
+        },
+        "append": {
+          "type": "object",
+          "required": ["transcript"],
+          "additionalProperties": false,
+          "properties": {
+            "transcript": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/transcriptEntry" } }
+          }
+        }
+      }
+    },
+    "instance": {
+      "description": "16 lowercase hex characters, random at each server start. A Last-Event-ID from another instance always gets a snapshot.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "state": {
+      "type": "object",
+      "required": ["v", "repo", "trussDir", "session", "requests", "transcript", "run", "decisions", "adrs", "design", "notices"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "repo": { "description": "Absolute path of the repo the session runs in (main.ts --repo).", "type": "string", "minLength": 1 },
+        "trussDir": { "$ref": "#/$defs/trussDir" },
+        "session": { "$ref": "#/$defs/session" },
+        "requests": { "$ref": "#/$defs/requests" },
+        "transcript": { "description": "The last 500 entries, oldest first.", "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/transcriptEntry" } },
+        "run": { "$ref": "#/$defs/run" },
+        "decisions": { "$ref": "#/$defs/decisions" },
+        "adrs": { "$ref": "#/$defs/adrs" },
+        "design": { "$ref": "#/$defs/design" },
+        "notices": { "$ref": "#/$defs/notices" }
+      }
+    },
+    "trussDir": {
+      "description": "path is null until --truss-dir is given or the session's init message gives a session_id; exists is whether that directory is on disk now.",
+      "type": "object",
+      "required": ["path", "exists"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "exists": { "type": "boolean" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["status", "sessionId", "model", "claudeCodeVersion", "permissionMode", "plugin", "usage", "backgroundTasks", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "idle: no session yet. running: a turn is in progress. waiting: the last top-level result arrived and no turn runs. ended: the SDK's message stream finished. error: it threw.",
+          "enum": ["idle", "running", "waiting", "ended", "error"]
+        },
+        "sessionId": { "description": "From the latest system/init message.", "type": ["string", "null"] },
+        "model": { "description": "From the latest system/init message (R-20). The UI passes no model.", "type": ["string", "null"] },
+        "claudeCodeVersion": { "description": "init claude_code_version.", "type": ["string", "null"] },
+        "permissionMode": { "description": "init permissionMode.", "type": ["string", "null"] },
+        "plugin": {
+          "description": "The init plugins entry whose name is truss, or null when init lists none.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["name", "version", "path", "source"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "const": "truss" },
+                "version": { "type": ["string", "null"] },
+                "path": { "type": "string" },
+                "source": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        },
+        "usage": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/usage" }] },
+        "backgroundTasks": {
+          "description": "The tasks array of the latest system/background_tasks_changed message.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["taskId", "description", "subagentType"],
+            "additionalProperties": false,
+            "properties": {
+              "taskId": { "type": "string" },
+              "description": { "type": "string" },
+              "subagentType": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "error": { "description": "The first line of the thrown error's message, at most 500 characters, when status is error.", "type": ["string", "null"] }
+      }
+    },
+    "usage": {
+      "description": "From the latest result message (R-22). Both total_cost_usd and modelUsage are session totals in the recorded stream, so the latest result replaces the earlier one; nothing is summed.",
+      "type": "object",
+      "required": ["costUsd", "models", "results", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "costUsd": { "description": "result total_cost_usd, or null when absent.", "type": ["number", "null"] },
+        "models": {
+          "description": "result modelUsage, keyed by model id, with these four counters kept.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens"],
+            "additionalProperties": false,
+            "properties": {
+              "inputTokens": { "type": "integer", "minimum": 0 },
+              "outputTokens": { "type": "integer", "minimum": 0 },
+              "cacheReadInputTokens": { "type": "integer", "minimum": 0 },
+              "cacheCreationInputTokens": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "results": { "description": "How many result messages the session has had.", "type": "integer", "minimum": 1 },
+        "at": { "description": "Server clock when the result arrived, RFC 3339 UTC.", "type": "string", "format": "date-time" }
+      }
+    },
+    "transcriptEntry": {
+      "type": "object",
+      "required": ["n", "role", "text", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "n": { "description": "1, 2, 3 ... per server process; the browser appends only entries with n above its last.", "type": "integer", "minimum": 1 },
+        "role": { "description": "user: text the UI sent. assistant: a text block of a top-level assistant message (no parent_tool_use_id, no agent_id). error: the session error.", "enum": ["user", "assistant", "error"] },
+        "text": { "type": "string" },
+        "ts": { "type": "string", "format": "date-time" }
+      }
+    },
+    "requests": {
+      "description": "Every request this server process opened, oldest first, at most the last 200.",
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/request" }
+    },
+    "request": {
+      "type": "object",
+      "required": ["id", "kind", "status", "createdAt", "answeredAt", "cancelReason"],
+      "properties": {
+        "id": { "description": "crypto.randomUUID() at open.", "type": "string", "minLength": 1 },
+        "kind": { "enum": ["question", "permission", "reply"] },
+        "status": { "enum": ["open", "answered", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "answeredAt": { "type": ["string", "null"], "format": "date-time" },
+        "cancelReason": {
+          "description": "aborted: the canUseTool signal fired. superseded: a reply card whose session started a turn by itself. ended: the session ended with the request open.",
+          "enum": ["aborted", "superseded", "ended", null]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "question" },
+            "questions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["question", "header", "multiSelect", "options"],
+                "additionalProperties": false,
+                "properties": {
+                  "question": { "type": "string" },
+                  "header": { "type": "string" },
+                  "multiSelect": { "type": "boolean" },
+                  "options": {
+                    "description": "In the order the session sent them; the brief puts the recommended one first.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["label", "description", "recommended"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "label": { "type": "string" },
+                        "description": { "type": "string" },
+                        "recommended": { "description": "label ends with \" (Recommended)\".", "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "answers": {
+              "description": "null while open; the answers sent to the session after (multiSelect labels joined with \", \").",
+              "oneOf": [{ "type": "null" }, { "type": "object", "additionalProperties": { "type": "string" } }]
+            }
+          },
+          "required": ["questions", "answers"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "permission" },
+            "toolName": { "type": "string" },
+            "title": { "description": "canUseTool options.description, else input.description, else toolName.", "type": "string" },
+            "summary": { "description": "input.command for Bash; input.file_path for Read, Write, Edit and NotebookEdit; else JSON.stringify(input).", "type": "string" },
+            "input": { "description": "The tool input as canUseTool received it.", "type": "object" },
+            "decisionReason": { "type": ["string", "null"] },
+            "blockedPath": { "type": ["string", "null"] },
+            "decision": { "enum": ["allow", "deny", null] },
+            "message": { "description": "The deny message sent, else null.", "type": ["string", "null"] }
+          },
+          "required": ["toolName", "title", "summary", "input", "decisionReason", "blockedPath", "decision", "message"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "reply" },
+            "text": { "description": "The result message's result text that ended the turn.", "type": "string" },
+            "isError": { "description": "result is_error.", "type": "boolean" },
+            "backgroundTasks": { "description": "How many background tasks ran when the turn ended; above 0 the session may start a turn by itself.", "type": "integer", "minimum": 0 },
+            "decision": { "description": "allow: Approve. deny: Deny. message: the client sent a free message instead.", "enum": ["allow", "deny", "message", null] },
+            "message": { "description": "The text sent into the session, else null.", "type": ["string", "null"] }
+          },
+          "required": ["text", "isError", "backgroundTasks", "decision", "message"]
+        }
+      ]
+    },
+    "run": {
+      "description": "null while the Truss dir is unknown or not on disk.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["goal", "version", "approval", "approvedAt", "crews", "skipped"],
+          "additionalProperties": false,
+          "properties": {
+            "goal": { "description": "plan.json goal; null without a readable plan.json.", "type": ["string", "null"] },
+            "version": { "type": ["integer", "null"] },
+            "approval": { "enum": ["auto", "client", null] },
+            "approvedAt": { "type": ["string", "null"] },
+            "crews": { "type": "array", "items": { "$ref": "#/$defs/crew" } },
+            "skipped": {
+              "description": "jsonl lines not used, at most the first 100: json = not a JSON object; version = an events line whose v isn't 1, or a messages line that has a v other than 1 (message lines carry no v today). A last line with no newline yet is not skipped; it waits.",
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "required": ["file", "line", "reason"],
+                "additionalProperties": false,
+                "properties": {
+                  "file": { "description": "Name relative to the Truss dir, such as events.jsonl.", "type": "string" },
+                  "line": { "description": "1-based line number in that file.", "type": "integer", "minimum": 1 },
+                  "reason": { "enum": ["json", "version"] }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "crew": {
+      "description": "plan.json crews in plan order, then crews named only in event lines (rolled files first, by n, then events.jsonl), in order of first appearance. Crew main is never a crew.",
+      "type": "object",
+      "required": ["slug", "stage", "verdict", "status", "goal", "owns", "foreman", "members", "latest", "qc"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "type": "string", "minLength": 1 },
+        "stage": { "type": ["integer", "null"] },
+        "verdict": { "type": ["string", "null"] },
+        "status": { "description": "plan.json status; null for a crew not in plan.json.", "enum": ["planned", "running", "merged", "dropped", null] },
+        "goal": { "description": "plan.json v3 crew goal id, else null.", "type": ["string", "null"] },
+        "owns": { "type": "array", "items": { "type": "string" } },
+        "foreman": { "description": "The member line of the agent whose name equals the slug.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/member" }] },
+        "members": { "description": "Every other agent named in the crew's event lines, in order of first appearance.", "type": "array", "items": { "$ref": "#/$defs/member" } },
+        "latest": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/activity" }] },
+        "qc": {
+          "description": "The newest QC file under reports/<slug>/ by the hooks' rule (isQcFile, latestQc without the run filter).",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["verdict", "file"],
+              "additionalProperties": false,
+              "properties": {
+                "verdict": { "description": "From a first non-empty line `VERDICT: PASS` or `VERDICT: FAIL`, else null.", "enum": ["PASS", "FAIL", null] },
+                "file": { "description": "Relative to the Truss dir, such as reports/auth/auth-qc-2.md.", "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": ["name", "type", "model", "effort", "state", "detail", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "description": "From the agent's latest spawn line.", "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "effort": { "type": ["string", "null"] },
+        "state": { "description": "From the agent's latest event line.", "enum": ["spawned", "stalled", "tagged", "reported", "allowance-spent", "fetched"] },
+        "detail": { "description": "stalled: `<minutes> min`; tagged: the tag; reported: the marker or null; fetched: the url or query; else null.", "type": ["string", "null"] },
+        "ts": { "type": "string" }
+      }
+    },
+    "activity": {
+      "description": "The crew's newest event or message line by ts; on equal ts, the one read later. A message line belongs to the crew of its from agent, else of its to agent, as the event lines name them.",
+      "type": "object",
+      "required": ["ts", "agent", "event", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "ts": { "type": "string" },
+        "agent": { "type": "string" },
+        "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "message"] },
+        "text": {
+          "description": "spawn: `<agent> spawned`. stall: `<agent> stalled <minutes> min`. tag: `<agent> sent <tag>`. report: `<agent> reported <marker>`, or `<agent> reported` when marker is null. allowance-spent: `<agent> spent the rework allowance`. fetch: `<agent> fetched <url or query>`. incomplete: `workflow run <run> incomplete`. message: `<from> to <to>: <summary>`.",
+          "type": "string"
+        }
+      }
+    },
+    "decisions": {
+      "description": "decisions.md, one entry per line that starts with `- `, in file order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["n", "run", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "n": { "description": "1-based line number of the `- ` line.", "type": "integer", "minimum": 1 },
+          "run": { "description": "The text after `## Run ` of the nearest run heading above, else null.", "type": ["string", "null"] },
+          "text": { "description": "The line without its `- `, then each following two-space continuation line without its two spaces, joined with \\n.", "type": "string" }
+        }
+      }
+    },
+    "adrs": {
+      "description": "The *.md files directly in the adr directory that .claude/truss.json names, sorted by file name.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "title", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string" },
+          "title": { "description": "The first `# ` line without `# `, else the file name.", "type": "string" },
+          "status": { "description": "The rest of the first line that starts with `Status: `, else null.", "type": ["string", "null"] }
+        }
+      }
+    },
+    "design": {
+      "type": "object",
+      "required": ["planMd", "architecture", "images"],
+      "additionalProperties": false,
+      "properties": {
+        "planMd": { "description": "<truss dir>/plan.md, else null.", "type": ["string", "null"] },
+        "architecture": {
+          "description": "The file .claude/truss.json's architecture key names, else null.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["path", "markdown"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "description": "Relative to the repo.", "type": "string" },
+                "markdown": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "images": {
+          "description": "Image files the run's crews added, read through git (ADR-0011 Decision 7). GET /api/image?ref=&path= serves only these pairs.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "ref": { "description": "The target branch, or a crew branch truss-<slug>.", "type": "string" },
+              "path": { "description": "Repo-relative path in that ref.", "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "notices": {
+      "description": "Conditions the page states in words, such as a missing .claude/truss.json or a Truss dir not on disk yet.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "description": "Stable per condition: no-config, no-truss-dir, no-plugin, git-error.", "type": "string" },
+          "text": { "type": "string" }
+        }
+      }
+    }
+  }
+}
