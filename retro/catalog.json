@@ -1,0 +1,78 @@
+{
+  "v": 1,
+  "entries": [
+    {
+      "id": "webkit-host-libs",
+      "kind": "friction",
+      "title": "The WebKit browser cannot start on this host: libicudata is missing, so screenshots and browser checks fail",
+      "anchor": "libicudata",
+      "patterns": [
+        "error while loading shared libraries: libicudata",
+        "[Mm]issing (?:dependencies|libraries).*libicudata",
+        "libicudata\\S* => not found",
+        "\\(libicudata\\S*\\)"
+      ],
+      "fix": "Do not retry the WebKit browser on this host. Use the Chromium or Firefox project for browser checks, or install the host's ICU runtime library, and record the missing library as a need in the plan so doctor probes it before a crew starts.",
+      "fixedBy": null
+    },
+    {
+      "id": "settings-local-not-in-worktrees",
+      "kind": "friction",
+      "title": "settings.local.json is untracked, so a worktree does not see it and its allow rules never apply",
+      "anchor": "settings.local.json",
+      "patterns": [
+        "ENOENT.*settings\\.local\\.json",
+        "settings\\.local\\.json (?:is|was) (?:not|untracked|missing|absent)",
+        "settings\\.local\\.json.*(?:not|never|untracked|missing).*worktree"
+      ],
+      "fix": "A worktree holds only committed files, so rules kept in an untracked .claude/settings.local.json do not reach a crew. Put the allow rules a crew needs in the committed .claude/settings.json, and do not point a crew at settings.local.json.",
+      "fixedBy": null
+    },
+    {
+      "id": "worktree-guard-shell-shape",
+      "kind": "friction",
+      "title": "Claude Code's worktree guard refuses a Bash command it cannot show stays inside the worktree",
+      "anchor": "Refusing to run it",
+      "patterns": [
+        "isolated in the worktree.*Refusing to run it"
+      ],
+      "fix": "Run one plain command per Bash call: no cd, no && or ; chains, no for-loop, no $VAR argument, no heredoc. Give paths in full, write files with the Write and Edit tools, and put a script in a file instead of feeding an interpreter inline text. Each refusal costs a turn.",
+      "fixedBy": null
+    },
+    {
+      "id": "harness-only-claude-code",
+      "kind": "friction",
+      "title": "A test imports the claude-code package, which only the Claude Code harness provides",
+      "anchor": "Cannot find package 'claude-code'",
+      "patterns": [
+        "Cannot find package 'claude-code'"
+      ],
+      "fix": "The claude-code package exists only inside the Claude Code harness, so a check that imports it cannot run under plain node. Do not install it. Treat the failure as a known harness-only limit: run the check where the harness is loaded, or have the check import only what node can resolve.",
+      "fixedBy": null
+    },
+    {
+      "id": "node-modules-missing",
+      "kind": "friction",
+      "title": "A package is missing because node_modules was never installed in the worktree",
+      "anchor": "Cannot find package '",
+      "patterns": [
+        "Cannot find package '(?!claude-code')[^']+'"
+      ],
+      "fix": "Run the project's install (npm ci or the package manager the lockfile names) in the worktree before the check, and list the install as a need in the plan so doctor probes it. A package named claude-code is a different problem (harness-only-claude-code).",
+      "fixedBy": null
+    },
+    {
+      "id": "tracked-pyc",
+      "kind": "mechanical bug",
+      "title": "Python bytecode under __pycache__ is tracked or left untracked, so it shows in diffs and status",
+      "anchor": "__pycache__",
+      "patterns": [
+        "(?:^|\\s)\\S*__pycache__/",
+        "__pycache__\\S*\\.pyc"
+      ],
+      "fix": "Remove the tracked bytecode with git rm -r --cached on the __pycache__ directories and add __pycache__/ and *.pyc to .gitignore, so no .pyc file is tracked and a crew's status is clean.",
+      "probe": { "kind": "command", "run": "test -z \"$(git ls-files -- '*.pyc')\"" },
+      "fixedBy": null
+    }
+  ]
+}
