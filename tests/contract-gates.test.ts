@@ -68,7 +68,7 @@ test('section 9: reasons and refusals are the ADR strings', () => {
     `${MARK} Not done yet: on this plan your final report also needs the sections "## Examined" (what the crew checked, each with its scope) and "## Not examined" (what nobody checked, or None.), each a heading of its own.`,
   )
   expect(constant('MAIN_MODEL_REFUSAL')).toBe(
-    `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`,
+    `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`. Call Agent again with model set.`,
   )
   expect(constant('MAIN_EFFORT_REFUSAL')).toBe(
     `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.`,
@@ -318,7 +318,7 @@ test('headVerdict: every row of the section 6 table', () => {
 
 test('mainCallVerdict: refuses a main-session truss:* call with no model or a bad effort; model check first', () => {
   const f = fn('mainCallVerdict')
-  const model = { deny: `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.` }
+  const model = { deny: `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`. Call Agent again with model set.` }
   const effort = { deny: `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.` }
   expect(f(V2, undefined, 'truss:qc-engineer', undefined, 'medium')).toEqual(model)
   expect(f(V2, undefined, 'truss:qc-engineer', undefined, undefined)).toEqual(model)
@@ -487,7 +487,7 @@ test('handler: a v1 plan never refuses a qc name, whatever the FAIL count', asyn
   expect(r.deny).toBeUndefined()
 })
 
-const mainModelRefusal = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`
+const mainModelRefusal = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`. Call Agent again with model set.`
 const mainEffortRefusal = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.`
 
 test("handler: on a v2 plan the main session's truss:* Agent call without model, without effort, or with effort max is refused and runs nothing", async ($, on) => {
