@@ -984,6 +984,16 @@ const textOfResult = (r: unknown): string | undefined => {
   return r === undefined ? undefined : JSON.stringify(r)
 }
 
+// Pure role audit: qc must be truss:qc-engineer and never use Write or Edit; stress must be truss:stress-engineer or truss:qc-engineer. Returns the reason, or undefined when the agent is fine.
+export function roleAudit(role: string, agentType: string | undefined, toolNames: readonly string[]): string | undefined {
+  if (role === 'qc') {
+    if (agentType !== 'truss:qc-engineer') return `qc ran as ${agentType ?? 'an unknown type'}, not truss:qc-engineer`
+    if (toolNames.some((t) => t === 'Write' || t === 'Edit')) return 'a QC used Write or Edit'
+  }
+  if (role === 'stress' && agentType !== 'truss:stress-engineer' && agentType !== 'truss:qc-engineer') return `stress ran as ${agentType ?? 'an unknown type'}, not truss:stress-engineer or truss:qc-engineer`
+  return undefined
+}
+
 // Record step: files each crew agent's result under reports/, appends spawn and report lines (once), and audits every agent of the run.
 function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj): Audit[] {
   const audits: Audit[] = []
@@ -999,8 +1009,10 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     if (fam !== 'opus' && fam !== 'sonnet') bad(`the transcript model family is ${fam}, not opus or sonnet`)
     if (facts.effort === 'max') bad('effort max')
     if ((facts.effort === 'high' || facts.effort === 'xhigh') && parsed !== undefined) bad(`effort ${facts.effort} on role ${parsed.role}`)
-    if (parsed !== undefined && (parsed.role === 'qc' || parsed.role === 'stress') && agentType !== 'truss:qc-engineer') bad(`${parsed.role} ran as ${agentType ?? 'an unknown type'}, not truss:qc-engineer`)
-    if (parsed !== undefined && parsed.role === 'qc' && facts.tools.some((t) => t.name === 'Write' || t.name === 'Edit')) bad('a QC used Write or Edit')
+    if (parsed !== undefined) {
+      const why = roleAudit(parsed.role, agentType, facts.tools.map((t) => t.name))
+      if (why !== undefined) bad(why)
+    }
     if (parsed === undefined) {
       bad('the label does not parse as <slug>-<role>')
       continue
