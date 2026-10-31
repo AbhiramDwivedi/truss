@@ -171,6 +171,7 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     const { main } = await cliMod()
     const tA = `A${hex(3)}`
     const tB = `B${hex(3)}`
+    const tL = `longquote ${hex(3)}`
     const label = `judge-${hex(3)}`
     const { cost: _cost, ...noCost } = judged(`nocost ${hex(3)}`, a.main, 3)
     const report = join(a.root, 'report.md')
@@ -184,7 +185,7 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
         '```json\n' + JSON.stringify(judged(`notfinding ${hex(3)}`, a.main, 3)) + '\n```\n', // not a finding block: no number, no keep
         block(judged(`withid ${hex(3)}`, a.main, 3, { id: 'F-9' })), // 4: a judge may not pick its own id
         block(judged(tB, a.main, 6)), // 5: valid
-        block(judged(`longquote ${hex(3)}`, a.main, 3, { evidence: [{ file: a.main, line: 3, quote: 'q'.repeat(201) }] })), // 6: quote over 200
+        block(judged(tL, a.main, 3, { evidence: [{ file: a.main, line: 3, quote: 'q'.repeat(201) }] })), // 6: quote over 200 is cut to 200, not dropped
         'closing prose\n',
       ].join('\n'),
     )
@@ -194,24 +195,75 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     assert.ok(lines.includes(`KEPT: F-1 | ${tA}`), r.out)
     assert.ok(lines.includes(`KEPT: F-2 | ${tB}`), r.out)
     assert.ok(lines.indexOf(`KEPT: F-1 | ${tA}`) < lines.indexOf(`KEPT: F-2 | ${tB}`), 'kept in report order')
-    for (const n of [1, 2, 4, 6]) assert.ok(lines.some(l => new RegExp(`^DROPPED: ${n} \\| .+`).test(l)), `block ${n} is dropped, with a reason: ${r.out}`)
-    for (const n of [3, 5]) assert.ok(!lines.some(l => l.startsWith(`DROPPED: ${n} |`)), `block ${n} was valid`)
-    assert.equal(lines.filter(l => l.startsWith('KEPT: ')).length, 2)
-    assert.equal(lines.filter(l => l.startsWith('DROPPED: ')).length, 4, 'the json block is not a finding block')
-    assert.equal(lines[lines.length - 1], 'OK: 2 kept, 4 dropped')
+    assert.ok(lines.includes(`KEPT: F-3 | ${tL}`), `block 6 is kept, its quote cut: ${r.out}`)
+    assert.ok(lines.indexOf(`KEPT: F-2 | ${tB}`) < lines.indexOf(`KEPT: F-3 | ${tL}`), 'kept in report order')
+    for (const n of [1, 2, 4]) assert.ok(lines.some(l => new RegExp(`^DROPPED: ${n} \\| .+`).test(l)), `block ${n} is dropped, with a reason: ${r.out}`)
+    for (const n of [3, 5, 6]) assert.ok(!lines.some(l => l.startsWith(`DROPPED: ${n} |`)), `block ${n} was valid`)
+    assert.equal(lines.filter(l => l.startsWith('KEPT: ')).length, 3)
+    assert.equal(lines.filter(l => l.startsWith('DROPPED: ')).length, 3, 'the json block is not a finding block')
+    assert.equal(lines[lines.length - 1], 'OK: 3 kept, 3 dropped')
     const saved = readFindings(a.trussDir)
     assertSchema('findings', saved)
-    assert.deepEqual(saved.findings.map((f: any) => `${f.id}|${f.judge}|${f.title}`), [`F-1|${label}|${tA}`, `F-2|${label}|${tB}`])
+    assert.deepEqual(saved.findings.map((f: any) => `${f.id}|${f.judge}|${f.title}`), [`F-1|${label}|${tA}`, `F-2|${label}|${tB}`, `F-3|${label}|${tL}`])
+    assert.equal(saved.findings[2].evidence[0].quote, 'q'.repeat(200), 'the quote is cut to exactly 200')
 
     // a later batch from another judge continues the numbering and appends
     const tC = `C${hex(3)}`
     writeFileSync(report, block(judged(`nope ${hex(3)}`, a.main, 99)) + block(judged(tC, a.main, 2)))
     const r2 = await main(['findings', a.trussDir, 'judge-two', report])
-    assert.ok(linesOf(r2.out).includes(`KEPT: F-3 | ${tC}`), `a dropped block takes no number: ${r2.out}`)
+    assert.ok(linesOf(r2.out).includes(`KEPT: F-4 | ${tC}`), `a dropped block takes no number: ${r2.out}`)
     const saved2 = readFindings(a.trussDir)
     assertSchema('findings', saved2)
-    assert.deepEqual(saved2.findings.map((f: any) => f.id), ['F-1', 'F-2', 'F-3'])
-    assert.equal(saved2.findings[2].judge, 'judge-two')
+    assert.deepEqual(saved2.findings.map((f: any) => f.id), ['F-1', 'F-2', 'F-3', 'F-4'])
+    assert.equal(saved2.findings[3].judge, 'judge-two')
+  })
+
+  test('a title and a quote of 250 random characters each are cut to their first 200, and the finding is kept (ADR-0012 Decision 5)', async () => {
+    const a = await prepared()
+    const { main } = await cliMod()
+    const title = hex(125)
+    const quote = hex(125)
+    assert.equal(title.length, 250)
+    assert.equal(quote.length, 250)
+    const report = join(a.root, 'report.md')
+    writeFileSync(report, block(judged(title, a.main, 3, { evidence: [{ file: a.main, line: 3, quote }] })))
+    const r = await main(['findings', a.trussDir, 'j', report])
+    const lines = linesOf(r.out)
+    assert.equal(r.code, 0, r.out)
+    assert.ok(lines.includes(`KEPT: F-1 | ${title.slice(0, 200)}`), r.out)
+    assert.ok(!lines.some(l => l.startsWith('DROPPED: ')), r.out)
+    assert.equal(lines[lines.length - 1], 'OK: 1 kept, 0 dropped')
+    const saved = readFindings(a.trussDir)
+    assertSchema('findings', saved)
+    assert.equal(saved.findings.length, 1)
+    assert.equal(saved.findings[0].title, title.slice(0, 200))
+    assert.equal(saved.findings[0].evidence[0].quote, quote.slice(0, 200))
+  })
+
+  test('parseFindings: 250-character title and quote are cut to 200 and kept; exactly 200 is unchanged; other problems still drop', async () => {
+    const a = await prepared()
+    const { parseFindings } = await cliMod()
+    const files = a.x.files
+    const title = hex(125)
+    const quote = hex(125)
+    const r = parseFindings(block(judged(title, a.main, 3, { evidence: [{ file: a.main, line: 3, quote }] })), files)
+    assert.equal(r.kept.length, 1, JSON.stringify(r.dropped))
+    assert.equal(r.dropped.length, 0)
+    assert.equal(r.kept[0].finding.title, title.slice(0, 200))
+    assert.equal(r.kept[0].finding.evidence[0].quote, quote.slice(0, 200))
+
+    const t200 = hex(100)
+    const q200 = hex(100)
+    assert.equal(t200.length, 200)
+    const r2 = parseFindings(block(judged(t200, a.main, 3, { evidence: [{ file: a.main, line: 3, quote: q200 }] })), files)
+    assert.equal(r2.kept.length, 1, JSON.stringify(r2.dropped))
+    assert.equal(r2.kept[0].finding.title, t200)
+    assert.equal(r2.kept[0].finding.evidence[0].quote, q200)
+
+    const { cost: _c, ...noCost } = judged(hex(125), a.main, 3)
+    const r3 = parseFindings(block(judged('', a.main, 3)) + block(noCost), files)
+    assert.equal(r3.kept.length, 0, 'an empty title and a missing cost are still dropped')
+    assert.equal(r3.dropped.length, 2)
   })
 
   test('a report with no finding block gives OK: 0 kept, 0 dropped', async () => {
