@@ -751,6 +751,22 @@ function cmdStart(f: Flags): Obj {
   return stageOut(ctx, entries, foremen, refused, stale, unfinished)
 }
 
+// --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
+// so the stage args never fill the PM's Bash output. A Workflow script has no file system and the Workflow gate reads
+// args.truss from the call, so the PM still Reads P and passes that object as the Workflow's args.
+function argsFileOut(f: Flags, out: Obj): Obj {
+  const p = str(f, 'args-file')
+  if (p === undefined) return out
+  if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
+  try {
+    mkdirSync(path.dirname(p), { recursive: true })
+    writeFileSync(p, JSON.stringify(out) + '\n')
+  } catch (e) {
+    throw usage(`cannot write ${flat(p)}: ${(e as Error).message}`)
+  }
+  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished }
+}
+
 // ==== finish ====
 
 import { utimesSync } from 'node:fs'
@@ -1045,7 +1061,7 @@ function cmdFinish(f: Flags): Obj {
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
-  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: cmdStart,
+  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, finish: cmdFinish,
 }
 

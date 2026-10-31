@@ -352,6 +352,27 @@ test('start --scripts-dir copies stage.js byte for byte to <S>/truss-stage.js an
   assert.equal(workflowCallVerdict(plan, { scriptPath: j.truss.scriptPath, scriptText, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, stageJs] }), undefined)
 })
 
+test('start --args-file P writes the whole output to P and prints a short pointer; a relative P is a usage error', () => {
+  const env = world([crew('x'), crew('y')])
+  const p = `${tmp('fcli-args-')}/sub/stage-args.json`
+  const j = assertOneLine(start(env, 'next', { 'args-file': p }))
+  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.equal(j.argsFile, flat(p))
+  assert.deepEqual(j.crews, ['x', 'y'])
+  const text = readFileSync(p, 'utf8')
+  assert.ok(text.endsWith('}\n') && !text.slice(0, -1).includes('\n'), 'one line, as stdout would be')
+  const args = JSON.parse(text)
+  assert.deepEqual(Object.keys(args).sort(), OUTPUT_KEYS)
+  assert.equal(args.truss.scriptPath, j.scriptPath)
+  assert.deepEqual(slugsOf(args.truss.crews), ['x', 'y'])
+  const plan = parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8'))
+  const texts = ['plan.js', 'stage.js'].map((n) => readFileSync(`${env.plugin}/workflows/${n}`, 'utf8'))
+  assert.equal(workflowCallVerdict(plan, { scriptPath: args.truss.scriptPath, args, pluginDir: env.plugin, pluginScriptTexts: texts }), undefined)
+  const rel = start(world([crew('z')]), 'next', { 'args-file': 'stage-args.json' })
+  assert.equal(rel.status, 2, rel.stdout)
+  assert.match(rel.json.error, /absolute/)
+})
+
 test('start is idempotent: a second run adds no spawn line and does not return the running crew again', () => {
   const env = world([crew('x')])
   assertOneLine(start(env))
