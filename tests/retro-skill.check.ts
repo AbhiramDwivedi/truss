@@ -188,15 +188,24 @@ test('scrub before commit (R-32): retro/cli.ts scrub runs on every changed file 
   matches(SKILL, /A hit blocks the merge/, 'retro SKILL.md')
 })
 
+const settingsWordingOk = (s4: string): boolean => {
+  const f = s4.replace(/\s+/g, ' ')
+  return /[Tt]russ writes [^.]*`\.claude\/settings\.json`/.test(f) && f.includes('client writes the rules') && f.includes('is never worked around')
+}
+const INVERTED_S4 = '- A fix goal never touches `.claude/settings.json`.\n- When the classifier refuses, the client writes nothing and truss works around the refusal.'
+
 test('section 4 says a fix goal writes the settings file and the classifier refusal goes to the client', () => {
   const s4 = section(SKILL, '## 4. Propose changes')
   assert.ok(!s4.includes(SETTINGS_SENTENCE_OLD), `producer missing: retro SKILL.md section 4 still says "${SETTINGS_SENTENCE_OLD}"`)
-  matches(s4, /fix goal[^.]*`\.claude\/settings\.json`|`\.claude\/settings\.json`[^.]*fix goal/, 'retro SKILL.md section 4')
-  matches(s4, /classifier refuses[^.]*client writes|client writes[^.]*classifier refuses/, 'retro SKILL.md section 4')
+  assert.ok(settingsWordingOk(s4), 'producer missing: retro SKILL.md section 4 must say truss writes the rules into `.claude/settings.json`, the client writes the rules when the classifier refuses, and the refusal is never worked around')
   assert.ok(
     flatten(section(SKILL, '## 5. Write only what the client approves')).includes('for the client to write'),
     'producer missing: retro SKILL.md section 5 lost "for the client to write"',
   )
+})
+
+test('negative control: an inverted section 4 fails the settings wording pin', () => {
+  assert.ok(!settingsWordingOk(INVERTED_S4))
 })
 
 test('the catalog grows: each merged fix adds or updates an entry with fixedBy', () => {

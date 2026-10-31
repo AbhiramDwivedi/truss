@@ -98,14 +98,23 @@ test('a refusal from the worktree guard is steered through prompts, never an all
   assert.ok(s3.includes('never propose a rule to get past it'))
 })
 
-test('section 4 proposes only narrow allow rules for .claude/settings.json, which the client writes', () => {
+const settingsWordingOk = (s4: string): boolean => {
+  const f = s4.replace(/\s+/g, ' ')
+  return /[Tt]russ writes [^.]*`\.claude\/settings\.json`/.test(f) && f.includes('client writes the rules') && f.includes('is never worked around')
+}
+const INVERTED_S4 = '- A fix goal never touches `.claude/settings.json`.\n- When the classifier refuses, the client writes nothing and truss works around the refusal.'
+
+test('section 4 proposes only narrow allow rules for .claude/settings.json, which truss writes', () => {
   const s4 = section(HEADING4)
   assert.ok(s4.includes('`.claude/settings.json` `permissions.allow`'))
   for (const wild of ['`Bash(*)`', '`Bash(node:*)`', '`Bash(python3:*)`', '`Bash(bash:*)`', '`Bash(npx:*)`']) assert.ok(s4.includes(wild), wild)
   assert.ok(s4.includes('Never propose a wildcard over anything that runs code it is handed'))
   assert.ok(s4.includes("`.claude/settings.local.json` is not checked in, so it never reaches the agents' worktrees"))
   assert.ok(!s4.includes('truss never writes a settings file'), 'ADR-0012 section 6 replaces that sentence')
-  assert.ok(/fix goal[^.]*`\.claude\/settings\.json`|`\.claude\/settings\.json`[^.]*fix goal/.test(s4), 'a fix goal writes the settings file')
-  assert.ok(/classifier refuses[^.]*client writes|client writes[^.]*classifier refuses/.test(s4), 'a classifier refusal goes to the client')
+  assert.ok(settingsWordingOk(s4), 'section 4: truss writes the rules into `.claude/settings.json`; the client writes the rules when the classifier refuses; the refusal is never worked around')
   assert.ok(section('## 5. Write only what the client approves').includes('for the client to write'))
+})
+
+test('negative control: an inverted section 4 fails the settings wording pin', () => {
+  assert.ok(!settingsWordingOk(INVERTED_S4))
 })
