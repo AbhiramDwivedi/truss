@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
-import { fencedBlock, qcFails, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
+import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
 
 // ==== core ====
@@ -255,9 +255,21 @@ export function reportsOf(dir: string, slug: string): QcFile[] {
   if (!existsSync(d)) return []
   return readdirSync(d).filter((n) => n.endsWith('.md')).sort().map((name) => ({ name, text: readFileSync(`${d}/${name}`, 'utf8'), mtimeMs: statSync(`${d}/${name}`).mtimeMs }))
 }
+// The k of the crew's newest logged re-plan, decision line `re-planned: <slug> from qc-<k>`, or undefined when none.
+export function replannedFrom(log: string, slug: string): number | undefined {
+  let k: number | undefined
+  for (const m of log.matchAll(/^- [^|]*\|\s*re-planned: ([A-Za-z0-9._-]+) from qc-(\d+)\b/gm)) if (m[1] === slug) k = Number(m[2])
+  return k
+}
+// The crew's QC files that count toward its spend: a logged re-plan starts a fresh count, so only -qc-<k> and later count.
+export function countedQc(dir: string, slug: string, files: readonly QcFile[]): QcFile[] {
+  const p = `${dir}/decisions.md`
+  const k = existsSync(p) ? replannedFrom(readFileSync(p, 'utf8'), slug) : undefined
+  return k === undefined ? [...files] : files.filter((f) => qcK(f.name) >= k)
+}
 // The crew's repair spend: its QC FAIL reports only (client ruling: stress-test rounds add nothing).
 export function spentOf(dir: string, slug: string, since = 0): number {
-  return qcFails(slug, reportsOf(dir, slug), since)
+  return qcFails(slug, countedQc(dir, slug, reportsOf(dir, slug)), since)
 }
 // {role: next free label number} from the crew's report files: `<slug>-qc.md` and `-qc-2.md` give {"qc": 3}.
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
@@ -1033,7 +1045,7 @@ function cmdFinish(f: Flags): Obj {
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, files, since))
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since))
     if (r.merged) out.merged.push(c.slug)
     else if (r.rework !== undefined) out.rework.push({ slug: c.slug, why: r.rework })
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })
