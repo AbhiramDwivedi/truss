@@ -53,7 +53,15 @@ async function exec(file, args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      // heavy first: its line holds the inner `factory.ts check` after ` -- `, so match heavy, then read the real command after the cut
+      const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
+      let m
+      if (mh) {
+        const cut = mh[1].indexOf(' -- ')
+        m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
+      } else {
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      }
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -65,13 +73,15 @@ async function exec(file, args, o = {}) {
       const branch = flag('branch')
       const key = cmd === 'check' ? `check:${expect}` : cmd === 'integrate' ? `integrate:${branch}` : cmd
       const name = `runner:${slug}:${key}`
-      call.runner = { cmd, slug, expect, branch, key, name }
+      const heavy = !!mh
+      call.runner = { cmd, slug, expect, branch, key, name, heavy }
       const n = (counters[name] = (counters[name] ?? -1) + 1)
       timeline.push(`start:${name}`)
-      let out = o.runner ? await o.runner({ cmd, key, slug, expect, branch, n, prompt, call }) : undefined
+      let out = o.runner ? await o.runner({ cmd, key, slug, expect, branch, n, prompt, call, heavy }) : undefined
       if (out === undefined) {
+        const plain = expect === 'red' ? { ok: true } : { ok: true, head: HEAD }
         out =
-          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head: HEAD })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
+          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(heavy ? { ...plain, heavy: { label: `${slug}-check`, waitedMs: 0, exit: 0 } } : plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
       }
       await ticks(cmd === 'integrate' ? 3 : 1)
       timeline.push(`end:${name}`)
@@ -113,7 +123,11 @@ async function exec(file, args, o = {}) {
   } catch (e) {
     error = e
   }
-  return { result, error, calls, unscripted, timeline, labels: calls.map((c) => c.label) }
+  // admit and reap are their own runner calls around every non-runner spawn; `labels` and `timeline` leave them out
+  const isAR = (c) => c.runner?.cmd === 'admit' || c.runner?.cmd === 'reap'
+  const arNames = new Set(calls.filter(isAR).map((c) => c.runner.name))
+  const notAR = (e) => !arNames.has(e.replace(/^(start|end):/, ''))
+  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.map((c) => c.label) }
 }
 
 const HEAD = 'a1'.repeat(20)
