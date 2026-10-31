@@ -230,10 +230,10 @@ export function mkRun(transcripts: string, runId: string, agents: RunAgent[], op
   return { dir: flat(dir), ids }
 }
 
-const COPY_DIRS = ['bin', 'hooks', 'docs', 'workflows']
+const COPY_DIRS = ['bin', 'hooks', 'docs', 'workflows', 'resources']
 let sharedCopy: string | undefined
 
-/** A temp copy of the plugin (bin, hooks, docs, workflows from this checkout) where workflows/plan.js and stage.js are stub files (so tests do not depend on another crew's scripts); returns its dir. Built once per process and shared, so never write inside it. */
+/** A temp copy of the plugin (bin, hooks, docs, workflows, resources from this checkout; bin/factory.ts imports resources/index.ts) where workflows/plan.js and stage.js are stub files (so tests do not depend on another crew's scripts); returns its dir. Built once per process and shared, so never write inside it. */
 export function pluginCopy(): string {
   if (sharedCopy) return sharedCopy
   const d = tmp('fcli-plugin-')
@@ -247,9 +247,26 @@ export function pluginCopy(): string {
 
 export type CliResult = { status: number | null; json: any; stdout: string; stderr: string }
 
-/** Runs `node <factory> <command> ...args` with spawnSync (cwd optional) and returns {status, json (parsed stdout when it is a single JSON line, else undefined), stdout, stderr}. */
-export function runCli(factory: string, command: string, args: string[] = [], cwd?: string): CliResult {
-  const r = spawnSync(process.execPath, [factory, command, ...args], { cwd, encoding: 'utf8', timeout: 120_000 })
+let highSample: string | undefined
+
+/** A sample file with plenty of free memory, written once per process. runCli points TRUSS_SAMPLE at it, so no case samples the real host. */
+export function highSampleFile(): string {
+  if (!highSample) {
+    highSample = `${tmp('fcli-sample-')}/high.json`
+    writeFileSync(highSample, JSON.stringify({ freeMB: 64000, totalMB: 64000 }))
+  }
+  return highSample
+}
+
+/** Runs `node <factory> <command> ...args` with spawnSync (cwd optional) and returns {status, json (parsed stdout when it is a single JSON line, else undefined), stdout, stderr}. The child env is the caller's minus TRUSS_SAMPLE and TRUSS_MIN_FREE_MB, plus TRUSS_SAMPLE = a high sample file, plus `extraEnv`. */
+export function runCli(factory: string, command: string, args: string[] = [], cwd?: string, extraEnv: Record<string, string> = {}): CliResult {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  delete env.TRUSS_SAMPLE
+  delete env.TRUSS_MIN_FREE_MB
+  env.TRUSS_SAMPLE = highSampleFile()
+  Object.assign(env, extraEnv)
+  const r = spawnSync(process.execPath, [factory, command, ...args], { cwd, encoding: 'utf8', timeout: 120_000, env })
   const stdout = r.stdout ?? ''
   const lines = stdout.split('\n').filter((l) => l.length > 0)
   let json: any

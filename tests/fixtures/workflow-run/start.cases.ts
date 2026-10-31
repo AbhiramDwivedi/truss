@@ -39,7 +39,7 @@ const norm = (p: string): string => {
 }
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
-const OUTPUT_KEYS = ['foremen', 'refused', 'stale', 'truss', 'unfinished']
+const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished']
 const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'highImpact', 'labelFrom', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
@@ -290,6 +290,7 @@ test('start output: top-level keys, truss keys and crew entry keys are exactly t
   })
   const j = assertOneLine(start(env))
   assert.deepEqual(Object.keys(j).sort(), OUTPUT_KEYS)
+  assert.deepEqual(j.held, [], 'a start with room and memory holds nothing')
   assert.deepEqual(Object.keys(j.truss).sort(), TRUSS_KEYS)
   assert.equal(j.truss.kind, 'stage')
   assert.equal(norm(j.truss.dir), norm(env.dir))
@@ -356,7 +357,8 @@ test('start --args-file P writes the whole output to P and prints a short pointe
   const env = world([crew('x'), crew('y')])
   const p = `${tmp('fcli-args-')}/sub/stage-args.json`
   const j = assertOneLine(start(env, 'next', { 'args-file': p }))
-  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.deepEqual(j.held, [])
   assert.equal(j.argsFile, flat(p))
   assert.deepEqual(j.crews, ['x', 'y'])
   const text = readFileSync(p, 'utf8')
