@@ -1,8 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "mcp__claude_ai_Gmail__search_threads",
-      "mcp__claude_ai_Gmail__get_message",
       "mcp__claude-in-chrome__find",
       "mcp__claude-in-chrome__tabs_context_mcp",
       "Bash(systemctl --user is-active *)",
