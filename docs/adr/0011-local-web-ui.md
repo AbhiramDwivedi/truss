@@ -324,7 +324,7 @@ ui-server takes `state` and `session` as interfaces. So `http.check.ts` passes i
 ## Consequences
 
 - Stage-1 crews build against Decision 9 and the schema. `ui/contract/{state,session,http}.check.ts` import `ui/server/<module>` and fail with `producer missing: ui/server/<module>` until it exists.
-- `ui/package.json` needs `marked` 18.1.2 as a dependency, and `@axe-core/playwright` 4.14.0 as a dev dependency (frontend rule 12, `docs/architecture.md`, "Local web UI"). `npm view @axe-core/playwright@4.14.0` gives the dependency `axe-core ~4.14.0` and the peer `playwright-core >=1.0.0`. TODO: neither is in `ui/package.json` yet.
+- `ui/package.json` needs `marked` 18.1.2 as a dependency, and `@axe-core/playwright` 4.14.0 as a dev dependency (frontend rule 12, `docs/architecture.md`, "Local web UI"). `npm view @axe-core/playwright@4.14.0` gives the dependency `axe-core ~4.14.0` and the peer `playwright-core >=1.0.0`. Both are in `ui/package.json` and `ui/package-lock.json`.
 - P19 (erasable TypeScript, Node built-ins only) keeps binding the plugin. It doesn't bind `ui/`, which has the runtime dependencies `@anthropic-ai/claude-agent-sdk` and `marked`.
 - A reply card after every turn means the client also sees one after a turn that asked nothing. Writing in the chat box answers it, so it costs no extra click.
 
