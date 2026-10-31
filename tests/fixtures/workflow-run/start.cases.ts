@@ -484,6 +484,27 @@ test('start --resume answers: a PASS qc report does not count as spend', () => {
   assert.deepEqual(e.labelFrom, { qc: 3 })
 })
 
+test('start --resume answers: tasks and done combine every run of the crew next to T; a later re-split drops the older done', () => {
+  const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 3 * HOUR) } })
+  const wt = makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
+  memberBranch(wt, 'truss-x', 'member-t1', true)
+  memberBranch(wt, 'truss-x', 'member-t2', true)
+  const member = (n: string, branch: string) => ({ task: n, marker: 'DONE', branch, commit: 'c0ffee', proof: 'ran it', text: 'ok' })
+  const tasks = [task('t1'), task('t2'), task('t3')]
+  // run 1 planned and merged t1; run 2 was a resume that took the saved tasks (no planner) and merged t2
+  deadRun(env, 'wf_first', [{ label: 'x-planner', result: { tasks, stop: null } }, { label: 'x-builder', result: member('t1', 'member-t1') }], { agoMs: 30 * MIN })
+  const second = deadRun(env, 'wf_second', [{ label: 'x-builder-2', result: member('t2', 'member-t2') }], { agoMs: 20 * MIN })
+  const e = assertOneLine(resume(env, 'x', 'answers', { transcript: second.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.deepEqual(e.tasks, tasks, 'the plan comes from run 1: run 2 has no planner result')
+  assert.deepEqual(e.done.map((d: any) => (typeof d === 'string' ? d : d.name)), ['t1', 't2'], 't1 was merged in run 1, t2 in run 2')
+  // run 3 re-split (planner-2): only its own members count, so run 1's t1 never matches a task of the new plan by name
+  const resplit = [task('t1'), task('t4')]
+  const third = deadRun(env, 'wf_third', [{ label: 'x-planner-2', result: { tasks: resplit, stop: null } }], { agoMs: 10 * MIN })
+  const r = assertOneLine(resume(env, 'x', 'answers', { transcript: third.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.deepEqual(r.tasks, resplit)
+  assert.deepEqual(r.done, [])
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // --resume merge-ready
 

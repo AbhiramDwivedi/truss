@@ -583,7 +583,10 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
 const runsNextTo = (transcript: string): WfRun[] => runsOf(path.dirname(flat(transcript).replace(/\/+$/, '')))
 const eventsOf = (dir: string): Obj[] => (existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : [])
 
-type CrewState = { kind: 'none' } | { kind: 'unfinished'; run: string | null } | { kind: 'returned' } | { kind: 'live' } | { kind: 'stale'; wfRun: WfRun | undefined; since: string }
+// The runs that hold one of the crew's labels, oldest first (newest mtime, then id).
+const crewRunsOf = (runs: WfRun[], slug: string): WfRun[] =>
+  runs.filter((r) => r.agents.some((a) => parseLabel(a.label)?.slug === slug)).sort((a, b) => newestMtime(a.dir) - newestMtime(b.dir) || (a.id < b.id ? -1 : 1))
+type CrewState = { kind: 'none' } | { kind: 'unfinished'; run: string | null } | { kind: 'returned' } | { kind: 'live' } | { kind: 'stale'; since: string }
 // The state of a running workflow crew, read from files (ADR-0009 "start, stale runs"); `none` when rule 1 fails.
 // runs undefined means no --transcript was given: nothing can be read, so the crew fails closed as unfinished.
 function crewState(dir: string, crew: Obj, runs: WfRun[] | undefined, events: Obj[], now: number): CrewState {
@@ -591,42 +594,46 @@ function crewState(dir: string, crew: Obj, runs: WfRun[] | undefined, events: Ob
   const spawn = factorySpawned(dir, slug)
   if (crew.status !== 'running' || spawn === undefined) return { kind: 'none' }
   if (runs === undefined) return { kind: 'unfinished', run: null }
-  const holding = runs.filter((r) => r.agents.some((a) => parseLabel(a.label)?.slug === slug)).sort((a, b) => newestMtime(a.dir) - newestMtime(b.dir) || (a.id < b.id ? -1 : 1))
+  const holding = crewRunsOf(runs, slug)
   const newest = holding[holding.length - 1]
   if (newest !== undefined) {
     if (!events.some((e) => e.event === 'spawn' && e.crew === slug && e.by === `workflow:${newest.id}`)) return { kind: 'unfinished', run: newest.id }
     if (!events.some((e) => e.event === 'incomplete' && e.crew === slug && e.run === newest.id)) return { kind: 'returned' }
   }
   if (isLive(String(spawn.ts), newest?.dir, now)) return { kind: 'live' }
-  return { kind: 'stale', wfRun: newest, since: String(spawn.ts) }
+  return { kind: 'stale', since: String(spawn.ts) }
 }
 
-// The tasks of the highest-numbered `<slug>-planner*` result in a run.
-function plannerTasks(wfRun: WfRun | undefined, slug: string): unknown[] {
+// The tasks of the highest-numbered `<slug>-planner*` result over the crew's runs, and the index of the run that holds it
+// (0 when none does). labelFrom numbers labels on across runs, so the highest is the newest plan; on a tie the later run wins.
+function plannerTasks(runs: WfRun[], slug: string): { tasks: unknown[]; from: number } {
   let best = 0
-  let tasks: unknown[] = []
-  for (const a of wfRun?.agents ?? []) {
-    const p = parseLabel(a.label)
-    if (p === undefined || p.slug !== slug || p.role !== 'planner' || !a.hasResult || p.n < best) continue
-    let r = a.result
-    if (typeof r === 'string') {
-      try {
-        r = JSON.parse(r)
-      } catch {
-        continue
+  let out = { tasks: [] as unknown[], from: 0 }
+  runs.forEach((wfRun, i) => {
+    for (const a of wfRun.agents) {
+      const p = parseLabel(a.label)
+      if (p === undefined || p.slug !== slug || p.role !== 'planner' || !a.hasResult || p.n < best) continue
+      let r = a.result
+      if (typeof r === 'string') {
+        try {
+          r = JSON.parse(r)
+        } catch {
+          continue
+        }
+      }
+      if (isObj(r) && Array.isArray(r.tasks)) {
+        best = p.n
+        out = { tasks: r.tasks, from: i }
       }
     }
-    if (isObj(r) && Array.isArray(r.tasks)) {
-      best = p.n
-      tasks = r.tasks
-    }
-  }
-  return tasks
+  })
+  return out
 }
-// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report).
-function doneTasks(wfRun: WfRun | undefined, slug: string, wt: string): string[] {
+// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report),
+// over the given runs: a task done in an earlier run, and passed in `done` to a later one that never re-ran it, stays done.
+function doneTasks(runs: WfRun[], slug: string, wt: string): string[] {
   const done: string[] = []
-  for (const a of wfRun?.agents ?? []) {
+  for (const a of runs.flatMap((r) => r.agents)) {
     const r = a.result
     if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
     if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
@@ -647,19 +654,28 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
   if (crew === undefined || crew.status !== 'running' || factorySpawned(c.dir, slug) === undefined) throw refuse({ slug, why: kind === 'stale' ? 'not stale' : 'not restartable' })
-  let wfRun: WfRun | undefined
+  // tasks and done are rebuilt from every run of the crew in the runs root (T's parent), T included, not from T alone:
+  // a resumed run that took saved tasks has no planner result, and its done list holds tasks no member of it ran.
+  let runs: WfRun[] = []
   if (kind === 'stale') {
-    const st = crewState(c.dir, crew, runsNextTo(transcript), eventsOf(c.dir), Date.now())
+    const all = runsNextTo(transcript)
+    const st = crewState(c.dir, crew, all, eventsOf(c.dir), Date.now())
     if (st.kind === 'returned' || st.kind === 'none') throw refuse({ slug, why: 'not stale' })
     if (st.kind === 'unfinished') throw refuse({ slug, why: 'run not finished' })
     if (st.kind === 'live') throw refuse({ slug, why: 'run may be live' })
-    wfRun = st.wfRun
-  } else if (kind === 'answers') wfRun = runOf(transcript)
+    runs = crewRunsOf(all, slug)
+  } else if (kind === 'answers') {
+    const t = runOf(transcript)
+    const all = runsNextTo(transcript)
+    runs = crewRunsOf(all.some((r) => r.id === t.id) ? all : [...all, t], slug)
+  }
   const wt = ensureWorktree(c.repo, slug, c.settings.target)
   // A stale crew whose branch has no commit beyond the base starts from step 1.
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
   const rebuild = kind !== 'merge-ready' && !noWork
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: rebuild ? plannerTasks(wfRun, slug) : [], done: rebuild ? doneTasks(wfRun, slug, wt) : [], answers })
+  // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
+  const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt) : [], answers })
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
