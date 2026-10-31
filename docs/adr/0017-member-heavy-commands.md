@@ -73,39 +73,39 @@ The path changes no hook. It doesn't change how hooks treat the worktree guard: 
 
 ## Probes behind this ADR
 
-Run from this crew's worktree, `/home/abd/Projects/truss/.claude/worktrees/wf_568cdfca-33b-6`, on Linux with Node v24.22.0. The truss dir came from `mktemp -d`, never the live truss dir. Ports: none.
+Run from this crew's worktree, `<repo>/.claude/worktrees/<member worktree>`, on Linux with Node v24.22.0. The truss dir came from `mktemp -d`, never the live truss dir. Ports: none.
 
 1. A temp truss dir:
 
    ```
    $ mktemp -d
-   /tmp/tmp.AW4EqtslYG
+   <tmp truss dir>
    ```
 
-2. The member shape, one plain command, with the plugin's `bin/factory.ts` (`/home/abd/Projects/truss`, the plugin dir) and the truss dir both outside the worktree, and a harmless inner command. Nothing refused it:
+2. The member shape, one plain command, with the plugin's `bin/factory.ts` (`<plugin>`, the plugin dir) and the truss dir both outside the worktree, and a harmless inner command. Nothing refused it:
 
    ```
-   $ node /home/abd/Projects/truss/bin/factory.ts heavy --dir /tmp/tmp.AW4EqtslYG --repo /home/abd/Projects/truss/.claude/worktrees/wf_568cdfca-33b-6 --slug member-heavy-design --label member-heavy-design-probe --cwd /home/abd/Projects/truss/.claude/worktrees/wf_568cdfca-33b-6 -- node --version
+   $ node <plugin>/bin/factory.ts heavy --dir <tmp truss dir> --repo <repo>/.claude/worktrees/<member worktree> --slug member-heavy-design --label member-heavy-design-probe --cwd <repo>/.claude/worktrees/<member worktree> -- node --version
    {"heavy":{"label":"member-heavy-design-probe","waitedMs":0,"exit":0},"tail":"v24.22.0"}
    ```
 
 3. What it left behind: the lock released and the group record deleted, as `heavyMain` does (`bin/factory.ts:1185-1186`, `:1200`):
 
    ```
-   $ find /tmp/tmp.AW4EqtslYG
-   /tmp/tmp.AW4EqtslYG
-   /tmp/tmp.AW4EqtslYG/resources
-   /tmp/tmp.AW4EqtslYG/resources/groups
+   $ find <tmp truss dir>
+   <tmp truss dir>
+   <tmp truss dir>/resources
+   <tmp truss dir>/resources/groups
    ```
 
 What the worktree guard does refuse, seen once in this session: a git command redirected to the shared checkout. It was not part of the probe, and it was not retried.
 
 ```
-$ git -C /home/abd/Projects/truss log -1 ...
-This agent is isolated in the worktree /home/abd/Projects/truss/.claude/worktrees/wf_568cdfca-33b-6, but this command redirects git to the shared checkout via -C. Refusing to run it — a worktree-isolated agent's git operations must target its own worktree. Run the equivalent from /home/abd/Projects/truss/.claude/worktrees/wf_568cdfca-33b-6 without the redirect.
+$ git -C <repo> log -1 ...
+This agent is isolated in the worktree <repo>/.claude/worktrees/<member worktree>, but this command redirects git to the shared checkout via -C. Refusing to run it — a worktree-isolated agent's git operations must target its own worktree. Run the equivalent from <repo>/.claude/worktrees/<member worktree> without the redirect.
 ```
 
-So the guard refuses git aimed outside the worktree, and the shapes the `SHELL` rule lists. It let a plain `node` command that reads and writes paths outside the worktree go through. Because of that refusal, this crew didn't record which commit the plugin checkout was on. It has `heavyMain` (`grep -c heavyMain /home/abd/Projects/truss/bin/factory.ts` gives `2`).
+So the guard refuses git aimed outside the worktree, and the shapes the `SHELL` rule lists. It let a plain `node` command that reads and writes paths outside the worktree go through. Because of that refusal, this crew didn't record which commit the plugin checkout was on. It has `heavyMain` (`grep -c heavyMain <plugin>/bin/factory.ts` gives `2`).
 
 ## Documents this ADR amends
 
