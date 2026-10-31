@@ -27,7 +27,7 @@ For the counts, read only the JSON it prints. Section 3 adds a few bounded reads
 
 Per run (`runs`), then the dir-wide keys. Be brief; a table or short list per run.
 
-- **Escalations** (`escalations`): QUESTION, BLOCKED, PROPOSAL.
+- **Escalations** (`escalations`): QUESTION, BLOCKED, PROPOSAL. A foreman crew's come from its tagged messages to the PM; a Workflow crew's from the stops `factory.ts finish --result` records from the stage result, one per crew and run (ADR-0009 "finish, escalation lines"). A Workflow run that never went through `finish --result` records none.
 - **Checking engineer** (`recommendations`): answer, defer, pass. With `decisions.overruled`, say how often the PM overruled.
 - **Stalls** (`stalls`): agent and idle-foreman.
 - **Spawns** (`spawns`): total, and `byModelEffort`. `unset` means the call named no model or effort.

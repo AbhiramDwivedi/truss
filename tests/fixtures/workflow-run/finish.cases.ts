@@ -26,7 +26,7 @@ import {
 const APPROVED = '2026-10-01T00:00:00.000Z'
 const CFG = { merge: 'sequential', target: 'main' }
 const OLD_SPAWN = () => new Date(Date.now() - 3 * 3600_000).toISOString()
-const KEYS = ['merged', 'rework', 'blocked', 'refused', 'audit', 'incomplete']
+const KEYS = ['merged', 'rework', 'blocked', 'refused', 'audit', 'incomplete', 'stopped']
 const AAA = 'a'.repeat(40)
 const BBB = 'b'.repeat(40)
 
@@ -38,9 +38,9 @@ function patchId(cwd, base, hd) {
   return reg.patchIdOf(p.stdout)
 }
 
-const writeCheck = (dir, slug, n, exit, hd) => {
+const writeCheck = (dir, slug, n, exit, hd, env) => {
   mkdirSync(`${dir}/checks`, { recursive: true })
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: 'true', exit, head: hd, tail: '' }))
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: 'true', exit, head: hd, tail: '', ...(env === undefined ? {} : { env }) }))
 }
 
 /**
@@ -117,14 +117,14 @@ const dirListing = (d) => (existsSync(d) ? readdirSync(d, { recursive: true }).m
 // ---------------------------------------------------------------------------------------------------------------
 // output shape
 
-test('finish --result: a clean pass prints one line with the six keys in order, merges, exits 0', () => {
+test('finish --result: a clean pass prints one line with the seven keys in order, merges, exits 0', () => {
   const w = scenario([{ slug: 's' }])
   const res = w.finish()
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr + res.stdout)
   assert.deepEqual(Object.keys(j), KEYS)
   assert.deepEqual(j.merged, ['s'])
-  assert.deepEqual([j.rework, j.blocked, j.refused, j.incomplete], [[], [], [], []])
+  assert.deepEqual([j.rework, j.blocked, j.refused, j.incomplete, j.stopped], [[], [], [], [], []])
   assert.equal(statusOf(w, 's'), 'merged')
   assert.equal(mainNow(w), w.c.s.head, 'fast-forwarded to the crew head')
 })
@@ -427,6 +427,16 @@ test('gate: the lowest-numbered checks file decides (numerically), later ones do
   assertMerged(b, assertOneLine(b.finish()))
 })
 
+test('gate: a checks file with env is passed over, so an environment failure is never the red record', () => {
+  const a = scenario([{ slug: 's', red: false }])
+  writeCheck(a.env.dir, 's', 1, 1, a.c.s.head, 'browserType.launch: Host system is missing dependencies')
+  assert.ok(listed(assertOneLine(a.finish()), 'refused', 's'), 'an env failure alone is no red record')
+  const b = scenario([{ slug: 's', red: false }])
+  writeCheck(b.env.dir, 's', 1, 1, b.c.s.head, 'browserType.launch: Host system is missing dependencies')
+  writeCheck(b.env.dir, 's', 2, 1, b.c.s.head)
+  assertMerged(b, assertOneLine(b.finish()))
+})
+
 const qcCases = [
   ['FAIL', (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })],
   ['an UNSCOPED line', (c) => qcReport({ head: c.head, patch: c.patch, unscoped: 1 })],
@@ -644,4 +654,59 @@ test('stopped result: not merged, the crew stays running', () => {
   const j = assertOneLine(w.finish())
   assertHeld(w, j)
   assert.ok(existsSync(w.c.s.wt))
+})
+
+test('stopped result: listed under stopped with its tag, step and the first line of its text; a run crew with no result is listed too', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'q' }, { slug: 'n' }])
+  const long = 'x'.repeat(400)
+  writeFileSync(w.resFile, JSON.stringify([
+    { slug: 's', state: 'stopped', tag: 'QUESTION', text: '\nExtend owns to src/z?\nmore detail', at: 'scope' },
+    { slug: 'q', state: 'stopped', tag: 'BLOCKED', text: long, at: 'qc' },
+  ]))
+  const res = w.finish()
+  const j = assertOneLine(res)
+  assert.equal(res.status, 0, 'a stop alone does not change the exit code')
+  for (const slug of ['s', 'q', 'n']) assertHeld(w, j, slug)
+  assert.deepEqual(entry(j, 'stopped', 's'), { slug: 's', tag: 'QUESTION', at: 'scope', why: 'Extend owns to src/z?' })
+  assert.equal(entry(j, 'stopped', 'q').why, `${'x'.repeat(299)}…`)
+  assert.deepEqual(entry(j, 'stopped', 'n'), { slug: 'n', tag: null, at: null, why: 'no result for this crew in --result' })
+  const passed = scenario([{ slug: 's' }])
+  assert.deepEqual(assertOneLine(passed.finish()).stopped, [])
+})
+
+test('escalations: a stopped result writes one tag line per crew and run; finish run twice adds none', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'q' }, { slug: 'p' }])
+  writeFileSync(w.resFile, JSON.stringify([
+    { slug: 's', state: 'stopped', tag: 'BLOCKED', text: 'webkit cannot launch', at: 'green' },
+    { slug: 'q', state: 'stopped', tag: 'QUESTION', text: 'Extend owns?', at: 'scope' },
+    { slug: 'p', state: 'passed', head: w.c.p.head, base: w.c.p.base, qc: 'p-qc' },
+  ]))
+  w.finish()
+  w.finish()
+  const tags = readEvents(w.env.dir).filter((e) => e.event === 'tag')
+  assert.deepEqual(tags.map((e) => [e.crew, e.agent, e.tag, e.run]).sort(), [['q', 'q', 'QUESTION', 'wf_1'], ['s', 's', 'BLOCKED', 'wf_1']])
+  for (const e of tags) assert.deepEqual(validateEvent(e), [])
+})
+
+test('escalations: the QC FAIL that takes the counted FAILs past reworkAllowance gets one allowance-spent line; a re-plan resets the count', () => {
+  const fail = (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
+  const mk = (line) => {
+    const w = scenario([{ slug: 's' }], { qcLabel: 's-qc-4' })
+    for (let i = 1; i <= 3; i++) writeReport(w.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(w.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+    if (line !== undefined) writeFileSync(`${w.env.dir}/decisions.md`, `${line}\n`, { flag: 'a' })
+    return w
+  }
+  const spent = mk(undefined)
+  spent.finish()
+  spent.finish()
+  const lines = readEvents(spent.env.dir).filter((e) => e.event === 'allowance-spent')
+  assert.deepEqual(lines.map((e) => [e.crew, e.agent]), [['s', 's-qc-3']])
+  for (const e of lines) assert.deepEqual(validateEvent(e), [])
+  const fresh = mk('- 11:00 | re-planned: s from qc-4 | allowance spent, successor | none | followed')
+  fresh.finish()
+  assert.deepEqual(readEvents(fresh.env.dir).filter((e) => e.event === 'allowance-spent'), [])
+  const within = scenario([{ slug: 's' }], { qcLabel: 's-qc-3' })
+  for (let i = 1; i <= 2; i++) writeReport(within.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(within.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+  within.finish()
+  assert.deepEqual(readEvents(within.env.dir).filter((e) => e.event === 'allowance-spent'), [])
 })
