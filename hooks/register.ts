@@ -314,6 +314,21 @@ export function recipientsOf(to: string, agents: readonly Agent[]): Agent[] {
   return newest === undefined ? [] : [newest]
 }
 
+// A resumed plan or amend design engineer hands back a plan no hook routes: refuse the message, name the mode.
+export function designerResumeVerdict(
+  to: unknown,
+  agents: readonly Agent[],
+  designers: ReadonlyMap<string, 'plan' | 'amend'>,
+): { deny: string } | undefined {
+  if (typeof to !== 'string') return undefined
+  for (const a of recipientsOf(to, agents)) {
+    const mode = designers.get(a.id)
+    if (mode === undefined) continue
+    return { deny: `${MARK} Refused: ${to} is a ${mode} design engineer, and a resumed one's hand-back is never routed. Start a fresh ${mode} design engineer under the next unused name.` }
+  }
+  return undefined
+}
+
 export type MessageVerdict =
   | { kind: 'pass' }
   | { kind: 'allow'; crossCrew: false }
@@ -547,7 +562,7 @@ export const NO_PASS_REASON = `${MARK} Not done yet: the crew's latest QC file t
 export const NO_HEAD_REASON = `${MARK} Not done yet: the crew's latest QC PASS has no "${HEAD_LINE.trim()}" and "${PATCH_LINE.trim()}" lines under ## Proof checked, so no hook can tell which head it ruled on. Start a fresh QC under the next unused name.`
 export const HEAD_MOVED = `${MARK} Not done yet: the head moved:`
 export const EXAMINED_REASON = `${MARK} Not done yet: on this plan your final report also needs the sections "${EXAMINED}" (what the crew checked, each with its scope) and "${NOT_EXAMINED}" (what nobody checked, or None.), each a heading of its own.`
-export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`
+export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`. Call Agent again with model set.`
 export const MAIN_EFFORT_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.`
 
 export type QcFile = { name: string; text: string; mtimeMs: number }
@@ -740,7 +755,14 @@ export function workflowCallVerdict(
     if (text === undefined || text.includes('truss:')) return refuse(ONLY_FROM_PLUGIN)
     return undefined
   }
-  const args = input.args
+  let args = input.args
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args)
+    } catch {
+      return refuse('the Workflow args are a string that is not valid JSON')
+    }
+  }
   const truss = isRecord(args) ? args.truss : undefined
   if (!isRecord(truss)) return refuse('a truss Workflow needs args.truss')
   const roles = workflowRoleVerdict(truss.roles)
@@ -1940,6 +1962,8 @@ export const register: Register = on => {
   on('tool.call', { tool: 'SendMessage' }, async ($, e, next) => {
     const input = e as unknown as { to?: unknown; summary?: unknown; message?: unknown }
     if (e.agentId === undefined) {
+      const resumed = await safely($, 'designer resume check', async () => designerResumeVerdict(input.to, (await agentsOf($, state)).all, state.planDesigners))
+      if (resumed !== undefined) return refuse($, state, refusalsLogged, e, resumed)
       // the PM answering a foreman: that foreman is no longer waiting on the person
       const result = await next(e)
       if (result.deny === undefined && typeof input.to === 'string' && state.waiting.size > 0) {
