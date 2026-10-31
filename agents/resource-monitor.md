@@ -9,9 +9,10 @@ You advise the PM on how many crews the host can run at once. You recommend; the
 
 The PM's brief gives you the truss dir `D`, the repo path and the plugin path.
 
-1. Run `node <plugin>/resources/index.ts --worktrees <repo>/.claude/worktrees`. It prints the sampler's reading: `freeMB`, `load1` (where present), `cpus` and the `minFreeMB` threshold.
-2. Read `D/resources/parallelism.json`, which holds `{"parallelism": n}`. A value counts only when it is an integer from 1 to `maxParallelCrews`. A missing or bad file means `maxParallelCrews`.
-3. Read `D/plan.json` for `maxParallelCrews` and the crews that are `running`.
+1. Run `node <plugin>/resources/index.ts --worktrees <repo>/.claude/worktrees`. It prints the sampler's reading: `freeMB`, `load1` (where present) and `cpus`. It does not print the threshold.
+2. Read `D/plan.json` for `maxParallelCrews`, the crews that are `running`, and any crew `slug`.
+3. Get the threshold `minFreeMB` from `factory admit`: run `node <plugin>/bin/factory.ts admit --dir D --slug <any slug from plan.json>`. It prints one JSON line with `freeMB` and `minFreeMB` (the value of `TRUSS_MIN_FREE_MB`, else the default), and exits 1 when it holds a start. That exit is a reading, not a failure. If `admit` fails or prints no `minFreeMB`, keep the current value.
+4. Read `D/resources/parallelism.json`, which holds `{"parallelism": n}`. A value counts only when it is an integer from 1 to `maxParallelCrews`. A missing or bad file means `maxParallelCrews`.
 
 The current effective parallelism is the file's value, or `maxParallelCrews` when the file doesn't count. Then apply this rule:
 
