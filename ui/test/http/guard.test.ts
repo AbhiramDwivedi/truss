@@ -65,7 +65,7 @@ describe('Host values, DNS rebinding (Decision 6)', () => {
       'evil.example', `evil.example:${p}`, `rebind.127.0.0.1.nip.io:${p}`, `127.0.0.1.evil.example:${p}`, `localhost.evil.example:${p}`,
       `evil.example:${p}@127.0.0.1`, `127.0.0.1:${p}.evil.example`, `127.0.0.1:${p} evil`,
       '127.0.0.1', 'localhost', `127.0.0.1:${p + 1}`, `localhost:${p + 1}`,
-      `0.0.0.0:${p}`, `127.0.0.2:${p}`, `[::1]:${p}`, `[::ffff:127.0.0.1]:${p}`, `2130706433:${p}`, `0x7f.0.0.1:${p}`, `:${p}`, '',
+      `0.0.0.0:${p}`, `127.0.0.2:${p}`, `[::1]:${p}`, `[::ffff:127.0.0.1]:${p}`, `2130706433:${p}`, `0x7f.0.0.1:${p}`, `:${p}`,
     ];
     for (const host of hosts) {
       const r = await call(b.port, 'GET', `/api/events?token=${b.token}`, { headers: { host, cookie: b.cookie } });
@@ -75,6 +75,11 @@ describe('Host values, DNS rebinding (Decision 6)', () => {
   });
   it('Decision 6: a request with no Host header at all (HTTP/1.0) is refused 403 host', async () => {
     const r = await rawRequest(b.port, [`GET /api/events?token=${b.token} HTTP/1.0`, `Cookie: ${b.cookie}`]);
+    assert.equal(r.status, 403, r.text);
+    assert.match(r.text, /"error":"host"/);
+  });
+  it('Decision 6: a literal empty Host header line is refused 403 host', async () => {
+    const r = await rawRequest(b.port, [`GET /api/events?token=${b.token} HTTP/1.1`, 'Host:', `Cookie: ${b.cookie}`]);
     assert.equal(r.status, 403, r.text);
     assert.match(r.text, /"error":"host"/);
   });
