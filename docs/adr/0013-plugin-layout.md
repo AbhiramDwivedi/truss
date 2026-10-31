@@ -59,7 +59,7 @@ main holds:
 - ui/ at the root, beside plugins/;
 - checks/, with the root contract `checks/repo-home.check.ts`;
 - a marketplace/ directory with exactly two files:
-  - `marketplace/.claude-plugin/marketplace.json`: name `truss`, owner Abhiram Dwivedi, and one entry with no `version` (plugin.json keeps the version):
+  - `marketplace/.claude-plugin/marketplace.json`: name `truss`, owner the repo owner, and one entry with no `version` (plugin.json keeps the version):
 
     ```json
     {"name":"truss","source":{"source":"git-subdir","url":"AbhiramDwivedi/truss","path":"plugins/truss","ref":"main"}}
@@ -191,7 +191,7 @@ Other files the move must fix, from the plan's scratch move (plan-repo-home.md, 
 - Pull requests need `--base main`. truss itself always names `main`: `git grep -nwE 'gh pr|origin/HEAD|symbolic-ref' -- agents skills bin workflows hooks` prints nothing at dbb7700.
 - Every change to `main:marketplace/` needs a re-publish of the branch, so the later goal adds a sync check.
 - The claude-ops truss entry must change in the same release as the move, to the git-subdir entry with `"ref":"main"` (client ruling, decisions.md 05:07). After the move, claude-ops' current `{"source":"github","repo":"AbhiramDwivedi/truss"}` finds no plugin.json at the root.
-- The PM's live `--plugin-dir /home/abd/Projects/truss` session loses its plugin when the move merges, and restarts on `--plugin-dir /home/abd/Projects/truss/plugins/truss`.
+- The PM's live `--plugin-dir <repo>` session loses its plugin when the move merges, and restarts on `--plugin-dir <repo>/plugins/truss`.
 - When plugin-move merges, it rewrites this ADR's opening `not done yet` line to say the move is done.
 
 ### Ship steps (the PM, after the later goal merges; not run)
@@ -207,7 +207,7 @@ Other files the move must fix, from the plan's scratch move (plan-repo-home.md, 
 - The plan-time runs covered the whole isolated config dir: the plugin cache, the marketplace clone and temp clones.
 - They ran against a local smart-HTTP copy of the repo on 127.0.0.1 (a Node wrapper around `git http-backend`), reached through git `url.<local>.insteadOf` rules for the github.com HTTPS and SSH forms. They did not run against github.com. The real GitHub main had no marketplace.json and no plugins/truss at the time, so their success could not have come from github.com.
 - Dumb HTTP failed with `dumb http transport does not support shallow capabilities`, and a `file://` source gave `Invalid marketplace source format`.
-- On that host the git-subdir `owner/repo` shorthand resolved to `git@github.com:` (SSH), so the redirect must cover the SSH forms too.
+- On that host the git-subdir `owner/repo` shorthand resolved to the GitHub SSH URL form (`git@` plus the host), so the redirect must cover the SSH forms too.
 - Two things stay unverified until the later goal ships and the PM runs ship steps 3 and 5 against real GitHub:
   - GitHub's default-branch behaviour for `claude plugin marketplace add owner/repo`;
   - whether `claude plugin marketplace update` fast-forwards across re-published subtree-split commits.
