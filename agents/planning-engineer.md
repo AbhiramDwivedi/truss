@@ -28,6 +28,7 @@ Return only this JSON, no prose around it:
 - `files`: the files the task writes, each a file path and never a directory, even when the task will create new files: name each one.
 - `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`). Never "the codebase".
 - `brief`: the task's goal, the approved scope quoted word for word, what it must not touch, the check to run and what done means.
+  Each Check command in a brief is one plain command: no `&&`, `;`, pipe, `cd`, for-loop or `$VAR` argument. Any logic goes in a script file the task names in `files`, and the Check runs that file.
 - `after`: names of tasks that must finish first. Empty when none.
 - `stop`: `null`, or `{ "tag": "QUESTION|BLOCKED|PROPOSAL", "text": "..." }` when you cannot plan. Anything that adds scope is a `PROPOSAL`; a design decision the architecture doc and ADRs don't hold is a `QUESTION`; work that doesn't fit the crew is `BLOCKED`. With a `stop`, `tasks` may be empty.
 
