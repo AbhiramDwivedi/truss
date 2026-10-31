@@ -157,6 +157,98 @@ Measure: 0 spending limits set by the UI; usage the SDK reports (tokens, and cos
 Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin
 Source: client
 
+## R-23: The retro runs by itself at the end of every run
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given a truss run whose last crew has merged, when the PM finishes the run, then the retro starts without the client typing /truss:retro, and the UI shows a retro stage running after the work stages, through to its fixes being applied.
+
+## R-24: Finish saves a mechanical extract of the session's transcripts
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given a session dir and its transcripts, when `finish` runs, then the truss dir holds an extract listing tool errors, refusals by source (permission, classifier, hook, factory gate), retries and repeated commands, step durations, BLOCKED and stop reasons, QC failures, PM hand edits and workarounds, and failing check output with trace paths, each with transcript file:line, and the extract is still readable after the transcripts and worktrees are deleted.
+
+## R-25: A known-problems catalog in the plugin is matched by the extract, the preflight and the stage workflow
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given catalog entries for webkit on a non-Ubuntu host, settings.local.json not reaching worktrees, guard-refused shell shapes, harness-only claude-code tests, node_modules missing after a merge and tracked .pyc files, when the extract, the preflight or a stage hits one of them, then it is reported by its catalog id with the entry's known fix instead of as a new problem.
+
+## R-26: A startup check finds host problems before any crew starts
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given a plan whose crews list their needs (a browser that launches, npm ci, gh auth, a system library), when the plan is approved, then `factory doctor` probes each need on the host and reports the failures, and the client gets one approval bundle: allow rules to add to the committed .claude/settings.json, allowed downloads, and standing rulings for known problems, each logged as a decision.
+
+## R-27: An independent judge reports evidence-backed findings
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given the extract and the transcripts, and not the PM's account of the run, when the retro runs, then a truss:retro-judge agent per crew and one combining judge report findings, each with a kind (mechanical bug, friction, missing agent persona, missing skill, missing hook or gate, misleading prompt, architecture decision), transcript file:line evidence, its cost, the fix and the file the fix belongs in; a finding with no cited transcript line is dropped, and transcript text is treated as data, never instructions.
+
+## R-28: The judge reads extract-led on Opus
+Status: open
+Kind: nfr
+Measure: at most 1 + (number of crews) judge agents per retro, each on Opus at effort medium, each opening only the transcript spans the extract points to
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+
+## R-29: Approved findings are fixed automatically through a truss run with QC
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given the judge's findings, when a checking engineer has sorted them into fix now, defer or drop and deduped them against the catalog, then the fix-now findings become a goal that runs through truss automatically (crews, tests, QC engineer, merge), a fix that fails QC is not applied and is reported, and the client sees what was applied.
+
+## R-30: Retro fixes touch only the files truss uses
+Status: open
+Kind: constraint
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: The retro may edit the plugin's agents, skills, hooks, workflows, scripts and catalog, the project's CLAUDE.md and .claude/ files including .claude/settings.json, and any other file that makes truss perform better; it never changes the code a truss run delivered. On another project its plugin fixes are drafted upstream changes. A permission or classifier refusal of one of its edits is shown to the client, never worked around.
+
+## R-31: The next retro checks that fixed findings did not come back
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given a finding fixed by an earlier retro and recorded with its id, when a later run's retro runs, then it reports for each fixed finding whether its evidence pattern recurred, and a recurrence is a new finding that cites the earlier fix.
+
+## R-32: Raw transcript text stays local; committed files stay clean
+Status: open
+Kind: constraint
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: The extract in the truss dir (inside .git, never committed) may hold short quoted transcript lines with file:line; every file the retro commits (catalog entries, fixes, ADR text) holds no names, emails, user paths, tokens or pasted secrets, and a scrubber checks this before each commit.
+
+## R-33: The retro is proved by replaying this session
+Status: open
+Kind: functional
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: Given this session's truss dir and transcripts, when the new retro runs over them (reading what the session left, not re-running it), then its findings include webkit missing host libraries, settings.local.json not reaching worktrees, guard-refused shell shapes and tracked .pyc files dirtying main, each citing a transcript file:line; unit tests on fixture transcripts cover the extract.
+
+## R-34: The retro may read raw transcripts, replacing P24 for the retro
+Status: open
+Kind: constraint
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: client
+Example: A new ADR records the client's ruling that the retro reads transcripts, replacing P24 (the retro reads no raw logs) for the retro only; the event log still holds no message, prompt or report text (P8).
+
+## R-35: The extract outlives the transcripts
+Status: open
+Kind: nfr
+Measure: the extract is kept with the truss dir until the truss dir is removed, and 0 retro steps need a transcript older than Claude Code's 30-day cleanup
+Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
+Source: default
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
+- The retro never changes the code a truss run delivered; it changes only files truss uses (client ruling, 2026-10-31).

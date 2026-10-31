@@ -21,7 +21,7 @@ PRE = os.path.join(FIXTURES, "retro-pre040")
 NEW = os.path.join(FIXTURES, "retro-040")
 NR = "not recorded"
 TOP_KEYS = {"leftovers", "leftoverDetails", "retro", "dir", "split", "runs", "qcFiles", "plan", "eventsSkipped", "eventsOutsideRuns"}
-RUN_KEYS = {"started", "goal", "decisions", "freeform", "recommendations", "messages", "spawns", "stalls", "escalations", "qcs", "allowancesSpent", "fetches", "extendPasses", "defaultDecisions", "openClientActions"}
+RUN_KEYS = {"started", "goal", "decisions", "freeform", "recommendations", "messages", "spawns", "stalls", "escalations", "qcs", "allowancesSpent", "fetches", "refusals", "extendPasses", "defaultDecisions", "openClientActions"}
 
 
 def snapshot(root):

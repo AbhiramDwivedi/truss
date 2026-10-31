@@ -723,7 +723,20 @@ t('stage members: an integrate refused for unparsed Truss-Role trailers stops BL
 t('stage members: a member prompt says to keep the trailers in the last block and check them with %(trailers)', async () => {
   const p = call(await runStage([entry('a')], { labels: base() }), 'a-builder').prompt
   has(p, "last block, with no blank line between them or before any Co-Authored-By line")
-  has(p, 'git log -1 --format=%(trailers:key=Truss-Role,valueonly)')
+  // quoted: the worktree guard refuses the unquoted parentheses as too complex to verify
+  has(p, "git log -1 --format='%(trailers:key=Truss-Role,valueonly)'")
+  assert.ok(!p.includes('--format=%(trailers'))
+})
+t('stage members: member and stress prompts steer Bash into shapes the worktree guard lets through', async () => {
+  const builder = call(await runStage([entry('a')], { labels: base() }), 'a-builder').prompt
+  const stress = call(await runStage([rtCrew()], { labels: base('a', { 'a-stress': RT0 }) }), 'a-stress').prompt
+  for (const p of [builder, stress]) {
+    has(p, "Your worktree is guarded by Claude Code: it refuses a Bash command it can't show stays inside the worktree")
+    has(p, "Write and change files with the Write and Edit tools, never a shell heredoc (`cat > f <<'EOF'`)")
+    has(p, 'Run one plain command per Bash call: no `&&`, `;`, `cd`, for-loop or `$VAR` argument')
+    has(p, 'rather than feeding python or node inline text that names git')
+    has(p, 'Never cd into the main checkout.')
+  }
 })
 t('stage members: the integrate-conflict resolver prompt names git -C with the crew worktree', async () => {
   const r = await runStage([entry('a')], {

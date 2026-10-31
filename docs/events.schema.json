@@ -8,7 +8,7 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
@@ -91,6 +91,22 @@
           { "properties": { "tool": { "const": "WebFetch" } }, "required": ["url"], "not": { "required": ["query"] } },
           { "properties": { "tool": { "const": "WebSearch" } }, "required": ["query"], "not": { "required": ["url"] } }
         ]
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "refusal" } } },
+      "then": {
+        "description": "One tool call refused before or as it ran (P24). crew is the caller's crew slug, or main for a caller outside every crew; agent is the agent's name, or main for the main session. source names who refused: truss (truss's own hooks), worktree-guard (Claude Code's worktree confinement for an isolated agent), classifier (the auto-mode classifier), permission (a permission rule or the person), other (another plugin's deny). category is the refusal's own reason with quoted names and paths taken out; program is a Bash command's first word and shape the kinds of part its first line holds, never the command's text. Written only while a plan.json exists.",
+        "additionalProperties": false,
+        "required": ["tool", "source", "category", "program", "shape"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true, "agent": true,
+          "tool": { "type": "string", "minLength": 1 },
+          "source": { "enum": ["truss", "worktree-guard", "classifier", "permission", "other"] },
+          "category": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "program": { "type": ["string", "null"], "maxLength": 40 },
+          "shape": { "type": "array", "uniqueItems": true, "items": { "enum": ["heredoc", "compound", "cd", "subst", "var", "pipe", "loop"] } }
+        }
       }
     },
     {

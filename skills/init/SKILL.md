@@ -1,6 +1,6 @@
 ---
 name: init
-description: Checks that the project has a truss architecture doc and, when it doesn't, has the truss:design-engineer agent write one (principles, module map, ADRs for decisions already in the code). Then builds on kit's manifest when the project has one, never setting kit up itself, and proposes the 0.4.0 keys of .claude/truss.json (roles, deploy, writingSkill, promptOverrides), writing only the ones the client approves. Also proposes a short PM section for the project's CLAUDE.md. Use when the person runs /truss:init, asks to set up truss or write the project's architecture doc, or when a truss run finds no architecture doc.
+description: Checks that the project has a truss architecture doc and, when it doesn't, has the truss:design-engineer agent write one (principles, module map, ADRs for decisions already in the code). Then builds on kit's manifest when the project has one, never setting kit up itself, and proposes the 0.4.0 keys of .claude/truss.json (roles, deploy, writingSkill, promptOverrides), writing only the ones the client approves. Also proposes a short PM section for the project's CLAUDE.md, and a narrow permissions allowlist for the project's .claude/settings.json that the client writes. Use when the person runs /truss:init, asks to set up truss or write the project's architecture doc, or when a truss run finds no architecture doc.
 ---
 
 # truss init
@@ -89,6 +89,37 @@ Also propose a PM section for the project's `CLAUDE.md`, unless it already has o
 > In a truss run the main session is the PM. It edits `plan.json`, `goals/` and `decisions.md` in the truss dir, writes check scripts there, and fast-forwards crew branches into the target. This describes the role. It pre-approves nothing a hook or the client refuses.
 
 Append it to `CLAUDE.md` only if the client approves; never overwrite or reword existing text, and create the file only if the client asks.
+
+Also propose a permissions allowlist for the project's `.claude/settings.json`. Crew members ask before each command no rule allows, and every refused call costs a turn. A truss session's own count (`refusals` in `/truss:retro`) was 195 refusals in one run: 168 from Claude Code's worktree guard, 27 from the auto-mode classifier (21 of them "no verdict" on Write and Edit), 2 from truss's Workflow gate and 0 plain permission denials. So:
+
+- Propose rules only for the commands a crew runs every time: the project's tests and build, read-only git, and truss's own scripts. Take the test and build commands from what the repo shows (`package.json` scripts, a `Makefile`, CI config). For example:
+
+  ```json
+  {
+    "permissions": {
+      "allow": [
+        "Bash(node --test:*)",
+        "Bash(npm test:*)",
+        "Bash(npm --prefix ui test:*)",
+        "Bash(git status:*)",
+        "Bash(git log:*)",
+        "Bash(git diff:*)",
+        "Bash(git show:*)",
+        "Bash(git rev-parse:*)",
+        "Bash(node <plugin>/bin/factory.ts:*)",
+        "Bash(python3 -I <plugin>/scripts/retro.py:*)"
+      ]
+    }
+  }
+  ```
+
+  `<plugin>` is this plugin's root as an absolute path (two directories above this skill's own folder). Keep only the rules that fit this repo, and leave out any key the file already has.
+- Each rule is narrow: a program and its subcommand or a fixed script. Never propose a wildcard over anything that runs code it is handed: no `Bash(*)`, `Bash(node:*)`, `Bash(python3:*)`, `Bash(bash:*)`, `Bash(sh:*)`, `Bash(npx:*)`, `Bash(env:*)`, `Bash(xargs:*)`, `Bash(git:*)` or the like.
+- The rules go in `.claude/settings.json`, the committed file. `.claude/settings.local.json` is not checked in, so it never reaches the agents' worktrees, and a rule there helps only the main session.
+- No allow rule reaches Claude Code's worktree guard, the source of most refusals. It is built into Claude Code, not truss. truss's stage prompts steer members past it (one plain command per Bash call, files written with Write and Edit). Say so, so the client doesn't expect the allowlist to fix it.
+- The classifier's "no verdict" refusals on Write and Edit come from the classifier service, not from a rule. A retry usually passes. Propose no rule for them.
+
+Show the client the proposed JSON and where each rule came from. The client writes the approved rules into `.claude/settings.json` themselves: truss never writes a settings file, approved or not (the classifier refuses it as self-modification, and that refusal is never worked around). If the client approves none, say so and carry on.
 
 Show the client each proposed key with its value and where it came from, and ask which to write. Write only the approved ones. If there is nothing to propose, or the client approves nothing, say so and go to step 8.
 
