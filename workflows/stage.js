@@ -179,6 +179,7 @@ function memberPrompt(crew, role, parts) {
     'Every commit you make ends with these trailers:',
     `Truss-Crew: ${crew.slug}`,
     `Truss-Role: ${TRAILER_ROLE[role]}`,
+    'They go in the message\'s last block, with no blank line between them or before any Co-Authored-By line, or git does not read them. After each commit, check that `git log -1 --format=%(trailers:key=Truss-Role,valueonly)` prints the role; if it prints nothing, fix the message with git commit --amend. A merge refuses a commit whose Truss-Crew or Truss-Role git cannot read.',
     '',
     'You have no Agent tool; do the work yourself.',
     'Commit on your branch and report the branch and commit. Put your proof in the proof field. marker is DONE when finished, CHECKPOINT when you must stop early (put a handoff note in text), QUESTION, BLOCKED or PROPOSAL when you cannot go on.',
@@ -254,6 +255,9 @@ async function integrateNow(crew, branch, at) {
   const command = `integrate --slug ${sh(crew.slug)} --branch ${sh(branch)}`
   let r = await runFactory(crew, command, 'merged')
   if (r.met) return
+  // commits whose Truss-Crew or Truss-Role line git does not parse as a trailer: a stop that names them, never a resolver or a QC role FAIL
+  const bad = r.parsed && Array.isArray(r.parsed.trailers) ? r.parsed.trailers.map(String) : []
+  if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflictsOf(r), at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)

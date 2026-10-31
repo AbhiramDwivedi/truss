@@ -26,7 +26,7 @@ import {
 const APPROVED = '2026-10-01T00:00:00.000Z'
 const CFG = { merge: 'sequential', target: 'main' }
 const OLD_SPAWN = () => new Date(Date.now() - 3 * 3600_000).toISOString()
-const KEYS = ['merged', 'rework', 'blocked', 'refused', 'audit', 'incomplete']
+const KEYS = ['merged', 'rework', 'blocked', 'refused', 'audit', 'incomplete', 'stopped']
 const AAA = 'a'.repeat(40)
 const BBB = 'b'.repeat(40)
 
@@ -117,14 +117,14 @@ const dirListing = (d) => (existsSync(d) ? readdirSync(d, { recursive: true }).m
 // ---------------------------------------------------------------------------------------------------------------
 // output shape
 
-test('finish --result: a clean pass prints one line with the six keys in order, merges, exits 0', () => {
+test('finish --result: a clean pass prints one line with the seven keys in order, merges, exits 0', () => {
   const w = scenario([{ slug: 's' }])
   const res = w.finish()
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr + res.stdout)
   assert.deepEqual(Object.keys(j), KEYS)
   assert.deepEqual(j.merged, ['s'])
-  assert.deepEqual([j.rework, j.blocked, j.refused, j.incomplete], [[], [], [], []])
+  assert.deepEqual([j.rework, j.blocked, j.refused, j.incomplete, j.stopped], [[], [], [], [], []])
   assert.equal(statusOf(w, 's'), 'merged')
   assert.equal(mainNow(w), w.c.s.head, 'fast-forwarded to the crew head')
 })
@@ -644,4 +644,22 @@ test('stopped result: not merged, the crew stays running', () => {
   const j = assertOneLine(w.finish())
   assertHeld(w, j)
   assert.ok(existsSync(w.c.s.wt))
+})
+
+test('stopped result: listed under stopped with its tag, step and the first line of its text; a run crew with no result is listed too', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'q' }, { slug: 'n' }])
+  const long = 'x'.repeat(400)
+  writeFileSync(w.resFile, JSON.stringify([
+    { slug: 's', state: 'stopped', tag: 'QUESTION', text: '\nExtend owns to src/z?\nmore detail', at: 'scope' },
+    { slug: 'q', state: 'stopped', tag: 'BLOCKED', text: long, at: 'qc' },
+  ]))
+  const res = w.finish()
+  const j = assertOneLine(res)
+  assert.equal(res.status, 0, 'a stop alone does not change the exit code')
+  for (const slug of ['s', 'q', 'n']) assertHeld(w, j, slug)
+  assert.deepEqual(entry(j, 'stopped', 's'), { slug: 's', tag: 'QUESTION', at: 'scope', why: 'Extend owns to src/z?' })
+  assert.equal(entry(j, 'stopped', 'q').why, `${'x'.repeat(299)}…`)
+  assert.deepEqual(entry(j, 'stopped', 'n'), { slug: 'n', tag: null, at: null, why: 'no result for this crew in --result' })
+  const passed = scenario([{ slug: 's' }])
+  assert.deepEqual(assertOneLine(passed.finish()).stopped, [])
 })

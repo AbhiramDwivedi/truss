@@ -708,6 +708,23 @@ t('stage members: an integrate conflict spawns the resolver with the worktree, t
   assert.equal(r.timeline.filter((e) => e === 'start:runner:a:integrate:feat/t').length, 2)
   passedShape(r.res[0], 'a', HEAD, 'a-qc')
 })
+t('stage members: an integrate refused for unparsed Truss-Role trailers stops BLOCKED naming the commits, with no resolver', async () => {
+  const r = await runStage([entry('a')], {
+    labels: base(),
+    runner: ({ key }) => (key === 'integrate:feat/t' ? rj({ merged: false, conflicts: [], trailers: ['c0ffee tests for a'] }, 1) : undefined),
+  })
+  stopped(r.res[0], 'BLOCKED', 'write-tests')
+  has(r.res[0].text, 'c0ffee tests for a')
+  has(r.res[0].text, 'Truss-Role')
+  assert.ok(!had(r, 'a-resolver'))
+  assert.ok(!had(r, 'a-builder'))
+  assert.equal(r.timeline.filter((e) => e === 'start:runner:a:integrate:feat/t').length, 1)
+})
+t('stage members: a member prompt says to keep the trailers in the last block and check them with %(trailers)', async () => {
+  const p = call(await runStage([entry('a')], { labels: base() }), 'a-builder').prompt
+  has(p, "last block, with no blank line between them or before any Co-Authored-By line")
+  has(p, 'git log -1 --format=%(trailers:key=Truss-Role,valueonly)')
+})
 t('stage members: the integrate-conflict resolver prompt names git -C with the crew worktree', async () => {
   const r = await runStage([entry('a')], {
     labels: base('a', { 'a-resolver': marked('DONE', 'resolved') }),
