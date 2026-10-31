@@ -44,6 +44,43 @@ test('classifier: the bracketed category, or no verdict', () => {
   assert.deepEqual(refusalOf(nv), { source: 'classifier', category: 'no verdict' })
 })
 
+const SAFETY_HEAD = 'Permission for this command was denied by a built-in Claude Code safety check, not by the user. The check stops removals that can delete far more than intended: a system, home or workspace directory, or a target it cannot resolve, such as a shell variable that, if unset or empty, turns this into `rm -rf /` or `rm -rf /*`. Only a person may approve such a removal, and no person did (the permission prompt timed out, or none was shown). The command was NOT run; do not claim it succeeded. Do not work around the check by splitting, scripting, or re-issuing the removal through another tool or shell: the check exists because a removal like this can destroy the user\'s data, and getting past it would not make it safe. If the text below suggests a safe rewrite, run that instead; it goes through the same check. Otherwise finish the rest of the task without this removal, tell the user what you wanted to delete and why, and leave the removal to them. What was flagged: '
+const SAFETY_TEXT = SAFETY_HEAD + 'This command passes a shell -c script that runs rm, and Claude Code could not check the script for dangerous removals. Approve only if you have read the script.'
+const NO_EXPLANATION_TEXT = "Permission for this action was denied by the Claude Code auto mode classifier. Reason: The server-side auto mode classifier judged this action dangerous (it gave no explanation). If you have other tasks that don't depend on this action, continue working on those."
+
+test('F-40: the built-in safety check is source permission, category built-in safety check', () => {
+  assert.deepEqual(refusalOf({ isError: true, text: SAFETY_TEXT }), { source: 'permission', category: 'built-in safety check' })
+})
+
+test('F-40: the safety check as a deny string gives the same', () => {
+  assert.deepEqual(refusalOf({ deny: SAFETY_TEXT }), { source: 'permission', category: 'built-in safety check' })
+})
+
+test('F-40: a different "What was flagged:" sentence gives the same category', () => {
+  const other = SAFETY_HEAD + 'This command removes $DIR/ and $DIR could not be resolved. Approve only if you are sure.'
+  assert.deepEqual(refusalOf({ isError: true, text: other }), { source: 'permission', category: 'built-in safety check' })
+})
+
+test('F-40: the classifier with no explanation is source classifier, category no explanation', () => {
+  assert.deepEqual(refusalOf({ isError: true, text: NO_EXPLANATION_TEXT }), { source: 'classifier', category: 'no explanation' })
+})
+
+test('F-40: the older classifier forms keep their categories', () => {
+  const r = { isError: true, text: 'Permission for this action has been denied by the Claude Code auto mode classifier. Reason: [Self-Modification] writes the agent settings.' }
+  assert.deepEqual(refusalOf(r), { source: 'classifier', category: 'Self-Modification' })
+  assert.deepEqual(refusalOf({ isError: true, text: 'The auto mode classifier gave no verdict on the safety of Write, so the call was not run.' }), { source: 'classifier', category: 'no verdict' })
+})
+
+test('F-40: refusalLine for the safety check validates and carries no command body', () => {
+  const l = line('Bash', { command: 'rm -rf x' }, { isError: true, text: SAFETY_TEXT })
+  assert.ok(l, 'a line is written')
+  assert.equal(l.source, 'permission')
+  assert.equal(l.category, 'built-in safety check')
+  assert.equal(l.program, 'rm')
+  const { event, ...fields } = l
+  assert.deepEqual(validateEvent({ v: 1, ts: '2026-10-31T07:00:00.000Z', event, ...fields }), [])
+})
+
 test('permission: a denied rule or the person saying no', () => {
   assert.deepEqual(refusalOf({ isError: true, text: 'Permission to use Bash with command rm -rf x has been denied.' }), { source: 'permission', category: 'denied' })
   assert.deepEqual(refusalOf({ isError: true, text: "The user doesn't want to proceed with this tool use." }), { source: 'permission', category: 'the person said no' })
