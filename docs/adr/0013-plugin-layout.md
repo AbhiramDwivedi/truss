@@ -223,3 +223,65 @@ The contract `checks/repo-home.check.ts` repeats these runs on every check: it s
 
 - https://code.claude.com/docs/en/plugin-marketplaces: fetched by the design engineer at plan time (plan-repo-home.md, "Sources fetched").
 - https://code.claude.com/docs/en/plugins/marketplace-reference.md: fetched at plan time, and again by this ADR's writer on 2026-10-31 to confirm `owner/repo@ref` and `owner/repo#ref`, `sparsePaths` on the marketplace source only (set by `--sparse`), the git-subdir sparse checkout, `ref` defaulting to the repository's default branch, and the top-level field list. That page now also lists `metadata.pluginRoot` among the top-level fields; it adds no sparse default, so option D's finding stands.
+
+## Amendment (goal plugin-move)
+
+Written by the design crew `move-design` (stage 0 of goal `plugin-move`), at main 1cc086f. It updates this ADR for what main gained since it was written, and settles the open sync-check TODO. Where it differs from the sections above, the amendment wins. Every line number below is at 1cc086f.
+
+### 1. The moved list gains resources/
+
+Decision C6 (decisions.md, 11:38): plugins/truss must carry the top-level `resources/` module (ADR-0015), which landed after this ADR. Re-listed from `git ls-tree --name-only HEAD` at 1cc086f, the move takes these 17 paths into plugins/truss/: `agents`, `bin`, `brief`, `docs`, `evals`, `hooks`, `resources`, `retro`, `scripts`, `skills`, `tests`, `types`, `workflows`, `.claude-plugin`, `tsconfig.json`, `README.md`, `CHANGELOG.md`. It also:
+
+- copies `LICENSE` to `plugins/truss/LICENSE`;
+- untracks the 24 `tests/__pycache__/*.pyc` files tracked at 1cc086f (`git ls-files tests/__pycache__` lists 24); `.gitignore` already ignores them.
+
+### 2. The sync check is a PM ship step
+
+The sync check between `origin/marketplace` and `main:marketplace` is a PM ship step, not an automated check: after every change to `main:marketplace/`, the PM re-publishes the branch and runs ship step 4 above, `test "$(git rev-parse origin/marketplace^{tree})" = "$(git rev-parse main:marketplace)"`. This replaces the TODO in "Seams after the move" and in "Not confirmed". No crew of goal plugin-move builds a check for it.
+
+### 3. The ui seam files: 13
+
+The recount at 1cc086f, `git grep -nE "dirname\(uiDir\)|resolve\(uiDir, *'\.\.'\)|join\(uiDir, *'\.\.'\)" -- ui/`, lists 10 files:
+
+- `ui/contract/e2e/live-status.spec.ts:14`
+- `ui/contract/e2e/retro-stage.spec.ts:15`
+- `ui/contract/state.check.ts:14`
+- `ui/e2e/harness.ts:23`
+- `ui/server/main.ts:43`
+- `ui/test/session/session.test.ts:12`
+- `ui/test/state/design.test.ts:16`
+- `ui/test/state/notices.test.ts:14`
+- `ui/test/state/retro.test.ts:17`
+- `ui/test/state/store.test.ts:16`
+
+Three more take the plugin to be ui/'s parent another way, so the grep misses them:
+
+- `ui/contract/live.check.ts:16`, `dirname(dirname(dirname(fileURLToPath(import.meta.url))))`, passed as the `--plugin` root at `:136`;
+- `ui/spike/run.ts:13`, `resolve(here, '..', '..')`, used as the plugin path at `:33` and `:68`;
+- `ui/e2e/session.spec.ts:14`, which reads `ui/contract/fixtures/sdk-stream.jsonl` through the harness's `root`.
+
+The total is 13, replacing the nine-plus-two list above. `ui/contract/live.check.ts` and `ui/spike/run.ts` must pass `join(root, 'plugins', 'truss')` as the plugin root.
+
+### 4. The plugin files that break under a pure move: 6
+
+- `tests/contract-stubs.check.ts`
+- `tests/evals-run-model.check.ts`
+- `evals/run-model.ts:140-143` (the case's worktree is a detached `git worktree add` of HEAD, and `:143` removes `evals/golden` from its root)
+- `tests/main-edit-gate.check.ts:117-122` (it reads `../.claude/truss.json` from the tests dir, and builds `${repoRoot}/hooks/register.ts` and `${repoRoot}/docs/requirements.md` from the repo root)
+- `tests/retro/cli.check.ts:664` (`join(PLUGIN, 'ui', 'README.md')`)
+- `tests/run-procedure.check.ts:22` (`const REPO = PLUGIN`) and `:149-150` (it asserts `architecture` `docs/architecture.md` and `adr` `docs/adr`)
+
+This replaces the two-file list above.
+
+### 5. The seams the move pins
+
+- `ui/server/main.ts`: the default plugin dir becomes `join(uiDir, '..', 'plugins', 'truss')`; `--plugin` still overrides it.
+- `.claude/truss.json`: `architecture` = `plugins/truss/docs/architecture.md`, `adr` = `plugins/truss/docs/adr`; `merge` and `target` stay. The PM updates plan.json's `architecture` after the merge (C4).
+- `marketplace/.claude-plugin/marketplace.json`: one plugin `truss`, source `git-subdir`, url `AbhiramDwivedi/truss`, path `plugins/truss`, ref `main`.
+- Root `package.json`: `test` and `test:ui` scripts and no dependencies.
+
+`checks/repo-home.check.ts` (suites `repo-home layout` and `repo-home marketplace`) and the plugin-move acceptance test pin all four, so no new contract test is needed.
+
+### 6. The architecture-doc text now lives in the doc
+
+The "Architecture-doc text for the later goal" section above is now the `## Repo layout (ADR-0013)` section of `docs/architecture.md`, updated for `resources/` and these seams. It moves with the doc to `plugins/truss/docs/architecture.md`.

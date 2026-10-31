@@ -22,6 +22,8 @@ Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by t
 
 [ADR-0016](adr/0016-plugin-fixes.md) (proposed 2026-10-31 by the `plugin-fixes-design` crew) fixes the plugin gaps this run proved, on the client's ruling "Don't just log a plugin bug, fix it." `factory.ts start` gains a `warnings` key that says when a stress crew needs `truss:stress-engineer` changed after the session started, and refuses a crew whose goal file is missing, by path. The hooks refuse a SendMessage that resumes a plan or amend design engineer, and `envFailure` and `tests-check` get stricter.
 
+[ADR-0013](adr/0013-plugin-layout.md) (decided by the client; amended by goal `plugin-move`) gives the repo its own marketplace: the plugin moves to a `plugins/truss/` directory, the catalog lives on its own `marketplace` branch, and a plugin-only install gets no `ui/`. Details, and what is built so far, are in "Repo layout (ADR-0013)" below.
+
 The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
 
 ```mermaid
@@ -1196,6 +1198,87 @@ Nothing. The state, the replay ring, the requests and the transcript live in the
 ### Not verified yet
 
 The open points are in ADR-0011, "Not confirmed". The one that can stop a run: whether the `[truss] dir:` note reaches the PM when the SDK hosts the session. `ui/contract/live.check.ts` and the client's own R-21 run must show it.
+
+## Repo layout (ADR-0013)
+
+The move to plugins/truss/ is not done yet: at main 1cc086f the plugin's 17 top-level paths still sit at the repo root beside `ui/`, and neither `plugins/truss/` nor `marketplace/` exists; goal `plugin-move` (crew `plugin-move`, stage 1) does the move and rewrites this line.
+
+This section is the design from [ADR-0013](adr/0013-plugin-layout.md) and its amendment for goal `plugin-move`. A user runs two commands, `claude plugin marketplace add AbhiramDwivedi/truss` and `claude plugin install truss@truss`, and gets the plugin with no `ui/` anywhere under their Claude config (ADR-0013, "The client's rulings"). Two things make that work: the plugin lives in its own directory, `plugins/truss/`, and the catalog lives on its own `marketplace` branch, whose one entry is a `git-subdir` source into `main:plugins/truss`. When the move lands, this section moves with the doc to `plugins/truss/docs/architecture.md`.
+
+### What moves
+
+The move takes the 17 top-level plugin paths that `git ls-tree --name-only HEAD` lists at 1cc086f, beside `.claude`, `.gitignore`, `LICENSE`, `checks` and `ui`: `agents`, `bin`, `brief`, `docs`, `evals`, `hooks`, `resources`, `retro`, `scripts`, `skills`, `tests`, `types`, `workflows`, `.claude-plugin`, `tsconfig.json`, `README.md` and `CHANGELOG.md`. `resources/` (ADR-0015) came after ADR-0013 was written; decision C6 adds it. `plugins/truss/` also gets a copy of `LICENSE`, and the 24 tracked `tests/__pycache__/*.pyc` files are untracked (`.gitignore` already ignores `__pycache__/` and `*.pyc`).
+
+After the move the repo root holds exactly `.claude`, `.gitignore`, `LICENSE`, `checks`, `marketplace`, `package.json`, `plugins` and `ui` (the plugin-move acceptance test's root-tree guard).
+
+### The two branches
+
+```mermaid
+flowchart TB
+  subgraph main["branch main (repo root)"]
+    plugin["truss plugin<br/>[plugins/truss/**]<br/>agents, bin, brief, docs, evals, hooks, resources,<br/>retro, scripts, skills, tests, types, workflows,<br/>.claude-plugin, LICENSE copy"]
+    ui["Local web UI<br/>[ui/**]<br/>Optional; never installed by the plugin"]
+    mdir["Catalog source<br/>[marketplace/.claude-plugin/marketplace.json,<br/>marketplace/README.md]"]
+    checks["Root contract<br/>[checks/repo-home.check.ts]"]
+    root["Root files<br/>[package.json, LICENSE, .gitignore, .claude/truss.json]"]
+  end
+  subgraph mbranch["branch marketplace (GitHub default)"]
+    cat["Published catalog<br/>[.claude-plugin/marketplace.json, README.md]<br/>tree = main:marketplace"]
+  end
+  subgraph cfg["User's Claude config dir"]
+    mclone["Marketplace clone<br/>[plugins/marketplaces/truss/]<br/>two files"]
+    cache["Plugin cache<br/>[plugins/cache/truss/truss/VERSION/]<br/>plugins/truss/** only"]
+  end
+
+  mdir -->|"PM: git subtree split --prefix=marketplace main"| cat
+  cat -.->|"git-subdir entry: url AbhiramDwivedi/truss,<br/>path plugins/truss, ref main"| plugin
+  ui -->|"--plugin, default ui/../plugins/truss<br/>(ui/server/main.ts)"| plugin
+  root -->|"architecture, adr = plugins/truss/docs/..."| plugin
+  checks -->|"reads, runs the install commands"| mdir
+  checks -->|"reads"| plugin
+  cat -->|"claude plugin marketplace add"| mclone
+  plugin -->|"claude plugin install truss@truss<br/>(sparse fetch)"| cache
+```
+
+*The layout after the move. main holds the plugin, the UI and the catalog source; the `marketplace` branch holds only the published catalog. Solid arrows are writes, reads or fetches; the dotted arrow is the catalog entry's reference into main. Neither box under the config dir gets `ui/`.*
+Traces to: ADR-0013 Decision 1 and 2, and its "Architecture-doc text for the later goal"; ADR-0013 "Amendment (goal plugin-move)"; `checks/repo-home.check.ts:46-83`, `:159-166`.
+
+### Install flow
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant CC as claude CLI
+  participant GH as github.com/AbhiramDwivedi/truss
+  participant Cfg as Claude config dir
+
+  User->>CC: claude plugin marketplace add AbhiramDwivedi/truss
+  CC->>GH: clone the default branch (marketplace)
+  GH-->>CC: .claude-plugin/marketplace.json, README.md
+  CC->>Cfg: write plugins/marketplaces/truss/ (two files, no ui/)
+  User->>CC: claude plugin install truss@truss
+  CC->>Cfg: read the truss entry: source git-subdir, url AbhiramDwivedi/truss, path plugins/truss, ref main
+  CC->>GH: sparse fetch of main:plugins/truss
+  GH-->>CC: plugins/truss/** only
+  CC->>Cfg: write plugins/cache/truss/truss/VERSION/ (no ui/, checks/, plugins/ or package.json)
+```
+
+*The two documented commands. Neither step downloads `ui/`. The entry's `ref` `main` is required: without it, the git-subdir fetch would land on the default branch, which is the two-file `marketplace` branch (ADR-0013 Decision 2).*
+Traces to: ADR-0013 Decision 2 and "Install flow"; `checks/repo-home.check.ts:150-151` (the two commands, run literally), `:76-79` (the entry), `:159-166` (the cache).
+
+The install flow is proven against a local smart-HTTP copy of the repo, not against github.com (ADR-0013, "Scope of the proof"). The PM's real-GitHub check after the ship steps proves it there.
+
+### Seams the move pins
+
+| Seam | Producer | Consumer | Contract | Pinned by |
+| --- | --- | --- | --- | --- |
+| The plugin root the UI loads | plugin | `ui/server/main.ts` | Default plugin dir `join(uiDir, '..', 'plugins', 'truss')` when no `--plugin` is given. Today `ui/server/main.ts:43` is `resolve(args.plugin ?? join(uiDir, '..'))`, ui/'s parent. | the plugin-move acceptance test (the ui server starts with no `--plugin`) |
+| The architecture doc paths | repo layout | truss hooks and `bin/factory.ts` | `.claude/truss.json` `architecture` = `plugins/truss/docs/architecture.md`, `adr` = `plugins/truss/docs/adr`; `merge` `sequential` and `target` `main` stay. Today it names `docs/architecture.md` and `docs/adr`. | `checks/repo-home.check.ts:60-64` (suite `repo-home layout`); the plugin-move acceptance test |
+| The catalog entry | marketplace | Claude Code's installer | `marketplace/.claude-plugin/marketplace.json`: name `truss`, an owner, one plugin `truss` with no `version`, source `{"source":"git-subdir","url":"AbhiramDwivedi/truss","path":"plugins/truss","ref":"main"}`; `marketplace/` tracks exactly that file and `marketplace/README.md` | `checks/repo-home.check.ts:67-83` (suite `repo-home marketplace`) |
+| Root scripts | repo layout | the developer | root `package.json` with no `dependencies` or `devDependencies`; `scripts.test` = `node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && python3 -B -m unittest discover -s plugins/truss/tests && node --test checks/*.check.ts`, `scripts["test:ui"]` = `npm --prefix ui test` | `checks/repo-home.check.ts:54-59`; the plugin-move acceptance test (exact scripts) |
+| The published branch | the PM's publish step | `claude plugin marketplace add` | `origin/marketplace^{tree}` equals `main:marketplace` | the sync check, a PM ship step (ADR-0013 amendment); no automated check |
+
+The ADR-0013 amendment lists the other files the move changes: 13 ui files that take the plugin to be ui/'s parent, and 6 plugin files that break under a pure move.
 
 ## Failure modes and recovery
 
