@@ -34,8 +34,9 @@ describe('item 1: no-polling rule in every member brief', () => {
     has(FOREMAN, /no polling loops, no sleep, no relaunching waiters/i, 'no polling loops, no sleep')
     has(FOREMAN, /never a shared temp path/i, 'no shared temp path')
   })
-  test('stage.js memberPrompt carries the same rule', () => {
-    has(STAGE, RULE, 'no-polling rule in stage.js')
+  test('stage.js memberPrompt runs commands in the foreground with a Bash timeout', () => {
+    has(STAGE, /Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor/, 'foreground rule (F-1) in stage.js')
+    gone(STAGE, RULE, 'old run_in_background sentence in stage.js')
     has(STAGE, /no polling loops, no sleep, no relaunching waiters/i, 'no polling loops in stage.js')
     has(STAGE, /never a shared temp path/i, 'no shared temp path in stage.js')
   })

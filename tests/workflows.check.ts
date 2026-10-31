@@ -729,12 +729,11 @@ t('stage members: an integrate refused for unparsed Truss-Role trailers stops BL
   assert.ok(!had(r, 'a-builder'))
   assert.equal(r.timeline.filter((e) => e === 'start:runner:a:integrate:feat/t').length, 1)
 })
-t('stage members: a member prompt says to keep the trailers in the last block and check them with %(trailers)', async () => {
+t('stage members: a member prompt says to keep the trailers in the last block and check them with git log -1 --format=%B', async () => {
   const p = call(await runStage([entry('a')], { labels: base() }), 'a-builder').prompt
   has(p, "last block, with no blank line between them or before any Co-Authored-By line")
-  // quoted: the worktree guard refuses the unquoted parentheses as too complex to verify
-  has(p, "git log -1 --format='%(trailers:key=Truss-Role,valueonly)'")
-  assert.ok(!p.includes('--format=%(trailers'))
+  has(p, 'git log -1 --format=%B')
+  assert.ok(!p.includes('%(trailers'))
 })
 t('stage members: member and stress prompts steer Bash into shapes the worktree guard lets through', async () => {
   const builder = call(await runStage([entry('a')], { labels: base() }), 'a-builder').prompt
