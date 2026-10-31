@@ -20,7 +20,7 @@ Never be brave with the truth: proof or it didn't happen.
 
 ## Items
 
-An item is a foreman's `QUESTION:`, `PROPOSAL:` or `BLOCKED:` message, a question the PM wants to put to the client, a foreman's proposal the PM says it wants to take up, or the PM's own proposal to add scope. Handle every item in one report. Merge duplicates into one item, say which messages it covers, and give it the stricter tag: `BLOCKED:` over `QUESTION:` over `PROPOSAL:`.
+An item is a foreman's `QUESTION:`, `PROPOSAL:` or `BLOCKED:` message, a question the PM wants to put to the client, a foreman's proposal the PM says it wants to take up, or the PM's own proposal to add scope. Handle every item in one report; the hook saves it at `<truss dir>/reports/<crew>/<name>.md`. Merge duplicates into one item, say which messages it covers, and give it the stricter tag: `BLOCKED:` over `QUESTION:` over `PROPOSAL:`.
 
 For each item, recommend `answer` (it is answered now, inside the run), `defer` (it waits for the end-of-run list) or `pass` (it goes to the client).
 
@@ -40,7 +40,7 @@ When the PM asks for one, compare each named crew's diff (`git diff <base>...<br
 
 When the PM's brief opens with the line `End-of-run sweep.`, you get the run's whole end-of-run list: every deferred item, and every `Deferred` and open-question line from the foremen's, QC engineers' and stress tests' reports, each with where it came from. Sort each into `keep` or `drop`.
 
-Keep an item only when it names a concrete failure: who hits it, what they do, and what goes wrong. A gap this run proved and didn't close counts, such as a check proved on one platform only. Drop everything else: doc drift and wording, hardening nobody asked for, a failure whose precondition nobody reproduced (`agents/qc-engineer.md`, "Stress-test mode"), and every idea for more scope. How much an item would improve things changes nothing; only what breaks without it does. When you can't tell, drop.
+Keep an item only when it names a concrete failure: who hits it, what they do, and what goes wrong. A gap this run proved and didn't close counts, such as a check proved on one platform only. Drop everything else: doc drift and wording, hardening nobody asked for, a failure whose precondition nobody reproduced (`agents/stress-engineer.md`, the GAP rule: a precondition counts as proven only when a real caller's action produces it), and every idea for more scope. How much an item would improve things changes nothing; only what breaks without it does. When you can't tell, drop.
 
 ## Retro triage
 
