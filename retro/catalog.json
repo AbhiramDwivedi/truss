@@ -74,6 +74,248 @@
       "fix": "Remove the tracked bytecode with git rm -r --cached on the __pycache__ directories and add __pycache__/ and *.pyc to .gitignore, so no .pyc file is tracked and a crew's status is clean.",
       "probe": { "kind": "command", "run": "test -z \"$(git ls-files -- '*.pyc')\"" },
       "fixedBy": null
+    },
+    {
+      "id": "monitor-wrong-argument-shape",
+      "kind": "misleading prompt",
+      "title": "A builder calls Monitor with the ToolSearch argument shape, validation fails, and it then busy-polls for minutes",
+      "anchor": "Monitor failed due to the following issue",
+      "patterns": [
+        "Monitor failed due to the following issue"
+      ],
+      "fix": "Run acceptance and test commands in the foreground with an explicit Bash timeout up to 600000 and never in the background. If a background run is unavoidable, load the Monitor schema with ToolSearch first, pass a description, and do not poll between notifications.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-1",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "brave-brief-auto-mode-bypass",
+      "kind": "misleading prompt",
+      "title": "Under a be-brave brief a tester renamed a command to get past the guard and the classifier denied it as an auto-mode bypass",
+      "anchor": "[Auto-Mode Bypass]",
+      "patterns": [
+        "\\[Auto-Mode Bypass\\]"
+      ],
+      "fix": "A harness or classifier refusal is never a difficulty to push through. Never rename, encode or hide a command to get past a refusal. Use the sanctioned fallback, or stop BLOCKED with the refusal quoted.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-7",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "compound-shell-check-command",
+      "kind": "misleading prompt",
+      "title": "A planner-written member Check is compound shell with a command substitution, the shape the worktree guard refuses",
+      "anchor": "Check: `out=$(",
+      "patterns": [
+        "Check: `out=\\$\\("
+      ],
+      "fix": "Write each Check as one plain command per line, with no command substitution, semicolon, && chain, pipe or $VAR. A check that needs logic goes in a script file the member runs.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-9",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "webkit-host-missing-dependencies",
+      "kind": "friction",
+      "title": "The WebKit browser reports that the host is missing dependencies to run browsers, a message the libicudata patterns miss",
+      "anchor": "Host system is missing dependencies",
+      "patterns": [
+        "Host system is missing dependencies to run browsers(?!.*libicudata)"
+      ],
+      "fix": "Do not download debs or retry the WebKit browser on this host. Use the Chromium or Firefox project for browser checks, and list webkit host libraries as a need in the plan so doctor probes them before a crew starts.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-17",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "webkit-apt-install-libicu",
+      "kind": "friction",
+      "title": "The WebKit browser message tells the host to apt-get install libicu with a version number, which the libicudata patterns miss",
+      "anchor": "apt-get install libicu",
+      "patterns": [
+        "apt-get install libicu\\d+"
+      ],
+      "fix": "Do not run apt-get or download debs on this host. Use the Chromium or Firefox project for browser checks, and list webkit host libraries as a need in the plan so doctor probes them before a crew starts.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-17",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "trailers-format-unquoted",
+      "kind": "friction",
+      "title": "A builder ran the trailer self-check with an unquoted trailers format and the worktree guard refused it",
+      "anchor": "%(trailers",
+      "patterns": [
+        "--format=%\\(trailers",
+        "--format=%H%n%\\(trailers"
+      ],
+      "fix": "Do not run the per-commit trailer self-check with a format string that holds parentheses unquoted. Quote the format, or use a plugin script that needs no format string.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-24",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "stress-role-scratchpad-script",
+      "kind": "missing agent persona",
+      "title": "The stress role has no Write or Edit tool, so its probe script is never created and node cannot find it",
+      "anchor": "scratchpad",
+      "patterns": [
+        "Cannot find module '[^']*scratchpad[^']*\\.ts'"
+      ],
+      "fix": "Give the stress role an agent with Write and Edit limited to scratch and its own worktree, or give its brief a shell variant that creates scripts with one plain command.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-25",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "builder-edits-acceptance-test",
+      "kind": "friction",
+      "title": "A QC finding that needed a test change went to a builder, which edited the acceptance test, and later QCs failed on that edit",
+      "anchor": "builder",
+      "patterns": [
+        "Truss-Role: builder.{0,80}edits? (?:this|an acceptance-test) file",
+        "A builder must not (?:write or )?(?:touch|change) (?:the )?acceptance tests?",
+        "a builder edited the acceptance test"
+      ],
+      "fix": "Send any QC finding that needs a change to an acceptance-test file to a tester fix member, and leave tester-owned files out of the builder files-you-may-change list.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-27",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "kill-by-pattern-pkill",
+      "kind": "friction",
+      "title": "Members cleared hung tests with pkill by pattern on a host shared with other crews, and the classifier blocked it",
+      "anchor": "[Interfere With Workloads]",
+      "patterns": [
+        "\\[Interfere With Workloads\\]"
+      ],
+      "fix": "Never kill by pattern (pkill -f or killall), because other crews processes share the host. Run each test file under timeout, or stop only the process you started, by its pid.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-30",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "stress-brief-no-base-commit",
+      "kind": "mechanical bug",
+      "title": "The stress-test brief gives no base commit, so the tester guesses main as the base and reports a patch id over the wrong diff",
+      "anchor": "no base commit",
+      "patterns": [
+        "brief (?:named|gives) no base commit"
+      ],
+      "fix": "The stress-test brief carries a Base line next to the head, and the tester computes the patch id over base...head.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-32",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "decisions-md-edit-stale",
+      "kind": "friction",
+      "title": "The PM edits decisions.md with Edit while something else rewrites it with time stamps, so its edits fail as stale or not found",
+      "anchor": "decisions.md",
+      "patterns": [
+        "\"file_path\":\"[^\"]*/decisions\\.md\"[^}]*\"old_string\"",
+        "tail -1 \\S*/decisions\\.md"
+      ],
+      "fix": "Log to decisions.md only through the one append command that stamps the time itself, never through Edit, so no edit has to match text that the stamping changes.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-35",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "pm-agent-brief-missing-shell-rules",
+      "kind": "friction",
+      "title": "The worktree guard refuses commands from agents the PM starts directly, because their briefs lack the shell rules crew briefs carry",
+      "anchor": "isolated in the worktree",
+      "patterns": [
+        "isolated in the worktree.*(?:feeds|runs) (?:python|node)"
+      ],
+      "fix": "Paste the same shell rules that crew briefs carry (one plain command per call, no cd, no chains, no $VAR, scripts in files) into every brief for an agent the PM starts in a worktree.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-38",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "design-engineer-external-code",
+      "kind": "misleading prompt",
+      "title": "The design engineer validates plans with an npx download and shell harnesses that remove a variable path, and the classifier blocks both",
+      "anchor": "Reason: [Code from External]",
+      "patterns": [
+        "Reason: \\[Code from External\\]"
+      ],
+      "fix": "Validate plans only with the plugin plan-check command, never npx. Put acceptance-test probes in a script file under the engineer own scratch subdirectory, and never remove a variable path.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-39",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "refusal-builtin-safety-check",
+      "kind": "mechanical bug",
+      "title": "refusalOf misses the built-in safety check denial, so the extract logs it as a tool error instead of a refusal",
+      "anchor": "denied by a built-in Claude Code safety check",
+      "patterns": [
+        "denied by a built-in Claude Code safety check"
+      ],
+      "fix": "refusalOf recognises the built-in safety check form (source safety-check, with the flagged text as category) and a classifier denial with no category.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-40",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "harness-claude-code-module",
+      "kind": "friction",
+      "title": "A test imports the claude-code module, which only the Claude Code harness provides, and node cannot find it",
+      "anchor": "Cannot find module 'claude-code",
+      "patterns": [
+        "Cannot find module 'claude-code(?:/[^']*)?'"
+      ],
+      "fix": "The claude-code module exists only inside the Claude Code harness. Do not install it. Run the check where the harness is loaded, or have the check import only what node can resolve.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/P-1",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "retro-dropped-overlong-field",
+      "kind": "mechanical bug",
+      "title": "A judged problem is dropped because its title or evidence quote is over 200 characters",
+      "anchor": "DROPPED: ",
+      "patterns": [
+        "DROPPED: \\d+ \\| (?:title must be 1 to 200 characters|evidence quote must be a string of at most 200 characters)"
+      ],
+      "fix": "Keep a problem title to 200 characters or fewer and each evidence quote to 200 characters or fewer, so the problem is kept, not dropped.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/P-4",
+        "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "pm-edits-repo-files-during-run",
+      "kind": "missing hook or gate",
+      "title": "The PM main thread edits repo files itself while a run is active, instead of delegating to a crew or agent",
+      "anchor": "the main thread does not edit repo files",
+      "patterns": [
+        "the main thread does not edit repo files while a run is active"
+      ],
+      "fix": "The main thread does not edit repo files while a run is active. Delegate the change to a crew or an agent.",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/P-8",
+        "date": "2026-10-31"
+      }
     }
   ]
 }
