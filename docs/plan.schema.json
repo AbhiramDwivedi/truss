@@ -15,7 +15,7 @@
   ],
   "properties": {
     "version": {
-      "description": "Plan file format version. It goes up whenever a field is added; readers gate on version >= 2, never === 2, so a later version inherits every v2 rule. Version 2 adds reworkAllowance. Version 3 adds the top-level goals array and a crew's goal.",
+      "description": "Plan file format version. It goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse. An optional field that a reader may treat as absent keeps the version: a crew's needs came in at version 3 this way (adr/0012-self-improving-retro.md). Readers gate on version >= 2, never === 2, so a later version inherits every v2 rule. Version 2 adds reworkAllowance. Version 3 adds the top-level goals array and a crew's goal.",
       "enum": [1, 2, 3]
     },
     "goal": {
@@ -243,6 +243,12 @@
         "status": {
           "description": "Set by the PM as crews start and merge. The hooks only read it.",
           "enum": ["planned", "running", "merged", "dropped"]
+        },
+        "needs": {
+          "description": "Optional, any version. What the crew needs from the host before it starts: a browser that launches, npm ci, gh auth, a system library. The plan design engineer lists them; a crew with none leaves the key out, and every reader treats a missing needs as an empty list. factory.ts doctor runs each probe after plan-check and before any crew starts. See adr/0012-self-improving-retro.md, Decision 9.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/need" }
         }
       },
       "allOf": [
@@ -261,6 +267,60 @@
           "if": { "required": ["clientApproval"] },
           "then": {
             "properties": { "verdict": { "const": "design" } }
+          }
+        }
+      ]
+    },
+    "need": {
+      "description": "One host need of a crew, with the probe factory.ts doctor runs for it and what the client's approval bundle gets from it (adr/0012-self-improving-retro.md, Decision 9).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "why", "probe"],
+      "properties": {
+        "id": {
+          "description": "The need's name, unique within the crew. doctor reports it as <crew slug>/<id>.",
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "why": {
+          "description": "One line: what in the crew's work needs it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "probe": { "$ref": "#/$defs/probe" },
+        "allow": {
+          "description": "Permission allow rules the crew's commands need, in .claude/settings.json's permissions.allow form, such as Bash(npm --prefix ui ci:*). doctor puts every need's rules in the bundle, whether the probe passed or not.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "download": {
+          "description": "What the client allows to be downloaded when the probe fails, as the command that fetches it, such as npx playwright install chromium. doctor puts it in the bundle only when the probe fails.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "probe": {
+      "description": "How doctor tests a need on the host. command: bash -c <run> in the repo, which passes on exit 0 within 120 seconds. file: <path>, relative to the repo or absolute, which passes when it exists.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run"],
+          "properties": {
+            "kind": { "const": "command" },
+            "run": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path"],
+          "properties": {
+            "kind": { "const": "file" },
+            "path": { "type": "string", "minLength": 1 }
           }
         }
       ]

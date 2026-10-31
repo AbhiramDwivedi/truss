@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "truss transcript extract, version 1",
+  "description": "<truss dir>/retro/extract.json: what retro/extract.ts read mechanically from one session's transcripts (R-24). factory.ts finish and retro/cli.ts extract overwrite it whole. The same transcripts and catalog give the same bytes: no wall-clock time, files in code-point order of path, items in file order then line order. It holds short quotes, so it stays inside .git with the truss dir and is never committed (R-32); it is kept until the truss dir is removed, so no later step needs the transcripts (R-35). See adr/0012-self-improving-retro.md, Decision 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "session", "files", "items", "catalogHits", "skipped"],
+  "properties": {
+    "v": {
+      "description": "File format version. A reader treats a file with any other v as absent.",
+      "const": 1
+    },
+    "session": {
+      "description": "The session id: the session transcript dir's base name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "description": "Every transcript file read, in code-point order of path. path is relative to the project's transcript dir (the session dir's parent), with forward slashes: <session>.jsonl, <session>/subagents/agent-<id>.jsonl, <session>/subagents/workflows/<run id>/journal.jsonl and <session>/subagents/workflows/<run id>/agent-<id>.jsonl. lines is the file's line count, so evidence can be checked after the file is gone.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "lines"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "lines": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "items": {
+      "description": "One entry per thing found, in file order, then line order, then the order of the kinds in this schema's $defs.item.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "catalogHits": {
+      "description": "Lines of tool_result text and journal result text that hit a catalog entry: the line holds the entry's anchor and matches one of its patterns. At most one hit per entry per record.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "file", "line", "quote"],
+        "properties": {
+          "id": { "description": "The catalog entry id.", "type": "string", "minLength": 1 },
+          "file": { "$ref": "#/$defs/file" },
+          "line": { "$ref": "#/$defs/line" },
+          "quote": { "$ref": "#/$defs/quote" }
+        }
+      }
+    },
+    "skipped": {
+      "description": "Lines the extractor did not use. json: lines that are not a JSON object. type: per record type it does not read, how many lines had it (api-request-blob, which repeats content, is one). The extractor reads the types user, assistant and system in agent transcripts, and launched, started and result in journals.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["json", "type"],
+      "properties": {
+        "json": { "type": "integer", "minimum": 0 },
+        "type": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "description": "A path from files.",
+      "type": "string",
+      "minLength": 1
+    },
+    "line": {
+      "description": "1-based line number of the record in that file.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "quote": {
+      "description": "The first 200 characters of the text line the item rests on, trimmed. Stays inside .git.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "agent": {
+      "description": "The record's agentId, or main for the main session's own transcript.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ts": {
+      "description": "The record's timestamp, else null.",
+      "type": ["string", "null"]
+    },
+    "item": {
+      "oneOf": [
+        {
+          "description": "toolError: a tool_result block with is_error true that is no refusal.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "tool"],
+          "properties": {
+            "kind": { "const": "toolError" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "$ref": "#/$defs/quote" },
+            "tool": { "description": "The name of the tool_use the result answers, else null.", "type": ["string", "null"] }
+          }
+        },
+        {
+          "description": "refusal: a tool call refused before or as it ran. source is refusalOf's (hooks/register.ts) for a tool_result, with truss for truss's hooks; factory is a factory.ts command that exited 1 with a JSON body, the factory gate.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "tool", "source", "category"],
+          "properties": {
+            "kind": { "const": "refusal" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "$ref": "#/$defs/quote" },
+            "tool": { "type": ["string", "null"] },
+            "source": { "enum": ["permission", "classifier", "truss", "worktree-guard", "factory", "other"] },
+            "category": { "description": "refusalOf's category; for factory, the command name, such as finish.", "type": "string" }
+          }
+        },
+        {
+          "description": "repeat: a Bash command string run more than once in one transcript file. line is the first run's; lines lists every run's. retried is true when a run before the last one errored.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "count", "lines", "retried"],
+          "properties": {
+            "kind": { "const": "repeat" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "description": "The command's first line, first 200 characters.", "$ref": "#/$defs/quote" },
+            "count": { "type": "integer", "minimum": 2 },
+            "lines": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/line" } },
+            "retried": { "type": "boolean" }
+          }
+        },
+        {
+          "description": "step: one Workflow agent, from its journal started line to the last timestamp in its own transcript. file and line are the journal's started line.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "label", "start", "end", "ms"],
+          "properties": {
+            "kind": { "const": "step" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "description": "The label.", "$ref": "#/$defs/quote" },
+            "label": { "type": "string" },
+            "start": { "description": "First timestamp in the agent's transcript, else null.", "type": ["string", "null"] },
+            "end": { "description": "Last timestamp in the agent's transcript, else null.", "type": ["string", "null"] },
+            "ms": { "description": "end minus start in milliseconds, else null.", "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        {
+          "description": "stop: a journal result, or an agent's last assistant text, whose first non-empty line starts with BLOCKED:, CHECKPOINT: or QUESTION:.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "marker"],
+          "properties": {
+            "kind": { "const": "stop" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "$ref": "#/$defs/quote" },
+            "marker": { "enum": ["BLOCKED", "CHECKPOINT", "QUESTION"] }
+          }
+        },
+        {
+          "description": "qcFail: a text block or journal result holding a line that is exactly VERDICT: FAIL.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote"],
+          "properties": {
+            "kind": { "const": "qcFail" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "$ref": "#/$defs/quote" }
+          }
+        },
+        {
+          "description": "handEdit: a Write, Edit or NotebookEdit tool_use in the main session's own transcript whose file_path is outside the truss dir: the PM editing by hand.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "tool", "path"],
+          "properties": {
+            "kind": { "const": "handEdit" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "const": "main" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "description": "The file_path.", "$ref": "#/$defs/quote" },
+            "tool": { "enum": ["Write", "Edit", "NotebookEdit"] },
+            "path": { "type": "string" }
+          }
+        },
+        {
+          "description": "checkFail: an errored Bash tool_result whose text holds at least one trace path, <file>.<ts|js|mjs|cjs|py>:<line>. traces lists the distinct ones, at most 10, in the order they appear.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "line", "agent", "ts", "quote", "traces"],
+          "properties": {
+            "kind": { "const": "checkFail" },
+            "file": { "$ref": "#/$defs/file" },
+            "line": { "$ref": "#/$defs/line" },
+            "agent": { "$ref": "#/$defs/agent" },
+            "ts": { "$ref": "#/$defs/ts" },
+            "quote": { "$ref": "#/$defs/quote" },
+            "traces": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    }
+  }
+}

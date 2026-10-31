@@ -1,6 +1,7 @@
 # ADR-0006: why each leftover stayed, a stress test that leaves nothing, and retro's root-cause step
 
 Status: proposed, 2026-10-29. Written by the design crew `leftover-design` (stage 0), for foundry 0.9.0. It becomes accepted when the PM (project manager) merges the stage-0 crew under the client-approved plan; no client trigger applies (no principle breaks, no external service, retro's JSON is not stored, P15).
+Amended by ADR-0012 (the retro may read transcripts; P24 no longer binds the retro).
 
 ## Context
 

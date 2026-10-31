@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "truss retro state, version 1",
+  "description": "<truss dir>/retro/state.json: where the end-of-run retro is, step by step. Only retro/cli.ts writes it (the state command); the PM and the local web UI read it. The steps run in the order extract, judges, triage, fixGoal, applied. See adr/0012-self-improving-retro.md, Decision 8. ui/contract/state.schema.json copies this shape as the state's retro key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "updatedAt", "steps"],
+  "properties": {
+    "v": {
+      "description": "File format version. A reader treats a file with any other v as absent.",
+      "const": 1
+    },
+    "updatedAt": {
+      "description": "When retro/cli.ts last wrote the file: an RFC 3339 UTC date-time ending in Z.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extract", "judges", "triage", "fixGoal", "applied"],
+      "properties": {
+        "extract": {
+          "description": "retro/cli.ts extract wrote <truss dir>/retro/extract.json for the whole session.",
+          "$ref": "#/$defs/step"
+        },
+        "judges": {
+          "description": "The truss:retro-judge agents ran and retro/cli.ts findings saved what they returned.",
+          "$ref": "#/$defs/step"
+        },
+        "triage": {
+          "description": "A fresh checking engineer sorted the findings into fix now, defer or drop.",
+          "$ref": "#/$defs/step"
+        },
+        "fixGoal": {
+          "description": "The fix-now findings went into plan.json as a goal through amend (adr/0010-mid-run-intake.md). skipped when triage kept none.",
+          "$ref": "#/$defs/step"
+        },
+        "applied": {
+          "description": "The fix goal's crews merged (done), or at least one failed QC and was not merged (failed). skipped when there is no fix goal.",
+          "$ref": "#/$defs/step"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "at", "detail"],
+      "properties": {
+        "status": {
+          "description": "pending until the step starts; running while it works; then done, failed or skipped.",
+          "enum": ["pending", "running", "done", "failed", "skipped"]
+        },
+        "at": {
+          "description": "When retro/cli.ts last set this step's status, an RFC 3339 UTC date-time; null while pending.",
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "detail": {
+          "description": "One line for the client, such as 3 findings kept, 1 dropped; else null. No transcript text.",
+          "type": ["string", "null"],
+          "maxLength": 200
+        }
+      }
+    }
+  }
+}

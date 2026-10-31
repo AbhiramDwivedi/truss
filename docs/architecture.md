@@ -14,6 +14,8 @@ Foundry 0.8.0 ([ADR-0005](adr/0005-growth-model.md), accepted 2026-10-29) grows 
 
 Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by the `leftover-design` crew) says why each leftover worktree stayed. retro gains one top-level key, `leftoverDetails`, with `leftovers` and every other key unchanged. The stress test resets its own branch to the crew head instead of detaching, and leaves its worktree clean. The retro skill gains a root-cause step that writes one `CAUSE:` line per anomaly. Details are in "retro's leftover details (0.9.0)" below.
 
+[ADR-0012](adr/0012-self-improving-retro.md) (proposed 2026-10-31 by the `retro-design` crew) makes the retro improve truss from each run. `factory.ts finish` saves a mechanical extract of the session's transcripts in the truss dir, and a committed catalog of known problems names each one `check`, `stage.js`, the extract and a new `factory.ts doctor` meet again. `doctor` probes each crew's host `needs` before any crew starts and gives the client one approval bundle. At the end of every run the PM starts `truss:retro-judge` agents that cite transcript lines, a checking engineer triages their findings, and the fix-now findings become a goal that truss builds with QC. The next retro reports a fixed problem that came back. The retro now reads transcripts, so P24 no longer binds it; the event log still holds no message, prompt or report text (P8). Details are in "The self-improving retro (ADR-0012)" below.
+
 The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
 
 ```mermaid
@@ -396,6 +398,11 @@ Everything for a session lives under one folder:
   scratch/truss.candidate.json  0.4.0, init: the config it would write, validated before the write (ADR-0002)
   brief.json                 ADR-0008, PM: the client brief's state for the run's first goal
   checks/<slug>-<n>.json     factory.ts check (ADR-0009): one record per acceptance-test run on the Workflow path
+                             (ADR-0012: and a catalog key when the output hits a known problem)
+  retro/extract.json         ADR-0012, factory.ts finish and retro/cli.ts extract: the transcript extract
+  retro/findings.json        ADR-0012, retro/cli.ts findings and recur: the judges' kept findings
+  retro/state.json           ADR-0012, retro/cli.ts state: where the end-of-run retro is, step by step
+  retro/upstream/<F-n>.md    ADR-0012, PM: a drafted plugin fix, on a project that isn't the truss repo
 ```
 
 **Stored shapes.** `brief.json` ([ADR-0008](adr/0008-owner-interview.md), Decisions 2, 5 and 7) is the client brief's state, rewritten by the PM with Write after each round: a string `goal`, a `size` of `small`, `standard` or `large`, arrays `packs`, `opened` and `requirements` (the R-ids this run accepted), an object `visits` (`{ "by": "fact" | "client" | "closed" | "default", "note" }` per branch id) and a boolean `stopped`; `cli.ts` exits 2 on a state file without them (Seam 5). The CLI takes the state path as an argument, so another goal can use its own file; only `<truss dir>/brief.json` is fixed.
@@ -403,6 +410,8 @@ Everything for a session lives under one folder:
 `requirements.md` is the client brief's stored shape: one file per project, append-only by id, `## R-<n>: <title>` headings with `Status` (`open`, `met`, `dropped` or `replaced by R-<k>`), `Kind` (`functional`, `nfr` or `constraint`), `Added`, `Source` (`client`, `default`, `goal` or `repo:<path>`), `Example` and `Measure` lines, and a required `## Non-goals` section. `parseRequirements` is its contract. The PM writes it, commits it alone as `docs(req): ...` before the plan, marks ids `met` at the end of the run, and no crew owns or edits it (ADR-0008, Decision 7). It lives in the project repo, at `<dir of the architecture key>/requirements.md` (`docs/requirements.md` here and on a greenfield repo; `skills/run/SKILL.md:89`), committed so crews' worktrees see it.
 
 `checks/<slug>-<n>.json` ([ADR-0009](adr/0009-workflow-factory.md), Decision 1, `check`) holds the command, exit code, `git rev-parse HEAD` of the checkout and the last 40 lines of output. `check` adds a new file each time and never changes an old one; the crew's lowest-numbered file is its red record, and `finish` refuses a merge when it is missing or has `exit` 0 (Decision 1, "finish, merge step", item 1). On the Workflow path `factory.ts finish` also writes the crew agents' reports, `reports/<slug>/<label>.md`, from the Workflow journal's results, with each file's mtime set to the agent's last transcript timestamp so `latestQc`'s newest-file rule orders QC engineers truthfully; it never overwrites a report with different text (Decision 1, "finish, record step" and "start, allowance and label numbering across runs"). `factory.ts` also writes `plan.json` and `plan.md` (`plan-write`, the plan-file route's rules), the Workflow crews' `status`, and stamped decision lines (ADR-0009, "What moves where").
+
+`retro/extract.json`, `retro/findings.json` and `retro/state.json` follow [`extract.schema.json`](extract.schema.json), [`findings.schema.json`](findings.schema.json) and [`retro-state.schema.json`](retro-state.schema.json). The extract and the findings quote transcript lines, so they stay inside `.git` with the truss dir and are never committed ([ADR-0012](adr/0012-self-improving-retro.md), R-32).
 
 The plugin writes only `reports/`, the message logs, (0.4.0) the event logs and (0.6.0) the draft `plan.json` and `plan.md` it takes from the plan-mode design engineer's hand-back ([ADR-0015](adr/claude-ops/0015-agent-worktree-cleanup.md) item 9). The PM writes `decisions.md`, `plan.md` and `goals/`, as `skills/run/SKILL.md` tells it to; the plugin only stamps the time on new `decisions.md` lines (see Decision times).
 
@@ -451,7 +460,7 @@ On the Workflow path ([ADR-0009](adr/0009-workflow-factory.md)), `factory.ts` wr
 
 ### `plan.json`
 
-`plan.json` (0.3.0) is the seam between the design engineer, the PM and the hooks: the goal, the architecture doc's path, `approval`, `approvedAt`, `maxParallelCrews`, and one entry per crew with its stage, verdict, modules, owned paths, acceptance test, whether that check was proved, estimated agents, an optional `clientApproval` and status. [`plan.schema.json`](plan.schema.json) is the contract; [ADR-0001](adr/0001-design-phase.md), section 8, is the source. The rules it adds:
+`plan.json` (0.3.0) is the seam between the design engineer, the PM and the hooks: the goal, the architecture doc's path, `approval`, `approvedAt`, `maxParallelCrews`, and one entry per crew with its stage, verdict, modules, owned paths, acceptance test, whether that check was proved, estimated agents, an optional `clientApproval`, optional host `needs` ([ADR-0012](adr/0012-self-improving-retro.md), Decision 9) and status. [`plan.schema.json`](plan.schema.json) is the contract; [ADR-0001](adr/0001-design-phase.md), section 8, is the source. The rules it adds:
 
 - `approval` (`auto` or `client`) is set once, at plan time. It's `client` exactly when the plan has a stage-0 crew; mid-run slices never change it.
 - `approvedAt` is null only while a run waits for the client, so an `auto` run always has it. Otherwise it is an RFC 3339 date-time with a time-zone offset, such as `2026-10-26T14:03:00+01:00` or `2026-10-26T13:03:00Z`.
@@ -459,11 +468,11 @@ On the Workflow path ([ADR-0009](adr/0009-workflow-factory.md)), `factory.ts` wr
 - `clientApproval` (`pending` or `approved`) is set only on mid-run design slices that wait for the client.
 - Within a stage, the order of the `crews` array is the queue order.
 - The agent total is the sum of `estAgents`, so it isn't stored.
-- `version` goes up whenever a field is added; the schema allows no other properties.
+- `version` goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse. An optional field that a reader may treat as absent keeps the version: crew `needs` came in at version 3 this way ([ADR-0012](adr/0012-self-improving-retro.md), Decision 11). The schema allows no other properties.
 
 Validating a plan against the schema checks these constraints of its own:
 
-- Every top-level field and every crew field is required, except `clientApproval`; `version` is `1`; no other properties are allowed, at either level.
+- `version`, `goal`, `architecture`, `approval`, `approvedAt`, `maxParallelCrews` and `crews` are required; `reworkAllowance` is required at versions 2 and 3 and forbidden at version 1; `goals` and a crew's `goal` are allowed only at version 3; `agentCap` is optional. Every crew field is required except `goal`, `clientApproval` and `needs`. `version` is `1`, `2` or `3`; no other properties are allowed, at either level.
 - `approval: "client"` needs at least one crew in stage 0, and `approval: "auto"` needs `approvedAt` to be a string.
 - `approvedAt` is null or a JSON Schema `date-time`: RFC 3339 with an offset. The format is checked only by a validator that asserts formats, such as `ajv` with `ajv-formats`.
 - Stage 0 holds only `design` crews: a crew with `stage: 0` must have `verdict: "design"`. A design crew may still sit in a later stage.
@@ -882,6 +891,69 @@ the stress test's first step becomes `git reset --hard <sha>` in its own worktre
 | the stress test's start and end state | `agents/qc-engineer.md`, `agents/foreman.md` | the stress-test QC engineer; worktrees' sweep | ADR-0006 section 2 and its literals table | `tests/redteam-reset.check.ts` |
 | The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | ADR-0006 section 3 | `tests/retro-cause.check.ts` |
 
+### The self-improving retro (ADR-0012)
+
+This section is the design of goal `retro-judge`; its stage-1 and stage-2 crews build it. Until they merge, none of `retro/`, `agents/retro-judge.md` or `factory.ts doctor` exists. [ADR-0012](adr/0012-self-improving-retro.md) holds every rule; this section maps the parts.
+
+| Part | Path | What it does | Built by |
+| --- | --- | --- | --- |
+| retro-core | `retro/**` (`extract.ts`, `catalog.ts`, `scrub.ts`, `cli.ts`, `catalog.json`) | Reads the session's transcripts into the extract, holds and matches the known-problems catalog, checks committed text for names, emails, home paths and tokens, and gives the PM the `extract`, `findings`, `recur`, `scrub` and `state` commands. Node built-ins only. | crew `retro-core`, stage 1 |
+| `truss:retro-judge` | `agents/retro-judge.md` | Opus at `medium`, `Read`, `Grep` and `Glob` only. Reads the spans the extract points to and returns `finding` blocks, each citing a transcript line. One per crew with items, plus one combining judge. | crew `retro-skill`, stage 1 |
+| The retro skill and triage | `skills/retro/SKILL.md`, `agents/checking-engineer.md` | Runs the steps in order and records each in `retro/state.json`; the checking engineer's `Retro triage.` brief returns `TRIAGE:` lines. | crew `retro-skill`, stage 1 |
+| Run wiring | `skills/run/SKILL.md`, `agents/design-engineer.md`, `skills/init/SKILL.md` | `doctor` in section 5, the automatic retro in section 10, crew `needs` in the plan, and truss writing `.claude/settings.json` with the classifier's refusal shown, never worked around. | crew `run-wiring`, stage 1 |
+| The UI's retro stage | `ui/server/state/**`, `ui/web/**` | The state's `retro` key from `retro/state.json`, shown as the region `Retro stage` after the crew lanes. | crew `ui-retro`, stage 1 |
+| factory doctor | `bin/factory.ts`, `workflows/stage.js` | `doctor` probes needs and catalog entries; `check` adds `catalog` hits; `finish` writes the extract; `stage.js` names known problems in its stop and fix-builder texts. | crew `factory-doctor`, stage 2 |
+
+```mermaid
+flowchart LR
+  T[("transcripts<br/>&lt;session&gt;.jsonl, subagents/**")]
+  C[("retro/catalog.json<br/>[plugin, committed]")]
+  P[("plan.json<br/>crew needs")]
+  F["factory.ts finish"]
+  D["factory.ts doctor"]
+  K["factory.ts check"]
+  X[("retro/extract.json")]
+  J["truss:retro-judge x (1 + crews)"]
+  R["retro/cli.ts findings, recur"]
+  FD[("retro/findings.json")]
+  TR["checking engineer<br/>Retro triage."]
+  G["fix goal<br/>amend, ADR-0010"]
+  S[("retro/state.json")]
+  UI["UI: Retro stage"]
+  P --> D
+  C --> D
+  C --> K
+  T --> F
+  C --> F
+  F --> X
+  X --> J
+  T -. "spans only" .-> J
+  J --> R
+  C --> R
+  R --> FD
+  FD --> TR
+  TR --> G
+  G -. "fixedBy" .-> C
+  R -. "state" .-> S
+  S --> UI
+```
+
+`doctor` runs after `plan-check` and before any crew starts; its bundle (allow rules, downloads, standing rulings) goes to the client with the plan as one approval. The retro starts after the end-of-run sweep without the client asking. Each step writes `retro/state.json` through `retro/cli.ts state`, and the UI shows it.
+
+| Seam | Producer | Consumer | Contract | Pinned by |
+| --- | --- | --- | --- | --- |
+| `<truss dir>/retro/extract.json` | `factory.ts finish`, `retro/cli.ts extract` | the judges, `findings`, `recur` | `extract.schema.json`; ADR-0012 Decision 2 | `tests/retro-contract.check.ts`, `tests/retro-replay.check.ts` |
+| `retro/catalog.json`, its six seed ids and anchors | retro-core | the extractor, `check`, `doctor`, `stage.js`, `recur` | `catalog.schema.json`; ADR-0012 Decision 3 | `tests/retro-contract.check.ts` |
+| `finding` blocks and `<truss dir>/retro/findings.json` | the judges; `retro/cli.ts findings` and `recur` | triage, the PM | `findings.schema.json`; ADR-0012 Decisions 4, 5 and 7 | `tests/retro-contract.check.ts` |
+| `retro/cli.ts` commands and exports | retro-core | the PM, the retro skill | ADR-0012 Seams | `tests/retro-contract.check.ts` |
+| `factory.ts doctor`, crew `needs` | factory-doctor; the plan design engineer | the PM | `plan.schema.json` `$defs.need`; ADR-0012 Decision 9 | `tests/doctor-contract.check.ts` |
+| `check`'s `catalog` key, `finish`'s extract | factory-doctor | `stage.js`, the PM | ADR-0012 Decision 10 | `tests/doctor-contract.check.ts` |
+| The retro skill, the judge and triage prompts | retro-skill | the PM, the judges, the checking engineer | ADR-0012 Decisions 1, 4 and 6 | `tests/retro-skill.check.ts`, `tests/retro-cause.check.ts` |
+| Run skill sections 5 and 10, the init sentence | run-wiring | the PM | ADR-0012 Decisions 6 and 12 | `tests/run-retro.check.ts`, `tests/init.check.ts` |
+| `<truss dir>/retro/state.json`, the `retro` state key and the `Retro stage` region | `retro/cli.ts state`; ui-retro | ui-state; the client | `retro-state.schema.json`, `ui/contract/state.schema.json`; ADR-0012 Decision 8 | `ui/contract/state.check.ts` |
+
+TODO: the "Pinned by" column names the check files the `retro-design` crew owns in `plan.json`; confirm each file and what it pins once the crew's tests merge.
+
 ### Heartbeat and stalls
 
 Every 60 seconds the module checks each crew agent listed as `running`. An agent counts as active at its spawn, each tool call and each model request. One with nothing on record starts counting from the first check. One that is `running` now but wasn't at the last check, or wasn't listed then, counts as active now and leaves the stalled set: a resumed agent isn't reported on its old activity. An agent idle for 15 minutes or more is reported once, until it is active again, with a toast, `[truss] stalled: <agent> (crew <crew>), no activity for <n>m`, and a prompt to the main session:
@@ -992,6 +1064,7 @@ Traces to: ADR-0011, Decisions 1 to 9.
 | The page, by role and accessible name | ui-web | the client | R-3 to R-7, R-15, R-18 | `ui/contract/e2e/live-status.spec.ts` |
 | SDK messages and `canUseTool` | Claude Code | ui-session | the recorded stream `ui/contract/fixtures/sdk-stream.jsonl`; ADR-0011 Spike | `ui/contract/session.check.ts` (replay), `ui/contract/live.check.ts` (live) |
 | Truss files the UI reads | Truss hooks and the PM | ui-state | `docs/events.schema.json`, `docs/plan.schema.json`, "On disk" above | `ui/contract/state.check.ts` on `tests/fixtures/retro-040` and `docs/plan.example.json` |
+| The retro stage: `<truss dir>/retro/state.json`, the state's `retro` key, and the region `Retro stage` with one list item per step, `<label>: <status>` | `retro/cli.ts state`; ui-state; ui-web | the client | `docs/retro-state.schema.json`, `ui/contract/state.schema.json` `$defs.retro`; ADR-0012 Decision 8 | TODO: the check that pins it, once ui-retro's tests merge |
 
 Each contract check imports its producer and, when the import fails, fails with `producer missing: ui/server/<module>`.
 
