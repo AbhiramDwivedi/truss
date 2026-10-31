@@ -7,6 +7,7 @@ import * as crews from './crews.js'
 import * as retro from './retro.js'
 import * as cards from './cards.js'
 import * as panels from './panels.js'
+import * as notify from './notify.js'
 
 function byId(id) {
   return document.getElementById(id)
@@ -68,6 +69,7 @@ const views = [
   crews.mount(byId('crews'), api),
   retro.mount(byId('retro'), api),
   panels.mount(byId('panels'), api),
+  notify.mount(byId('notify'), api),
 ]
 
 let model = emptyModel()
