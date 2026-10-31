@@ -11,6 +11,7 @@ import type { JsonlReader } from './jsonl.ts'
 import { createReducer } from './reduce.ts'
 import type { Reducer, Run } from './reduce.ts'
 import { createFileReaders } from './files.ts'
+import { createImageTracker, trussDirFor } from './git.ts'
 import type { Adr, Decision } from './files.ts'
 
 // ---- the Decision 9 interface -------------------------------------------------------------------
@@ -40,33 +41,10 @@ export interface Store extends StateSource {
   close(): void
 }
 
+export { trussDirFor }
+
 const RING = 1024
 const TRANSCRIPT_MAX = 500
-
-interface Image {
-  ref: string
-  path: string
-}
-
-// ---- state-git spot -----------------------------------------------------------------------------------------
-// state-git (ADR-0011 Decision 7) fills this. It owns, in a file of its own, the 5 s `git` pass that finds the image
-// files the run's crews added, and trussDirFor(repo, sessionId). Until then:
-//   - design.images is [] (read from `images` below);
-//   - `gitError` is false, so the notice `git-error` is never raised;
-//   - readImage resolves null, which is the answer for every pair that is not in design.images;
-//   - trussDirFor is absent from this module (Decision 9 marks it as state-git's).
-// To wire it: set `images` and `gitError` from the git pass inside refresh(), and have readImage check the pair
-// against `images` and read the blob through git.
-function imagesNow(): Image[] {
-  return []
-}
-function gitErrorNow(): boolean {
-  return false
-}
-async function readImageFromGit(_repo: string, _ref: string, _path: string, _allowed: Image[]): Promise<Buffer | null> {
-  return null
-}
-// ---- end of the state-git spot ------------------------------------------------------------------------------
 
 const emptySession = {
   status: 'idle',
@@ -95,6 +73,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
   const pollMs = opts.pollMs ?? 500
   const instance = crypto.randomBytes(8).toString('hex')
   const files = createFileReaders(repo)
+  const gitImages = createImageTracker(repo, () => refresh())
 
   let trussDir: string | null = opts.trussDir ?? null
   let session: unknown = emptySession
@@ -193,7 +172,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
     design = {
       planMd: exists && trussDir !== null ? files.planMd(trussDir) : null,
       architecture: cfg.architecture === null ? null : files.architecture(cfg.architecture),
-      images: imagesNow(),
+      images: gitImages.images(),
     }
     const n: { id: string; text: string }[] = []
     if (!cfg.complete) {
@@ -210,6 +189,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
     }
     notices = n
     publish(null)
+    gitImages.tick(run === null ? null : run.approvedAt)
   }
 
   // ---- publishing ---------------------------------------------------------------------------------------------
@@ -217,7 +197,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
   function compute(): Record<string, unknown> {
     const all = [...notices]
     if (sessionNoPlugin) all.push({ id: 'no-plugin', text: 'The session did not load the Truss plugin.' })
-    if (gitErrorNow()) all.push({ id: 'git-error', text: 'git could not be read; the images shown are the last good ones.' })
+    if (gitImages.failed()) all.push({ id: 'git-error', text: 'git could not be read; the images shown are the last good ones.' })
     return {
       trussDir: { path: trussDir, exists },
       session,
@@ -307,12 +287,13 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
         subscribers.delete(fn)
       }
     },
-    readImage: (ref, p) => readImageFromGit(repo, ref, p, imagesNow()),
+    readImage: (ref, p) => gitImages.read(ref, p),
     setTrussDir,
     setSession,
     close(): void {
       closed = true
       clearInterval(timer)
+      gitImages.close()
       if (soon !== null) clearTimeout(soon)
       soon = null
       watch(null)
