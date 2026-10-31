@@ -109,7 +109,9 @@ function judgedProblem(v: unknown, files: FilesList): string | null {
   const extra = onlyKeys(v, ['kind', 'title', 'evidence', 'cost', 'fix', 'target', 'signature', 'recurs'])
   if (extra) return extra
   if (!(KINDS as readonly unknown[]).includes(v.kind)) return 'kind is not one of the seven kinds'
-  if (!nonEmpty(v.title) || v.title.length > 200) return 'title must be 1 to 200 characters'
+  if (!nonEmpty(v.title)) return 'title must be 1 to 200 characters'
+  // over 200: cut to the first 200 instead of dropping (v is this call's own parsed JSON)
+  v.title = v.title.slice(0, 200)
   for (const k of ['cost', 'fix', 'target'] as const) if (!nonEmpty(v[k])) return `${k} must be a non-empty string`
   if (!Array.isArray(v.evidence) || v.evidence.length === 0) return 'no evidence line'
   for (const e of v.evidence) {
@@ -118,7 +120,10 @@ function judgedProblem(v: unknown, files: FilesList): string | null {
     if (bad) return `evidence ${bad}`
     if (!nonEmpty(e.file)) return 'evidence file must be a non-empty string'
     if (!Number.isInteger(e.line) || (e.line as number) < 1) return 'evidence line must be a whole number of at least 1'
-    if ('quote' in e && (typeof e.quote !== 'string' || e.quote.length > 200)) return 'evidence quote must be a string of at most 200 characters'
+    if ('quote' in e) {
+      if (typeof e.quote !== 'string') return 'evidence quote must be a string of at most 200 characters'
+      e.quote = e.quote.slice(0, 200)
+    }
     const f = files.find((x) => x.path === e.file)
     if (!f) return `evidence file ${e.file} is not in the extract`
     if ((e.line as number) > f.lines) return `evidence line ${e.line} is past the end of ${e.file} (${f.lines} lines)`
