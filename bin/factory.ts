@@ -11,6 +11,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
+import type { Catalog } from '../retro/catalog.ts'
+
+// retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
+let retroMods: { cat: typeof import('../retro/catalog.ts'); ex: typeof import('../retro/extract.ts') } | undefined
+try {
+  retroMods = { cat: await import('../retro/catalog.ts'), ex: await import('../retro/extract.ts') }
+} catch {
+  retroMods = undefined
+}
+const retro = (): NonNullable<typeof retroMods> => {
+  if (retroMods === undefined) throw new Error('retro/ is not in this plugin copy')
+  return retroMods
+}
 
 // ==== core ====
 
@@ -511,10 +524,85 @@ function cmdCheck(f: Flags): Obj {
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
   // a failing run whose output names an environment failure carries it as `env`: never a red, and no fix builder for a green
   const env = exit === 0 ? undefined : envFailure(text)
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }) }) + '\n', { flag: 'wx' })
+  const known = exit === 0 ? [] : catalogHits(text)
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }), ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }) }
+  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }), ...(known.length === 0 ? {} : { catalog: known }) }
   if (!ok) throw refuse(body)
+  return body
+}
+
+// ADR-0012 Decision 10: the catalog entries a failed check's output hits, in catalog order, each with the first line that hits it.
+// An unreadable catalog gives no hits: a check never fails over it.
+function catalogHits(text: string): { id: string; fix: string; line: string }[] {
+  let catalog: Catalog
+  try {
+    catalog = retro().cat.loadCatalog(`${PLUGIN}/retro/catalog.json`)
+  } catch {
+    return []
+  }
+  const first = new Map<string, string>()
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '') continue
+    for (const id of retro().cat.matchLine(line, catalog)) if (!first.has(id)) first.set(id, line.length > 300 ? `${line.slice(0, 299)}…` : line)
+  }
+  return catalog.entries.filter((e) => first.has(e.id)).map((e) => ({ id: e.id, fix: e.fix, line: first.get(e.id) as string }))
+}
+
+// ADR-0012 Decision 9: probes every crew need and every catalog probe on the host; writes nothing.
+function runProbe(probe: Obj, repo: string): { pass: boolean; detail: string } {
+  if (probe.kind === 'file') {
+    const p = String(probe.path)
+    return existsSync(path.resolve(repo, p)) ? { pass: true, detail: '' } : { pass: false, detail: p }
+  }
+  const r = spawnSync('bash', ['-c', String(probe.run)], { cwd: repo, encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
+  if (r.error === undefined && r.status === 0) return { pass: true, detail: '' }
+  const first = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.split('\n').map((l) => l.trim()).find((l) => l !== '')
+  const why = r.error !== undefined ? r.error.message : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`
+  const detail = first ?? why
+  return { pass: false, detail: detail.length > 300 ? `${detail.slice(0, 299)}…` : detail }
+}
+
+function cmdDoctor(f: Flags): Obj {
+  const dir = dirOf(f)
+  const repo = repoOf(f)
+  const catPath = str(f, 'catalog')
+  if (f.catalog !== undefined && (catPath === undefined || catPath === '')) throw usage('--catalog needs a value')
+  let catalog: Catalog
+  try {
+    catalog = retro().cat.loadCatalog(catPath === undefined ? `${PLUGIN}/retro/catalog.json` : flat(catPath))
+  } catch (e) {
+    throw usage((e as Error).message)
+  }
+  const plan = loadPlan(dir)
+  const probes: { name: string; kind: string; pass: boolean; detail: string }[] = []
+  const allow: string[] = []
+  const downloads: string[] = []
+  const addOnce = (list: string[], v: unknown): void => {
+    if (typeof v === 'string' && v !== '' && !list.includes(v)) list.push(v)
+  }
+  for (const c of plan.crews) {
+    if (!isObj(c) || !Array.isArray(c.needs)) continue
+    for (const nd of c.needs) {
+      if (!isObj(nd) || !isObj(nd.probe)) continue
+      const r = runProbe(nd.probe, repo)
+      probes.push({ name: `${String(c.slug)}/${String(nd.id)}`, kind: String(nd.probe.kind), pass: r.pass, detail: r.detail })
+      if (Array.isArray(nd.allow)) for (const a of nd.allow) addOnce(allow, a)
+      if (!r.pass) addOnce(downloads, nd.download)
+    }
+  }
+  const known: { id: string; pass: boolean }[] = []
+  const rulings: { id: string; fix: string }[] = []
+  for (const e of catalog.entries) {
+    if (e.probe === undefined) continue
+    const r = runProbe(e.probe, repo)
+    known.push({ id: e.id, pass: r.pass })
+    if (!r.pass) rulings.push({ id: e.id, fix: e.fix })
+  }
+  const failed = probes.filter((p) => !p.pass).map((p) => p.name)
+  const body = { ok: failed.length === 0, probes, passed: probes.filter((p) => p.pass).map((p) => p.name), failed, known, bundle: { allow, downloads, rulings } }
+  if (!body.ok) throw refuse(body)
   return body
 }
 
@@ -1159,6 +1247,18 @@ function cmdFinish(f: Flags): Obj {
     if (out.refused.length > 0) return finishWith()
   }
 
+  // ADR-0012 Decision 10: the extract is kept with the truss dir; a failed write is one decision line and changes nothing else
+  try {
+    const parts = tdir.split('/')
+    const session = parts.length >= 3 && parts[parts.length - 2] === 'workflows' && parts[parts.length - 3] === 'subagents' ? parts.slice(0, -3).join('/') : tdir
+    const { cat, ex } = retro()
+    ex.writeExtract(dir, ex.extractSession(session, cat.loadCatalog(`${PLUGIN}/retro/catalog.json`)))
+  } catch (e) {
+    const what = `retro extract failed: ${(e as Error).message}`
+    const had = existsSync(`${dir}/decisions.md`) ? readFileSync(`${dir}/decisions.md`, 'utf8') : ''
+    if (!had.includes(what)) appendDecision(dir, what)
+  }
+
   const audits = recordRun(dir, wfRun, factorySlugs, roles)
   for (const a of audits) out.audit.push({ label: a.label, why: a.why })
   recordEscalations(dir, wfRun, inRun, results, plan)
@@ -1205,7 +1305,7 @@ function cmdFinish(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
 }
 
 // Runs one command and returns what it printed and its exit code.
