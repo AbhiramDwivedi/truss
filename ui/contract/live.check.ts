@@ -93,7 +93,7 @@ async function waitFor<T>(what: string, pick: () => T | undefined | null | false
     if (got) return got;
     if (child?.exitCode !== null && child?.exitCode !== undefined) assert.fail(`ui/server/main.ts exited (${child.exitCode}) while waiting for ${what}: ${stderr.slice(-400)}`);
     const left = end - Date.now();
-    if (left <= 0) assert.fail(`timed out waiting for ${what}; session status ${state?.session?.status}, requests ${JSON.stringify((state?.requests ?? []).map((r: any) => [r.kind, r.status]))}`);
+    if (left <= 0) assert.fail(`timed out waiting for ${what}; session status ${state?.session?.status}, requests ${JSON.stringify((state?.requests ?? []).map((r: any) => [r.kind, r.status]))}, background tasks ${state?.session?.backgroundTasks?.length ?? 'unknown'}, recent transcript ${JSON.stringify((state?.transcript ?? []).slice(-8))}`);
     await new Promise<void>((r) => { waiters.push(r); setTimeout(r, Math.min(left, 500)); });
   }
 }
@@ -179,7 +179,9 @@ describe('live session with the real SDK and the Truss plugin', { timeout: 15 * 
     for (const q of card.questions) answers[q.question] = (q.options.find((o: any) => o.recommended) ?? q.options[0]).label;
     const done = await timedAnswer(card.id, { answers }, (r) => r.answers !== null);
     assert.deepEqual(done.answers, answers);
-    await waitFor('the turn to end with a reply card', () => {
+    // ADR-0014 reply rule: while background tasks run, a finished turn opens no card (its text is held);
+    // the reply card opens only once the tasks drop to 0.
+    await waitFor('the turn to end with a reply card (background tasks at 0)', () => {
       allowOthers(() => false);
       const q = openRequest('question');
       if (q) {
@@ -187,7 +189,9 @@ describe('live session with the real SDK and the Truss plugin', { timeout: 15 * 
         for (const x of q.questions) more[x.question] = x.options[0].label;
         void post(`/api/requests/${q.id}/answer`, { answers: more });
       }
-      return openRequest('reply');
+      const reply = openRequest('reply');
+      // A card seen while tasks still show above 0 is not accepted; the wait goes on until the tasks drop.
+      return reply && (state?.session?.backgroundTasks ?? []).length === 0 ? reply : undefined;
     });
   });
 
