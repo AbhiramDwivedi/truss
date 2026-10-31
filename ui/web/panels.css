@@ -1,5 +1,5 @@
 /* decisions, ADRs and design panels */
-#panels { display: grid; gap: var(--gap); }
+#panels { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 .panel-title { font-size: 1.05rem; }
 .panel-toggle {
   display: flex;
@@ -16,11 +16,11 @@
   cursor: pointer;
 }
 .panel-mark { display: inline-block; width: 1.2em; }
-.panel-body { margin-top: 8px; display: grid; gap: 12px; }
+.panel-body { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .panel-body[hidden], .design-sec[hidden], .empty[hidden] { display: none; }
 .panel-sub { font-size: 0.95rem; color: var(--muted); margin-bottom: 4px; }
 
-.entry-list { display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.entry-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-height: 40vh; overflow-y: auto; }
 .entry { display: flex; flex-wrap: wrap; gap: 2px 12px; border-left: 3px solid var(--border); padding: 2px 0 2px 10px; overflow-wrap: anywhere; }
 .entry-text { white-space: pre-wrap; }
 .entry-meta { color: var(--muted); font-size: 0.875rem; }
