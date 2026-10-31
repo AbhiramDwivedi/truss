@@ -10,15 +10,16 @@ const LOCAL = /[A-Za-z0-9._%+-]/
 const DOMAIN = /[A-Za-z0-9.-]/
 const NAME = /[A-Za-z0-9._-]/
 const TOKEN_CHAR = /[A-Za-z0-9_-]/
-const WORD_CHAR = /[A-Za-z0-9_]/
+const KEY_VALUE_CHAR = /[A-Za-z0-9_/+-]/
+const WORD_CHAR =/[A-Za-z0-9_]/
 
 const TOKEN_PREFIXES = ['sk-', 'ghp_', 'gho_', 'ghs_', 'github_pat_', 'xox', 'AKIA', 'glpat-', 'npm_']
 const KEY_WORDS = ['token', 'secret', 'password', 'api_key', 'apikey']
 
 // count token characters from `from`, stopping at `cap` (so a long run is never walked twice)
-const run = (s: string, from: number, cap: number): number => {
+const run = (s: string, from: number, cap: number, chars: RegExp = TOKEN_CHAR): number => {
   let n = 0
-  while (n < cap && from + n < s.length && TOKEN_CHAR.test(s[from + n]!)) n++
+  while (n < cap && from + n < s.length && chars.test(s[from + n]!)) n++
   return n
 }
 
@@ -167,7 +168,8 @@ const hasToken = (s: string): boolean => {
         j++
         while (lower[j] === ' ' || lower[j] === '\t') j++
         if (lower[j] === '"' || lower[j] === "'") j++
-        if (run(lower, j, 16) >= 16) return true
+        // the value after a key word also continues through `/` and `+` (base64 secrets); the prefix, JWT and bearer scans keep their own classes
+        if (run(lower, j, 16, KEY_VALUE_CHAR) >= 16) return true
       }
       i = lower.indexOf(w, i + 1)
     }
