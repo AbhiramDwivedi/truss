@@ -11,9 +11,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
-import { loadCatalog, matchLine } from '../retro/catalog.ts'
 import type { Catalog } from '../retro/catalog.ts'
-import { extractSession, writeExtract } from '../retro/extract.ts'
+
+// retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
+let retroMods: { cat: typeof import('../retro/catalog.ts'); ex: typeof import('../retro/extract.ts') } | undefined
+try {
+  retroMods = { cat: await import('../retro/catalog.ts'), ex: await import('../retro/extract.ts') }
+} catch {
+  retroMods = undefined
+}
+const retro = (): NonNullable<typeof retroMods> => {
+  if (retroMods === undefined) throw new Error('retro/ is not in this plugin copy')
+  return retroMods
+}
 
 // ==== core ====
 
@@ -527,7 +537,7 @@ function cmdCheck(f: Flags): Obj {
 function catalogHits(text: string): { id: string; fix: string; line: string }[] {
   let catalog: Catalog
   try {
-    catalog = loadCatalog(`${PLUGIN}/retro/catalog.json`)
+    catalog = retro().cat.loadCatalog(`${PLUGIN}/retro/catalog.json`)
   } catch {
     return []
   }
@@ -535,7 +545,7 @@ function catalogHits(text: string): { id: string; fix: string; line: string }[] 
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (line === '') continue
-    for (const id of matchLine(line, catalog)) if (!first.has(id)) first.set(id, line.length > 300 ? `${line.slice(0, 299)}…` : line)
+    for (const id of retro().cat.matchLine(line, catalog)) if (!first.has(id)) first.set(id, line.length > 300 ? `${line.slice(0, 299)}…` : line)
   }
   return catalog.entries.filter((e) => first.has(e.id)).map((e) => ({ id: e.id, fix: e.fix, line: first.get(e.id) as string }))
 }
@@ -561,7 +571,7 @@ function cmdDoctor(f: Flags): Obj {
   if (f.catalog !== undefined && (catPath === undefined || catPath === '')) throw usage('--catalog needs a value')
   let catalog: Catalog
   try {
-    catalog = loadCatalog(catPath === undefined ? `${PLUGIN}/retro/catalog.json` : flat(catPath))
+    catalog = retro().cat.loadCatalog(catPath === undefined ? `${PLUGIN}/retro/catalog.json` : flat(catPath))
   } catch (e) {
     throw usage((e as Error).message)
   }
@@ -1241,7 +1251,8 @@ function cmdFinish(f: Flags): Obj {
   try {
     const parts = tdir.split('/')
     const session = parts.length >= 3 && parts[parts.length - 2] === 'workflows' && parts[parts.length - 3] === 'subagents' ? parts.slice(0, -3).join('/') : tdir
-    writeExtract(dir, extractSession(session, loadCatalog(`${PLUGIN}/retro/catalog.json`)))
+    const { cat, ex } = retro()
+    ex.writeExtract(dir, ex.extractSession(session, cat.loadCatalog(`${PLUGIN}/retro/catalog.json`)))
   } catch (e) {
     const what = `retro extract failed: ${(e as Error).message}`
     const had = existsSync(`${dir}/decisions.md`) ? readFileSync(`${dir}/decisions.md`, 'utf8') : ''
