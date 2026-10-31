@@ -1,6 +1,6 @@
 ---
 name: init
-description: Checks that the project has a truss architecture doc and, when it doesn't, has the truss:design-engineer agent write one (principles, module map, ADRs for decisions already in the code). Then builds on kit's manifest when the project has one, never setting kit up itself, and proposes the 0.4.0 keys of .claude/truss.json (roles, deploy, writingSkill, promptOverrides), writing only the ones the client approves. Also proposes a short PM section for the project's CLAUDE.md, and a narrow permissions allowlist for the project's .claude/settings.json that the client writes. Use when the person runs /truss:init, asks to set up truss or write the project's architecture doc, or when a truss run finds no architecture doc.
+description: Checks that the project has a truss architecture doc and, when it doesn't, has the truss:design-engineer agent write one (principles, module map, ADRs for decisions already in the code). Then builds on kit's manifest when the project has one, never setting kit up itself, and proposes the 0.4.0 keys of .claude/truss.json (roles, deploy, writingSkill, promptOverrides), writing only the ones the client approves. Also proposes a short PM section for the project's CLAUDE.md, and a narrow permissions allowlist for the project's .claude/settings.json that truss writes once the client approves it. Use when the person runs /truss:init, asks to set up truss or write the project's architecture doc, or when a truss run finds no architecture doc.
 ---
 
 # truss init
@@ -119,7 +119,7 @@ Also propose a permissions allowlist for the project's `.claude/settings.json`. 
 - No allow rule reaches Claude Code's worktree guard, the source of most refusals. It is built into Claude Code, not truss. truss's stage prompts steer members past it (one plain command per Bash call, files written with Write and Edit). Say so, so the client doesn't expect the allowlist to fix it.
 - The classifier's "no verdict" refusals on Write and Edit come from the classifier service, not from a rule. A retry usually passes. Propose no rule for them.
 
-Show the client the proposed JSON and where each rule came from. The client writes the approved rules into `.claude/settings.json` themselves: truss never writes a settings file, approved or not (the classifier refuses it as self-modification, and that refusal is never worked around). If the client approves none, say so and carry on.
+Show the client the proposed JSON and where each rule came from. Truss writes the approved rules into `.claude/settings.json`; when Claude Code's classifier refuses that write, truss shows the refusal and the client writes the rules, and the refusal is never worked around. If the client approves none, say so and carry on.
 
 Show the client each proposed key with its value and where it came from, and ask which to write. Write only the approved ones. If there is nothing to propose, or the client approves nothing, say so and go to step 8.
 
