@@ -104,8 +104,8 @@ test('parseSnippets: ADR-0007 yields at least the five listed lines, in order, w
     ['agents/qc-engineer.md', 'git diff --no-color', 'fenced'],
     ['agents/foreman.md', 'git diff --no-color', 'fenced'],
     ['skills/run/SKILL.md', 'git diff --no-color', 'inline'],
-    ['agents/qc-engineer.md', 'git rev-parse --path-format=absolute --git-dir', 'inline'],
-    ['agents/qc-engineer.md', 'git rev-parse --path-format=absolute --git-common-dir', 'inline'],
+    ['agents/stress-engineer.md', 'git rev-parse --path-format=absolute --git-dir', 'inline'],
+    ['agents/stress-engineer.md', 'git rev-parse --path-format=absolute --git-common-dir', 'inline'],
   ])
   assert.deepEqual(first5[0].fills, { '<base>': 'HEAD~1', '<head>': 'HEAD' })
   assert.deepEqual(first5[3].fills, {})
@@ -129,6 +129,7 @@ test('parseSnippets: a malformed - line throws an Error that quotes the line', (
 const SNIPPETS = parseSnippets(ADR)
 SNIPPETS.forEach((line, i) => {
   test(`snippet ${i + 1}: ${line.file} \`${line.opening}\` (${line.form}) is found, runs ok, and prints`, () => {
+    assert.ok(existsSync(join(ROOT, line.file)), `producer missing: ${line.file}`)
     const text = extractSnippet(join(ROOT, line.file), line)
     assert.equal(typeof text, 'string', 'extractSnippet found nothing: a snippet the ADR lists is missing from its prompt')
     assert.ok(text.trim().length > 0)
@@ -217,8 +218,9 @@ test('git-dir check: the 4e43d5c script passes at root and in subdir, fails in a
   assert.equal(runSnippet(FIXED, {}, 'subdir').ok, true)
   assert.equal(runSnippet(FIXED, {}, 'worktree').ok, false)
 })
-test('git-dir check: the same comparison built from qc-engineer.md spans gives the fixed results', () => {
-  const [gd, gc] = SNIPPETS.filter((l) => l.file === 'agents/qc-engineer.md' && /git rev-parse --path-format=absolute --git-(dir|common-dir)$/.test(l.opening))
+test('git-dir check: the same comparison built from stress-engineer.md spans gives the fixed results', () => {
+  assert.ok(existsSync(join(ROOT, 'agents/stress-engineer.md')), 'producer missing: agents/stress-engineer.md')
+  const [gd, gc] = SNIPPETS.filter((l) => l.file === 'agents/stress-engineer.md' &&/git rev-parse --path-format=absolute --git-(dir|common-dir)$/.test(l.opening))
   assert.ok(gd && gc, 'ADR lists both git-dir spans')
   const a = extractSnippet(join(ROOT, gd.file), gd)
   const b = extractSnippet(join(ROOT, gc.file), gc)
