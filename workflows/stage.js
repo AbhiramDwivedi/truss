@@ -219,8 +219,22 @@ function taskPrompt(crew, task, note) {
   return memberPrompt(crew, task.role, { start, body })
 }
 
-// the files of the crew's tester tasks (from split or e.tasks); empty on a merge-ready resume
-const testerFiles = (crew) => [...new Set((crew.tasks || []).filter((t) => t.role === 'tester').flatMap((t) => t.files || []))]
+// a path that holds acceptance tests by its name
+const isTestPath = (p) => /(^|\/)(tests?|__tests__)\//.test(p) || /\.(check|test|spec)\./.test(p)
+
+// the files of the crew's tester tasks (from split or e.tasks). A merge-ready resume carries no tasks, so there the tester
+// files are the owned paths that look like tests (ADR-0014 Decision 4 has no merge-ready exception).
+const testerFiles = (crew) => {
+  const fromTasks = (crew.tasks || []).filter((t) => t.role === 'tester').flatMap((t) => t.files || [])
+  const files = fromTasks.length || crew.e.resume !== 'merge-ready' ? fromTasks : (crew.e.owns || []).filter(isTestPath)
+  return [...new Set(files)]
+}
+
+// the file paths a finding names
+const pathsIn = (text) => String(text).match(/[\w@./*-]*[\w*-]\.(?:ts|tsx|js|jsx|mjs|cjs|json|py|go|rs|sh|md|css|html|yml|yaml)\b/g) || []
+const namesFile = (finding, file) => finding.includes(file) || (file.includes('*') && pathsIn(finding).some((p) => globToRegExp(file).test(p)))
+// the paths a finding names that are not a tester file: its code half
+const namesCode = (finding, tf) => pathsIn(finding).some((p) => !tf.some((file) => p === file || (file.includes('*') && globToRegExp(file).test(p))))
 
 function fixPrompt(crew, what, detail, role = 'builder') {
   const e = crew.e
@@ -351,10 +365,11 @@ function findingsOf(text) {
 async function fixFindings(crew, what, header, findingsText, wholeDetail) {
   const tf = testerFiles(crew)
   const all = findingsOf(findingsText)
-  const mine = tf.length ? all.filter((f) => tf.some((file) => f.includes(file))) : []
+  const mine = tf.length ? all.filter((f) => tf.some((file) => namesFile(f, file))) : []
   if (!mine.length) return fixBuilder(crew, what, wholeDetail)
   await fixBuilder(crew, what, `${header}\n${mine.join('\n')}`, 'tester')
-  const rest = all.filter((f) => !mine.includes(f))
+  // a finding that names a tester file and a code file also goes to the builder, for its code half
+  const rest = all.filter((f) => !mine.includes(f) || namesCode(f, tf))
   if (rest.length) await fixBuilder(crew, what, `${header}\n${rest.join('\n')}`)
 }
 
