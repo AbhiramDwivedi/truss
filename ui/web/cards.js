@@ -73,6 +73,7 @@ function mountMessageBox(root, api) {
     box.readOnly = false
     if (res.status === 202 || res.status === 200) {
       box.value = ''
+      grow()
       status.textContent = 'Sent.'
     } else if (res.status === 409) {
       status.textContent = 'The session has ended, so the message was not sent. Your text is still in the box.'
@@ -91,7 +92,15 @@ function mountMessageBox(root, api) {
   })
   root.append(holder)
 
-  return function update(state) {
+  function grow() {
+    box.style.height = 'auto'
+    const edge = box.offsetHeight - box.clientHeight
+    box.style.height = (box.scrollHeight + edge) + 'px'
+  }
+  box.addEventListener('input', grow)
+
+  update.focusBox = () => box.focus()
+  function update(state) {
     const s = state.session || {}
     const open = (state.requests || []).some((r) => r.kind === 'reply' && r.status === 'open')
     const over = s.status === 'ended'
@@ -101,6 +110,7 @@ function mountMessageBox(root, api) {
       paintHint()
     }
   }
+  return update
 }
 
 // ---- request cards ------------------------------------------------------------------------------------
@@ -313,7 +323,7 @@ function questionRecap(r) {
   return out
 }
 
-function mountCards(root, api) {
+function mountCards(root, api, focusGoal) {
   const title = el('h2', { class: 'region-title', text: 'Requests' })
   const empty = el('p', { class: 'empty', text: 'No requests from Claude right now.' })
   const openList = el('div', { class: 'card-list', 'aria-label': 'Open requests' })
@@ -322,6 +332,20 @@ function mountCards(root, api) {
   root.append(title, empty, openList, settledHead, settledList)
   const items = new Map() // id -> { node, sig, local }
   let last
+  let lastSig = ''
+  const bgLine = el('p', { class: 'bg-line', role: 'status' })
+  bgLine.hidden = true
+  root.insertBefore(bgLine, empty)
+
+  // After an answered card leaves the open list: the next open card's first enabled control, else the goal box.
+  function focusNext(except) {
+    for (const card of openList.children) {
+      if (card === except) continue
+      const c = card.querySelector('input:not(:disabled), button:not(:disabled), textarea:not(:disabled)')
+      if (c) { c.focus(); return }
+    }
+    if (focusGoal) focusGoal()
+  }
 
   function place(list, wanted) {
     wanted.forEach((node, i) => {
@@ -353,8 +377,11 @@ function mountCards(root, api) {
       it.local.rebuild = () => {
         const fresh = buildCard(it.request, api, it.local)
         fresh.dataset.rid = it.request.id
+        const a = document.activeElement
+        const lostFocus = !a || a === document.body || (it.node && it.node.contains(a))
         if (it.node && it.node.parentNode) it.node.replaceWith(fresh)
         it.node = fresh
+        if (lostFocus) focusNext(fresh)
       }
       if (it.sig !== sig) {
         it.request = it.local.cancelled && r.status === 'open' ? { ...r, status: 'cancelled', cancelReason: r.cancelReason || null } : r
@@ -382,6 +409,12 @@ function mountCards(root, api) {
 
   return function update(state) {
     const reqs = state.requests || []
+    const s = state.session || {}
+    const tasks = Array.isArray(s.backgroundTasks) ? s.backgroundTasks.length : (s.backgroundTasks || 0)
+    const replyOpen = reqs.some((r) => r.kind === 'reply' && r.status === 'open')
+    const showBg = s.status === 'waiting' && tasks > 0 && !replyOpen
+    bgLine.hidden = !showBg
+    bgLine.textContent = showBg ? 'Agents still running; nothing needed from you' : ''
     if (reqs === last) return
     last = reqs
     paint(reqs)
@@ -397,7 +430,7 @@ export function mount(root, api) {
   const cardsHost = el('div', { class: 'cards-requests' })
   root.append(messageHost, cardsHost)
   const updateMessage = mountMessageBox(messageHost, api)
-  const updateCards = mountCards(cardsHost, api)
+  const updateCards = mountCards(cardsHost, api, () => updateMessage.focusBox())
   return function update(state) {
     updateMessage(state)
     updateCards(state)
