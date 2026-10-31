@@ -201,7 +201,7 @@ export const HEAD_MOVED = `${MARK} Not done yet: the head moved:`
 // headMovedReason(judged, head) =
 //   `${HEAD_MOVED} the QC ruled on ${judged}, the branch is at ${head}, and its patch id differs. Start a fresh QC under the next unused name on ${head}, and send your final report on its PASS.`
 export const EXAMINED_REASON = `${MARK} Not done yet: on this plan your final report also needs the sections "${EXAMINED}" (what the crew checked, each with its scope) and "${NOT_EXAMINED}" (what nobody checked, or None.), each a heading of its own.`
-export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`: "opus" or "sonnet". Call Agent again with model set.`
+export const MAIN_MODEL_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`model\`. Call Agent again with model set.`
 export const MAIN_EFFORT_REFUSAL = `${MARK} Refused: on a version 2 or later plan, every truss:* Agent call from the main session sets \`effort\` to "low", "medium", "high" or "xhigh": "medium" by default, "high" or "xhigh" only on the client's call. Call Agent again with effort set.`
 ```
 

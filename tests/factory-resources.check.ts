@@ -245,7 +245,7 @@ test('start --args-file short output carries held, after crews', () => {
   writeFileSync(low, JSON.stringify({ freeMB: 10, totalMB: 16000 }))
   const r = w.run(['start', '--stage', 'next', '--dir', w.dir, '--repo', w.repo, '--args-file', p], { sample: low })
   assert.equal(r.status, 0, say(r))
-  assert.deepEqual(Object.keys(r.json), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.deepEqual(Object.keys(r.json), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished', 'warnings'])
   assert.deepEqual(r.json.held.map((x) => x.slug), ['q'])
   assert.equal(typeof r.json.held[0].why, 'string')
   const full = JSON.parse(readFileSync(p, 'utf8'))

@@ -29,6 +29,8 @@ Return only this JSON, no prose around it:
 - `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`). Never "the codebase".
 - `brief`: the task's goal, the approved scope quoted word for word, what it must not touch, the check to run and what done means.
   Each Check command in a brief is one plain command: no `&&`, `;`, pipe, `cd`, for-loop or `$VAR` argument. Any logic goes in a script file the task names in `files`, and the Check runs that file.
+  No task's deliverable is a report, summary or findings `.md` file; findings go in the member's hand-back.
+  Members run plain single `node --test <files>` commands; the stage's green step runs the acceptance test.
 - `after`: names of tasks that must finish first. Empty when none.
 - `stop`: `null`, or `{ "tag": "QUESTION|BLOCKED|PROPOSAL", "text": "..." }` when you cannot plan. Anything that adds scope is a `PROPOSAL`; a design decision the architecture doc and ADRs don't hold is a `QUESTION`; work that doesn't fit the crew is `BLOCKED`. With a `stop`, `tasks` may be empty.
 

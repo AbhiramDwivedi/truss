@@ -587,6 +587,96 @@ describe('retro/cli.ts scrub: --deleted=<path> and person names', () => {
   })
 })
 
+// ---------- ADR-0016 Decisions 3 and 4: the manifest author line (item 3) and the README token (item 14) ----------
+
+describe('retro/cli.ts scrub: pf item 3, the plugin manifest author name is accepted and nothing wider', () => {
+  const AT = '@'
+  const alpha = (n: number) => Array.from(randomBytes(n), b => String.fromCharCode(97 + (b % 26))).join('')
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
+  const withNames = async (names: string, fn: () => Promise<void>) => {
+    const before = process.env.TRUSS_SCRUB_NAMES
+    process.env.TRUSS_SCRUB_NAMES = names
+    try {
+      await fn()
+    } finally {
+      if (before === undefined) delete process.env.TRUSS_SCRUB_NAMES
+      else process.env.TRUSS_SCRUB_NAMES = before
+    }
+  }
+  const manifest = (dir: string, author: object, description: string) => {
+    mkdirSync(join(dir, '.claude-plugin'), { recursive: true })
+    const p = join(dir, '.claude-plugin', 'plugin.json')
+    writeFileSync(p, JSON.stringify({ name: `x${hex(2)}`, description, author }, null, 2) + '\n')
+    return p
+  }
+  const hitsOf = (out: string) => linesOf(out).filter(l => l.startsWith('HIT: '))
+
+  test('pf item 3: a name on the description line hits, the same name on the author.name line does not; controls: a .md file and a plain x.json with the same author object still hit', async () => {
+    const { main } = await cliMod()
+    const name = `${cap(`fn${alpha(5)}`)} ${cap(`ln${alpha(6)}`)}`
+    const dir = mktmp()
+    const p = manifest(dir, { name }, `by ${name}`)
+    const md = join(dir, `n-${hex(2)}.md`)
+    writeFileSync(md, `${name} wrote this\n`)
+    const plain = join(dir, `x-${hex(2)}.json`)
+    writeFileSync(plain, JSON.stringify({ name: `x${hex(2)}`, description: 'd', author: { name } }, null, 2) + '\n')
+    await withNames(name, async () => {
+      const r = await main(['scrub', p])
+      assert.equal(r.code, 1, `the description line still hits: ${r.out}`)
+      assert.deepEqual(hitsOf(r.out), [`HIT: ${p}:3 | name`], `pf item 3: description hits, author.name (line 5) does not: ${r.out}`)
+      assert.equal((await main(['scrub', md])).code, 1, 'control: the name in a .md file hits')
+      const pj = await main(['scrub', plain])
+      assert.equal(pj.code, 1, 'control: the name in a plain json hits')
+      assert.deepEqual(hitsOf(pj.out), [`HIT: ${plain}:5 | name`], pj.out)
+    })
+  })
+
+  test('pf item 3: an email or a token on the manifest author line still hits; only the name kind is accepted', async () => {
+    const { main } = await cliMod()
+    const name = `${cap(`fn${alpha(5)}`)} ${cap(`ln${alpha(6)}`)}`
+    const dir = mktmp()
+    const mail = manifest(dir, { name: `${name} u${hex(3)}${AT}corp${hex(2)}.io` }, 'plain')
+    const dir2 = mktmp()
+    const key = manifest(dir2, { name: `${name} gh${'p_'}${hex(12).slice(0, 24)}` }, 'plain')
+    await withNames(name, async () => {
+      const a = await main(['scrub', mail])
+      assert.deepEqual(hitsOf(a.out), [`HIT: ${mail}:5 | email`], `the email on the author line hits and the name there does not: ${a.out}`)
+      const b = await main(['scrub', key])
+      assert.deepEqual(hitsOf(b.out), [`HIT: ${key}:5 | token`], `the token on the author line hits and the name there does not: ${b.out}`)
+    })
+  })
+
+  test('pf item 3: the real .claude-plugin/plugin.json scrubs clean with TRUSS_SCRUB_NAMES set to its own author.name', async () => {
+    const { main } = await cliMod()
+    const p = join(PLUGIN, '.claude-plugin', 'plugin.json')
+    const man = JSON.parse(readFileSync(p, 'utf8'))
+    assert.ok(man.author && man.author.name, 'control: the manifest has an author.name')
+    await withNames(man.author.name, async () => {
+      const r = await main(['scrub', p])
+      assert.equal(r.code, 0, `pf item 3: ${r.out}`)
+    })
+  })
+})
+
+describe('retro/cli.ts scrub: pf item 14, ui/README.md carries a placeholder token', () => {
+  test('pf item 14: ?token=<token> is there, no real-looking ?token= value is, and scrub finds no token hit', async () => {
+    const { main } = await cliMod()
+    const p = join(PLUGIN, 'ui', 'README.md')
+    const rd = readFileSync(p, 'utf8')
+    assert.ok(rd.includes('?token=<token>'), 'pf item 14: ui/README.md has the ?token=<token> placeholder')
+    assert.ok(!/\?token=(?!<token>)[A-Za-z0-9_-]{8,}/.test(rd), 'pf item 14: ui/README.md carries a real-looking token value')
+    const before = process.env.TRUSS_SCRUB_NAMES
+    process.env.TRUSS_SCRUB_NAMES = ''
+    try {
+      const r = await main(['scrub', p])
+      assert.ok(!/\| token/.test(r.out), `pf item 14: scrub flags a token: ${r.out}`)
+    } finally {
+      if (before === undefined) delete process.env.TRUSS_SCRUB_NAMES
+      else process.env.TRUSS_SCRUB_NAMES = before
+    }
+  })
+})
+
 // ---------- recur: text a command only showed is not a recurrence ----------
 
 describe('retro/cli.ts recur: a quoted catalog line is not a recurrence; the same line from a real failure is', () => {

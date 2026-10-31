@@ -664,3 +664,99 @@ describe('retro/extract.ts: a catalog anchor quoted by a show-only command or a 
     )
   })
 })
+
+// ---------- ADR-0016 Decision 3: F-42 and F-43 ----------
+
+describe('retro/extract.ts: pf F-43, the line after Exit code N joins the toolError quote', () => {
+  test('pf F-43: a Bash failure body "Exit code 2" then a message gives a quote holding both, at most 200 characters; control: one toolError', async () => {
+    const { extractSession } = await extractMod()
+    const a = `fa${hex(4)}`
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [use('b1', 'Bash', { command: `make ${hex(3)}` }, 1), result('b1', `Exit code 2\nError: ${a} real failure`, true, 2)],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    assertExtractSchema(x)
+    const te = x.items.filter((i: any) => i.kind === 'toolError')
+    assert.equal(te.length, 1, 'control: one toolError')
+    assert.ok(te[0].quote.startsWith('Exit code 2'), `quote starts with the exit code: ${JSON.stringify(te[0].quote)}`)
+    assert.ok(te[0].quote.includes(`Error: ${a} real failure`), `pf F-43: the next non-empty line joins the quote: ${JSON.stringify(te[0].quote)}`)
+    assert.ok(te[0].quote.length <= 200)
+  })
+
+  test('pf F-43: a blank line between Exit code and the message is skipped; a long message keeps the quote within 200 characters', async () => {
+    const { extractSession } = await extractMod()
+    const a = `fb${hex(4)}`
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [
+        use('b1', 'Bash', { command: `make ${hex(3)}` }, 1),
+        result('b1', `Exit code 1\n\n  \nError: ${a} first ${'w'.repeat(400)}`, true, 2),
+      ],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    const te = x.items.filter((i: any) => i.kind === 'toolError')
+    assert.equal(te.length, 1)
+    assert.ok(te[0].quote.startsWith('Exit code 1'), te[0].quote)
+    assert.ok(te[0].quote.includes(`Error: ${a} first`), `pf F-43: ${JSON.stringify(te[0].quote)}`)
+    assert.ok(te[0].quote.length <= 200, `quote is ${te[0].quote.length} characters`)
+  })
+})
+
+describe('retro/extract.ts: pf F-43, handEdit leaves out scratchpad and memory paths', () => {
+  test('pf F-43: Edit and Write to a scratchpad file and a memory file give no handEdit; control: repo files, even named like them, still do; /.git/truss/ stays out', async () => {
+    const { extractSession } = await extractMod()
+    const p = `p${hex(3)}`
+    const scratch = `/tmp/claude-1000/${p}/${sidOf()}/scratchpad/x.json`
+    const mem = `/home/<name>/.claude/projects/${p}/memory/m.md`
+    const repo = `/repo/src/a-${hex(3)}.ts`
+    const named1 = '/repo/src/scratchpad.ts'
+    const named2 = '/repo/docs/memory.md'
+    const gitTruss = `/repo/.git/truss/${hex(4)}/plan.md`
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [
+        use('e1', 'Edit', { file_path: scratch }, 1),
+        use('e2', 'Write', { file_path: mem }, 2),
+        use('e3', 'Edit', { file_path: repo }, 3),
+        use('e4', 'Edit', { file_path: named1 }, 4),
+        use('e5', 'Write', { file_path: named2 }, 5),
+        use('e6', 'Write', { file_path: gitTruss }, 6),
+      ],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    assertExtractSchema(x)
+    const paths = x.items.filter((i: any) => i.kind === 'handEdit').map((i: any) => i.path)
+    for (const keep of [repo, named1, named2]) assert.ok(paths.includes(keep), `control: ${keep} is a handEdit: ${paths.join(', ')}`)
+    assert.ok(!paths.includes(gitTruss), 'control: /.git/truss/ stays out')
+    assert.ok(!paths.includes(scratch), `pf F-43: the scratchpad edit is no handEdit: ${paths.join(', ')}`)
+    assert.ok(!paths.includes(mem), `pf F-43: the memory edit is no handEdit: ${paths.join(', ')}`)
+  })
+})
+
+describe('retro/extract.ts: pf F-42, a quoted string literal line is no catalog hit', () => {
+  test('pf F-42: double and single quoted literal lines ending in a comma give no hit; controls: an unquoted line and a quoted line with no comma do', async () => {
+    const { extractSession } = await extractMod()
+    const a = `qf${hex(4)}`
+    const id = `e-${hex(4)}`
+    const lines = [
+      `    "Error: ${a} quoted in source",`, // 1: no hit
+      `'Error: ${a} single quoted',`, // 2: no hit
+      `Error: ${a} real`, // 3: hit
+      `    "Error: ${a} quoted no comma"`, // 4: hit
+    ]
+    const run = async (ls: string[]) => {
+      const s = session(sid => ({
+        [`${sid}.jsonl`]: [use('b1', 'Bash', { command: `node --test ${hex(3)}.check.ts` }, 1), result('b1', ls.join('\n'), false, 2)],
+      }))
+      const x = extractSession(s.sessionDir, await catalogOf(s.root, [entry(id, a, [`Error: ${a}`])]))
+      return x.catalogHits.filter((h: any) => h.id === id).map((h: any) => h.quote)
+    }
+    // the first matching line per entry counts, so each case is its own result
+    const dq = await run([lines[0]])
+    const sq = await run([lines[1]])
+    const real = await run([lines[2]])
+    const nc = await run([lines[3]])
+    assert.equal(real.length, 1, 'control: an unquoted line hits')
+    assert.equal(nc.length, 1, 'control: a quoted line with no trailing comma hits')
+    assert.equal(dq.length, 0, `pf F-42: a double quoted literal line is no hit: ${JSON.stringify(dq)}`)
+    assert.equal(sq.length, 0, `pf F-42: a single quoted literal line is no hit: ${JSON.stringify(sq)}`)
+  })
+})

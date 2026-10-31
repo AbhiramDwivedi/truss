@@ -106,6 +106,12 @@ Measure: p95 under 5 s at 10,000 invoices
 Added: 2026-10-29T19:42:00Z | add invoice export
 Source: default
 
+## R-3: Exports hold only the signed-in owner's data
+Status: open
+Kind: constraint
+Added: 2026-10-29T19:42:00Z | add invoice export
+Source: client
+
 ## Non-goals
 - No PDF export.
 ```
