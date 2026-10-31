@@ -42,7 +42,7 @@ test('a foreman tagging its message to main appends one tag line, without the me
   expect(lines(w).some(l => l.includes('secret-text') || l.includes('Options'))).toBe(false)
 })
 
-test('a refused SendMessage, a refused Agent call and a refused hand-back append nothing', async ($, on) => {
+test('a refused SendMessage, a refused Agent call and a refused hand-back append nothing while the session has no plan.json (a refusal line needs one)', async ($, on) => {
   const w = world($, on)
   await startSession($)
   // a member may not message main
