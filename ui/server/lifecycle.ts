@@ -1,5 +1,6 @@
-// Process lifecycle for ui/server/main.ts: shutdown signals, parent-death watch, the per-port lockfile
-// and the "port in use" message. Node built-ins only; every function here never throws.
+// Process lifecycle for ui/server/main.ts: shutdown signals, parent and ancestor-chain death watch, the
+// per-port lockfile and the "port in use" message. Node built-ins only; every function here never throws.
+import { execFile } from 'node:child_process';
 import { closeSync, lstatSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,23 +26,142 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-// Calls onGone once when the process that started us goes away. On Linux and macOS an orphan is
-// re-parented, so process.ppid changes; on Windows ppid keeps the old value, so the old pid is
-// also probed. Skipped when started by init (ppid 1), which is a deliberate daemon. The timer is
-// unref'd, so it never keeps the process alive by itself.
-export function watchParent(onGone: () => void, opts: { intervalMs?: number; getPpid?: () => number; alive?: (pid: number) => boolean } = {}): () => void {
+// Field 4 (ppid) of a /proc/<pid>/stat line, read after the last ')' because the command name can
+// hold spaces and parentheses. null when the line is not in that shape.
+export function ppidFromProcStat(stat: string): number | null {
+  try {
+    const close = stat.lastIndexOf(')');
+    if (close < 0) return null;
+    const m = /^\s+\S+\s+(\d+)(?:\s|$)/.exec(stat.slice(close + 1));
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface Win32Row { ProcessId: number; ParentProcessId: number; CreationDate: number }
+
+// The ancestors of startPid, parent upward, from one Win32_Process snapshot (CreationDate in ms since
+// epoch). Stops at pid 1 or below, at a pid already seen, at a parent created after its child (Windows
+// reuses pids) and at a parent missing from the rows (that parent is still returned).
+export function chainFromWin32(rows: Win32Row[], startPid: number): number[] {
+  const out: number[] = [];
+  try {
+    const byPid = new Map<number, Win32Row>();
+    for (const r of rows) byPid.set(r.ProcessId, r);
+    const seen = new Set<number>([startPid]);
+    let cur = byPid.get(startPid);
+    while (cur) {
+      const ppid = cur.ParentProcessId;
+      if (!Number.isInteger(ppid) || ppid <= 1 || seen.has(ppid)) break;
+      const parent = byPid.get(ppid);
+      if (parent && parent.CreationDate > cur.CreationDate) break;
+      seen.add(ppid);
+      out.push(ppid);
+      cur = parent;
+    }
+  } catch {
+    // return what was walked
+  }
+  return out;
+}
+
+const READ_TIMEOUT_MS = 10_000;
+
+function run(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      execFile(cmd, args, { timeout: READ_TIMEOUT_MS, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function linuxChain(): number[] {
+  const out: number[] = [];
+  const seen = new Set<number>([process.pid]);
+  let pid: number | null = process.ppid;
+  try {
+    while (pid !== null && pid > 1 && !seen.has(pid) && pidAlive(pid)) {
+      out.push(pid);
+      seen.add(pid);
+      pid = ppidFromProcStat(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+    }
+  } catch {
+    // the read failed: keep what was walked
+  }
+  return out;
+}
+
+async function macChain(): Promise<number[]> {
+  const out: number[] = [];
+  const seen = new Set<number>([process.pid]);
+  let pid = process.ppid;
+  while (Number.isInteger(pid) && pid > 1 && !seen.has(pid) && pidAlive(pid)) {
+    out.push(pid);
+    seen.add(pid);
+    pid = Number((await run('ps', ['-o', 'ppid=', '-p', String(pid)])).trim());
+  }
+  return out;
+}
+
+async function windowsChain(): Promise<number[]> {
+  const ps = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,@{n="CreationDate";e={[DateTimeOffset]::new($_.CreationDate).ToUnixTimeMilliseconds()}} | ConvertTo-Json -Compress';
+  const parsed = JSON.parse(await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps]));
+  const rows: Win32Row[] = Array.isArray(parsed) ? parsed : [parsed];
+  return chainFromWin32(rows, process.pid).filter((p) => pidAlive(p));
+}
+
+// The pids above this process, parent upward. Read once, at start. May throw or reject: watchParent
+// then falls back to the parent-only check.
+export function defaultAncestors(): number[] | Promise<number[]> {
+  if (process.platform === 'linux') return linuxChain();
+  if (process.platform === 'win32') return windowsChain();
+  if (process.platform === 'darwin') return macChain();
+  return [];
+}
+
+// Calls onGone once when the process that started us, or any ancestor of it, goes away (ADR-0014
+// Decision 5). Under npm the parent is often a cmd.exe or an npm-cli process that can outlive the
+// shell that was closed, so the ancestor chain is read once, at start, through ancestors(), and each
+// tick checks every pid with alive(): no tick starts a child process. When ancestors() throws, rejects,
+// returns nothing or never settles, only the parent is checked. On Linux and macOS an orphan is
+// re-parented, so process.ppid changes; on Windows ppid keeps the old value, so the old pid is also
+// probed. Skipped when started by init (ppid 1), which is a deliberate daemon. The timer is unref'd,
+// so it never keeps the process alive by itself.
+export function watchParent(onGone: () => void, opts: { intervalMs?: number; getPpid?: () => number; alive?: (pid: number) => boolean; ancestors?: () => number[] | Promise<number[]> } = {}): () => void {
   const getPpid = opts.getPpid ?? (() => process.ppid);
   const alive = opts.alive ?? pidAlive;
+  const ancestors = opts.ancestors ?? defaultAncestors;
   const start = getPpid();
   if (!Number.isInteger(start) || start <= 1) return () => {};
+  let chain: number[] = [];
+  let done = false;
   const t = setInterval(() => {
-    if (getPpid() !== start || !alive(start)) {
+    if (done) return;
+    let gone = false;
+    try {
+      gone = getPpid() !== start || !alive(start) || chain.some((p) => !alive(p));
+    } catch {
+      gone = false;
+    }
+    if (gone) {
+      done = true;
       clearInterval(t);
       onGone();
     }
   }, opts.intervalMs ?? 1000);
   t.unref();
-  return () => clearInterval(t);
+  try {
+    Promise.resolve(ancestors()).then(
+      (pids) => { if (!done && Array.isArray(pids)) chain = pids.filter((p) => Number.isInteger(p) && p > 1 && p !== start); },
+      () => {},
+    );
+  } catch {
+    // sync throw: parent-only
+  }
+  return () => { done = true; clearInterval(t); };
 }
 
 // No token: the URL with its token is printed once, by the server that owns it (ADR-0011 Decision 6).
