@@ -24,7 +24,8 @@ const read = (...parts: string[]): string => {
 }
 const FOREMAN = read('agents', 'foreman.md')
 const QC = read('agents', 'qc-engineer.md')
-const ARCH = read('agents', 'design-engineer.md')
+const STRESS = read('agents', 'stress-engineer.md')
+const ARCH =read('agents', 'design-engineer.md')
 const RUN = read('skills', 'run', 'SKILL.md')
 
 const has = (text: string, re: RegExp, what: string) => assert.match(text, re, `missing: ${what}`)
@@ -32,15 +33,16 @@ const gone = (text: string, re: RegExp, what: string) => assert.doesNotMatch(tex
 
 describe('speed-rules', () => {
   test('1 stress test: one round, DEFECT/GAP, mkdtemp clone, high-impact crews only', () => {
+    assert.ok(STRESS !== '', 'producer missing: agents/stress-engineer.md')
     has(FOREMAN, /(one|1|a single) stress[- ]test round/i, 'foreman: one stress test round')
     has(FOREMAN, /at most (once|one more|a single|1)|only once|at most one (re-?run|more)/i, 'foreman: rerun at most once')
     has(FOREMAN, /real[- ]defect|\bDEFECT\b/i, 'foreman: rerun only after a real-defect fix')
-    has(QC, /\bDEFECT\b/, 'qc: DEFECT label')
-    has(QC, /\bGAP\b/, 'qc: GAP label')
-    has(QC, /end-of-run/i, 'qc: GAPs go to the end-of-run list')
-    has(QC, /mkdtemp/i, 'qc: probes in a mkdtemp clone')
-    has(QC, /GIT_\w*/, 'qc: GIT_* variables')
-    has(QC, /unset/i, 'qc: GIT_* unset')
+    has(STRESS, /\bDEFECT\b/, 'stress: DEFECT label')
+    has(STRESS, /\bGAP\b/, 'stress: GAP label')
+    has(STRESS, /end-of-run/i, 'stress: GAPs go to the end-of-run list')
+    has(STRESS, /mkdtemp/i, 'stress: probes in a mkdtemp clone')
+    has(STRESS, /GIT_\w*/, 'stress: GIT_* variables')
+    has(STRESS, /unset/i, 'stress: GIT_* unset')
     has(RUN + FOREMAN, /stress test[^.]{0,120}(high-impact|hooks, gates, merge)|(high-impact|hooks, gates, merge)[^.]{0,120}stress test/i, 'stress test only for high-impact crews')
     gone(FOREMAN, /After the fixes, run a fresh stress test/i, 'foreman: "After the fixes, run a fresh stress test"')
     gone(FOREMAN, /Have every break it reports fixed/i, 'foreman: "Have every break it reports fixed"')
