@@ -264,6 +264,21 @@ t('F-27: a QC FAIL naming no tester file runs a-builder-2 only (today\'s path)',
   has(call(r, 'a-builder-2').prompt, 'BFIND')
   assert.ok(!had(r, 'a-tester-2'), 'a tester fix member started for a finding naming no tester file')
 })
+t('F-27: a merge-ready resume (no tasks) sends a QC finding naming a tester file to a-tester-2, not a builder', async () => {
+  const r = await runStage([entry('a', { resume: 'merge-ready', tasks: [], labelFrom: { tester: 2, builder: 2, qc: 2 } })], {
+    labels: { 'a-qc-2': qcFail(`TFIND ${TF} misses the empty case`), 'a-qc-3': PASS, 'a-tester-2': done('feat/ft'), 'a-builder-2': done('feat/fb') },
+  })
+  assert.ok(had(r, 'a-tester-2'), `no a-tester-2; labels: ${r.labels.join(', ')}`)
+  assert.ok(!had(r, 'a-builder-2'), 'a builder fix ran for a tester-only finding')
+})
+t('F-27: one finding naming a tester file and a code file goes to both a-tester-2 and a-builder-2', async () => {
+  const r = await runStage([entry('a')], {
+    labels: { ...base('a', { 'a-qc': qcFail(`TFIND in ${TF}; BFIND in src/a.ts`), 'a-qc-2': PASS }), ...fixLabels },
+  })
+  assert.ok(had(r, 'a-tester-2'), `no a-tester-2; labels: ${r.labels.join(', ')}`)
+  assert.ok(had(r, 'a-builder-2'), 'no a-builder-2')
+  has(call(r, 'a-builder-2').prompt, 'BFIND')
+})
 t('F-27: a green-check failure still goes to a-builder-2 (today\'s path)', async () => {
   const r = await runStage([entry('a')], { labels: { ...base(), ...fixLabels }, runner: greenSeq(gFail('TAIL-ONE'), gOk(HEAD2)) })
   assert.ok(had(r, 'a-builder-2'))
