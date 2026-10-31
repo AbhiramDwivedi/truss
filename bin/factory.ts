@@ -977,9 +977,14 @@ const pidAlive = (pid: unknown): boolean => {
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
   try {
     process.kill(pid, 0)
-    return true
   } catch (e: any) {
     return e.code === 'EPERM'
+  }
+  try {
+    // a zombie has exited: its parent has not collected it yet
+    return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8'))
+  } catch {
+    return true
   }
 }
 
