@@ -237,6 +237,8 @@ function memberPrompt(crew, role, parts) {
     '',
     SHELL,
     '',
+    'Members run plain single `node --test <files>` commands; the stage green step runs the acceptance test.',
+    '',
     'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
     '',
     REFUSAL,
@@ -302,7 +304,7 @@ function resolverPrompt(crew, what, conflicts) {
     `Work in the crew worktree ${e.worktree} (branch ${e.branch}). Do not make a new worktree.`,
     `Conflicting files: ${conflicts.length ? conflicts.join(', ') : 'none listed; run git status to find them'}`,
     `Run git as git -C ${e.worktree} <command> so it acts on the crew worktree whatever your working directory is.`,
-    'Resolve every conflict, keep both sides intent, run the acceptance test, and commit the merge. Never edit an acceptance-test file to make it pass.',
+    'Resolve every conflict, keep both sides intent, run plain single `node --test <files>` commands (never the acceptance test, which the stage green step runs), and commit the merge. Never edit an acceptance-test file to make it pass.',
   ]
   return memberPrompt(crew, 'resolver', { start: [], body })
 }
@@ -566,7 +568,7 @@ const stressTestCount = (text) => {
   return m ? Number(m[1]) : null
 }
 
-// A Workflow run gives the stress test a worktree on a worktree-wf_<run>-<n> branch. agents/qc-engineer.md accepts it (f533265),
+// A Workflow run gives the stress test a worktree on a worktree-wf_<run>-<n> branch. agents/stress-engineer.md accepts it (its own-worktree rule),
 // but a session that loaded the agent definition before that change still checks for worktree-agent- only and refuses to
 // run (plugin agents don't reload mid-session), so the brief carries the rule itself.
 const WF_WORKTREE = 'Your worktree is one this Workflow run made, so `git branch --show-current` starts with `worktree-wf_`, not `worktree-agent-`. That branch passes the own-worktree check: when the git-dir and git-common-dir differ and the branch starts with `worktree-wf_` or `worktree-agent-`, you are in your own worktree; reset it to the head above and run the stress test there. Never report `STRESSTEST: not run` because the branch starts with `worktree-wf_`.'
