@@ -104,7 +104,7 @@ const planned = (s: string) => crew(s, { status: 'planned' })
 test('factory heavy splits argv at the first -- so command args that start with -- reach the command', () => {
   const w = world([planned('q')])
   const js = `console.log(JSON.stringify({ ok: true, argv: process.argv.slice(1) }))`
-  const r = heavy(w, 'q', 'split', [NODE, '-e', js, '--dir', 'not-a-flag', '--', '--label', 'x'])
+  const r = heavy(w, 'q', 'split', [NODE, '-e', js, '--', '--dir', 'not-a-flag', '--', '--label', 'x'])
   assert.equal(r.status, 0, say(r))
   assert.deepEqual(r.json.argv, ['--dir', 'not-a-flag', '--', '--label', 'x'], 'everything after the first -- is passed unchanged')
   assert.equal(r.json.heavy.label, 'split', 'flags before the -- are the heavy flags')
