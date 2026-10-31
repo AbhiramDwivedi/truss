@@ -225,7 +225,8 @@ function registerTests(mod: any): void {
     const fromWt = await mod.trussDirFor(wt, 'sess-1')
     assert.equal(path.basename(fromWt), 'sess-1')
     assert.equal(fs.realpathSync(path.dirname(path.dirname(fromWt))), fs.realpathSync(path.join(w.repo, '.git')))
-    assert.equal(fs.realpathSync(path.dirname(fromWt)), fs.realpathSync(path.dirname(fromMain)))
+    assert.equal(fs.realpathSync(path.dirname(path.dirname(fromWt))), fs.realpathSync(path.dirname(path.dirname(fromMain))))
+    assert.equal(path.basename(path.dirname(fromWt)), 'truss')
     assert.equal(path.dirname(path.dirname(fromWt)).includes(`${path.sep}worktrees${path.sep}`), false, 'not the per-worktree git dir')
   })
 
