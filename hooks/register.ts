@@ -266,6 +266,8 @@ export function refusalOf(result: unknown): { source: RefusalSource; category: s
   const reason = CLASSIFIER_REASON.exec(head)
   if (reason !== null) return { source: 'classifier', category: categoryOf(reason[1]) }
   if (CLASSIFIER_NO_VERDICT.test(head)) return { source: 'classifier', category: 'no verdict' }
+  if (head.includes('judged this action dangerous')) return { source: 'classifier', category: 'no explanation' }
+  if (head.includes('built-in Claude Code safety check')) return { source: 'permission', category: 'built-in safety check' }
   if (PERMISSION.test(head.slice(0, 400))) return { source: 'permission', category: /The user doesn't want to proceed/.test(head) ? 'the person said no' : 'denied' }
   return denied ? { source: 'other', category: categoryOf(head.split('\n', 1)[0]) } : undefined
 }
@@ -936,6 +938,50 @@ async function gitCommonDir($: $, cwd: string | undefined): Promise<string | und
   } catch {
     return undefined
   }
+}
+
+// every `worktree <path>` entry of `git worktree list --porcelain`, in order (the main checkout first), forward-slashed
+export function worktreeRootsOf(porcelain: string): string[] {
+  const roots: string[] = []
+  for (const line of porcelain.split('\n')) {
+    const l = line.replace(/\r$/, '')
+    if (l.startsWith('worktree ')) roots.push(slashed(l.slice('worktree '.length)))
+  }
+  return roots
+}
+
+// ADR-0014 Decision 2 (P-8): while a run is active (a plan with a crew not merged or dropped), the main thread may not
+// Edit or Write repo files; it delegates. Allowed: the truss dir, the requirements path beside the architecture doc,
+// .claude/settings.json, and every path outside the repo and its worktrees. Pure; fails open on anything unreadable.
+export function mainEditVerdict(
+  call: { tool: string; filePath: unknown; agentId: string | undefined },
+  ctx: { repoRoot: string; worktreeRoots: readonly string[]; trussDir: string | undefined; planText: string | undefined; architecture: string | undefined },
+): { deny: string } | undefined {
+  if (call.agentId !== undefined) return undefined
+  if (!['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(call.tool)) return undefined
+  if (typeof call.filePath !== 'string' || call.filePath === '') return undefined
+  if (ctx.planText === undefined) return undefined
+  const plan = parsePlan(ctx.planText)
+  if (plan === undefined) return undefined
+  const active = plan.crews.some(c => !(isRecord(c) && (c.status === 'merged' || c.status === 'dropped')))
+  if (!active) return undefined
+  const path = slashed(call.filePath)
+  const inside = (root: string): boolean => {
+    const r = slashed(root)
+    return r !== '' && (path === r || path.startsWith(`${r}/`))
+  }
+  const repoRoot = slashed(ctx.repoRoot)
+  if (![repoRoot, ...ctx.worktreeRoots].some(inside)) return undefined
+  if (ctx.trussDir !== undefined && inside(ctx.trussDir)) return undefined
+  if (path === `${repoRoot}/.claude/settings.json`) return undefined
+  if (ctx.architecture !== undefined && ctx.architecture !== '') {
+    const arch = slashed(ctx.architecture)
+    const cut = arch.lastIndexOf('/')
+    const dir = cut < 0 ? '' : arch.slice(0, cut)
+    const requirements = dir === '' ? `${repoRoot}/requirements.md` : dir.startsWith('/') ? `${dir}/requirements.md` : `${repoRoot}/${dir.replace(/^\.\//, '')}/requirements.md`
+    if (path === requirements) return undefined
+  }
+  return { deny: `${MARK} Refused: the main thread does not edit repo files while a run is active. Delegate this change to a crew or an agent; the PM's own writes are the truss dir, the requirements doc and .claude/settings.json.` }
 }
 
 async function homeDir($: $): Promise<string | undefined> {
@@ -2128,6 +2174,30 @@ export const register: Register = on => {
     })
     if (stamped === undefined) return next(e)
     return e.tool === 'Write' ? next({ ...e, content: stamped }) : next({ ...e, new_string: stamped })
+  }).catch(failOpen)
+
+  // The main-thread edit gate (ADR-0014 Decision 2, P-8): refuses a main-thread Edit, Write, MultiEdit or NotebookEdit on
+  // repo files while a run is active. Subagents are never gated; every failure lets the call through.
+  on('tool.call', { tool: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] }, async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    const input = e as unknown as { file_path?: unknown; notebook_path?: unknown }
+    const verdict = await safely($, 'main-edit gate', async () => {
+      const listed = await $.process.run(['git', 'worktree', 'list', '--porcelain'], { cwd: await $.session.cwd(), timeoutMs: 15_000 })
+      if (listed.exitCode !== 0) return undefined
+      const worktreeRoots = worktreeRootsOf(listed.stdout)
+      if (worktreeRoots.length === 0) return undefined
+      const dir = await rootOf($, state)
+      const planText = dir !== undefined && (await $.fs.exists(planPath(dir))) ? String(await $.fs.read(planPath(dir))) : undefined
+      const configPath = `${worktreeRoots[0]}/.claude/truss.json`
+      let architecture: string | undefined
+      if (await $.fs.exists(configPath)) {
+        const cfg: unknown = JSON.parse(String(await $.fs.read(configPath)))
+        if (isRecord(cfg) && typeof cfg.architecture === 'string') architecture = cfg.architecture
+      }
+      return mainEditVerdict({ tool: e.tool, filePath: input.file_path ?? input.notebook_path, agentId: e.agentId }, { repoRoot: worktreeRoots[0], worktreeRoots, trussDir: dir, planText, architecture })
+    })
+    if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)
+    return next(e)
   }).catch(failOpen)
 
   // The fetch gate (ADR-0005 s11): allows every call and logs one line when the session has a plan. The caller and the
