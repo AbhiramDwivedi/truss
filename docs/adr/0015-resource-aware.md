@@ -158,7 +158,7 @@ The four open items from the plan are decided here.
 
 ### Checks through heavy: runner-run commands only
 
-(b) is decided. Only runner-run commands are queued through `factory heavy`: the red and green `check` runs. A member's own builds and tests aren't queued. They are covered by admission at member start and by the effective parallelism. Nobody probes `factory heavy` from a worktree member. The members' unqueued heavy commands go to the plugin fix goal as a proven gap (checker-24 (b)).
+(b) is decided. Only runner-run commands are queued through `factory heavy`: the red and green `check` runs. A member's own builds and tests aren't queued. They are covered by admission at member start and by the effective parallelism. Nobody probes `factory heavy` from a worktree member. The members' unqueued heavy commands go to the plugin fix goal as a proven gap (checker-24 (b)). [ADR-0017](0017-member-heavy-commands.md) decides it: a member-side heavy path, not yet built.
 
 - `check` (`workflows/stage.js:178`) becomes one runner call of this command:
 
@@ -193,7 +193,7 @@ These are decided in Decision 3: a dead owner pid, or no owner file and an mtime
 - A detached UI server, or a `--detached` flag.
 - The foreman path (`agents/foreman.md`) is out of scope, and this ADR says so. Foreman crews get `start`'s admission (Decision 2) and nothing else.
 - macOS proof.
-- Queuing members' own heavy commands. This goes to the plugin fix goal as a proven gap.
+- Queuing members' own heavy commands. This goes to the plugin fix goal as a proven gap, decided in [ADR-0017](0017-member-heavy-commands.md).
 - Carrying `resources/` under `plugins/truss` (C6, for the plugin-move goal).
 
 ## Seams to pin
