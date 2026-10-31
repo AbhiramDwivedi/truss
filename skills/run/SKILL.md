@@ -200,12 +200,14 @@ The plan gives each crew its slug, stage, verdict, modules, owned paths, accepta
 
 ## 5. Show the plan, approve it, freeze the scope
 
-Show the client the budget and the queue whatever the run's approval:
+Section 4's `plan-check` has passed before you get here. Show the client the budget and the queue whatever the run's approval:
 
 - **Budget:** each crew's `estAgents`, and the total.
 - **Queue:** the crews stage by stage, in the order of the `crews` array, which is the queue order within a stage, and `maxParallelCrews`.
 
 Under them, list the files no crew owns that more than one crew might want (shared config, lockfiles, generated code), and say who gets them. Log the plan in `decisions.md`.
+
+After `plan-check` passes and before any crew starts, run `node <plugin>/bin/factory.ts doctor --dir <truss dir> --repo <repo>`, show the client its bundle with the plan as one approval (allow rules for the committed `.claude/settings.json`, downloads and standing rulings), and log each bundle item as a decision. In an auto-approved run, a non-empty bundle waits for the client before any crew starts; an empty bundle asks nothing.
 
 Write `approvedAt` with Edit, as an RFC 3339 date-time with a time-zone offset, such as `2026-10-26T14:05:00Z`. Read the time from your own clock, for example with `date -u +%Y-%m-%dT%H:%M:%SZ`: the plugin stamps the time only on `decisions.md` lines, never in `plan.json`.
 
@@ -419,6 +421,8 @@ The plugin doesn't save reports for agents you start outside a crew. Read its ha
 
 When the plan has more than one stage, integrate stage by stage. Once a stage's crews have all passed their QC engineers, the integrator merges their branches into the integration branch and a fresh integration QC engineer rules on it. On its PASS, set those crews to `"merged"`. The next stage's foremen build on the integration branch: their brief names it, and each foreman resets its worktree to it first. Start a fresh integrator for each later stage, named `integrator-2`, then `integrator-3`, with the same brief and the integration branch's head.
 
+**Scrub before merge.** For a retro fix goal, run `node <plugin>/retro/cli.ts scrub <changed file>` on each changed file before each merge of the fix; a hit blocks the merge (R-32), and the fix goes back to its foreman to remove it.
+
 ### Adopt what the run learned
 
 When the run's last crew has merged and any foreman's report carried a `## Learned` section, run one extend pass before you report: start an extend design engineer as in section 4, with `Extend pass.`, every `## Learned` item with its crew and source, and the same paths; give its new or changed sections to a fresh checking engineer with the same narrow brief; then commit the pass on its own on the target, as in section 4, with the subject `docs(arch): adopt learned items`.
@@ -426,6 +430,8 @@ When the run's last crew has merged and any foreman's report carried a `## Learn
 ## 10. Report to the client
 
 First, sweep the end-of-run list. Start a fresh checking engineer, as in "The checking engineer", whose brief opens with the line `End-of-run sweep.` and gives every deferred item and every `Deferred` and open-question line from the foremen's final reports and the QC engineers' and stress tests' reports, each with where it came from, plus the decision log's path. For each item it returns `SWEEP: keep | drop`. Log each as one line, `- HH:MM | sweep <keep|drop>: <item> | <reason> | checker-<n> | <outcome>`, where `<outcome>` is `followed` or `overruled: <reason>`. Follow it by default; to keep an item the checking engineer dropped, log why.
+
+**Retro.** After the sweep, the PM starts the retro without waiting for the client to ask, following `skills/retro/SKILL.md` on this session's truss dir. A retro triage sorts each finding into fix now, defer or drop, one line each as `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`, and drops a finding the catalog already holds, naming the catalog id as the reason. A finding that is not about truss's own setup (plugin, skills, agents, CLAUDE.md, `.claude/settings.json`) is dropped with the reason `out of scope (R-30)`; the retro never changes code a truss run delivered. The fix-now findings become a goal through amend (ADR-0010), as in "Take a new goal mid-run". A fix goal is `"auto"` unless a run-skill section-4 client trigger applies, and a `.claude/settings.json` edit counts as one; then it is `"client"`. Each fix goes through a QC engineer before merge, and a fix that fails QC is not merged and is reported to the client. On a project other than the truss repo, a plugin fix is a draft at `<truss dir>/retro/upstream/<finding id>.md`, reported to the client and not applied. Truss writes `.claude/settings.json` in a fix; when the classifier refuses a write, show the client the refusal and let the client write the rules, never work around it.
 
 Then mark the requirements met. For each id in `brief.json`'s `requirements` whose citing crews all merged, set `Status: met` in `requirements.md`; an id whose crew was dropped stays `open`. Run `node <plugin>/brief/cli.ts check <requirements path>` until it prints `OK:`, then commit the file alone on the target as `docs(req): met R-...`, as an extend pass is committed.
 
@@ -441,6 +447,6 @@ Before anything leaves the machine, report:
 - the items the sweep kept, each with its failure, and only the number it dropped. Dropped items stay in `decisions.md`; never name or list one, not even for information, in the report, the PR or anywhere else;
 - the high-impact files that changed, for the client to read. List only those;
 - the files, exports, config keys and prompt rules the run added or removed, as counts. Take them from `git diff --name-status <base>..<target>` (files), `git diff --stat` (size), and `git diff -U0 | grep` for `export` lines, config keys and prompt-rule lines. The PM never counts by reading (P20). The QC engineer checks this: in sequential mode each crew's QC engineer, in single mode the integration QC engineer;
-- each agent type the work needed and the session didn't have (section 3). Point the client to `kit:revise` to add it; truss never writes agents or skills.
+- each agent type the work needed and the session didn't have (section 3). Point the client to `kit:revise` to add it; truss never writes agents or skills, except that a retro fix goal on the truss repo does.
 
 Ask the client before every push and before opening a PR, unless the client has granted merge or push ownership for the project, in its CLAUDE.md or memory. Then you push, open the PR and merge it yourself once the integration QC engineer passes, or in sequential mode once the last crew has merged and its checks pass. In `single` mode, the PR is one PR from the integration branch into the target. Production deploys always go to the client.

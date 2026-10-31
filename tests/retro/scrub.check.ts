@@ -130,28 +130,30 @@ describe('retro/scrub.ts: home paths', () => {
 })
 
 describe('retro/scrub.ts: tokens by prefix, with the 20-character boundary', () => {
-  const PREFIXES = ['sk-', 'ghp_', 'gho_', 'ghs_', 'github_pat_', 'xox', 'AKIA']
+  const PREFIXES = ['sk-', 'ghp_', 'gho_', 'ghs_', 'github_pat_', 'xox', 'AKIA', 'glpat-', 'npm_']
 
-  test('each prefix followed by 20 characters is a token; 19 is not; 40 is; _ and - count as token characters', async () => {
+  test('each prefix followed by 20 characters (AKIA: 16) is a token; one fewer is not; 40 is; _ and - count as token characters', async () => {
     const { scrub } = await scrubMod()
     for (const p of PREFIXES) {
+      // a real AWS key id is AKIA plus 16 characters (20 in all); the other prefixes need 20 after them
+      const n = p === 'AKIA' ? 16 : 20
       const text = [
         `first clean line ${hex(2)}`,
-        `see ${p}${chars(20)} now`,
-        `see ${p}${chars(19)} now`,
+        `see ${p}${chars(n)} now`,
+        `see ${p}${chars(n - 1)} now`,
         `see ${p}${chars(40)} now`,
-        `see ${p}${mixed(20)} now`,
-        `see ${p}${mixed(19)} now`,
+        `see ${p}${mixed(n)} now`,
+        `see ${p}${mixed(n - 1)} now`,
         `quoted "${p}${chars(24)}",`,
         p,
         `${p} ${chars(30)}`,
       ].join('\n')
       const hits = scrub(text)
-      assert.deepEqual(at(hits, 2), ['token'], `${p} + 20`)
-      assert.deepEqual(at(hits, 3), [], `${p} + 19 is below the boundary`)
+      assert.deepEqual(at(hits, 2), ['token'], `${p} + ${n}`)
+      assert.deepEqual(at(hits, 3), [], `${p} + ${n - 1} is below the boundary`)
       assert.deepEqual(at(hits, 4), ['token'], `${p} + 40`)
-      assert.deepEqual(at(hits, 5), ['token'], `${p} + 20 with _ and -`)
-      assert.deepEqual(at(hits, 6), [], `${p} + 19 with _ and -`)
+      assert.deepEqual(at(hits, 5), ['token'], `${p} + ${n} with _ and -`)
+      assert.deepEqual(at(hits, 6), [], `${p} + ${n - 1} with _ and -`)
       assert.deepEqual(at(hits, 7), ['token'], `${p} in quotes`)
       assert.deepEqual(at(hits, 8), [], `${p} alone`)
       assert.deepEqual(at(hits, 9), [], `${p} then a space ends the token`)
@@ -264,6 +266,132 @@ describe('retro/scrub.ts: shape of the answer, line endings and size', () => {
     assert.ok(Array.isArray(scrub('sk-'.repeat(10000))), 'a prefix run finishes')
     assert.deepEqual(scrub('x'.repeat(30000) + `\n${PREFIXES_FIRST()}${chars(20)}`).map((h: any) => h.line), [2])
     assert.ok(Date.now() - t0 < 25000, 'under 25 seconds in all')
+  })
+})
+
+// ---------- stress fixes: more token forms, pins, encoded dirs, person names, Windows paths ----------
+// Every plant is per run and assembled from parts, so this file scrubs clean itself.
+
+const alpha = (n: number) => Array.from(randomBytes(n), b => String.fromCharCode(97 + (b % 26))).join('')
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
+const BS = '\\'
+const HOME = ['', 'ho' + 'me', ''].join('/') // /home/
+const ENC = '-ho' + 'me-'
+
+describe('retro/scrub.ts: bearer values, JWTs and secret key names', () => {
+  test('a Bearer value of 30 characters and a three-part eyJ token hit; short values, bare words and prose do not', async () => {
+    const { scrub } = await scrubMod()
+    const lines = [
+      `Authorization: Bearer ${chars(30)}`, // 1
+      `Authorization: Bearer eyJ${chars(20)}.eyJ${chars(20)}.${chars(20)}`, // 2
+      `jwt eyJ${chars(20)}.${chars(20)}.${chars(20)} end`, // 3
+      `Authorization: Bearer ${chars(6)}`, // 4: too short
+      'the Bearer of the news', // 5
+      'Bearer', // 6
+      `eyJ${chars(4)} alone`, // 7
+      `clean ${chars(12)}`, // 8
+    ]
+    const hits = scrub(lines.join('\n'))
+    for (const l of [1, 2, 3]) assert.deepEqual(at(hits, l), ['token'], `line ${l}`)
+    for (const l of [4, 5, 6, 7, 8]) assert.deepEqual(at(hits, l), [], `line ${l} is clean`)
+  })
+
+  test('a secret key name with a word tail before the separator hits like the bare key word; a tail with no separator does not', async () => {
+    const { scrub } = await scrubMod()
+    const hit = [`aws_secret_access_key = ${chars(30)}`, `aws_secret_access_key=${chars(30)}`, `client_secret: ${chars(20)}`, `refresh_token="${chars(24)}"`]
+    for (const h of hit) assert.deepEqual(at(scrub(h), 1), ['token'], h)
+    const clean = [`aws_secret_access_key = ${chars(8)}`, 'the secret_santa list is fun', `secret_rotation is weekly ${chars(30)}`]
+    for (const c of clean) assert.deepEqual(scrub(c), [], c)
+  })
+})
+
+describe('retro/scrub.ts: a package pin is not an email', () => {
+  test('name@version pins are clean, a real address next to a pin still hits, and look-alikes with a letter-led last label hit', async () => {
+    const { scrub } = await scrubMod()
+    const pkg = `pk${alpha(5)}`
+    const ver = `${1 + (randomBytes(1)[0] % 9)}.${randomBytes(1)[0] % 90}.${randomBytes(1)[0] % 90}`
+    assert.deepEqual(scrub(`Run npx ${pkg}${AT}${ver} install chromium.`), [])
+    assert.deepEqual(scrub(`Pin ${pkg}-${alpha(3)}${AT}${ver} in the notes.`), [])
+    assert.deepEqual(at(scrub(`${pkg}${AT}${ver} and ${email(user(), `corp${alpha(3)}.io`)}`), 1), ['email'])
+    assert.deepEqual(at(scrub(`mail ${email(user(), `corp${alpha(3)}.io`)} today`), 1), ['email'])
+  })
+})
+
+describe('retro/scrub.ts: the encoded project dir and a bare home dir', () => {
+  test('-home-<user>-<project> after a space, a slash or a quote hits; a word that merely holds it and a lone flag do not', async () => {
+    const { scrub } = await scrubMod()
+    const u = user()
+    const hit = [`see ~/.claude/projects/${ENC}${u}-Projects-${alpha(3)}/ here`, `dir ${ENC}${u}-x`, `"${ENC}${u}-x"`, `${ENC}${u}-x at the start`]
+    for (const h of hit) assert.deepEqual(at(scrub(h), 1), ['home-path'], h)
+    const clean = [`a sweet${ENC}page`, `use ${ENC} as a flag`, `the ${alpha(4)}${ENC}${u}-x word`]
+    for (const c of clean) assert.deepEqual(scrub(c), [], c)
+  })
+
+  test('a bare /home/<user> with no trailing slash hits, at the end of a line or before a space; the placeholder and look-alikes do not', async () => {
+    const { scrub } = await scrubMod()
+    const u = user()
+    for (const h of [`cd ${HOME}${u}`, `${HOME}${u} is the home`, `HOME=${HOME}${u}`]) assert.deepEqual(at(scrub(h), 1), ['home-path'], h)
+    for (const c of [`cd ${HOME}<name>`, `${HOME}<name>/x`, `the ${HOME} folder`, `/homework/${u}`]) assert.deepEqual(scrub(c), [], c)
+  })
+})
+
+describe('retro/scrub.ts: person names, matched on word boundaries without case', () => {
+  test('the full name, the first part alone and the last part alone each hit; case does not matter; a clean line does not', async () => {
+    const { scrub } = await scrubMod()
+    const first = cap(`fn${alpha(5)}`)
+    const last = cap(`ln${alpha(6)}`)
+    const names = [`${first} ${last}`, first, last]
+    const lines = [
+      `by ${first} ${last} today`, // 1
+      `thanks ${first} for the review`, // 2
+      `cc ${last.toUpperCase()}`, // 3
+      `(${last.toLowerCase()}), ${first}.`, // 4: punctuation around is a boundary
+      `nothing about anyone ${hex(3)}`, // 5
+    ]
+    const hits = scrub(lines.join('\n'), names)
+    for (const l of [1, 2, 3, 4]) assert.deepEqual(at(hits, l), ['name'], `line ${l}`)
+    assert.deepEqual(at(hits, 5), [])
+    assert.deepEqual(scrub(lines.join('\n')), [], 'with no names configured nothing is a name')
+  })
+
+  test('a name inside a longer word is no hit, before, after or both', async () => {
+    const { scrub } = await scrubMod()
+    const first = cap(`fn${alpha(5)}`)
+    const last = cap(`ln${alpha(6)}`)
+    const lines = [`pre${first.toLowerCase()}post`, `x${last}`, `${first}${alpha(2)}`, `${first}${last}`]
+    assert.deepEqual(scrub(lines.join('\n'), [`${first} ${last}`, first, last]), [])
+  })
+})
+
+describe('retro/scrub.ts: Windows home paths', () => {
+  test('C:\\Users\\<n>\\, any drive letter in either case, forward slashes and the JSON-escaped form all hit', async () => {
+    const { scrub } = await scrubMod()
+    const n = user()
+    const forms = [
+      `C:${BS}Users${BS}${n}${BS}work`,
+      `d:${BS}Users${BS}${n}${BS}work`,
+      `c:/Users/${n}/work`,
+      `E:/Users/${n}/work`,
+      `C:${BS}${BS}Users${BS}${BS}${n}${BS}${BS}work`,
+    ]
+    for (const f of forms) {
+      assert.deepEqual(at(scrub(`see ${f} here`), 1), ['home-path'], f)
+      assert.deepEqual(at(scrub(`{"cwd":"${f}"}`), 1), ['home-path'], `json ${f}`)
+    }
+  })
+
+  test('the literal <name> placeholder and system directories pass; a real path beside a placeholder still hits', async () => {
+    const { scrub } = await scrubMod()
+    const n = user()
+    const clean = [
+      `C:${BS}Users${BS}<name>${BS}x`,
+      `c:/Users/<name>/x`,
+      `C:${BS}${BS}Users${BS}${BS}<name>${BS}${BS}x`,
+      `C:${BS}Windows${BS}System32`,
+      `C:${BS}Program Files${BS}${alpha(5)}`,
+    ]
+    for (const c of clean) assert.deepEqual(scrub(c), [], c)
+    assert.deepEqual(at(scrub(`C:${BS}Users${BS}<name>${BS}x then C:${BS}Users${BS}${n}${BS}x`), 1), ['home-path'])
   })
 })
 

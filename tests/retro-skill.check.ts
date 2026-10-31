@@ -188,15 +188,46 @@ test('scrub before commit (R-32): retro/cli.ts scrub runs on every changed file 
   matches(SKILL, /A hit blocks the merge/, 'retro SKILL.md')
 })
 
-test('section 4 says a fix goal writes the settings file and the classifier refusal goes to the client', () => {
+const settingsWordingOk = (s4: string): boolean => {
+  // flatten whitespace and hide the dot in the path so sentences split on real full stops only
+  const f = s4.replace(/\s+/g, ' ').replace(/`\.claude\/settings\.json`/g, '`SETTINGS`')
+  const trussWrites = /[Tt]russ writes (?:(?!\b(?:nothing|not|never|no|none)\b)[^.])*`SETTINGS`/.test(f)
+  const clientOnRefusal = f.split('.').some((sent) => sent.includes('client writes the rules') && sent.includes('classifier refuses'))
+  return trussWrites && clientOnRefusal && f.includes('is never worked around')
+}
+const INVERTED_S4 = '- A fix goal never touches `.claude/settings.json`.\n- When the classifier refuses, the client writes nothing and truss works around the refusal.'
+const ADR_SENTENCE = "Truss writes the approved rules into `.claude/settings.json`; when Claude Code's classifier refuses that write, truss shows the refusal and the client writes the rules, and the refusal is never worked around."
+const TAIL = '; the client writes the rules when the classifier refuses, and the refusal is never worked around.'
+const FIX_GOAL = /fix goal[^.]*`\.claude\/settings\.json`|`\.claude\/settings\.json`[^.]*fix goal/
+const REJECTED: Record<string, string> = {
+  'inverted text': INVERTED_S4,
+  'truss writes nothing': 'Truss writes nothing into `.claude/settings.json`' + TAIL,
+  'truss writes the rules but not into the file': 'Truss writes the rules, but not into `.claude/settings.json`' + TAIL,
+  'client writes only when truss forgets': 'Truss writes the approved rules into `.claude/settings.json`; the client writes the rules only when truss forgets, and the refusal is never worked around.',
+  'refusal is worked around': 'Truss writes the approved rules into `.claude/settings.json`; the client writes the rules when the classifier refuses, and the refusal is worked around.',
+  'truss never writes': 'Truss never writes the rules into `.claude/settings.json`' + TAIL,
+}
+
+test('section 4 anchors the settings edit to a fix goal, and says truss writes the rules, the client writes them when the classifier refuses, and the refusal is never worked around', () => {
   const s4 = section(SKILL, '## 4. Propose changes')
   assert.ok(!s4.includes(SETTINGS_SENTENCE_OLD), `producer missing: retro SKILL.md section 4 still says "${SETTINGS_SENTENCE_OLD}"`)
-  matches(s4, /fix goal[^.]*`\.claude\/settings\.json`|`\.claude\/settings\.json`[^.]*fix goal/, 'retro SKILL.md section 4')
-  matches(s4, /classifier refuses[^.]*client writes|client writes[^.]*classifier refuses/, 'retro SKILL.md section 4')
+  matches(s4, FIX_GOAL, 'retro SKILL.md section 4')
+  assert.ok(settingsWordingOk(s4), 'producer missing: retro SKILL.md section 4 must say truss writes the rules into `.claude/settings.json`, the client writes the rules when the classifier refuses, and the refusal is never worked around')
   assert.ok(
     flatten(section(SKILL, '## 5. Write only what the client approves')).includes('for the client to write'),
     'producer missing: retro SKILL.md section 5 lost "for the client to write"',
   )
+})
+
+test('negative controls: the settings wording pin rejects each inverted or weakened section 4', () => {
+  for (const [name, text] of Object.entries(REJECTED)) assert.ok(!settingsWordingOk(text), `accepted: ${name}`)
+})
+
+test('positive control: the ADR-0012 settings sentence passes the settings wording pin', () => {
+  assert.ok(settingsWordingOk(ADR_SENTENCE))
+  const withFixGoal = 'A fix goal edits `.claude/settings.json`. ' + ADR_SENTENCE
+  assert.ok(settingsWordingOk(withFixGoal))
+  matches(withFixGoal, FIX_GOAL, 'positive control')
 })
 
 test('the catalog grows: each merged fix adds or updates an entry with fixedBy', () => {

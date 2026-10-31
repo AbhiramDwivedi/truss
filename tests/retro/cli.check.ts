@@ -15,9 +15,9 @@
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { after, describe, test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -451,5 +451,157 @@ describe('retro/cli.ts scrub: several files, every hit listed', () => {
     assert.equal(bad.code, 1, bad.out)
     assert.deepEqual(linesOf(bad.out).filter(l => l.startsWith('HIT: ')), [`HIT: ${dirty}:2 | home-path`])
     assert.ok(!bad.out.includes('OK:'), 'no OK line when a file is dirty')
+  })
+})
+
+// ---------- scrub --deleted and person names ----------
+
+describe('retro/cli.ts scrub: --deleted=<path> and person names', () => {
+  const AT = '@'
+  const alpha = (n: number) => Array.from(randomBytes(n), b => String.fromCharCode(97 + (b % 26))).join('')
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
+
+  test('a file the fix removed passes with --deleted=, a mistyped path still exits 2, and a deleted path that is still there is scrubbed like any file', async () => {
+    const { main } = await cliMod()
+    const dir = mktmp()
+    const clean = join(dir, `clean-${hex(2)}.md`)
+    writeFileSync(clean, 'nothing here\n')
+    const gone = join(dir, `gone-${hex(2)}.md`)
+    assert.equal((await main(['scrub', clean, gone])).code, 2, 'without the flag a missing file is an error')
+    const ok = await main(['scrub', clean, `--deleted=${gone}`])
+    assert.equal(ok.code, 0, ok.out)
+    assert.ok(ok.out.includes(`GONE: ${gone}`), ok.out)
+    assert.ok(!ok.out.includes('HIT:'))
+    assert.equal((await main(['scrub', `--deleted=${gone}`])).code, 0, 'a deleted path alone is enough')
+    assert.equal((await main(['scrub', `--deleted=`, clean])).code, 2, 'an empty path is a usage error')
+    writeFileSync(gone, `mail ${hex(3)}${AT}corp${hex(2)}.io\n`)
+    const bad = await main(['scrub', clean, `--deleted=${gone}`])
+    assert.equal(bad.code, 1, bad.out)
+    assert.deepEqual(linesOf(bad.out).filter(l => l.startsWith('HIT: ')), [`HIT: ${gone}:1 | email`])
+  })
+
+  test('TRUSS_SCRUB_NAMES: the full name, its first part alone and its last part alone hit as kind name; a clean line, a name inside a longer word and a part under 4 characters do not', async () => {
+    const { main } = await cliMod()
+    const first = cap(`fn${alpha(5)}`)
+    const last = cap(`ln${alpha(6)}`)
+    const short = cap(alpha(3))
+    const dir = mktmp()
+    const f = join(dir, `names-${hex(2)}.md`)
+    writeFileSync(
+      f,
+      [
+        `by ${first} ${last} today`, // 1
+        `thanks ${first} for the review`, // 2
+        `cc ${last.toUpperCase()}`, // 3
+        `a clean line ${hex(4)}`, // 4
+        `pre${first.toLowerCase()}post and x${last}`, // 5
+        `${short} alone`, // 6
+        `${first}${last}`, // 7
+      ].join('\n') + '\n',
+    )
+    const before = process.env.TRUSS_SCRUB_NAMES
+    process.env.TRUSS_SCRUB_NAMES = `${first} ${last} ${short}`
+    try {
+      const r = await main(['scrub', f])
+      assert.equal(r.code, 1, r.out)
+      const hits = linesOf(r.out).filter(l => l.startsWith('HIT: '))
+      assert.deepEqual(hits, [`HIT: ${f}:1 | name`, `HIT: ${f}:2 | name`, `HIT: ${f}:3 | name`], r.out)
+      assert.ok(!r.out.includes(first) && !r.out.includes(last), 'a name is never printed back')
+    } finally {
+      if (before === undefined) delete process.env.TRUSS_SCRUB_NAMES
+      else process.env.TRUSS_SCRUB_NAMES = before
+    }
+  })
+
+  test('with TRUSS_SCRUB_NAMES set to a comma list, each entry and each of its parts is searched; names are never written to a file', async () => {
+    const { main } = await cliMod()
+    const a1 = cap(`aa${alpha(5)}`)
+    const a2 = cap(`ab${alpha(5)}`)
+    const b1 = cap(`ba${alpha(6)}`)
+    const dir = mktmp()
+    const f = join(dir, `names-${hex(2)}.md`)
+    writeFileSync(f, [`one ${a2}`, `two ${b1}`, `three ${a1} ${a2}`, 'four clean'].join('\n') + '\n')
+    const before = process.env.TRUSS_SCRUB_NAMES
+    process.env.TRUSS_SCRUB_NAMES = `${a1} ${a2},${b1}`
+    try {
+      const r = await main(['scrub', f])
+      assert.equal(r.code, 1, r.out)
+      assert.deepEqual(linesOf(r.out).filter(l => l.startsWith('HIT: ')), [`HIT: ${f}:1 | name`, `HIT: ${f}:2 | name`, `HIT: ${f}:3 | name`])
+      assert.deepEqual(readdirSync(dir), [basename(f)], 'no file appeared beside the input')
+    } finally {
+      if (before === undefined) delete process.env.TRUSS_SCRUB_NAMES
+      else process.env.TRUSS_SCRUB_NAMES = before
+    }
+  })
+})
+
+// ---------- recur: text a command only showed is not a recurrence ----------
+
+describe('retro/cli.ts recur: a quoted catalog line is not a recurrence; the same line from a real failure is', () => {
+  const FIXED = { finding: 'F-3', date: '2026-01-02' }
+
+  async function recurPrep(plant: string, recs: (a: string) => any[]) {
+    const { extractSession, writeExtract } = await extractMod()
+    const { loadCatalog } = await catalogMod()
+    const root = mktmp()
+    const sid = sidOf()
+    const projDir = join(root, 'proj')
+    mkdirSync(projDir, { recursive: true })
+    writeFileSync(join(projDir, `${sid}.jsonl`), recs(plant).map(r => JSON.stringify(r)).join('\n') + '\n')
+    const id = `e-${hex(3)}`
+    const catPath = join(root, 'catalog.json')
+    writeFileSync(catPath, JSON.stringify({ v: 1, entries: [{ id, kind: 'friction', title: `t ${id}`, anchor: plant, patterns: [`${plant}: `], fix: 'f', fixedBy: FIXED }] }))
+    const trussDir = join(root, 'truss')
+    mkdirSync(trussDir, { recursive: true })
+    writeExtract(trussDir, extractSession(join(projDir, sid), loadCatalog(catPath)))
+    return { root, sid, main: `${sid}.jsonl`, id, catPath, trussDir }
+  }
+  const bash = (id: string, command: string, t: number) => ({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] },
+    timestamp: ts(t),
+  })
+  const out = (id: string, text: string, isError: boolean, t: number) => ({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: text, is_error: isError }] },
+    timestamp: ts(t),
+  })
+
+  test('a git diff, a grep and a cat quoting the anchor give OK: 0 recurred of 1 fixed, exit 0, and no finding', async () => {
+    const { main } = await cliMod()
+    const a = `an${hex(4)}`
+    const p = await recurPrep(a, plant => [
+      bash('d1', 'git diff HEAD~1', 1),
+      out('d1', `+${plant}: quoted in a diff ${hex(3)}`, false, 2),
+      bash('g1', `grep -rn ${plant} docs`, 3),
+      out('g1', `docs/x.md:4:${plant}: quoted by grep ${hex(3)}`, false, 4),
+      bash('c1', 'cat notes.md | head -20', 5),
+      out('c1', `${plant}: quoted by cat ${hex(3)}`, false, 6),
+    ])
+    const r = await main(['recur', p.trussDir, p.catPath])
+    assert.equal(r.code, 0, r.out)
+    assert.equal(r.out, 'OK: 0 recurred of 1 fixed\n')
+    assert.ok(!r.out.includes('RECURRED'))
+    assert.equal(existsSync(join(p.trussDir, 'retro', 'findings.json')), false, 'no recur finding is made')
+  })
+
+  test('a real errored command with the same line is RECURRED, at its own line only, and the recur finding carries this run’s signature', async () => {
+    const { main } = await cliMod()
+    const a = `an${hex(4)}`
+    const p = await recurPrep(a, plant => [
+      bash('d1', 'git diff HEAD~1', 1),
+      out('d1', `+${plant}: quoted in a diff ${hex(3)}`, false, 2),
+      bash('b1', 'npx playwright test', 3),
+      out('b1', `Exit code 1\n${plant}: boom ${hex(3)}`, true, 4),
+    ])
+    const r = await main(['recur', p.trussDir, p.catPath])
+    assert.equal(r.code, 0, r.out)
+    assert.deepEqual(linesOf(r.out), [`RECURRED: ${p.id} | fixed by ${FIXED.finding} (${FIXED.date}) | ${p.main}:4`, 'OK: 1 recurred of 1 fixed'])
+    const saved = readFindings(p.trussDir)
+    assertSchema('findings', saved)
+    assert.equal(saved.findings.length, 1)
+    assert.equal(saved.findings[0].judge, 'recur')
+    assert.deepEqual(saved.findings[0].signature, [`${a}: `])
+    assert.deepEqual(saved.findings[0].evidence, [{ file: p.main, line: 4 }])
   })
 })

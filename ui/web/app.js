@@ -4,6 +4,7 @@ import { api } from './api.js'
 import { applyDelta, applySnapshot, emptyModel } from './state.js'
 import * as header from './header.js'
 import * as crews from './crews.js'
+import * as retro from './retro.js'
 import * as cards from './cards.js'
 import * as panels from './panels.js'
 
@@ -65,6 +66,7 @@ const views = [
   cards.mount(byId('cards-region'), api),
   mountTranscript(byId('transcript')),
   crews.mount(byId('crews'), api),
+  retro.mount(byId('retro'), api),
   panels.mount(byId('panels'), api),
 ]
 
