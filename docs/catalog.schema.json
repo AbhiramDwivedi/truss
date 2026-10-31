@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "truss known-problems catalog, version 1",
+  "description": "retro/catalog.json, committed in the plugin: problems truss has met before, each with how to recognise it and its known fix. The extractor, factory.ts check, factory.ts doctor and workflows/stage.js report a hit by the entry's id and fix instead of as a new problem (R-25). retro/catalog.ts loadCatalog refuses a file that breaks this schema or has a pattern that does not compile. See adr/0012-self-improving-retro.md, Decision 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "entries"],
+  "properties": {
+    "v": {
+      "description": "File format version. loadCatalog refuses any other v.",
+      "const": 1
+    },
+    "entries": {
+      "description": "In match order: a line that hits several entries reports them in this order.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "anchor", "patterns", "fix", "fixedBy"],
+      "properties": {
+        "id": {
+          "description": "Stable name, never reused: lowercase words joined by single hyphens.",
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "kind": {
+          "description": "The R-27 kind a recurrence of this entry is reported as.",
+          "enum": [
+            "mechanical bug",
+            "friction",
+            "missing agent persona",
+            "missing skill",
+            "missing hook or gate",
+            "misleading prompt",
+            "architecture decision"
+          ]
+        },
+        "title": { "description": "One line: the problem.", "type": "string", "minLength": 1, "maxLength": 200 },
+        "anchor": {
+          "description": "A literal substring every hit line contains. A line hits the entry only when it contains the anchor and at least one pattern matches it, so a pattern can never hit a line without the anchor.",
+          "type": "string",
+          "minLength": 1
+        },
+        "patterns": {
+          "description": "The entry's signature: JavaScript regular expressions, compiled with new RegExp(p) and no flags, tested against one line of text at a time.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "fix": {
+          "description": "The known fix, as the PM or a foreman acts on it. Also the standing ruling factory.ts doctor puts in the bundle when the entry's probe fails.",
+          "type": "string",
+          "minLength": 1
+        },
+        "probe": {
+          "description": "Optional. A host check factory.ts doctor runs on every plan; when it fails, the bundle's rulings get this entry's id and fix. Same shape as a plan need's probe (plan.schema.json $defs.probe).",
+          "$ref": "#/$defs/probe"
+        },
+        "fixedBy": {
+          "description": "null for a problem no retro has fixed. Otherwise the finding whose fix merged and the date it merged; retro/cli.ts recur then reports each hit of this entry as a recurrence citing it (R-31).",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["finding", "date"],
+              "properties": {
+                "finding": { "description": "The finding id, F-<n>, with the session it came from: <session id>/F-<n>.", "type": "string", "minLength": 1 },
+                "date": { "description": "The merge date, YYYY-MM-DD.", "type": "string", "format": "date" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "probe": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run"],
+          "properties": {
+            "kind": { "const": "command" },
+            "run": { "description": "bash -c <run> in the repo; passes on exit 0 within 120 seconds.", "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path"],
+          "properties": {
+            "kind": { "const": "file" },
+            "path": { "description": "Relative to the repo, or absolute; passes when it exists.", "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

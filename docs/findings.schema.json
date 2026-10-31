@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "truss retro findings, version 1",
+  "description": "<truss dir>/retro/findings.json: the findings the truss:retro-judge agents returned and retro/cli.ts kept. A judge returns each finding as one fenced block whose info string is finding, holding one JSON object under $defs.judged; retro/cli.ts findings checks each, drops one with no evidence line it can find in the extract's files, gives the rest an id and appends them here. Lives inside .git with the truss dir and is never committed. See adr/0012-self-improving-retro.md, Decisions 4 and 5.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "findings"],
+  "properties": {
+    "v": {
+      "description": "File format version. A reader treats a file with any other v as absent.",
+      "const": 1
+    },
+    "findings": {
+      "description": "In the order retro/cli.ts kept them.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "kind": {
+      "description": "The seven kinds of R-27, exactly.",
+      "enum": [
+        "mechanical bug",
+        "friction",
+        "missing agent persona",
+        "missing skill",
+        "missing hook or gate",
+        "misleading prompt",
+        "architecture decision"
+      ]
+    },
+    "evidence": {
+      "description": "One transcript line the finding rests on. file is a path from the extract's files list (relative to the project's transcript dir, forward slashes); line is 1-based and at most that file's line count.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "quote": {
+          "description": "Optional: a short piece of that line. Stays inside .git.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "judged": {
+      "description": "What a judge returns in one fenced finding block.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "evidence", "cost", "fix", "target", "signature"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/kind" },
+        "title": { "description": "One line: what went wrong.", "type": "string", "minLength": 1, "maxLength": 200 },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+        "cost": { "description": "What it cost the run, from the transcripts: time, retries, agents, client turns.", "type": "string", "minLength": 1 },
+        "fix": { "description": "The change that stops it, in one or two sentences.", "type": "string", "minLength": 1 },
+        "target": { "description": "Repo-relative path of the file the fix belongs in, such as agents/foreman.md, .claude/settings.json or CLAUDE.md.", "type": "string", "minLength": 1 },
+        "signature": {
+          "description": "JavaScript regular expressions (no flags) that match the evidence lines and would match the problem when it comes back. They become a catalog entry's patterns when the fix merges.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "recurs": { "$ref": "#/$defs/recurs" }
+      }
+    },
+    "finding": {
+      "description": "A kept finding: the judged fields plus the id and judge retro/cli.ts adds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "judge", "kind", "title", "evidence", "cost", "fix", "target", "signature"],
+      "properties": {
+        "id": {
+          "description": "F-<n>, numbered from 1 in the order retro/cli.ts kept them in this truss dir.",
+          "type": "string",
+          "pattern": "^F-[1-9][0-9]*$"
+        },
+        "judge": {
+          "description": "The label of the judge that returned it, as the PM passed it to retro/cli.ts findings, or recur for a recurrence retro/cli.ts recur added.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": { "$ref": "#/$defs/kind" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+        "cost": { "type": "string", "minLength": 1 },
+        "fix": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "signature": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "recurs": { "$ref": "#/$defs/recurs" }
+      }
+    },
+    "recurs": {
+      "description": "Set only on a finding about a problem an earlier retro fixed (R-31): the catalog entry whose fixedBy is not null and whose patterns hit this session's extract.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalog", "fixedBy"],
+      "properties": {
+        "catalog": { "description": "The catalog entry id.", "type": "string", "minLength": 1 },
+        "fixedBy": {
+          "description": "The entry's fixedBy, copied.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["finding", "date"],
+          "properties": {
+            "finding": { "type": "string", "minLength": 1 },
+            "date": { "type": "string", "format": "date" }
+          }
+        }
+      }
+    }
+  }
+}

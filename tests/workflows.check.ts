@@ -455,7 +455,6 @@ t('stage red: runner prompts say to run exactly the command, not change director
 for (const [name, out] of [
   ['exit 1 with ok false', { exit: 1, stdout: JSON.stringify({ ok: false, why: 'RED-OUT-MARK' }) }],
   ['exit 0 with ok false', { exit: 0, stdout: JSON.stringify({ ok: false, why: 'RED-OUT-MARK' }) }],
-  ['exit 1 with ok true', { exit: 1, stdout: JSON.stringify({ ok: true, why: 'RED-OUT-MARK' }) }],
   ['unparsable stdout', { exit: 0, stdout: 'RED-OUT-MARK not json' }],
 ]) {
   t(`stage red: not met (${name}) stops BLOCKED at red with the output and runs no planner`, async () => {
@@ -465,6 +464,16 @@ for (const [name, out] of [
     assert.deepEqual(r.labels, ['a-runner'])
   })
 }
+t('stage red: the parsed ok decides, not the relayed exit (exit 1, ok true: the crew goes on)', async () => {
+  const out = { exit: 1, stdout: JSON.stringify({ ok: true, exit: 1, head: HEAD, tail: '' }) }
+  const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'check:red' ? out : undefined) })
+  assert.ok(had(r, 'a-planner'))
+})
+t('stage green: the parsed ok decides, not the relayed exit (exit 1, ok true: not stopped at green)', async () => {
+  const out = { exit: 1, stdout: JSON.stringify({ ok: true, exit: 0, head: HEAD, tail: '' }) }
+  const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'check:green' ? out : undefined) })
+  assert.ok(!(r.res[0].state === 'stopped' && r.res[0].at === 'green'), JSON.stringify(r.res[0]))
+})
 t('stage red: a null runner result is not met (BLOCKED at red)', async () => {
   const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'check:red' ? null : undefined) })
   stopped(r.res[0], 'BLOCKED', 'red')

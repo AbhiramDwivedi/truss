@@ -44,7 +44,8 @@
             "decisions": { "$ref": "#/$defs/decisions" },
             "adrs": { "$ref": "#/$defs/adrs" },
             "design": { "$ref": "#/$defs/design" },
-            "notices": { "$ref": "#/$defs/notices" }
+            "notices": { "$ref": "#/$defs/notices" },
+            "retro": { "$ref": "#/$defs/retro" }
           }
         },
         "append": {
@@ -77,7 +78,8 @@
         "decisions": { "$ref": "#/$defs/decisions" },
         "adrs": { "$ref": "#/$defs/adrs" },
         "design": { "$ref": "#/$defs/design" },
-        "notices": { "$ref": "#/$defs/notices" }
+        "notices": { "$ref": "#/$defs/notices" },
+        "retro": { "$ref": "#/$defs/retro" }
       }
     },
     "trussDir": {
@@ -431,6 +433,43 @@
           "id": { "description": "Stable per condition: no-config, no-truss-dir, no-plugin, git-error.", "type": "string" },
           "text": { "type": "string" }
         }
+      }
+    },
+    "retro": {
+      "description": "Optional; adding it keeps v at 1. <truss dir>/retro/state.json as retro/cli.ts wrote it (docs/retro-state.schema.json, docs/adr/0012-self-improving-retro.md Decision 8): null while the file is absent, not JSON, or has a v other than 1. The steps run in the order extract, judges, triage, fixGoal, applied. ui-web renders it as the region named Retro stage.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["v", "updatedAt", "steps"],
+          "additionalProperties": false,
+          "properties": {
+            "v": { "const": 1 },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "steps": {
+              "type": "object",
+              "required": ["extract", "judges", "triage", "fixGoal", "applied"],
+              "additionalProperties": false,
+              "properties": {
+                "extract": { "$ref": "#/$defs/retroStep" },
+                "judges": { "$ref": "#/$defs/retroStep" },
+                "triage": { "$ref": "#/$defs/retroStep" },
+                "fixGoal": { "$ref": "#/$defs/retroStep" },
+                "applied": { "$ref": "#/$defs/retroStep" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "retroStep": {
+      "type": "object",
+      "required": ["status", "at", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pending", "running", "done", "failed", "skipped"] },
+        "at": { "description": "When retro/cli.ts last set this step's status; null while pending.", "type": ["string", "null"], "format": "date-time" },
+        "detail": { "description": "One line, at most 200 characters, such as `3 findings kept, 1 dropped`; else null.", "type": ["string", "null"] }
       }
     }
   }

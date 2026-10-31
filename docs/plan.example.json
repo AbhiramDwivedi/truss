@@ -31,7 +31,22 @@
       "acceptanceTest": "pnpm test -- quotas",
       "acceptanceTestProved": true,
       "estAgents": 8,
-      "status": "planned"
+      "status": "planned",
+      "needs": [
+        {
+          "id": "postgres",
+          "why": "the quota store tests run against a local Postgres",
+          "probe": { "kind": "command", "run": "pg_isready -q" },
+          "allow": ["Bash(pg_isready:*)"]
+        },
+        {
+          "id": "node-modules",
+          "why": "pnpm test needs the installed packages",
+          "probe": { "kind": "file", "path": "node_modules" },
+          "allow": ["Bash(pnpm install --frozen-lockfile:*)"],
+          "download": "pnpm install --frozen-lockfile"
+        }
+      ]
     },
     {
       "slug": "gateway",
