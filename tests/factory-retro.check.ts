@@ -204,6 +204,20 @@ describe('factory.ts check: several catalog matches', () => {
     assert.ok(!body.catalog[0].line.includes(t2))
     assert.deepEqual(record.catalog, body.catalog)
   })
+
+  test('a hit line that needs its leading tab (real git status output) still hits', () => {
+    const e = catalogEntries().find((c: any) => c.id === 'tracked-pyc')
+    assert.ok(e, 'the catalog holds tracked-pyc')
+    const dir = `tools-${hex()}`
+    const line = `\t${dir}/__pycache__/`
+    assert.ok(hits(e, line), 'the untrimmed line hits the entry')
+    assert.ok(!hits(e, line.trim()), 'the trimmed line does not, so the test sees the tab')
+    const { body, record } = checkWith(`On branch main\nUntracked files:\n${line}\n`, 1)
+    assert.ok(Array.isArray(body.catalog), JSON.stringify(body))
+    assert.deepEqual(body.catalog.map((c: any) => c.id), ['tracked-pyc'])
+    assert.equal(body.catalog[0].line, line.trim(), 'the shown line is trimmed')
+    assert.deepEqual(record.catalog, body.catalog)
+  })
 })
 
 // ---------- finish: the extract with no transcripts, and when it cannot be written ----------
