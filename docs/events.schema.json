@@ -8,7 +8,7 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
@@ -46,6 +46,19 @@
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
           "run": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "sampler-error" } } },
+      "then": {
+        "description": "The resource sampler threw, and a start went ahead anyway (fail open; truss ADR-0015). Written by factory admit, heavy or start. crew and agent are both the crew slug.",
+        "additionalProperties": false,
+        "required": ["command", "error"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true, "agent": true,
+          "command": { "description": "The factory command that sampled.", "enum": ["admit", "heavy", "start"] },
+          "error": { "description": "The sampler error's message, cut to its first 200 characters.", "type": "string", "minLength": 1, "maxLength": 200 }
         }
       }
     },

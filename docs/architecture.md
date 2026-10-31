@@ -18,6 +18,8 @@ Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by t
 
 [ADR-0014](adr/0014-retro-fixes.md) (proposed 2026-10-31 by the `fixes-design` crew) carries out the first retro's fix-now findings. Stress tests run as a new agent, `truss:stress-engineer`, which has Write and Edit for scratch dirs and its own worktree; the QC engineer stays read-only. A new hook gate, `mainEditVerdict`, refuses the PM's own Edit and Write calls on repo files while a run is active. In `ui/`, a pure `replyStep` holds a turn's reply card until its background tasks end, and the server watches its whole ancestor chain. The sections that say "ADR-0014, proposed" describe the design; the goal's later stages build it.
 
+[ADR-0015](adr/0015-resource-aware.md) (proposed 2026-10-31 by the `resource-design` crew) sizes crews to the host. It is truss's ADR-0015, not the claude-ops worktree-cleanup ADR that "ADR-0015 item 9" below cites. A new module, `resources/index.ts`, samples free memory and load. `factory.ts admit` holds a crew or member start below a free-memory threshold, `factory.ts heavy` runs each red and green check through one heavy slot shared by every crew, and `factory.ts reap` kills a finished check's leftover process group by its recorded pgid. A Haiku agent, `truss:resource-monitor`, recommends an effective parallelism, and the PM writes it to the truss dir. Details are in "Resource-aware sizing (ADR-0015, proposed)" below.
+
 The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
 
 ```mermaid
@@ -296,6 +298,30 @@ The run on this path, step by step (ADR-0009, Decision 7, "The PM's procedure"):
 
 The stress-test bound is an open client decision: whether every stress-test round after a crew's first counts against `reworkAllowance` on the Workflow path (ADR-0009, Client decisions, item 1; the ADR recommends yes, and `stage.js` step 5 is written that way). While a stage runs, `/truss` doesn't see its agents; they show in `/workflows`, and `/truss` fills each crew in when `finish` records it (ADR-0009, Consequences).
 
+#### Resource-aware sizing (ADR-0015, proposed)
+
+[ADR-0015](adr/0015-resource-aware.md) adds a module, `resources/index.ts`, and three factory commands. None of it is built yet; stages 1 to 3 of goal `resource-aware` build it.
+
+```mermaid
+flowchart LR
+  PM[PM] -->|start| F[factory.ts]
+  S[stage.js runner calls] -->|admit, heavy, reap| F
+  F -->|sample, admits, heavy lock| R[resources/index.ts]
+  F -->|reads| P[(resources/parallelism.json)]
+  F -->|lock and pgid records| H[(resources/heavy.lock, resources/groups)]
+  PM -->|Agent call| M[truss:resource-monitor, haiku]
+  M -->|runs| R
+  M -->|RECOMMEND parallelism n| PM
+  PM -->|Write| P
+```
+
+- **Sampler.** `sample()` returns `freeMB` and `totalMB` from `os.freemem()` and `os.totalmem()`, plus `cpus` and `load1`. It leaves `load1` out where `os.loadavg()` is all zeros (Windows). `TRUSS_SAMPLE` (a JSON file, or `error`) and `TRUSS_MIN_FREE_MB` are its test seams. The default threshold is 2048 MB.
+- **Admission.** `admit --slug S` exits 0 when admitted and 1 when held. A planned crew is also held while the running crews fill the effective parallelism. `start` applies the same rule and lists held crews under `held`; they stay `planned`. `stage.js` runs `admit` as a runner call before every non-runner spawn, and stops the crew `BLOCKED` with text `held by admission: ...` when it's held.
+- **One heavy slot.** Only the runner-run red and green checks go through `heavy`; members' own builds and tests don't (a proven gap for the plugin fix goal). The lock is `D/resources/heavy.lock/`, and a lock whose owner pid is dead is stale.
+- **Reaping.** `heavy` starts its command in a new process group and records it under `D/resources/groups/`. `stage.js` runs `reap --label <slug>-check` after each non-runner spawn and when the crew ends. `reap` signals only the recorded groups, never by name.
+- **Parallelism.** `D/resources/parallelism.json` holds `{"parallelism": n}`, used only when `n` is an integer from 1 to `maxParallelCrews`. The PM starts `truss:resource-monitor` at each stage start and when `held` or a `held by admission:` stop reaches it, then writes the file itself.
+- **Out of scope.** The foreman path (`agents/foreman.md`) gets only `start`'s admission. Proof covers Linux only.
+
 ## The client brief (ADR-0008)
 
 [ADR-0008](adr/0008-owner-interview.md) adds a module that asks the client about requirements before the plan, and a requirements ledger that carries them from run to run. It is built: the skill is `skills/brief/` (`SKILL.md`, `branches.md`), the CLI and ledger code are `brief/cli.ts` and `brief/ledger.ts`, and section 1 of `skills/run/SKILL.md` (`:89`) runs the skill before the plan.
@@ -405,6 +431,11 @@ Everything for a session lives under one folder:
   retro/findings.json        ADR-0012, retro/cli.ts findings and recur: the judges' kept findings
   retro/state.json           ADR-0012, retro/cli.ts state: where the end-of-run retro is, step by step
   retro/upstream/<F-n>.md    ADR-0012, PM: a drafted plugin fix, on a project that isn't the truss repo
+  resources/heavy.lock/      ADR-0015 (proposed), factory.ts heavy: the one heavy slot, with owner.json
+                             { pid, token, label, slug, since }; delete it by hand only when no heavy runs
+  resources/groups/<pgid>.json  ADR-0015 (proposed), factory.ts heavy: a heavy run's process group,
+                             kept while the group may have live processes; factory.ts reap deletes it
+  resources/parallelism.json ADR-0015 (proposed), PM: {"parallelism": n}, the effective parallelism
 ```
 
 **Stored shapes.** `brief.json` ([ADR-0008](adr/0008-owner-interview.md), Decisions 2, 5 and 7) is the client brief's state, rewritten by the PM with Write after each round: a string `goal`, a `size` of `small`, `standard` or `large`, arrays `packs`, `opened` and `requirements` (the R-ids this run accepted), an object `visits` (`{ "by": "fact" | "client" | "closed" | "default", "note" }` per branch id) and a boolean `stopped`; `cli.ts` exits 2 on a state file without them (Seam 5). The CLI takes the state path as an argument, so another goal can use its own file; only `<truss dir>/brief.json` is fixed.
@@ -445,6 +476,12 @@ The `refusal` event records one tool call refused before or as it ran (P24): `{ 
 ```
 
 On the Workflow path ([ADR-0009](adr/0009-workflow-factory.md)), `factory.ts` writes spawn lines in place of the Agent hook. `start` appends one per workflow crew it starts, `{"event":"spawn","crew":slug,"agent":slug,"agentId":null,"type":"workflow-crew","model":null,"effort":null,"by":"factory"}`, and `start --resume stale` appends a fresh one with a new `ts`. `finish` appends, for each crew agent of a run, a `spawn` line with the `agentId`, the meta file's `agentType`, the `model` and `effort` the transcript records and `by: "workflow:<run id>"`, plus a `report` line with `markerOf`'s marker (Decision 1, `start` and "finish, record step"). `finish` merges only crews that have a `by: "factory"` line, and a run with no `by: "workflow:<run id>"` line counts as not recorded. Both `by` values are strings the schema allows (Decision 8), so the spawn lines needed no schema change. `finish` without `--result` also appends `{"v":1,"ts":"...","event":"incomplete","crew":"<slug>","run":"<run id>"}` per crew in the run (`bin/factory.ts:955`), with `agent` set to the crew slug. `incomplete` is in the schema's `event` enum, and its branch requires a `run` string and allows no other extra field (`docs/events.schema.json:11`, `:41-51`), so the line validates.
+
+[ADR-0015](adr/0015-resource-aware.md) (proposed) adds the `sampler-error` event: `{ "v": 1, "ts", "event": "sampler-error", "crew", "agent", "command", "error" }`, with `crew` and `agent` both the crew slug. `factory.ts admit`, `heavy` or `start` (named in `command`) appends it when the sampler throws and the start goes ahead anyway. `error` is the error's message, cut to 200 characters. The schema branch requires both fields and allows no other extra field. No producer writes the line yet; crew `factory-resources` builds it.
+
+```json
+{"v":1,"ts":"2026-10-31T12:00:00.000Z","event":"sampler-error","crew":"q","agent":"q","command":"admit","error":"TRUSS_SAMPLE=error"}
+```
 
 ### `decisions.md` grammar (0.4.0)
 
@@ -1014,6 +1051,8 @@ Each hook step runs inside a guard. If Truss's code throws, the guard logs `trus
 
 The Workflow handler ([ADR-0009](adr/0009-workflow-factory.md), Decision 6; `register.ts:1796`) fails open the same way, through `.catch(failOpen)`. So a throw in the Workflow gate, or a `tool.call` that never fires for the main session's Workflow call, lets the run through unchecked. The gates don't rest on that hook alone: `factory.ts start` refuses a crew `planVerdict` refuses, `spawn()` in `plan.js` and `stage.js` throws before `agent()` on a role that is missing or fails `workflowRoleVerdict`'s rules, and `finish`'s session audit blocks every merge while it finds a `truss:*` agent in a run that isn't Truss's, or an agent of an in-scope run with no explicit model or a model family other than opus or sonnet. So without the hook an agent on the wrong model can still run and spend tokens, but its work can't reach the target (ADR-0009, Decision 6).
 
+The resource checks ([ADR-0015](adr/0015-resource-aware.md), proposed) fail open too. When the sampler throws, `admit`, `heavy` and `start` let the start through and append a `sampler-error` event. A missing or bad `resources/parallelism.json` means `maxParallelCrews`. A runner result for `admit` that isn't JSON admits.
+
 ## Local web UI
 
 `ui/` is an optional local web UI for one Truss run ([ADR-0011](adr/0011-local-web-ui.md), proposed 2026-10-30 by the `ui-design` crew). The client starts one Node process with `node ui/server/main.ts` (or `npm --prefix ui start`), opens the printed URL, and runs Truss from the browser. The process hosts a Claude Code session through `@anthropic-ai/claude-agent-sdk`, with the Truss plugin loaded, and shows the run live from Truss's own files. It never changes the plugin (R-9), and it never writes to the Truss dir or the repo. This section is a design: the four modules don't exist yet, and stage 1 and 2 of the UI run build them.
@@ -1174,6 +1213,10 @@ From 0.5.0, on a v2 plan, the QC engineer FAILs a crew may repair are bounded. O
 
 **A verdict on the wrong commit.** The PM merges only when the QC file's `## Proof checked` SHA equals `git rev-parse <crew branch>`. After a merge of the target (a rebase before 0.6.0) that moved the head, the old PASS doesn't count. From 0.5.0 the SHA is the QC engineer's head line, and a PASS also stands for a moved head when the patch line equals the merged branch's `PATCH_COMMAND` id, with `<base>` the target head last merged in, and the foreman's checks passed again after the merge. The foreman stop gate enforces the same rule as a send-back ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 6).
 
+**A start held by admission** ([ADR-0015](adr/0015-resource-aware.md), proposed). `start` lists the crew under `held` and leaves it `planned`; a member held inside a stage stops its crew `BLOCKED` with text `held by admission: ...`. The PM starts `truss:resource-monitor`, writes `resources/parallelism.json` if it lowers the parallelism, and re-runs `start` or resumes the crew with `start --slug <s> --resume answers` once memory recovers.
+
+**A stuck heavy lock** (ADR-0015, proposed). A waiter takes over a lock whose owner pid is dead, or one with no `owner.json` older than 10 s. When no `heavy` runs and a lock still blocks, delete `resources/heavy.lock/` in the truss dir by hand.
+
 **A reload mid-session.** The module's memory starts over. An agent that ended before the reload resolves to no crew, so a message to it from a crew agent is refused. A pending limit-reset wake survives in plugin state.
 
 ## Not verified yet
@@ -1190,5 +1233,6 @@ From 0.5.0, on a v2 plan, the QC engineer FAILs a crew may repair are bounded. O
 - `/goal` is session-only: a Stop hook on the main session judges it, so a foreman can't use it. Truss uses the goal file and the foreman stop gate instead (backlog item 20).
 - The gate's two-block bound relies on the engine setting `stop_hook_active` on the stop after a block. That comes from the hook type docs and hasn't been seen live. Claude Code also lets a stop through itself after 8 consecutive blocks.
 - The Workflow path ([ADR-0009](adr/0009-workflow-factory.md), "Probe") is a design, and four facts it touches are unverified. Each has a design answer that doesn't rely on it: whether `tool.call` fires for the main session's own `Workflow` call (if not, the CLI and `finish`'s audit hold the gates); whether `scriptPath` accepts a file inside the plugin (the fallback is the `--scripts-dir` copy, then the inline `script`, then `start --no-workflow`); whether the Workflow call blocks the PM's turn until the script returns (the stale-run rules cover a dead run either way); and what `agent()` returns when the agent ends with SubagentHandback, not final text. Also unverified: that a `truss:foreman` run by `agent()` has no Agent tool (inferred from `kit:builder` in probe 2); whether a SendMessage from a workflow agent reaches the PM or a foreman; whether Workflow accepts a script the CLI, not the harness, placed in the session's `workflows/scripts/` dir; and that agent transcripts are appended every turn, which the stale check relies on. The stale rule's `STALE_MS` of 30 minutes is a chosen margin, not a proof.
+- The resource-aware design ([ADR-0015](adr/0015-resource-aware.md)) is proven on Linux only, by probes of `os.freemem()`, process-group kill and `/proc` cwd grouping. A live `truss:resource-monitor` call waits for a session restart. Group kill and per-worktree sampling on macOS and Windows are unproven. The 2048 MB default threshold, the 240000 ms heavy wait and the monitor's rule are chosen numbers, not measurements.
 
 *Drafted with AI assistance and reviewed by the author.*
