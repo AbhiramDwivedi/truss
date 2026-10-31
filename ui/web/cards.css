@@ -12,7 +12,9 @@
   border-radius: 6px;
   padding: 8px 10px;
 }
-.msg-text { resize: vertical; min-height: 4.5rem; }
+.msg-text { resize: vertical; min-height: 4.5rem; overflow-y: auto; }
+.bg-line { color: var(--muted); margin-bottom: 12px; }
+.bg-line[hidden] { display: none; }
 .msg-status { min-height: 1.5em; color: var(--muted); }
 
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
