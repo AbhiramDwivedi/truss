@@ -543,9 +543,10 @@ function catalogHits(text: string): { id: string; fix: string; line: string }[] 
   }
   const first = new Map<string, string>()
   for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (line === '') continue
-    for (const id of retro().cat.matchLine(line, catalog)) if (!first.has(id)) first.set(id, line.length > 300 ? `${line.slice(0, 299)}…` : line)
+    const line = raw.replace(/\r$/, '')
+    if (line.trim() === '') continue
+    const shown = line.trim()
+    for (const id of retro().cat.matchLine(line, catalog)) if (!first.has(id)) first.set(id, shown.length > 300 ? `${shown.slice(0, 299)}…` : shown)
   }
   return catalog.entries.filter((e) => first.has(e.id)).map((e) => ({ id: e.id, fix: e.fix, line: first.get(e.id) as string }))
 }
@@ -557,7 +558,8 @@ function runProbe(probe: Obj, repo: string): { pass: boolean; detail: string } {
     return existsSync(path.resolve(repo, p)) ? { pass: true, detail: '' } : { pass: false, detail: p }
   }
   const r = spawnSync('bash', ['-c', String(probe.run)], { cwd: repo, encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
-  if (r.error === undefined && r.status === 0) return { pass: true, detail: '' }
+  // bash exiting 0 passes even when a background child held the pipes until the timeout (spawnSync then sets ETIMEDOUT with status 0)
+  if (r.status === 0) return { pass: true, detail: '' }
   const first = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.split('\n').map((l) => l.trim()).find((l) => l !== '')
   const why = r.error !== undefined ? r.error.message : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`
   const detail = first ?? why
