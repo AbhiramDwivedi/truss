@@ -7,7 +7,26 @@
       "Bash(journalctl --user -u *)",
       "Bash(systemctl --user list-timers *)",
       "Bash(git check-ignore *)",
-      "Bash(mise ls *)"
+      "Bash(mise ls *)",
+      "Write(ui/**)",
+      "Edit(ui/**)",
+      "Write(docs/architecture.md)",
+      "Edit(docs/architecture.md)",
+      "Write(docs/adr/**)",
+      "Edit(docs/adr/**)",
+      "Workflow",
+      "Bash(git *)",
+      "Bash(node *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mktemp *)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "WebFetch(domain:playwright.dev)"
     ]
   }
 }
