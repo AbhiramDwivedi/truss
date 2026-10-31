@@ -55,7 +55,8 @@ const hasHomePath = (s: string): boolean => {
       while (j < s.length && NAME.test(s[j]!)) j++
       const name = s.slice(i + root.length, j)
       // a user dir with or without a trailing slash
-      if (name.length > 0 && (s[j] === '/' || name !== '<name>')) return true
+      // the fixture user "u" (as in /home/u/p) is a placeholder too, not a person
+      if (name.length > 0 && name !== 'u' && (s[j] === '/' || name !== '<name>')) return true
       // the literal placeholder is the one allowed name
       if (name.length === 0 && s.startsWith('<name>/', i + root.length)) {
         i = s.indexOf(root, i + root.length)
