@@ -31,6 +31,8 @@ function costText(usd) {
   return '$' + usd.toFixed(Math.abs(usd) < 0.01 && usd !== 0 ? 4 : 2)
 }
 
+const STATUS_NOTICES = new Set(['no-config', 'no-truss-dir'])
+
 // Notices: conditions the page states in words (a missing config, a Truss dir not on disk yet).
 export function mountNotices(root) {
   root.replaceChildren()
@@ -55,6 +57,9 @@ export function mountNotices(root) {
         const text = el('span', 'notice-text')
         li.append(tag, text)
       }
+      const asStatus = STATUS_NOTICES.has(n.id)
+      li.classList.toggle('notice-status', asStatus)
+      setText(li.firstChild, asStatus ? 'Status: ' : 'Notice: ')
       setText(li.lastChild, n.text)
       if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null)
     })
@@ -97,13 +102,15 @@ export function mount(root) {
     if (s !== lastSession) {
       lastSession = s
       setText(model.dd, s && s.model ? s.model : 'not reported yet')
-      const word = STATUS_WORDS[s && s.status] || (s && s.status) || 'unknown'
+      const n = s && s.backgroundTasks ? s.backgroundTasks.length : 0
+      const word = s && s.status === 'waiting' && n > 0
+        ? 'working (' + n + (n === 1 ? ' background task)' : ' background tasks)')
+        : STATUS_WORDS[s && s.status] || (s && s.status) || 'unknown'
       setText(status.dd, word)
       status.dd.dataset.status = (s && s.status) || 'unknown'
       const u = s && s.usage
       cost.wrap.hidden = !(u && typeof u.costUsd === 'number')
       setText(cost.dd, u ? costText(u.costUsd) : '')
-      const n = s && s.backgroundTasks ? s.backgroundTasks.length : 0
       setText(tasks.dd, n + (n === 1 ? ' background task' : ' background tasks'))
       const hasError = s && s.status === 'error' && s.error
       errorLine.hidden = !hasError
