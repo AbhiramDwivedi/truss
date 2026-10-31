@@ -117,8 +117,36 @@ function nextLabel(crew, role) {
   return n === 1 ? `${crew.slug}-${role}` : `${crew.slug}-${role}-${n}`
 }
 
-function ask(crew, role, prompt, opts) {
-  return spawn(role, nextLabel(crew, role), prompt, opts)
+// ADR-0015 Decision 6: every spawn of a role other than runner is preceded by admit and followed by reap.
+// opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
+async function ask(crew, role, prompt, opts = {}) {
+  if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
+  const { at, ...rest } = opts
+  await admit(crew, at ?? crew.step)
+  try {
+    return await spawn(role, nextLabel(crew, role), prompt, rest)
+  } finally {
+    await reap(crew)
+  }
+}
+
+// admit --slug: a held answer stops the crew, with no retry; a result that is not JSON admits (fail open)
+async function admit(crew, at) {
+  const r = await runFactory(crew, `admit --slug ${sh(crew.slug)}`, 'admitted')
+  if (r.parsed && typeof r.parsed === 'object' && r.parsed.admitted === false) {
+    const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
+    throw new Stop('BLOCKED', `held by admission: ${why}`, at)
+  }
+}
+
+// reap --slug --label: a failure is logged in the crew's proofs and never stops the crew
+async function reap(crew) {
+  try {
+    const r = await runFactory(crew, `reap --slug ${sh(crew.slug)} --label ${sh(`${crew.slug}-check`)}`, 'reaped')
+    if (!r.parsed || typeof r.parsed !== 'object' || !Array.isArray(r.parsed.reaped)) crew.proofs.push(`reap failed: ${r.out}`)
+  } catch (err) {
+    crew.proofs.push(`reap failed: ${err && err.message ? err.message : String(err)}`)
+  }
 }
 
 const spendOf = (crew) => crew.e.spent + crew.fails
@@ -145,10 +173,11 @@ const sh = (v) => {
   return /^[A-Za-z0-9_./:@=+,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`
 }
 
-async function runFactory(crew, command, key) {
-  const full = `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)}`
+async function runFactory(crew, command, key, line = null) {
+  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)}`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
+    ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
     "Return the command's exit code as exit and its full standard output as stdout.",
     '',
     full,
@@ -175,7 +204,22 @@ const knownOf = (r) => {
   return lines.length ? `\n${lines.join('\n')}` : ''
 }
 
-const check = (crew, expect) => runFactory(crew, `check --slug ${sh(crew.slug)} --cwd ${sh(crew.e.worktree)} --expect ${sh(expect)}`, 'ok')
+// ADR-0015 Decision 6: the check runs through factory heavy. runFactory appends --dir and --repo after the whole command,
+// which would land after the --, so this line carries both flags on each side.
+function heavyLine(crew, expect) {
+  const bin = sh(`${F.plugin}/bin/factory.ts`)
+  const dr = `--dir ${sh(F.dir)} --repo ${sh(F.repo)}`
+  const slug = sh(crew.slug)
+  const cwd = sh(crew.e.worktree)
+  return `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} -- node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)} ${dr}`
+}
+
+async function check(crew, expect) {
+  const r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect))
+  const h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
+  if (h && typeof h === 'object' && h.ran === false) throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
+  return r
+}
 
 // ---------------------------------------------------------------- prompts
 
@@ -272,9 +316,9 @@ function reportOf(report, at) {
 
 // one member run; a CHECKPOINT starts one fresh member of the same role from its note
 async function runMember(crew, role, makePrompt, opts, at) {
-  let report = reportOf(await ask(crew, role, makePrompt(''), { ...opts, schema: MEMBER_SCHEMA }), at)
+  let report = reportOf(await ask(crew, role, makePrompt(''), { ...opts, schema: MEMBER_SCHEMA, at }), at)
   if (report.marker === 'CHECKPOINT') {
-    report = reportOf(await ask(crew, role, makePrompt(report.text || ''), { ...opts, schema: MEMBER_SCHEMA }), at)
+    report = reportOf(await ask(crew, role, makePrompt(report.text || ''), { ...opts, schema: MEMBER_SCHEMA, at }), at)
     if (report.marker !== 'DONE') throw new Stop('BLOCKED', `stopped again after a checkpoint (${report.marker}): ${report.text}`, at)
   }
   if (report.marker !== 'DONE') {
@@ -285,7 +329,7 @@ async function runMember(crew, role, makePrompt, opts, at) {
 }
 
 async function resolveConflicts(crew, what, conflicts, at) {
-  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA })
+  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA, at })
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish ${what}: ${report ? report.text : 'no report'}`, at)
 }
 
@@ -688,7 +732,13 @@ function qcPrompt(crew) {
 
 async function runQc(crew) {
   const label = nextLabel(crew, 'qc')
-  const text = await spawn('qc', label, qcPrompt(crew))
+  await admit(crew, 'qc')
+  let text
+  try {
+    text = await spawn('qc', label, qcPrompt(crew))
+  } finally {
+    await reap(crew)
+  }
   return { label, text: text || '', verdict: verdictOf(text) }
 }
 
@@ -765,11 +815,14 @@ async function chain(crew) {
 
 async function runCrew(entry) {
   const crew = makeCrew(entry)
+  let result
   try {
-    return await chain(crew)
+    result = await chain(crew)
   } catch (err) {
-    return stopResult(crew, err)
+    result = stopResult(crew, err)
   }
+  await reap(crew)
+  return result
 }
 
 const results = await Promise.all(F.crews.map(runCrew))
