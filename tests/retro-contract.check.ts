@@ -475,10 +475,19 @@ describe('retro/catalog.json: the six seed entries (ADR-0012 Decision 3)', () =>
     return { catalog: loadCatalog(path), path, loadCatalog }
   }
 
-  test('catalog.json validates against docs/catalog.schema.json and holds exactly the six ids and anchors', async () => {
+  test('catalog.json validates against the schema; every seed id is present with exactly its anchor; every other entry carries a merged-fix fixedBy (ADR-0012 Decision 7)', async () => {
     const { catalog, path } = await seedCatalog()
     assertSchema('catalog', null, JSON.parse(readFileSync(path, 'utf8')))
-    assert.deepEqual(Object.fromEntries(catalog.entries.map((e: any) => [e.id, e.anchor])), SEEDS)
+    for (const [id, anchor] of Object.entries(SEEDS)) {
+      const e = catalog.entries.find((x: any) => x.id === id)
+      assert.ok(e, `seed ${id} is present`)
+      assert.equal(e.anchor, anchor, `seed ${id} keeps its anchor`)
+    }
+    catalog.entries.forEach((e: any, i: number) => {
+      if (e.id in SEEDS) return
+      assert.ok(e.fixedBy, `non-seed entry #${i} (${e.id}) has a fixedBy`)
+      assert.match(e.fixedBy.finding, /^[^/]+\/[A-Z]+-\d+$/, `non-seed entry #${i} (${e.id}) fixedBy.finding is <session>/<id>`)
+    })
     for (const e of catalog.entries) assert.ok(e.fix.length > 10, `${e.id} has a real fix`)
   })
 
