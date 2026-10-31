@@ -483,11 +483,18 @@ function declares(from: string, pkg: string): boolean {
 // ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
 // nearest to <file> declares x: the dependency is declared but not installed. An undeclared package is a code failure.
 export function envFailure(text: string): string | undefined {
+  // A match counts only when no quote or backtick comes before it on the line: quoted text is output echoed by a test, not the
+  // host failing. A leading YAML `error:` key and its one opening quote don't count (TAP's `error: "<msg>"`).
+  const bare = (s: string, at: number): boolean => !/["'`]/.test(s.slice(0, at))
   for (const raw of text.split('\n')) {
     const line = raw.trim()
-    let hit = ENV_PATTERNS.some((re) => re.test(line))
-    const m = /Cannot find package '([^']+)' imported from (\S+)/.exec(line)
-    if (!hit && m && !m[1].startsWith('.') && !m[1].startsWith('/')) hit = declares(m[2].replace(/^file:\/\//, ''), packageName(m[1]))
+    const s = line.replace(/^error:\s*["']?/, '')
+    let hit = ENV_PATTERNS.some((re) => {
+      const x = re.exec(s)
+      return x !== null && bare(s, x.index)
+    })
+    const m = /Cannot find package '([^']+)' imported from (\S+)/.exec(s)
+    if (!hit && m && bare(s, m.index) && !m[1].startsWith('.') && !m[1].startsWith('/')) hit = declares(m[2].replace(/^file:\/\//, ''), packageName(m[1]))
     if (hit) return line.length > 300 ? `${line.slice(0, 299)}…` : line
   }
   return undefined
@@ -671,7 +678,14 @@ function cmdTestsCheck(f: Flags): Obj {
     const [sha = '', roles = ''] = first.split(' ')
     return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), files: rest.map((l) => l.trim()).filter(Boolean) }
   })
-  const tests = [...new Set(commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files))].sort()
+  // Also guarded: every existing repo-relative path the crew's acceptanceTest names.
+  const plan = loadPlan(c.dir)
+  const crew = Array.isArray(plan.crews) ? plan.crews.find((x: unknown) => isObj(x) && x.slug === c.slug) : undefined
+  const base = baseOf(c.wt, c.target)
+  const named = typeof crew?.acceptanceTest === 'string'
+    ? crew.acceptanceTest.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
+    : []
+  const tests = [...new Set([...commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files), ...named])].sort()
   const touched = commits.flatMap((x) => {
     const role = x.roles.find((r) => r === 'builder' || r === 'resolver')
     const files = x.files.filter((file) => tests.includes(file))
@@ -740,8 +754,58 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    held, foremen, refused, stale, unfinished,
+    held, foremen, refused, stale, unfinished, warnings: stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug))),
   }
+}
+
+// The start time of the session, in ms since the epoch, or undefined when it can't be read: TRUSS_SESSION_START (a test
+// override), else the start time of the CLAUDE_PID process (/proc/<pid>/stat field 22 over the tick rate, plus btime).
+// Never the /proc/<pid> inode mtime, never the transcript (--continue keeps the old one).
+function sessionStart(): number | undefined {
+  const o = process.env.TRUSS_SESSION_START
+  if (o !== undefined && o !== '') {
+    const n = Number(o)
+    return Number.isFinite(n) ? n : undefined
+  }
+  const pid = process.env.CLAUDE_PID
+  if (pid === undefined || !/^\d+$/.test(pid)) return undefined
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    // comm (field 2) may hold spaces and parentheses: count fields from after the last ")". Field 3 is the first after it.
+    const rest = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)
+    const ticks = Number(rest[22 - 3])
+    const btime = Number(/^btime (\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'))?.[1])
+    const hz = Number(spawnSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).stdout.trim())
+    if (!Number.isFinite(ticks) || !Number.isFinite(btime) || !(hz > 0) || rest.length < 20) return undefined
+    return (btime + ticks / hz) * 1000
+  } catch {
+    return undefined
+  }
+}
+// One warning per crew starting now whose goal file says `## Stress test` yes, when the stress role's agent file changed after
+// the session loaded its agents. Warnings never hold or refuse a crew.
+function stressWarnings(c: StartCtx, slugs: string[]): string[] {
+  const out: string[] = []
+  let started: number | undefined
+  let read = false
+  for (const slug of slugs) {
+    const goalFile = `${c.dir}/goals/${slug}.md`
+    if (!existsSync(goalFile) || !/^(yes|true)\b/i.test(goalSections(readFileSync(goalFile, 'utf8'))['Stress test'] ?? '')) continue
+    if (!read) {
+      read = true
+      started = sessionStart()
+    }
+    const type = String((isObj(c.roles.stress) ? c.roles.stress.agentType : undefined) ?? 'truss:stress-engineer')
+    let changed: number | undefined
+    try {
+      changed = statSync(`${PLUGIN}/agents/${type.replace(/^[^:]*:/, '')}.md`).mtimeMs
+    } catch {
+      changed = undefined
+    }
+    if (changed === undefined || started === undefined) out.push(`crew ${slug} runs ${type}, but I can't tell whether its agent file changed after this session loaded its agents; restart the session if it did`)
+    else if (changed > started) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents; restart the session to load it`)
+  }
+  return out
 }
 
 // The runs of this session: the dirs next to the transcript dir T (T's parent is the runs root).
@@ -904,6 +968,11 @@ function cmdStart(f: Flags): Obj {
   for (const crew of crews) {
     if (!startsNow(crew) || crew.status !== 'planned') continue
     if (slots <= 0) break
+    const missingGoal = `${dir}/goals/${String(crew.slug)}.md`
+    if (!existsSync(missingGoal)) {
+      refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
+      continue
+    }
     const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length)
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
@@ -963,7 +1032,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
   } catch (e) {
     throw usage(`cannot write ${flat(p)}: ${(e as Error).message}`)
   }
-  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished }
+  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished, warnings: out.warnings }
 }
 
 // ==== resources (ADR-0015): admit, heavy, reap ====
