@@ -67,24 +67,39 @@ session.subscribe((view) => {
 });
 
 const server = createServer({ state: store, session, webDir: join(uiDir, 'web') });
+const { onShutdownSignals, watchParent, lockPath, writeLock, readLiveLock, removeLock, addrInUseMessage } = await import('./lifecycle.ts');
 let url: string;
+let port: number;
 try {
-  url = (await server.listen(args.port)).url;
+  ({ url, port } = await server.listen(args.port));
 } catch (e) {
   session.close().catch(() => {});
   store.close();
+  if ((e as NodeJS.ErrnoException)?.code === 'EADDRINUSE') {
+    process.stderr.write(addrInUseMessage('127.0.0.1', args.port, readLiveLock(lockPath(args.port))));
+    process.exit(1);
+  }
   fail(1, `listen failed: ${oneLine(e)}`);
 }
-process.stdout.write(`truss-ui listening on ${url}\n`);
-
+const lock = lockPath(port);
+if (!writeLock(lock, { pid: process.pid, host: '127.0.0.1', port, startedAt: new Date().toISOString() })) {
+  process.stderr.write(`truss-ui: could not write lockfile ${lock}; carrying on without it\n`);
+}
+process.on('exit', () => removeLock(lock));
 let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  // A stuck session close must not leave the port held: force the exit after 5 s.
+  setTimeout(() => { removeLock(lock); process.exit(0); }, 5000).unref();
   try { await session.close(); } catch (e) { process.stderr.write(`session close failed: ${oneLine(e)}\n`); }
   try { await server.close(); } catch (e) { process.stderr.write(`server close failed: ${oneLine(e)}\n`); }
   store.close();
+  removeLock(lock);
   process.exit(0);
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// SIGINT, SIGTERM, SIGHUP and SIGBREAK, and the parent (npm, a shell) going away, all end the server.
+onShutdownSignals(process, shutdown);
+watchParent(shutdown);
+// Printed last, so whoever waits on this line can already stop the server with any of the signals above.
+process.stdout.write(`truss-ui listening on ${url}\n`);
