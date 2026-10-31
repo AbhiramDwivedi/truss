@@ -302,7 +302,7 @@ The stress-test bound is an open client decision: whether every stress-test roun
 
 #### Resource-aware sizing (ADR-0015, proposed)
 
-[ADR-0015](adr/0015-resource-aware.md) adds a module, `resources/index.ts`, and three factory commands. None of it is built yet; stages 1 to 3 of goal `resource-aware` build it.
+[ADR-0015](adr/0015-resource-aware.md) adds a module, `resources/index.ts`, and three factory commands. It is built: `resources/index.ts` and the factory commands `admit`, `heavy` and `reap` in `bin/factory.ts`.
 
 ```mermaid
 flowchart LR
