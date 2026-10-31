@@ -71,7 +71,7 @@ async function exec(file, args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|sync)\b([^\n`]*)/)
+      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -92,7 +92,7 @@ async function exec(file, args, o = {}) {
       if (out === undefined) {
         const head = (o.heads ?? {})[slug] ?? HEAD
         out =
-          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : rj({ merged: true })
+          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
       }
       await ticks(cmd === 'integrate' ? 3 : 1)
       if (cmd === 'integrate') inflight[slug]--
@@ -833,6 +833,35 @@ t('stage green: the ladder ends after four green checks: BLOCKED at green with t
   assert.equal(r.calls.filter((c) => c.label === 'a-rca').length, 1)
   assert.ok(!had(r, 'a-qc') && !had(r, 'a-builder-5'))
 })
+t('stage green: a failure the check names as env stops BLOCKED at green at once, quoting it, with no fix builder or rca', async () => {
+  const envFail = rj({ ok: false, tail: 'GREEN-TAIL', env: 'browserType.launch: Host system is missing dependencies to run browsers.' }, 1)
+  const r = await runStage([entry('a')], { labels: { ...base(), ...fixers }, runner: greenSeq(envFail) })
+  stopped(r.res[0], 'BLOCKED', 'green')
+  has(r.res[0].text, 'environment, not the code')
+  has(r.res[0].text, 'browserType.launch: Host system is missing dependencies')
+  assert.equal(r.timeline.filter((e) => e === 'start:runner:a:check:green').length, 1)
+  assert.ok(!had(r, 'a-builder-2') && !had(r, 'a-rca') && !had(r, 'a-qc'))
+})
+t('stage green: an env failure after a fix builder still stops at once (no second fix)', async () => {
+  const envFail = rj({ ok: false, tail: 'T', env: 'error while loading shared libraries: libicu.so.74' }, 1)
+  const r = await runStage([entry('a')], { labels: { ...base(), ...fixers }, runner: greenSeq(gFail('TAIL-ONE'), envFail) })
+  stopped(r.res[0], 'BLOCKED', 'green')
+  assert.ok(had(r, 'a-builder-2') && !had(r, 'a-builder-3'))
+})
+t('stage red: a red check that fails on the environment stops BLOCKED at red, quoting it, and runs no planner', async () => {
+  const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'check:red' ? rj({ ok: false, exit: 1, env: 'ENV-LINE-MARK' }, 1) : undefined) })
+  stopped(r.res[0], 'BLOCKED', 'red')
+  has(r.res[0].text, 'ENV-LINE-MARK')
+  has(r.res[0].text, 'environment')
+  assert.deepEqual(r.labels, ['a-runner'])
+})
+t('stage resume answers: an answer at red runs the red check again; other answers still skip it', async () => {
+  const atRed = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'red', text: 'host fixed' }] })], { labels: base() })
+  assert.equal(atRed.timeline[0], 'start:runner:a:check:red')
+  passedShape(atRed.res[0], 'a', HEAD, 'a-qc')
+  const atSplit = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'split', text: 'x' }] })], { labels: base() })
+  assert.ok(noRunner(atSplit, 'check:red'))
+})
 t('stage green: a fix builder that is not DONE stops the crew with its tag at green', async () => {
   const r = await runStage([entry('a')], { labels: { ...base(), ...fixers, 'a-builder-2': marked('QUESTION', 'FIX-Q') }, runner: greenSeq(gFail()) })
   stopped(r.res[0], 'QUESTION', 'green')
@@ -934,6 +963,26 @@ t('stage scope: an owns-check failure stops QUESTION at scope naming the files o
   has(r.res[0].text, 'docs/STRAY-ONE.md')
   has(r.res[0].text, 'lib/STRAY-TWO.ts')
   assert.ok(!had(r, 'a-qc'))
+})
+
+t('stage tests: tests-check runs with --slug after owns-check and before every qc', async () => {
+  const r = await runStage([entry('a')], { labels: { ...base('a', { 'a-qc': FAIL(), 'a-qc-2': PASS }), 'a-builder-2': done('feat/f1') } })
+  passedShape(r.res[0], 'a', HEAD, 'a-qc-2')
+  has(r.calls.find((c) => c.runner?.cmd === 'tests-check').prompt, 'tests-check --slug a')
+  const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check')
+  assert.equal(runs.length, 2, 'once before each qc, so a fix builder\'s commits are checked too')
+  assert.ok(idx(r, 'end:runner:a:owns-check') < idx(r, 'start:runner:a:tests-check'))
+  assert.ok(idx(r, 'end:runner:a:tests-check') < idx(r, 'start:a-qc'))
+})
+t('stage tests: a builder commit on a tester file stops BLOCKED at tests naming it; no qc, no fix builder', async () => {
+  const touched = [{ commit: 'c0ffee1', role: 'builder', files: ['tests/TESTER-FILE.test.ts'] }]
+  const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'tests-check' ? rj({ ok: false, touched, tests: ['tests/TESTER-FILE.test.ts'] }, 1) : undefined) })
+  stopped(r.res[0], 'BLOCKED', 'tests')
+  has(r.res[0].text, 'c0ffee1')
+  has(r.res[0].text, 'Truss-Role: builder')
+  has(r.res[0].text, 'tests/TESTER-FILE.test.ts')
+  assert.ok(!had(r, 'a-qc'))
+  assert.ok(!had(r, 'a-builder-2'))
 })
 
 // ---------------------------------------------------------------- stage.js: qc
@@ -1284,6 +1333,13 @@ t('stage briefs: the stress test prompt keeps "Stress test:" first and carries t
   assert.equal(p.split('\n')[0], 'Stress test:')
   has(p, R1)
   has(p, R2)
+})
+t('stage briefs: the stress test prompt accepts a worktree-wf_ branch as its own worktree, whatever agent definition the session loaded', async () => {
+  const r = await runStage([rtCrew()], { labels: base('a', { 'a-stress': RT0 }) })
+  const p = call(r, 'a-stress').prompt
+  has(p, 'starts with `worktree-wf_` or `worktree-agent-`, you are in your own worktree')
+  has(p, 'Never report `STRESSTEST: not run` because the branch starts with `worktree-wf_`.')
+  assert.equal(p.split('\n')[0], 'Stress test:')
 })
 t('stage briefs: the tester and builder prompts tell the member to build only the approved scope', async () => {
   const r = await runStage([entry('a')], { labels: base() })

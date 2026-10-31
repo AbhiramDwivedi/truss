@@ -158,6 +158,9 @@ async function runFactory(crew, command, key) {
   return { met, parsed, out: `exit ${res.exit}\n${res.stdout}` }
 }
 
+// the environment failure factory.ts check names in its output (ADR-0009 "check, environment failures"), or null
+const envOf = (r) => (r.parsed && typeof r.parsed.env === 'string' && r.parsed.env ? r.parsed.env : null)
+
 const check = (crew, expect) => runFactory(crew, `check --slug ${sh(crew.slug)} --cwd ${sh(crew.e.worktree)} --expect ${sh(expect)}`, 'ok')
 
 // ---------------------------------------------------------------- prompts
@@ -425,6 +428,8 @@ async function green(crew) {
       crew.head = g.parsed.head
       return
     }
+    const env = envOf(g)
+    if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.\n${clip(g.out)}`, 'green')
     if (attempt === 4) throw new Stop('BLOCKED', `the green check still fails after the escalation ladder:\n${clip(g.out)}`, 'green')
     if (attempt < 3) {
       await fixBuilder(crew, 'green check', `The green check failed. Its output tail:\n${clip(g.out)}`)
@@ -441,6 +446,11 @@ const stressTestCount = (text) => {
   return m ? Number(m[1]) : null
 }
 
+// A Workflow run gives the stress test a worktree on a worktree-wf_<run>-<n> branch. agents/qc-engineer.md accepts it (f533265),
+// but a session that loaded the agent definition before that change still checks for worktree-agent- only and refuses to
+// run (plugin agents don't reload mid-session), so the brief carries the rule itself.
+const WF_WORKTREE = 'Your worktree is one this Workflow run made, so `git branch --show-current` starts with `worktree-wf_`, not `worktree-agent-`. That branch passes the own-worktree check: when the git-dir and git-common-dir differ and the branch starts with `worktree-wf_` or `worktree-agent-`, you are in your own worktree; reset it to the head above and run the stress test there. Never report `STRESSTEST: not run` because the branch starts with `worktree-wf_`.'
+
 function stressTestPrompt(crew) {
   const e = crew.e
   return [
@@ -450,6 +460,8 @@ function stressTestPrompt(crew) {
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
     `Architecture doc: ${e.architecture}`,
+    '',
+    WF_WORKTREE,
     '',
     'Each finding names a plausible producer: the real caller or input that would produce the break.',
     'Class each finding as a real defect or a test gap. Only real defects count in STRESSTEST <n> and go under ## Findings; test gaps go under ## Notes and are not fixed.',
@@ -498,6 +510,17 @@ async function scope(crew) {
   const outside = r.parsed && Array.isArray(r.parsed.outside) ? r.parsed.outside : []
   const names = outside.length ? outside.join(', ') : r.out
   throw new Stop('QUESTION', `Files changed outside the crew owns: ${names}. Extend owns?`, 'scope')
+}
+
+// a builder or resolver commit that touched a tester's file is a sure QC FAIL (agents/qc-engineer.md step 8), and no fix
+// builder can clear it, since QC reads the history: stop BLOCKED before a QC engineer is paid for it
+async function testsGuard(crew) {
+  crew.step = 'tests'
+  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok')
+  if (r.met) return
+  const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
+  const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
+  throw new Stop('BLOCKED', `${lines.length ? `These commits touch acceptance-test files a tester wrote:\n${lines.join('\n')}` : `the tests check did not pass:\n${r.out}`}\nThe QC engineer fails any builder or resolver commit that touches them, so the crew stops before QC. Drop those commits from the crew branch (or have the tester make the change) and resume.`, 'tests')
 }
 
 // the same rule as register.ts qcRuling and markerOf: the first non-empty line decides
@@ -588,6 +611,7 @@ async function runQc(crew) {
 
 async function qc(crew) {
   for (;;) {
+    await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
     let j = await runQc(crew)
@@ -622,6 +646,8 @@ async function syncStep(crew) {
 async function redStep(crew) {
   crew.step = 'red'
   const r = await check(crew, 'red')
+  const env = envOf(r)
+  if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.\n${r.out}`, 'red')
   if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:\n${r.out}`, 'red')
 }
 
@@ -634,7 +660,9 @@ async function chain(crew) {
     return qc(crew)
   }
   let tasks = e.tasks || []
-  if (e.resume !== 'answers' && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
+  // an answers resume skips the red check, unless the stop it answers was at red (an environment failure the client fixed)
+  const redAnswered = (e.answers || []).some((a) => a.at === 'red')
+  if ((e.resume !== 'answers' || redAnswered) && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
   if (tasks.length) {
     crew.step = 'split'
     const errors = validateTasks(tasks, e.owns)

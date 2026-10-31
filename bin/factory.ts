@@ -441,6 +441,45 @@ function cmdApprove(f: Flags): Obj {
   return { approvedAt }
 }
 
+// Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
+// fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
+export const ENV_PATTERNS: RegExp[] = [
+  /Host system is missing dependencies/, // Playwright: the browser's system libraries are not installed
+  /browserType\.launch: /, // Playwright: the browser process could not start
+  /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
+  /error while loading shared libraries: /, // the dynamic loader: a system library is missing
+]
+// The package name of a bare import specifier (`@scope/name/sub` -> `@scope/name`, `name/sub` -> `name`).
+const packageName = (spec: string): string => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
+// True when the package.json nearest to `from` (walking up) declares `pkg` in any dependency list.
+function declares(from: string, pkg: string): boolean {
+  for (let d = path.dirname(from); ; d = path.dirname(d)) {
+    const p = `${d}/package.json`
+    if (existsSync(p)) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8'))
+        return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].some((k) => isObj(j?.[k]) && Object.hasOwn(j[k], pkg))
+      } catch {
+        return false
+      }
+    }
+    if (path.dirname(d) === d) return false
+  }
+}
+// The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
+// ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
+// nearest to <file> declares x: the dependency is declared but not installed. An undeclared package is a code failure.
+export function envFailure(text: string): string | undefined {
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    let hit = ENV_PATTERNS.some((re) => re.test(line))
+    const m = /Cannot find package '([^']+)' imported from (\S+)/.exec(line)
+    if (!hit && m && !m[1].startsWith('.') && !m[1].startsWith('/')) hit = declares(m[2].replace(/^file:\/\//, ''), packageName(m[1]))
+    if (hit) return line.length > 300 ? `${line.slice(0, 299)}…` : line
+  }
+  return undefined
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -470,9 +509,11 @@ function cmdCheck(f: Flags): Obj {
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail }) + '\n', { flag: 'wx' })
-  const ok = expect === 'red' ? exit !== 0 : exit === 0
-  const body = { ok, exit, head, tail }
+  // a failing run whose output names an environment failure carries it as `env`: never a red, and no fix builder for a green
+  const env = exit === 0 ? undefined : envFailure(text)
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }) }) + '\n', { flag: 'wx' })
+  const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
+  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }) }
   if (!ok) throw refuse(body)
   return body
 }
@@ -526,6 +567,28 @@ function cmdOwnsCheck(f: Flags): Obj {
   const outside = files.filter((file) => !owns.some((g) => path.matchesGlob(file, g)))
   if (outside.length > 0) throw refuse({ ok: false, outside })
   return { ok: true }
+}
+
+// The acceptance-test files are the files a `Truss-Role: test-writer` commit in <base>..HEAD touched. Lists every builder or
+// resolver commit there that touched one, the check of agents/qc-engineer.md step 8 done before a QC engineer is paid for it.
+// A merge commit counts only for the files its resolution changed (`--cc`: different from every parent), so integrating a
+// tester's branch is no touch. History is what QC reads, so a later commit that restores the file doesn't clear it.
+function cmdTestsCheck(f: Flags): Obj {
+  const c = crewCtx(f)
+  const out = gitOrFail(c.wt, ['log', '--cc', '--name-only', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
+    const [first = '', ...rest] = b.split('\n')
+    const [sha = '', roles = ''] = first.split(' ')
+    return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), files: rest.map((l) => l.trim()).filter(Boolean) }
+  })
+  const tests = [...new Set(commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files))].sort()
+  const touched = commits.flatMap((x) => {
+    const role = x.roles.find((r) => r === 'builder' || r === 'resolver')
+    const files = x.files.filter((file) => tests.includes(file))
+    return role !== undefined && files.length > 0 ? [{ commit: x.sha, role, files }] : []
+  }).reverse()
+  if (touched.length > 0) throw refuse({ ok: false, touched, tests })
+  return { ok: true, tests }
 }
 
 // ==== start ====
@@ -884,6 +947,27 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
   return audits
 }
 
+// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
+// counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
+// QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
+// file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
+function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj[] | undefined, plan: Obj): void {
+  const events = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
+  const allowance = intOr(plan.reworkAllowance, 2, 0)
+  const since = runStart(plan as any) ?? 0
+  for (const c of crews) {
+    const slug = String(c.slug)
+    const res = results?.find((r) => r.slug === slug)
+    const tag = res !== undefined && res.state === 'stopped' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(res.tag) ? String(res.tag) : undefined
+    if (tag !== undefined && !events.some((e) => e.event === 'tag' && e.crew === slug && e.run === wfRun.id)) appendEvent(dir, { event: 'tag', crew: slug, agent: slug, tag, run: wfRun.id })
+    const fails = countedQc(dir, slug, reportsOf(dir, slug)).filter((f) => qcFails(slug, [f], since) === 1).sort((a, b) => qcK(a.name) - qcK(b.name))
+    const spender = fails[allowance]
+    if (spender === undefined) continue
+    const agent = spender.name.replace(/\.md$/, '')
+    if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent })
+  }
+}
+
 // Session audit: every Workflow run of the session at or after the run start, in scope as ADR-0009 "finish, session audit" says.
 function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
   const audits: Audit[] = []
@@ -937,7 +1021,8 @@ function patchOf(wt: string, base: string, head: string): string | undefined {
   return patchIdOf(p.stdout)
 }
 
-// The lowest-numbered D/checks/<slug>-<n>.json: the red record. undefined when none.
+// The lowest-numbered D/checks/<slug>-<n>.json that has no `env` key: the red record. A run that failed on the environment
+// proves nothing about the code, so it is passed over. undefined when none.
 function redRecord(dir: string, slug: string): Obj | undefined {
   const d = `${dir}/checks`
   if (!existsSync(d)) return undefined
@@ -945,14 +1030,18 @@ function redRecord(dir: string, slug: string): Obj | undefined {
   const found = readdirSync(d).flatMap((n) => {
     const m = re.exec(n)
     return m?.[1] === undefined ? [] : [{ n: Number(m[1]), name: n }]
-  }).sort((x, y) => x.n - y.n)[0]
-  if (found === undefined) return undefined
-  try {
-    const v = JSON.parse(readFileSync(`${d}/${found.name}`, 'utf8'))
-    return isObj(v) ? v : undefined
-  } catch {
-    return undefined
+  }).sort((x, y) => x.n - y.n)
+  for (const f of found) {
+    let v
+    try {
+      v = JSON.parse(readFileSync(`${d}/${f.name}`, 'utf8'))
+    } catch {
+      return undefined
+    }
+    if (!isObj(v)) return undefined
+    if (v.env === undefined) return v
   }
+  return undefined
 }
 
 type Outcome = { merged?: true; rework?: string; blocked?: string; refused?: string }
@@ -1072,6 +1161,7 @@ function cmdFinish(f: Flags): Obj {
 
   const audits = recordRun(dir, wfRun, factorySlugs, roles)
   for (const a of audits) out.audit.push({ label: a.label, why: a.why })
+  recordEscalations(dir, wfRun, inRun, results, plan)
 
   if (results === undefined) {
     const have = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
@@ -1115,7 +1205,7 @@ function cmdFinish(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, finish: cmdFinish,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish,
 }
 
 // Runs one command and returns what it printed and its exit code.
