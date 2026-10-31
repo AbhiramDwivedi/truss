@@ -165,6 +165,13 @@ async function runFactory(crew, command, key) {
 // the environment failure factory.ts check names in its output (ADR-0009 "check, environment failures"), or null
 const envOf = (r) => (r.parsed && typeof r.parsed.env === 'string' && r.parsed.env ? r.parsed.env : null)
 
+// the catalog hits factory.ts check adds (ADR-0012 Decision 3), as "known problem <id>: <fix>" lines; '' when none or malformed
+const knownOf = (r) => {
+  const c = r.parsed && Array.isArray(r.parsed.catalog) ? r.parsed.catalog : []
+  const lines = c.filter((h) => h && typeof h.id === 'string' && h.id && typeof h.fix === 'string').map((h) => `known problem ${h.id}: ${h.fix}`)
+  return lines.length ? `\n${lines.join('\n')}` : ''
+}
+
 const check = (crew, expect) => runFactory(crew, `check --slug ${sh(crew.slug)} --cwd ${sh(crew.e.worktree)} --expect ${sh(expect)}`, 'ok')
 
 // ---------------------------------------------------------------- prompts
@@ -435,13 +442,13 @@ async function green(crew) {
       return
     }
     const env = envOf(g)
-    if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.\n${clip(g.out)}`, 'green')
+    if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(g)}\n${clip(g.out)}`, 'green')
     if (attempt === 4) throw new Stop('BLOCKED', `the green check still fails after the escalation ladder:\n${clip(g.out)}`, 'green')
     if (attempt < 3) {
-      await fixBuilder(crew, 'green check', `The green check failed. Its output tail:\n${clip(g.out)}`)
+      await fixBuilder(crew, 'green check', `The green check failed.${knownOf(g)}\nIts output tail:\n${clip(g.out)}`)
     } else {
       const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${crew.e.acceptanceTest}`, 'Failing output:', clip(g.out)].join('\n'))
-      await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing. Root-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
+      await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
     }
   }
 }
@@ -655,8 +662,8 @@ async function redStep(crew) {
   crew.step = 'red'
   const r = await check(crew, 'red')
   const env = envOf(r)
-  if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.\n${r.out}`, 'red')
-  if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:\n${r.out}`, 'red')
+  if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(r)}\n${r.out}`, 'red')
+  if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:${knownOf(r)}\n${r.out}`, 'red')
 }
 
 async function chain(crew) {
