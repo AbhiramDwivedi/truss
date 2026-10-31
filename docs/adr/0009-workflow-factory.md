@@ -146,6 +146,8 @@ One file, run as `node <plugin>/bin/factory.ts <command> [flags]`, where `<plugi
 
 [ADR-0015](0015-resource-aware.md) (proposed, `0015-resource-aware.md`) adds three commands to this set, `admit`, `heavy` and `reap`, a `held` key to `start`'s output, and one import, `../resources/index.ts`. `heavy` runs a command, so like `check` it isn't idempotent. This section's other rules don't change.
 
+[ADR-0016](0016-plugin-fixes.md) (proposed, `0016-plugin-fixes.md`) adds a `warnings` key to `start`'s output and its `--args-file` pointer, and has `start` refuse a crew whose goal file is missing, by path. It also makes `envFailure` and `tests-check` stricter. This section's other rules don't change.
+
 The CLI is the only writer of a crew's `status` on the Workflow path. Statuses keep `plan.schema.json`'s four values: `planned`, `running`, `merged` and `dropped`. `start` moves a crew from `planned` to `running`, and `finish` moves it from `running` to `merged`. Neither command ever changes a crew that is `merged` or `dropped`, and neither restarts a `running` one except through `start --slug` (below). It never runs `git push`, never opens a PR, and never touches any remote.
 
 Common flags: `--dir <truss dir>` (absolute), `--repo <repo root>` (absolute; default the cwd's `git rev-parse --show-toplevel`).
@@ -169,6 +171,8 @@ Common flags: `--dir <truss dir>` (absolute), `--repo <repo root>` (absolute; de
 | `finish --dir D --repo R --transcript T [--result R]` | `R` is a JSON file holding the value `Workflow(stage.js)` returned, which the PM saves. With `--result`: the record step, then the merge step, below. Without it (the Workflow call errored, or the session died, so there is no return value): first the liveness rule (rule 3 of "start, stale runs") for run `T`, for every crew that has a label in `T`. While it fails, `finish` refuses with `why: "run may be live"` and writes nothing, so `incomplete` is only ever written for a run that passed the liveness bound. Then the record step and the audit for run `T` only, nothing merged. For each crew that has a label in `T`, `finish` appends one `{"v":1,"ts":"...","event":"incomplete","crew":"<slug>","run":"<run id>"}` line to `events.jsonl` and lists the slug under `incomplete`. | `{"merged":[...],"rework":[{"slug","why"}],"blocked":[{"slug","why"}],"refused":[{"slug","why"}],"audit":[{"label","why"}],"incomplete":["<slug>", ...],"stopped":[{"slug","tag","at","why"}]}`; `incomplete` is `[]` with `--result`. `stopped` lists, with `--result`, each `running` factory crew whose result's `state` is not `passed`, with the result's `tag` and `at` and the first line of its `text` as `why` (cut at 300 characters; the full text stays in `R`), and each crew that holds labels in `T` but has no result in `R` (`tag` and `at` null). It is `[]` without `--result`, and it never changes the exit code |
 
 **start, args file.** Every `start` form takes `--args-file P`, an absolute path. `start` then writes the object it would have printed to `P`, the same one line, and prints only `{"argsFile":P,"scriptPath","crews":[<slug>, ...],"foremen","refused","stale","unfinished"}`, so the stage args (often 7 KB or more) stay out of the PM's Bash output. `stage.js` can't take `{argsFile: P}` instead of the object: a script has no file system, and the Workflow gate (Decision 6) checks `args.truss` on the call itself. So the PM reads `P` and passes its object as the Workflow's `args`.
+
+**start, warnings and a missing goal file.** [ADR-0016](0016-plugin-fixes.md) adds `warnings` (an array of strings) to the `start` row's output, to the resume output and to this pointer, after `unfinished`; a warning never holds or refuses a crew. It also sends a crew whose goal file `D/goals/<slug>.md` is missing to `refused`, with a reason that names the path, instead of the foreman path.
 
 **start, engine split.** Each goal file carries a `## Engine` section, written by the PM in `SKILL.md` section 6. Its first word is `workflow` or `foreman`, followed by the reason when it is `foreman`. The PM writes `foreman` when the crew has a `commissioning-engineer` member, or when the client raised any of its members to `high` or `xhigh`; it writes `workflow` otherwise. `start` overrides the section to `foreman` for every crew when `settings` gives `merge: single`, or when the PM passes `--no-workflow` because its session has no Workflow tool. A goal file with no `## Engine` section is `foreman`, so the default is today's behaviour. Then, in queue order within the cap:
 
@@ -364,6 +368,8 @@ Faster here means fewer waits between checked steps, not fewer checks. It does n
 The test-writers of the build crews pin these with `node --test` contract tests; no test calls a model, the Workflow tool or the client.
 
 The seams of `admit`, `heavy`, `reap`, `start`'s `held` key and the `stage.js` admit, heavy and reap calls are pinned in [ADR-0015](0015-resource-aware.md), "Seams to pin".
+
+The seams of `start`'s `warnings` key, `start`'s missing-goal-file refusal, the stricter `envFailure` and `tests-check`, and the hooks' `designerResumeVerdict`, `MAIN_MODEL_REFUSAL` and JSON-string `workflowCallVerdict` are pinned in [ADR-0016](0016-plugin-fixes.md), "Seams to pin".
 
 - `factory.ts` commands, flags, one-line JSON output and exit codes (Decision 1), including these cases:
   - the engine split;
