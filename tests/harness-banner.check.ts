@@ -185,3 +185,44 @@ t('STRESSTEST: 0 findings only later in the text (no banner) is not a stress res
   assert.equal(r.res.state, 'stopped', JSON.stringify(r.res))
   assert.equal(r.res.at, 'stress')
 })
+
+// ---------------------------------------------------------------- hooks/register.ts: markerOf and qcRuling
+
+import * as reg from '../hooks/register.ts'
+
+t('register markerOf: banner + blank line + VERDICT: PASS is VERDICT: PASS', () => {
+  assert.equal(reg.markerOf(ban(PASS)), 'VERDICT: PASS')
+})
+t('register qcRuling: banner + VERDICT: PASS rules PASS and reads head and patch', () => {
+  const r = reg.qcRuling(ban(PASS))
+  assert.equal(r.verdict, 'PASS')
+  assert.equal(r.head, HEAD)
+  assert.equal(r.patch, PATCH)
+})
+t('register qcRuling: banner + VERDICT: FAIL rules FAIL', () => {
+  assert.equal(reg.qcRuling(ban(FAIL)).verdict, 'FAIL')
+})
+t('register markerOf: banner + BLOCKED: x is BLOCKED (the marker name has no colon)', () => {
+  assert.equal(reg.markerOf(ban('BLOCKED: x\n\ndetail')), 'BLOCKED')
+})
+t('register markerOf: banner + STRESSTEST line is STRESSTEST', () => {
+  assert.equal(reg.markerOf(ban('STRESSTEST: 0 findings')), 'STRESSTEST')
+})
+t('register markerOf: banner + a non-marker line is null', () => {
+  assert.equal(reg.markerOf(ban('Looks fine to me')), null)
+  assert.equal(reg.qcRuling(ban('Looks fine to me')).verdict, undefined)
+})
+t('register markerOf: two stacked banners is null', () => {
+  assert.equal(reg.markerOf(ban(ban(PASS))), null)
+  assert.equal(reg.qcRuling(ban(ban(PASS))).verdict, undefined)
+})
+t('register markerOf: a [note: ...] paragraph is not a banner', () => {
+  assert.equal(reg.markerOf(`[note: not a harness banner]\n\n${PASS}`), null)
+})
+t('register markerOf: VERDICT: PASS only later after a normal first line is null', () => {
+  assert.equal(reg.markerOf(`Here is my review.\n\n${PASS}`), null)
+})
+t('register markerOf: the template line after a banner is still null', () => {
+  assert.equal(reg.markerOf(ban('VERDICT: PASS | FAIL')), null)
+  assert.equal(reg.markerOf(ban('VERDICT: PASS | then more')), null)
+})
