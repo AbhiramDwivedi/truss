@@ -348,7 +348,7 @@ st('case: runner calls get no admit', async () => {
     assert.equal(admits.length, memberCount, `${name}: ${admits.length} admit runner calls for ${memberCount} member spawns; only member spawns are admitted`)
     for (const a of admits) {
       const next = seq[a.i + 1]
-      assert.ok(next && !next.runner, `${name}: the admit at call ${a.i} is followed by ${next ? `a runner call (${next.runner.line})` : 'nothing'}, not a member spawn`)
+      assert.ok(next && !next.runner, `${name}: the admit at call ${a.i} is followed by ${next && next.runner ? `a runner call (${next.runner.line})` : 'nothing'}, not a member spawn`)
     }
     for (const c of seq.filter((x) => x.runner && x.runner.cmd !== 'admit')) {
       const prev = seq[c.i - 1]
