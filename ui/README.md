@@ -20,17 +20,19 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 
 ## Start the UI
 
-1. Start the server, and point it at the repo you want Truss to work in:
+1. Start the server, and point it at the repo you want Truss to work in. Run this from the plugin root:
+
+   ```
+   node ui/server/main.ts --repo /path/to/your/repo
+   ```
+
+   Or start it through npm:
 
    ```
    npm --prefix ui start -- --repo /path/to/your/repo
    ```
 
-   Or run the entry point with `node` directly:
-
-   ```
-   node ui/server/main.ts --repo /path/to/your/repo
-   ```
+   On Windows, stopping an `npm start` task (for example closing the terminal or stopping a background task) can leave npm and the server running, because the server's parent is npm's cmd shell. Start with `node` directly to avoid it. If a later start reports the port is in use and a running truss UI is recorded for that port, the message names its pid. Stop it with `taskkill /PID <pid> /F` on Windows, or `kill <pid>` elsewhere.
 
 2. Wait for the one line the server prints:
 
@@ -48,7 +50,7 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--repo <path>` | `$INIT_CWD` when set, else the current directory | The repo the session runs in. `npm` sets `INIT_CWD` to the directory you ran `npm` from. |
+| `--repo <path>` | `$INIT_CWD` when set, else the current directory | The repo the session runs in. `npm` sets `INIT_CWD` to the directory you ran `npm` from. With `node` directly, it is the current directory unless `INIT_CWD` is set. |
 | `--plugin <path>` | The directory that holds `ui/` | The Truss plugin root. It must contain `.claude-plugin/plugin.json`, or the server exits with code 2. |
 | `--truss-dir <path>` | Found from the session id | Read this Truss dir instead. Meant for tests on a copy of real Truss files. |
 | `--port <n>` | `0` | The port to listen on, 0 to 65535. `0` lets the OS pick a free port. |
