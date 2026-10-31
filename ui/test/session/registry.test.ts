@@ -123,7 +123,7 @@ test('bad bodies per kind give "answer" and leave the request open', () => {
   const bad: Record<string, unknown[]> = {
     perm: [null, 'allow', 42, {}, { decision: 'maybe' }, { decision: 'allow', message: 5 }],
     reply: [null, 'allow', 42, {}, { decision: 'maybe' }, { decision: 'deny', message: {} }],
-    q: [null, 'x', 42, {}, { decision: 'allow' }, { answers: [] }],
+    q: [null, 'x', 42, {}, { decision: 'allow' }, { answers: [] }, { answers: {} }, { answers: { 'Not asked?': 'x' } }],
   }
   const ids: Record<string, string> = { perm: perm.id, reply: reply.id, q: q.id }
   for (const [k, bodies] of Object.entries(bad)) {
