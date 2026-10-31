@@ -34,6 +34,8 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 
    On Windows, stopping an `npm start` task (for example closing the terminal or stopping a background task) can leave npm and the server running, because the server's parent is npm's cmd shell. Start with `node` directly to avoid it. If a later start reports the port is in use and a running truss UI is recorded for that port, the message names its pid. Stop it with `taskkill /PID <pid> /F` on Windows, or `kill <pid>` elsewhere.
 
+   Start `node ui/server/main.ts` from your own terminal where you can. The server stops when any process that started it exits (ADR-0014), so detached launches such as PowerShell Start-Process or WMI end with their launching shell or host. Started from a Claude Code background shell, it stays up, but that shell's reaper can kill it under memory pressure, which ends the Truss session.
+
 2. Wait for the one line the server prints:
 
    ```
