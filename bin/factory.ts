@@ -441,6 +441,45 @@ function cmdApprove(f: Flags): Obj {
   return { approvedAt }
 }
 
+// Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
+// fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
+export const ENV_PATTERNS: RegExp[] = [
+  /Host system is missing dependencies/, // Playwright: the browser's system libraries are not installed
+  /browserType\.launch: /, // Playwright: the browser process could not start
+  /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
+  /error while loading shared libraries: /, // the dynamic loader: a system library is missing
+]
+// The package name of a bare import specifier (`@scope/name/sub` -> `@scope/name`, `name/sub` -> `name`).
+const packageName = (spec: string): string => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
+// True when the package.json nearest to `from` (walking up) declares `pkg` in any dependency list.
+function declares(from: string, pkg: string): boolean {
+  for (let d = path.dirname(from); ; d = path.dirname(d)) {
+    const p = `${d}/package.json`
+    if (existsSync(p)) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8'))
+        return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].some((k) => isObj(j?.[k]) && Object.hasOwn(j[k], pkg))
+      } catch {
+        return false
+      }
+    }
+    if (path.dirname(d) === d) return false
+  }
+}
+// The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
+// ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
+// nearest to <file> declares x: the dependency is declared but not installed. An undeclared package is a code failure.
+export function envFailure(text: string): string | undefined {
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    let hit = ENV_PATTERNS.some((re) => re.test(line))
+    const m = /Cannot find package '([^']+)' imported from (\S+)/.exec(line)
+    if (!hit && m && !m[1].startsWith('.') && !m[1].startsWith('/')) hit = declares(m[2].replace(/^file:\/\//, ''), packageName(m[1]))
+    if (hit) return line.length > 300 ? `${line.slice(0, 299)}…` : line
+  }
+  return undefined
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -470,9 +509,11 @@ function cmdCheck(f: Flags): Obj {
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail }) + '\n', { flag: 'wx' })
-  const ok = expect === 'red' ? exit !== 0 : exit === 0
-  const body = { ok, exit, head, tail }
+  // a failing run whose output names an environment failure carries it as `env`: never a red, and no fix builder for a green
+  const env = exit === 0 ? undefined : envFailure(text)
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }) }) + '\n', { flag: 'wx' })
+  const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
+  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }) }
   if (!ok) throw refuse(body)
   return body
 }
@@ -958,7 +999,8 @@ function patchOf(wt: string, base: string, head: string): string | undefined {
   return patchIdOf(p.stdout)
 }
 
-// The lowest-numbered D/checks/<slug>-<n>.json: the red record. undefined when none.
+// The lowest-numbered D/checks/<slug>-<n>.json that has no `env` key: the red record. A run that failed on the environment
+// proves nothing about the code, so it is passed over. undefined when none.
 function redRecord(dir: string, slug: string): Obj | undefined {
   const d = `${dir}/checks`
   if (!existsSync(d)) return undefined
@@ -966,14 +1008,18 @@ function redRecord(dir: string, slug: string): Obj | undefined {
   const found = readdirSync(d).flatMap((n) => {
     const m = re.exec(n)
     return m?.[1] === undefined ? [] : [{ n: Number(m[1]), name: n }]
-  }).sort((x, y) => x.n - y.n)[0]
-  if (found === undefined) return undefined
-  try {
-    const v = JSON.parse(readFileSync(`${d}/${found.name}`, 'utf8'))
-    return isObj(v) ? v : undefined
-  } catch {
-    return undefined
+  }).sort((x, y) => x.n - y.n)
+  for (const f of found) {
+    let v
+    try {
+      v = JSON.parse(readFileSync(`${d}/${f.name}`, 'utf8'))
+    } catch {
+      return undefined
+    }
+    if (!isObj(v)) return undefined
+    if (v.env === undefined) return v
   }
+  return undefined
 }
 
 type Outcome = { merged?: true; rework?: string; blocked?: string; refused?: string }

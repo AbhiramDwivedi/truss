@@ -38,9 +38,9 @@ function patchId(cwd, base, hd) {
   return reg.patchIdOf(p.stdout)
 }
 
-const writeCheck = (dir, slug, n, exit, hd) => {
+const writeCheck = (dir, slug, n, exit, hd, env) => {
   mkdirSync(`${dir}/checks`, { recursive: true })
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: 'true', exit, head: hd, tail: '' }))
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: 'true', exit, head: hd, tail: '', ...(env === undefined ? {} : { env }) }))
 }
 
 /**
@@ -424,6 +424,16 @@ test('gate: the lowest-numbered checks file decides (numerically), later ones do
   const b = scenario([{ slug: 's', red: false }])
   writeCheck(b.env.dir, 's', 2, 1, b.c.s.head)
   writeCheck(b.env.dir, 's', 10, 0, b.c.s.head)
+  assertMerged(b, assertOneLine(b.finish()))
+})
+
+test('gate: a checks file with env is passed over, so an environment failure is never the red record', () => {
+  const a = scenario([{ slug: 's', red: false }])
+  writeCheck(a.env.dir, 's', 1, 1, a.c.s.head, 'browserType.launch: Host system is missing dependencies')
+  assert.ok(listed(assertOneLine(a.finish()), 'refused', 's'), 'an env failure alone is no red record')
+  const b = scenario([{ slug: 's', red: false }])
+  writeCheck(b.env.dir, 's', 1, 1, b.c.s.head, 'browserType.launch: Host system is missing dependencies')
+  writeCheck(b.env.dir, 's', 2, 1, b.c.s.head)
   assertMerged(b, assertOneLine(b.finish()))
 })
 

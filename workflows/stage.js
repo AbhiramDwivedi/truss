@@ -158,6 +158,9 @@ async function runFactory(crew, command, key) {
   return { met, parsed, out: `exit ${res.exit}\n${res.stdout}` }
 }
 
+// the environment failure factory.ts check names in its output (ADR-0009 "check, environment failures"), or null
+const envOf = (r) => (r.parsed && typeof r.parsed.env === 'string' && r.parsed.env ? r.parsed.env : null)
+
 const check = (crew, expect) => runFactory(crew, `check --slug ${sh(crew.slug)} --cwd ${sh(crew.e.worktree)} --expect ${sh(expect)}`, 'ok')
 
 // ---------------------------------------------------------------- prompts
@@ -425,6 +428,8 @@ async function green(crew) {
       crew.head = g.parsed.head
       return
     }
+    const env = envOf(g)
+    if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.\n${clip(g.out)}`, 'green')
     if (attempt === 4) throw new Stop('BLOCKED', `the green check still fails after the escalation ladder:\n${clip(g.out)}`, 'green')
     if (attempt < 3) {
       await fixBuilder(crew, 'green check', `The green check failed. Its output tail:\n${clip(g.out)}`)
@@ -622,6 +627,8 @@ async function syncStep(crew) {
 async function redStep(crew) {
   crew.step = 'red'
   const r = await check(crew, 'red')
+  const env = envOf(r)
+  if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.\n${r.out}`, 'red')
   if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:\n${r.out}`, 'red')
 }
 
@@ -634,7 +641,9 @@ async function chain(crew) {
     return qc(crew)
   }
   let tasks = e.tasks || []
-  if (e.resume !== 'answers' && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
+  // an answers resume skips the red check, unless the stop it answers was at red (an environment failure the client fixed)
+  const redAnswered = (e.answers || []).some((a) => a.at === 'red')
+  if ((e.resume !== 'answers' || redAnswered) && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
   if (tasks.length) {
     crew.step = 'split'
     const errors = validateTasks(tasks, e.owns)
