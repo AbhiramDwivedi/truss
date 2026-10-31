@@ -82,7 +82,7 @@ $ node <scratchpad>/start.mjs   # a scratch script: /proc/$CLAUDE_PID/stat field
 {"pid":"2829804","starttime":68664743,"btime":1792722936,"start":"2026-10-31T01:19:43.430Z",...}
 ```
 
-That is the instant `ps` showed for `claude --continue --plugin-dir /home/abd/Projects/truss` in the plan's probe. The transcript's first record was `2026-10-30T20:08:12.992Z`, five hours earlier. The 14:29 PM probe showed the PM's own Bash carries `CLAUDE_PID=2829804`, which closed the one point the plan left unproved.
+That is the instant `ps` showed for `claude --continue --plugin-dir <plugin dir>` in the plan's probe. The transcript's first record was `2026-10-30T20:08:12.992Z`, five hours earlier. The 14:29 PM probe showed the PM's own Bash carries `CLAUDE_PID=2829804`, which closed the one point the plan left unproved.
 
 ### Missing goal file
 
