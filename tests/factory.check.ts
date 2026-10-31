@@ -812,7 +812,7 @@ const TABLE = {
   resolver: ['general-purpose', 'sonnet', 'medium', 'none'],
   writer: ['truss:writer', 'opus', 'medium', 'worktree'],
   rca: ['general-purpose', 'opus', 'medium', 'none'],
-  stress: ['truss:qc-engineer', 'opus', 'medium', 'worktree'],
+  stress: ['truss:stress-engineer', 'opus', 'medium', 'worktree'],
   qc: ['truss:qc-engineer', 'opus', 'medium', 'none'],
   runner: ['general-purpose', 'sonnet', 'low', 'none'],
 }

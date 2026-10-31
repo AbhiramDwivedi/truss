@@ -201,11 +201,27 @@ for (const [name, opts] of AUDITS) {
   })
 }
 
-test('audit: a stress label run as a type other than truss:qc-engineer is audited', () => {
+test('audit: a stress label run as a type other than truss:stress-engineer or truss:qc-engineer is audited', () => {
   const w = scenario([{ slug: 's' }], { extraAgents: [{ label: 's-stress', agentType: 'general-purpose', metaModel: 'opus', effort: 'medium' }] })
   const j = assertOneLine(w.finish())
   assert.ok(j.audit.some((a) => String(a.label).includes('s-stress')), JSON.stringify(j.audit))
   assertHeld(w, j)
+})
+
+test('audit: a stress label run as truss:stress-engineer with a Write tool use is not in the audit', () => {
+  const w = scenario([{ slug: 's' }], {
+    extraAgents: [{ label: 's-stress', agentType: 'truss:stress-engineer', metaModel: 'opus', effort: 'medium', tools: [{ name: 'Write', file_path: 'x.md' }] }],
+  })
+  const j = assertOneLine(w.finish())
+  assert.ok(!(j.audit ?? []).some((a) => String(a.label).includes('s-stress')), `s-stress audited: ${JSON.stringify(j.audit)}`)
+})
+
+test('audit: a stress label run as truss:qc-engineer (the pre-merge type, read-only) is not audited either', () => {
+  const w = scenario([{ slug: 's' }], {
+    extraAgents: [{ label: 's-stress', agentType: 'truss:qc-engineer', metaModel: 'opus', effort: 'medium' }],
+  })
+  const j = assertOneLine(w.finish())
+  assert.ok(!(j.audit ?? []).some((a) => String(a.label).includes('s-stress')), `s-stress audited: ${JSON.stringify(j.audit)}`)
 })
 
 test('record step: an existing report with different text is audited and not overwritten; the same text is not', () => {
