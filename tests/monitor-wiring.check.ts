@@ -111,6 +111,14 @@ agentCase('agent states the up rule: above four times minFreeMB, load1 below hal
   assert.match(b, /\b(up|raise|increase|more|plus)\b/i, 'the rule must say when to go up')
 })
 
+agentCase('agent input carries minFreeMB: a source line outside the rule names where the threshold comes from', (b) => {
+  // The rule bullets use minFreeMB; a line that is not a rule bullet must say the sampler prints it or the env var sets it.
+  const lines = b.split('\n').filter((l) => /minFreeMB|TRUSS_MIN_FREE_MB/.test(l) && !/^\s*[-*]\s*(Go|Keep|Otherwise)\b/i.test(l))
+  const source = lines.filter((l) => /\b(prints?|reports?|reading|sampler|outputs?|returns?|reads?|from|TRUSS_MIN_FREE_MB)\b/i.test(l))
+  assert.ok(source.length > 0, `some line outside the rule must say where minFreeMB comes from (the sampler's reading or TRUSS_MIN_FREE_MB); lines naming it: ${JSON.stringify(lines)}`)
+  assert.ok(source.some((l) => /freeMB/.test(l) || /TRUSS_MIN_FREE_MB/.test(l)), 'the input line must sit with freeMB in the reading, or name TRUSS_MIN_FREE_MB')
+})
+
 // ---- the PM step ------------------------------------------------------------------------------------------------
 
 skillCase('run skill starts truss:resource-monitor as an Agent call with model haiku', (r) => {
