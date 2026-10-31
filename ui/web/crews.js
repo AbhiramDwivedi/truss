@@ -48,7 +48,9 @@ export function mount(root) {
   function makeRow(slug) {
     const id = 'crew-members-' + ++counter
     const wrap = el('div', 'crew')
-    const btn = el('button', 'crew-line')
+    const btn = document.createElement('button')
+    btn.id = 'crew-line-' + slug
+    btn.className = 'crew-line'
     btn.type = 'button'
     btn.setAttribute('aria-expanded', 'false')
     btn.setAttribute('aria-controls', id)

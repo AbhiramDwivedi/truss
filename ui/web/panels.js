@@ -42,6 +42,8 @@ function disclosure(title, onOpen) {
 
 function decisionsPanel() {
   const d = disclosure('Decisions and ADRs')
+  d.section.id = 'decisions-panel'
+  d.section.tabIndex = -1
   const h3a = el('h3', 'panel-sub', 'Decisions')
   const noDecisions = el('p', 'empty', 'No decisions recorded yet.')
   const decisionBox = el('div', 'entry-groups')
@@ -103,6 +105,8 @@ function imageUrl(img) {
 
 function designPanel() {
   const d = disclosure('Design', () => update.last && update(update.last))
+  d.section.id = 'design-panel'
+  d.section.tabIndex = -1
   const empty = el('p', 'empty', 'No plan, architecture doc or images yet.')
 
   const planSec = el('section', 'design-sec')
