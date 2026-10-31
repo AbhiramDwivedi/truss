@@ -95,4 +95,11 @@ describe('speed-rules', () => {
     has(RUN, /no stress test/i, 'run: only crews with no stress test')
     has(RUN, /Head\/Patch|patch id|merge gate/i, 'run: Head/Patch rules and merge gate kept')
   })
+
+  test('7 shell rule: every worktree member brief steers Bash past the worktree guard', () => {
+    has(FOREMAN, /the shell rule, for every member with a worktree: Claude Code.s worktree guard refuses/i, 'foreman: the shell rule names the guard as Claude Code\'s')
+    has(FOREMAN, /writes files with Write and Edit, never a shell heredoc/i, 'foreman: Write and Edit, not heredocs')
+    has(FOREMAN, /one plain command per Bash call, with no &&, ;, cd, for-loop or \$VAR argument/i, 'foreman: one plain command per call')
+    has(FOREMAN, /never cds into the main checkout/i, 'foreman: never cd into the main checkout')
+  })
 })

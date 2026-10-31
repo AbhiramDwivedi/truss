@@ -26,7 +26,7 @@ const HEADING3 = '## 3. Find the causes'
 const HEADING4 = '## 4. Propose changes'
 const CAUSE_FORM = 'CAUSE: <anomaly> | <evidence> | <fix location>'
 const NOT_FOUND = 'CAUSE: <anomaly> | not found | none'
-const KINDS = ['leftover', 'QC engineer fail', 'stall', 'overrule', 'spent allowance']
+const KINDS = ['leftover', 'QC engineer fail', 'stall', 'overrule', 'spent allowance', 'refusal']
 const NOT_ANOMALY = 'Spawns over estAgents are not an anomaly; give them no CAUSE line.'
 const SOURCES = "Its only sources are git, the disk, decisions.md, the QC engineer files' VERDICT: and finding lines, and the plugin's own files."
 const P24 = 'It never reads message, prompt or report bodies (P24).'
@@ -74,4 +74,35 @@ test('the frontmatter description still carries "why crews stalled or got reject
   const desc = (m?.[1] ?? '').split('\n').find((l: string) => l.startsWith('description:')) ?? ''
   // already true today: this pins something built, so it passes before and after the producer lands
   assert.ok(desc.includes(DESC), `SKILL.md frontmatter description lost ${JSON.stringify(DESC)}`)
+})
+
+// the refusal count (P24) and the permission proposals it can back
+const section = (heading: string): string => {
+  const i = SKILL.indexOf(heading)
+  if (i < 0) return ''
+  const rest = SKILL.slice(i + heading.length)
+  const j = rest.search(/\n## /)
+  return j < 0 ? rest : rest.slice(0, j)
+}
+
+test('section 2 reports refusals by source, tool, category, program and shape', () => {
+  const s2 = section('## 2. Report the counts')
+  for (const k of ['`refusals`', '`bySource`', '`byTool`', '`byCategory`', '`byProgram`', '`byShape`', '`worktree-guard`', '`classifier`', '`permission`']) assert.ok(s2.includes(k), k)
+})
+
+test('a refusal from the worktree guard is steered through prompts, never an allow rule', () => {
+  const s3 = section3()
+  assert.ok(s3.includes("the guard is Claude Code's, so no truss hook and no allow rule loosens it"))
+  assert.ok(s3.includes('`plugin: workflows/stage.js`'))
+  assert.ok(s3.includes('never propose a rule to get past it'))
+})
+
+test('section 4 proposes only narrow allow rules for .claude/settings.json, which the client writes', () => {
+  const s4 = section(HEADING4)
+  assert.ok(s4.includes('`.claude/settings.json` `permissions.allow`'))
+  for (const wild of ['`Bash(*)`', '`Bash(node:*)`', '`Bash(python3:*)`', '`Bash(bash:*)`', '`Bash(npx:*)`']) assert.ok(s4.includes(wild), wild)
+  assert.ok(s4.includes('Never propose a wildcard over anything that runs code it is handed'))
+  assert.ok(s4.includes("`.claude/settings.local.json` is not checked in, so it never reaches the agents' worktrees"))
+  assert.ok(s4.includes('truss never writes a settings file'))
+  assert.ok(section('## 5. Write only what the client approves').includes('for the client to write'))
 })

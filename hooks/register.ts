@@ -173,6 +173,7 @@ export type TrussEvent =
   | { event: 'report'; crew: string; agent: string; marker: ReportMarker | null }
   | { event: typeof ALLOWANCE_SPENT_EVENT; crew: string; agent: string }
   | FetchEvent
+  | RefusalEvent
 
 // The fetch gate (ADR-0005 s11): every WebFetch and WebSearch call passes this one pure function. It allows every call
 // today; a guardrail added later is a change here and its tests alone.
@@ -202,6 +203,80 @@ export function fetchVerdict(tool: 'WebFetch' | 'WebSearch', input: { readonly u
   if (!hasPlan) return { kind: 'allow', line: null }
   if (tool === 'WebFetch') return { kind: 'allow', line: { event: 'fetch', crew, agent, tool, url: loggedUrl(input.url) } }
   return { kind: 'allow', line: { event: 'fetch', crew, agent, tool, query: typeof input.query === 'string' ? input.query.slice(0, 200) : '' } }
+}
+
+// A tool call refused before or as it ran, by truss's own hooks or by what sits beneath them (P24: retro counts these;
+// it never reads a body). category is the rule's own words with names and paths taken out, never the call's input;
+// program is a Bash command's first word and shape names what its first line is made of, never its text.
+export type RefusalSource = 'truss' | 'worktree-guard' | 'classifier' | 'permission' | 'other'
+export type RefusalShape = 'heredoc' | 'compound' | 'cd' | 'subst' | 'var' | 'pipe' | 'loop'
+export type RefusalEvent = { event: 'refusal'; crew: string; agent: string; tool: string; source: RefusalSource; category: string; program: string | null; shape: RefusalShape[] }
+export const REFUSAL_CATEGORY_MAX = 100
+
+const WORKTREE_GUARD = /is isolated in the worktree \S+? but (?:this command|its working directory) ([^]*?)\. Refusing to run it/
+const CLASSIFIER_REASON = /auto mode classifier\. Reason: \[([^\]\n]{1,60})\]/
+const CLASSIFIER_NO_VERDICT = /auto mode classifier gave no verdict/
+const PERMISSION = /Permission to use \S+ (?:[^]*? )?has been denied|requires approval|The user doesn't want to proceed/
+
+// a rule's words as logged: quoted names and paths out, whitespace folded, cut to REFUSAL_CATEGORY_MAX
+function categoryOf(text: string): string {
+  const folded = text
+    .replace(/"[^"\n]*"/g, '<name>')
+    .replace(/\(the variable [^)]*\)/g, '(a variable)')
+    .replace(/(?:~|\.{0,2})?\/[^\s,;:)]*/g, '<path>')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return folded.length <= REFUSAL_CATEGORY_MAX ? folded : folded.slice(0, REFUSAL_CATEGORY_MAX - 1) + '…'
+}
+
+// what a Bash command is made of, read from its first word and first line by their parts' kinds alone
+export function commandShape(command: unknown): { program: string | null; shape: RefusalShape[] } {
+  if (typeof command !== 'string') return { program: null, shape: [] }
+  const c = command.trim()
+  const base = (c.split(/\s/, 1)[0] ?? '').replace(/^.*\//, '')
+  const program = /^[A-Za-z0-9_.+-]{1,40}$/.test(base) ? base : null
+  const firstLine = c.split('\n', 1)[0]
+  const outsideHeredoc = firstLine.replace(/<<-?\s*['"]?\w+['"]?/, '')
+  const shape: RefusalShape[] = []
+  if (/<<-?\s*['"]?\w/.test(firstLine)) shape.push('heredoc')
+  if (/&&|\|\||;/.test(outsideHeredoc)) shape.push('compound')
+  if (/(?:^|[;&|]\s*)cd\s/.test(firstLine)) shape.push('cd')
+  if (/\$\(|`/.test(firstLine)) shape.push('subst')
+  if (/\$\{?[A-Za-z_]/.test(firstLine)) shape.push('var')
+  if (/(?:^|[^|])\|(?!\|)/.test(outsideHeredoc)) shape.push('pipe')
+  if (/(?:^|[;&|]\s*)(?:for|while|until)\s/.test(firstLine)) shape.push('loop')
+  return { program, shape }
+}
+
+// Which party refused a call, from what the call answered: a deny, or an errored result whose text is one of the
+// engine's refusals (an ordinary failed tool is no refusal). undefined when it isn't one.
+export function refusalOf(result: unknown): { source: RefusalSource; category: string } | undefined {
+  if (typeof result !== 'object' || result === null) return undefined
+  const r = result as { deny?: unknown; isError?: unknown; text?: unknown; result?: unknown }
+  const denied = typeof r.deny === 'string'
+  const errored = r.isError === true ? (typeof r.text === 'string' ? r.text : typeof r.result === 'string' ? r.result : '') : ''
+  const head = (denied ? (r.deny as string) : errored).slice(0, 2000)
+  if (!denied && head === '') return undefined
+  if (head.startsWith(`${MARK} Refused: `)) {
+    const rule = head.slice(`${MARK} Refused: `.length).split(/[.:](?:\s|$)/, 1)[0]
+    return { source: 'truss', category: categoryOf(rule) }
+  }
+  const guard = WORKTREE_GUARD.exec(head)
+  if (guard !== null) return { source: 'worktree-guard', category: categoryOf(guard[1]) }
+  const reason = CLASSIFIER_REASON.exec(head)
+  if (reason !== null) return { source: 'classifier', category: categoryOf(reason[1]) }
+  if (CLASSIFIER_NO_VERDICT.test(head)) return { source: 'classifier', category: 'no verdict' }
+  if (PERMISSION.test(head.slice(0, 400))) return { source: 'permission', category: /The user doesn't want to proceed/.test(head) ? 'the person said no' : 'denied' }
+  return denied ? { source: 'other', category: categoryOf(head.split('\n', 1)[0]) } : undefined
+}
+
+// the event line for one refused call, or null when it is no refusal or the session has no plan
+export function refusalLine(tool: string, input: { readonly command?: unknown }, result: unknown, crew: string, agent: string, hasPlan: boolean): RefusalEvent | null {
+  if (!hasPlan) return null
+  const refused = refusalOf(result)
+  if (refused === undefined) return null
+  const { program, shape } = tool === 'Bash' ? commandShape(input.command) : { program: null, shape: [] as RefusalShape[] }
+  return { event: 'refusal', crew, agent, tool, source: refused.source, category: refused.category === '' ? 'unnamed' : refused.category, program, shape }
 }
 
 const MARKERS = ['VERDICT: PASS', 'VERDICT: FAIL', 'STRESSTEST', 'CHECKPOINT', 'BLOCKED', 'QUESTION', 'PROPOSAL'] as const
@@ -1723,6 +1798,34 @@ export const register: Register = on => {
   const wakes: Wakes = { checking: false, fired: new Set(), work: Promise.resolve() }
   // appends to the messages log, one at a time
   let appending: Promise<unknown> = Promise.resolve()
+  // results already logged as refusals: a deny that passes up through several of truss's hooks is counted once
+  const refusalsLogged = new WeakSet<object>()
+  // One refusal line for a call's result when it is one and the session has a plan (P24). The caller and the plan
+  // check each wait at most EVENT_WAIT_MS, as the fetch gate's do; never throws and never changes the result.
+  const noteRefusal = async ($: $, e: { readonly agentId?: string; readonly tool: string }, result: unknown): Promise<void> => {
+    if (typeof result !== 'object' || result === null || refusalsLogged.has(result) || refusalOf(result) === undefined) return
+    refusalsLogged.add(result)
+    await safely($, 'refusal log', async () => {
+      const caller = await within($, EVENT_WAIT_MS, async () => {
+        if (e.agentId === undefined) return { crew: 'main', agent: 'main' }
+        const all = (await agentsOf($, state)).all
+        const self = all.find(a => a.id === e.agentId)
+        return { crew: crewOf(e.agentId, all)?.crew ?? 'main', agent: self === undefined ? e.agentId : labelOf(self) }
+      })
+      const hasPlan =
+        (await within($, EVENT_WAIT_MS, async () => {
+          const dir = await rootOf($, state)
+          return dir !== undefined && (await $.fs.exists(planPath(dir)))
+        })) === true
+      const line = refusalLine(e.tool, e as { readonly command?: unknown }, result, caller?.crew ?? 'main', caller?.agent ?? e.agentId ?? 'main', hasPlan)
+      if (line !== null) await logEvent($, state, line)
+    })
+  }
+  // truss's own deny, logged before it goes back
+  const refuse = async <R>($: $, e: { readonly agentId?: string; readonly tool: string }, refused: R): Promise<R> => {
+    await noteRefusal($, e, refused)
+    return refused
+  }
 
   on('session.end', { reason: 'clear' }, async ($, e, next) => {
     state.known.clear()
@@ -1788,7 +1891,7 @@ export const register: Register = on => {
     }
     const sender = e.agentId
     const decided = await safely($, 'SendMessage check', async () => messageVerdict(sender, input.to, (await agentsOf($, state)).all))
-    if (decided?.kind === 'deny') return { deny: decided.reason }
+    if (decided?.kind === 'deny') return refuse($, e, { deny: decided.reason })
     const result = await next(e)
     if (decided?.kind !== 'allow' || result.deny !== undefined) return result
     if (input.to === MAIN && typeof input.message === 'string') {
@@ -1826,7 +1929,7 @@ export const register: Register = on => {
         if (verdict !== undefined) await logRule($, `main-session rule refused a ${type} call: ${verdict.deny === MAIN_MODEL_REFUSAL ? 'no model' : 'no allowed effort'}`)
         return verdict
       })
-      if (refused !== undefined) return refused
+      if (refused !== undefined) return refuse($, e, refused)
     }
     const caller = await safely($, 'Agent check', async () => {
       if (e.agentId === undefined) return undefined
@@ -1838,12 +1941,12 @@ export const register: Register = on => {
         refused: agentVerdict(e.agentId, e.model, all) ?? effortVerdict(e.agentId, e.effort, all),
       }
     })
-    if (caller?.refused !== undefined) return caller.refused
+    if (caller?.refused !== undefined) return refuse($, e, caller.refused)
     // ADR-0004 s5: a QC-named call from inside a crew whose rework allowance is spent
     const callerCrew = caller?.crew?.crew
     if (callerCrew !== undefined && isQcName(callerCrew.toLowerCase(), typeof e.name === 'string' ? e.name.toLowerCase() : e.name)) {
       const spent = await safely($, 'rework allowance gate', () => allowanceGate($, state, callerCrew, e.name))
-      if (spent !== undefined) return spent
+      if (spent !== undefined) return refuse($, e, spent)
     }
     const startsForeman = e.agentId === undefined && e.subagent_type === FOREMAN_TYPE
     // the plan gates (ADR-0001 s9): only the main thread starting a named foreman; any failure lets the call through
@@ -1853,7 +1956,7 @@ export const register: Register = on => {
         const plan = await planOf($, state)
         return plan === undefined ? undefined : planVerdict(plan, gated)
       })
-      if (refused !== undefined) return refused
+      if (refused !== undefined) return refuse($, e, refused)
     }
     // a plan-mode design engineer from the main session (ADR-0015 s9): its hand-back is the plan to write. Marked before the
     // call runs, since a foreground agent spawns and hands back inside it; agent.spawn binds the id by this tool_use_id.
@@ -1924,27 +2027,33 @@ export const register: Register = on => {
         if (verdict !== undefined) await logRule($, `Workflow gate refused a call: ${verdict.deny}`)
         return verdict
       })
-      if (refused !== undefined) return refused
+      if (refused !== undefined) return refuse($, e, refused)
     }
     return next(e)
   }).catch(failOpen)
 
   // Every tool call is activity, the main session's included. A report sent through the hand-back tool is the agent's
   // real report; its last message may be only a sign-off. One with nothing in it, from inside a crew, is sent back.
+  // Every call's answer is read for a refusal from beneath truss (the worktree guard, the classifier, a permission
+  // rule) and one line logged for it; a deny of truss's own is logged where it is made, and counted once.
   on('tool.call', async ($, e, next) => {
+    const answered = async (result: Awaited<ReturnType<typeof next>>) => {
+      await noteRefusal($, e, result)
+      return result
+    }
     if (e.agentId === undefined) {
       noteMainActivity($, state)
-      return next(e)
+      return answered(await next(e))
     }
     const id = e.agentId
     noteActivity($, state, id)
-    if ((e.tool as string) !== 'SubagentHandback') return next(e)
+    if ((e.tool as string) !== 'SubagentHandback') return answered(await next(e))
     const raw = (e as unknown as { message?: unknown }).message
     const message = typeof raw === 'string' ? raw : ''
     // outside every crew, or with the agent list down, an empty hand-back goes through
     if (isEmptyHandBack(message)) {
       const inCrew = await safely($, 'hand-back check', async () => crewOf(id, (await agentsOf($, state)).all) !== undefined)
-      if (inCrew === true) return { deny: HANDBACK_REFUSAL }
+      if (inCrew === true) return refuse($, e, { deny: HANDBACK_REFUSAL })
     }
     if (message.trim() !== '') {
       // a real report is marked before any await, so a stop that races this capture never overwrites it
@@ -1977,7 +2086,7 @@ export const register: Register = on => {
     } else if (passed.deny === undefined && !(passed as { isError?: unknown }).isError && route === 'amend') {
       await safely($, 'plan-amend route', () => writeAmendFiles($, state, message))
     }
-    return passed
+    return answered(passed)
   }).catch(failOpen)
 
   // every model request is activity, the main session's included; the stream passes untouched
