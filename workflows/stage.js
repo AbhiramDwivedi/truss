@@ -446,6 +446,11 @@ const stressTestCount = (text) => {
   return m ? Number(m[1]) : null
 }
 
+// A Workflow run gives the stress test a worktree on a worktree-wf_<run>-<n> branch. agents/qc-engineer.md accepts it (f533265),
+// but a session that loaded the agent definition before that change still checks for worktree-agent- only and refuses to
+// run (plugin agents don't reload mid-session), so the brief carries the rule itself.
+const WF_WORKTREE = 'Your worktree is one this Workflow run made, so `git branch --show-current` starts with `worktree-wf_`, not `worktree-agent-`. That branch passes the own-worktree check: when the git-dir and git-common-dir differ and the branch starts with `worktree-wf_` or `worktree-agent-`, you are in your own worktree; reset it to the head above and run the stress test there. Never report `STRESSTEST: not run` because the branch starts with `worktree-wf_`.'
+
 function stressTestPrompt(crew) {
   const e = crew.e
   return [
@@ -455,6 +460,8 @@ function stressTestPrompt(crew) {
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
     `Architecture doc: ${e.architecture}`,
+    '',
+    WF_WORKTREE,
     '',
     'Each finding names a plausible producer: the real caller or input that would produce the break.',
     'Class each finding as a real defect or a test gap. Only real defects count in STRESSTEST <n> and go under ## Findings; test gaps go under ## Notes and are not fixed.',

@@ -1334,6 +1334,13 @@ t('stage briefs: the stress test prompt keeps "Stress test:" first and carries t
   has(p, R1)
   has(p, R2)
 })
+t('stage briefs: the stress test prompt accepts a worktree-wf_ branch as its own worktree, whatever agent definition the session loaded', async () => {
+  const r = await runStage([rtCrew()], { labels: base('a', { 'a-stress': RT0 }) })
+  const p = call(r, 'a-stress').prompt
+  has(p, 'starts with `worktree-wf_` or `worktree-agent-`, you are in your own worktree')
+  has(p, 'Never report `STRESSTEST: not run` because the branch starts with `worktree-wf_`.')
+  assert.equal(p.split('\n')[0], 'Stress test:')
+})
 t('stage briefs: the tester and builder prompts tell the member to build only the approved scope', async () => {
   const r = await runStage([entry('a')], { labels: base() })
   has(call(r, 'a-tester').prompt, M1)
