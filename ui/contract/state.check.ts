@@ -336,7 +336,7 @@ function registerTests(mod: any): void {
     await until(store, (s) => crew(s, 'auth').latest.text === 'auth to billing: no v is fine', 2000, 'message without v')
     const s = state(store)
     assert.equal(crew(s, 'future-crew'), undefined)
-    assert.ok(s.run.skipped.some((k: any) => k.file === 'events.jsonl' && k.line === 20 && k.reason === 'version'), JSON.stringify(s.run.skipped))
+    assert.ok(s.run.skipped.some((k: any) => k.file === 'events.jsonl' && k.line === 19 && k.reason === 'version'), JSON.stringify(s.run.skipped))
     assert.ok(s.run.skipped.some((k: any) => k.file === 'messages.jsonl' && k.line === 5 && k.reason === 'version'), JSON.stringify(s.run.skipped))
   })
 
