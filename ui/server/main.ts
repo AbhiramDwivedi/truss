@@ -1,5 +1,5 @@
 // Entry point (ADR-0011 Decision 8): wires ui-state and ui-session for one repo and serves them on 127.0.0.1.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,6 +32,11 @@ function parseArgs(argv: string[]) {
   }
   return o;
 }
+
+// Warn, never exit: the UI is tested on the engines range but still runs on older Node.
+const { nodeVersionWarning } = await import('./node-version.ts');
+const nodeWarning = nodeVersionWarning(process.versions.node, JSON.parse(readFileSync(join(uiDir, 'package.json'), 'utf8')).engines?.node ?? '');
+if (nodeWarning) process.stderr.write(nodeWarning + '\n');
 
 const args = parseArgs(process.argv.slice(2));
 const repo = resolve(args.repo ?? process.env.INIT_CWD ?? process.cwd());
