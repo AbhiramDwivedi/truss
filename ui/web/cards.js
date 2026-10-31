@@ -332,7 +332,6 @@ function mountCards(root, api, focusGoal) {
   root.append(title, empty, openList, settledHead, settledList)
   const items = new Map() // id -> { node, sig, local }
   let last
-  let lastSig = ''
   const bgLine = el('p', { class: 'bg-line', role: 'status' })
   bgLine.hidden = true
   root.insertBefore(bgLine, empty)
@@ -358,6 +357,8 @@ function mountCards(root, api, focusGoal) {
     const open = []
     const settled = []
     const keep = new Set()
+    let refocus = false
+    const held = root.contains(document.activeElement) ? document.activeElement : null
     // Settled ones: newest first, capped.
     const ordered = requests.slice()
     const shownSettled = new Set(
@@ -388,6 +389,8 @@ function mountCards(root, api, focusGoal) {
         it.sig = sig
         const fresh = buildCard(it.request, api, it.local)
         fresh.dataset.rid = r.id
+        const a = document.activeElement
+        if (it.node && a && it.node.contains(a)) refocus = true
         if (it.node && it.node.parentNode) it.node.replaceWith(fresh)
         it.node = fresh
       }
@@ -401,6 +404,13 @@ function mountCards(root, api, focusGoal) {
     settled.reverse()
     place(openList, open)
     place(settledList, settled.map((s) => s.node))
+    // A pushed update swapped the card that held focus: hand focus on, as rebuild does.
+    // Moving a focused card's node in place() also drops focus, so put it back on the same control.
+    const a = document.activeElement
+    if (!a || a === document.body) {
+      if (held && held.isConnected) held.focus()
+      else if (refocus) focusNext()
+    }
     empty.hidden = open.length > 0 || settled.length > 0
     settledHead.hidden = settled.length === 0
     settledList.hidden = settled.length === 0
