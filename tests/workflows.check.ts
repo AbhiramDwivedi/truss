@@ -71,7 +71,7 @@ async function exec(file, args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|sync)\b([^\n`]*)/)
+      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -92,7 +92,7 @@ async function exec(file, args, o = {}) {
       if (out === undefined) {
         const head = (o.heads ?? {})[slug] ?? HEAD
         out =
-          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : rj({ merged: true })
+          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
       }
       await ticks(cmd === 'integrate' ? 3 : 1)
       if (cmd === 'integrate') inflight[slug]--
@@ -963,6 +963,26 @@ t('stage scope: an owns-check failure stops QUESTION at scope naming the files o
   has(r.res[0].text, 'docs/STRAY-ONE.md')
   has(r.res[0].text, 'lib/STRAY-TWO.ts')
   assert.ok(!had(r, 'a-qc'))
+})
+
+t('stage tests: tests-check runs with --slug after owns-check and before every qc', async () => {
+  const r = await runStage([entry('a')], { labels: { ...base('a', { 'a-qc': FAIL(), 'a-qc-2': PASS }), 'a-builder-2': done('feat/f1') } })
+  passedShape(r.res[0], 'a', HEAD, 'a-qc-2')
+  has(r.calls.find((c) => c.runner?.cmd === 'tests-check').prompt, 'tests-check --slug a')
+  const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check')
+  assert.equal(runs.length, 2, 'once before each qc, so a fix builder\'s commits are checked too')
+  assert.ok(idx(r, 'end:runner:a:owns-check') < idx(r, 'start:runner:a:tests-check'))
+  assert.ok(idx(r, 'end:runner:a:tests-check') < idx(r, 'start:a-qc'))
+})
+t('stage tests: a builder commit on a tester file stops BLOCKED at tests naming it; no qc, no fix builder', async () => {
+  const touched = [{ commit: 'c0ffee1', role: 'builder', files: ['tests/TESTER-FILE.test.ts'] }]
+  const r = await runStage([entry('a')], { labels: base(), runner: ({ key }) => (key === 'tests-check' ? rj({ ok: false, touched, tests: ['tests/TESTER-FILE.test.ts'] }, 1) : undefined) })
+  stopped(r.res[0], 'BLOCKED', 'tests')
+  has(r.res[0].text, 'c0ffee1')
+  has(r.res[0].text, 'Truss-Role: builder')
+  has(r.res[0].text, 'tests/TESTER-FILE.test.ts')
+  assert.ok(!had(r, 'a-qc'))
+  assert.ok(!had(r, 'a-builder-2'))
 })
 
 // ---------------------------------------------------------------- stage.js: qc

@@ -505,6 +505,17 @@ async function scope(crew) {
   throw new Stop('QUESTION', `Files changed outside the crew owns: ${names}. Extend owns?`, 'scope')
 }
 
+// a builder or resolver commit that touched a tester's file is a sure QC FAIL (agents/qc-engineer.md step 8), and no fix
+// builder can clear it, since QC reads the history: stop BLOCKED before a QC engineer is paid for it
+async function testsGuard(crew) {
+  crew.step = 'tests'
+  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok')
+  if (r.met) return
+  const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
+  const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
+  throw new Stop('BLOCKED', `${lines.length ? `These commits touch acceptance-test files a tester wrote:\n${lines.join('\n')}` : `the tests check did not pass:\n${r.out}`}\nThe QC engineer fails any builder or resolver commit that touches them, so the crew stops before QC. Drop those commits from the crew branch (or have the tester make the change) and resume.`, 'tests')
+}
+
 // the same rule as register.ts qcRuling and markerOf: the first non-empty line decides
 function verdictOf(text) {
   const lines = String(text || '').replace(/^﻿/, '').replace(/\r/g, '').split('\n')
@@ -593,6 +604,7 @@ async function runQc(crew) {
 
 async function qc(crew) {
   for (;;) {
+    await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
     let j = await runQc(crew)

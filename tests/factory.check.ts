@@ -2,7 +2,7 @@
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
 // truss ADR-0009 Decision 1 (the factory CLI, bin/factory.ts) and Decision 2 (roles.json). Written
 // from the ADR before the code. This file pins settings, plan-args, plan-write, plan-check, approve, check, integrate,
-// sync, owns-check, the roles table, the label parse, the events schema and the usage-error contract. `start` and
+// sync, owns-check, tests-check, the roles table, the label parse, the events schema and the usage-error contract. `start` and
 // `finish` are pinned in tests/fixtures/workflow-run/start.cases.ts and finish.cases.ts, loaded at the end of this file.
 //
 // Run with: node --test tests/factory.check.ts
@@ -758,6 +758,46 @@ test('owns-check: <base> is the merge-base with the target, so after a sync anot
   const stray = env.run('owns-check', { slug: 's' })
   assert.equal(stray.status, 1)
   assert.deepEqual(assertOneLine(stray).outside, ['lib/stray.ts'])
+})
+
+const roleMsg = (role) => `work\n\nTruss-Crew: s\nTruss-Role: ${role}`
+
+test('tests-check: a builder commit that touches a file a test-writer commit wrote is listed (exit 1); other files are not', () => {
+  const { env, wt } = crewEnv()
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('test-writer'))
+  const clean = env.run('tests-check', { slug: 's' })
+  assert.equal(clean.status, 0, clean.stdout)
+  assert.deepEqual(assertOneLine(clean), { ok: true, tests: ['src/s/a.test.ts'] })
+  putFile(wt, 'src/s/a.ts', 'code\n', roleMsg('builder'))
+  assert.equal(env.run('tests-check', { slug: 's' }).status, 0, 'a builder writing its own file is fine')
+  const bad = putFile(wt, 'src/s/a.test.ts', 'weakened\n', roleMsg('builder'))
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('builder'))
+  const res = env.run('tests-check', { slug: 's' })
+  assert.equal(res.status, 1, res.stdout)
+  const j = assertOneLine(res)
+  assert.equal(j.ok, false)
+  assert.deepEqual(j.tests, ['src/s/a.test.ts'])
+  assert.equal(j.touched.length, 2, 'history counts: restoring the file does not clear the touch')
+  assert.deepEqual(j.touched[0], { commit: bad, role: 'builder', files: ['src/s/a.test.ts'] })
+})
+
+test('tests-check: a resolver merge counts only for the files its resolution changed', () => {
+  const { env, wt } = crewEnv()
+  git(wt, ['checkout', '-q', '-b', 'tester'])
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('test-writer'))
+  git(wt, ['checkout', '-q', 'truss-s'])
+  git(wt, ['merge', '-q', '--no-ff', '-m', roleMsg('resolver'), 'tester'])
+  assert.equal(env.run('tests-check', { slug: 's' }).status, 0, 'merging the tester branch in is no touch')
+  git(wt, ['checkout', '-q', '-b', 'tester2'])
+  putFile(wt, 'src/s/a.test.ts', 'test v2\n', roleMsg('test-writer'))
+  git(wt, ['checkout', '-q', 'truss-s'])
+  putFile(wt, 'src/s/a.test.ts', 'crew side\n', roleMsg('test-writer'))
+  assert.notEqual(gitStatus(wt, ['merge', '-q', '-m', 'm', 'tester2']), 0, 'a conflict')
+  putFile(wt, 'src/s/a.test.ts', 'resolved\n')
+  git(wt, ['commit', '-q', '-a', '-m', roleMsg('resolver')])
+  const j = assertOneLine(env.run('tests-check', { slug: 's' }))
+  assert.equal(j.ok, false)
+  assert.deepEqual(j.touched.map((t) => [t.role, t.files]), [['resolver', ['src/s/a.test.ts']]])
 })
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -569,6 +569,28 @@ function cmdOwnsCheck(f: Flags): Obj {
   return { ok: true }
 }
 
+// The acceptance-test files are the files a `Truss-Role: test-writer` commit in <base>..HEAD touched. Lists every builder or
+// resolver commit there that touched one, the check of agents/qc-engineer.md step 8 done before a QC engineer is paid for it.
+// A merge commit counts only for the files its resolution changed (`--cc`: different from every parent), so integrating a
+// tester's branch is no touch. History is what QC reads, so a later commit that restores the file doesn't clear it.
+function cmdTestsCheck(f: Flags): Obj {
+  const c = crewCtx(f)
+  const out = gitOrFail(c.wt, ['log', '--cc', '--name-only', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
+    const [first = '', ...rest] = b.split('\n')
+    const [sha = '', roles = ''] = first.split(' ')
+    return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), files: rest.map((l) => l.trim()).filter(Boolean) }
+  })
+  const tests = [...new Set(commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files))].sort()
+  const touched = commits.flatMap((x) => {
+    const role = x.roles.find((r) => r === 'builder' || r === 'resolver')
+    const files = x.files.filter((file) => tests.includes(file))
+    return role !== undefined && files.length > 0 ? [{ commit: x.sha, role, files }] : []
+  }).reverse()
+  if (touched.length > 0) throw refuse({ ok: false, touched, tests })
+  return { ok: true, tests }
+}
+
 // ==== start ====
 
 // A goal file's `## Heading` sections as {heading: text}; the text before the first heading is under "".
@@ -1183,7 +1205,7 @@ function cmdFinish(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, finish: cmdFinish,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish,
 }
 
 // Runs one command and returns what it printed and its exit code.
