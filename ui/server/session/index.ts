@@ -1,0 +1,9 @@
+// ui/server/session: the only module that imports the Agent SDK (ADR-0011 Decision 9).
+export { createSession } from './session.ts'
+export type { Session, SessionControl } from './session.ts'
+export { initialView, foldMessage } from './fold.ts'
+export type { SessionView, SessionState, TranscriptEntry } from './fold.ts'
+export { questionCard, questionAnswer, permissionCard } from './cards.ts'
+export type { Request, QuestionRequest, PermissionRequest, NewRequest } from './cards.ts'
+export { createRegistry } from './registry.ts'
+export type { Registry, AnswerResult } from './registry.ts'

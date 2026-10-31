@@ -54,7 +54,7 @@ for (const lit of [
 }
 
 const GIT_DIR = 'git rev-parse --path-format=absolute --git-dir'
-for (const lit of [GIT_DIR, 'git rev-parse --path-format=absolute --git-common-dir', 'git branch --show-current', 'worktree-agent-']) {
+for (const lit of [GIT_DIR, 'git rev-parse --path-format=absolute --git-common-dir', 'git branch --show-current', 'worktree-agent-', 'worktree-wf_']) {
   test(`qc-engineer.md stress test section carries ${JSON.stringify(lit)}`, () => present(lit))
 }
 

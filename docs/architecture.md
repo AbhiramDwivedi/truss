@@ -933,6 +933,142 @@ Each hook step runs inside a guard. If Truss's code throws, the guard logs `trus
 
 The Workflow handler ([ADR-0009](adr/0009-workflow-factory.md), Decision 6; `register.ts:1796`) fails open the same way, through `.catch(failOpen)`. So a throw in the Workflow gate, or a `tool.call` that never fires for the main session's Workflow call, lets the run through unchecked. The gates don't rest on that hook alone: `factory.ts start` refuses a crew `planVerdict` refuses, `spawn()` in `plan.js` and `stage.js` throws before `agent()` on a role that is missing or fails `workflowRoleVerdict`'s rules, and `finish`'s session audit blocks every merge while it finds a `truss:*` agent in a run that isn't Truss's, or an agent of an in-scope run with no explicit model or a model family other than opus or sonnet. So without the hook an agent on the wrong model can still run and spend tokens, but its work can't reach the target (ADR-0009, Decision 6).
 
+## Local web UI
+
+`ui/` is an optional local web UI for one Truss run ([ADR-0011](adr/0011-local-web-ui.md), proposed 2026-10-30 by the `ui-design` crew). The client starts one Node process with `node ui/server/main.ts` (or `npm --prefix ui start`), opens the printed URL, and runs Truss from the browser. The process hosts a Claude Code session through `@anthropic-ai/claude-agent-sdk`, with the Truss plugin loaded, and shows the run live from Truss's own files. It never changes the plugin (R-9), and it never writes to the Truss dir or the repo. This section is a design: the four modules don't exist yet, and stage 1 and 2 of the UI run build them.
+
+```mermaid
+flowchart LR
+  browser["Browser tab<br/>[ui-web: ui/web/**]<br/>Cards, crew lanes, panels"]
+  http["ui-server<br/>[ui/server/http, ui/server/main.ts]<br/>127.0.0.1, token, SSE"]
+  state["ui-state<br/>[ui/server/state]<br/>Files to one state"]
+  session["ui-session<br/>[ui/server/session]<br/>The only SDK importer"]
+  sdk["Claude Code<br/>[@anthropic-ai/claude-agent-sdk]<br/>PM session, Truss plugin loaded"]
+  hooks["Truss hooks<br/>[hooks/register.ts, unchanged]"]
+  tdir[("Truss dir<br/>plan.json, plan.md, events*.jsonl,<br/>messages*.jsonl, reports/, decisions.md")]
+  repo[("Repo<br/>.claude/truss.json, architecture doc,<br/>ADR dir, git branches")]
+
+  browser -->|"GET /api/events (SSE)<br/>POST message, answer"| http
+  http -->|"snapshot, since, subscribe"| state
+  http -->|"send, answer"| session
+  session -->|"setSession(view)"| state
+  session -->|"query(): streaming input,<br/>canUseTool replies"| sdk
+  sdk -->|"messages, canUseTool calls"| session
+  sdk -.->|"loads"| hooks
+  hooks -->|"writes"| tdir
+  state -->|"polls, reads by byte offset"| tdir
+  state -->|"reads, runs git"| repo
+```
+
+*The UI's modules and what each reads. Solid arrows are calls or reads inside the UI process, or the SDK link. The UI writes no file.*
+Traces to: ADR-0011, Decisions 1 to 9.
+
+### Module map
+
+| Module | Path | Responsibility | Built by |
+| --- | --- | --- | --- |
+| ui-state | `ui/server/state/**` | Reads the Truss dir, `.claude/truss.json`, the architecture doc, the ADR dir and git. Reduces them, with the session view, into one in-memory state. Emits a snapshot and numbered deltas, and keeps a replay ring of 1024. | crew `ui-state`, stage 1 |
+| ui-session | `ui/server/session/**` | Hosts the session with `query()`. Turns `canUseTool` calls and turn ends into question, approval and reply-needed requests, and answers each at most once. The only module that imports the SDK (ai rule 7). | crew `ui-session`, stage 1 |
+| ui-server | `ui/server/http/**`, `ui/server/main.ts` | Serves `ui/web/`, the SSE stream and the POST routes on `127.0.0.1`, behind the Host, Origin and token checks. `main.ts` parses flags, wires the modules and prints the URL. | crew `ui-server`, stage 1 |
+| ui-web | `ui/web/**`, `ui/e2e/**`, `ui/README.md` | Static HTML, CSS and plain ES modules. Applies the snapshot and deltas, and renders cards, crew lanes, decisions, ADRs and the design panel. No bundler. | crew `ui-web`, stage 2 |
+
+`ui-design` (stage 0) owns the shared files: `ui/package.json`, its lockfile, `ui/.gitignore`, `ui/playwright.config.ts`, `ui/contract/**` and `ui/spike/**`.
+
+### Seams
+
+| Seam | Producer | Consumer | Contract | Pinned by |
+| --- | --- | --- | --- | --- |
+| Snapshot and delta messages | ui-state | ui-server (carries), ui-web (applies) | `ui/contract/state.schema.json`; ADR-0011 Decision 5 | `ui/contract/state.check.ts`, `ui/contract/http.check.ts` |
+| `StateSource`, `Store`, `createStore`, `trussDirFor` | ui-state | ui-server, `main.ts` | ADR-0011 Decision 9 | `ui/contract/state.check.ts` |
+| `SessionControl`, `Session`, `createSession`, the pure folds and the registry | ui-session | ui-server, `main.ts` | ADR-0011 Decisions 3 and 9 | `ui/contract/session.check.ts` |
+| `SessionView` passed to `store.setSession` | ui-session | ui-state | the schema's `session`, `requests`, `transcript`; ADR-0011 Decision 9 | `ui/contract/session.check.ts` |
+| HTTP routes, status codes, SSE ids, Host, Origin and token rules | ui-server | ui-web | ADR-0011 Decision 6 | `ui/contract/http.check.ts` |
+| The page, by role and accessible name | ui-web | the client | R-3 to R-7, R-15, R-18 | `ui/contract/e2e/live-status.spec.ts` |
+| SDK messages and `canUseTool` | Claude Code | ui-session | the recorded stream `ui/contract/fixtures/sdk-stream.jsonl`; ADR-0011 Spike | `ui/contract/session.check.ts` (replay), `ui/contract/live.check.ts` (live) |
+| Truss files the UI reads | Truss hooks and the PM | ui-state | `docs/events.schema.json`, `docs/plan.schema.json`, "On disk" above | `ui/contract/state.check.ts` on `tests/fixtures/retro-040` and `docs/plan.example.json` |
+
+Each contract check imports its producer and, when the import fails, fails with `producer missing: ui/server/<module>`.
+
+### Answering a request
+
+```mermaid
+sequenceDiagram
+  participant B as Browser (ui-web)
+  participant H as ui-server
+  participant S as ui-session
+  participant C as Claude Code (SDK)
+  participant T as ui-state
+  C->>S: canUseTool("AskUserQuestion", input, {signal})
+  S->>S: registry.open(question card)
+  S->>T: setSession(view)
+  T-->>H: delta (set.requests)
+  H-->>B: SSE id <instance>:<seq>
+  B->>H: POST /api/requests/<id>/answer {answers}
+  H->>S: answer(id, body)
+  S-->>C: {behavior: "allow", updatedInput: {questions, answers}}
+  H-->>B: 200 {ok: true, request}
+  B->>H: same POST again
+  H->>S: answer(id, body)
+  H-->>B: 409 {error: "answered", request}
+```
+
+*A question card, answered once. A permission card is the same with `{decision}`. A reply-needed card opens on each top-level `result`, and its answer goes into the streaming input as text (ADR-0011 Decision 3).*
+
+### On disk
+
+Nothing. The state, the replay ring, the requests and the transcript live in the process's memory (R-13). Restarting the server starts them over; a reconnecting tab from the old process gets a fresh snapshot, because its `instance` differs.
+
+### Principles: what binds `ui/`
+
+**P19 binds the plugin, not `ui/`** (R-11, `docs/requirements.md:81`). The plugin stays erasable TypeScript on Node built-ins only. `ui/` is its own package with its own `package.json` and lockfile. Its runtime dependencies are `@anthropic-ai/claude-agent-sdk` and `marked`; its dev dependencies are `@playwright/test` and `@axe-core/playwright`. Its server code is still erasable TypeScript, run by Node 24 as is. No file in `ui/` imports the plugin, and the plugin imports nothing from `ui/`.
+
+**Core pack: all 14 rules adopted.** Rule 1: each module exports from its `index.ts` only. Rule 3: ui-server takes `StateSource` and `SessionControl` as interfaces, which `http.check.ts` implements. Rule 6: every POST body and query is checked at ui-server. Rule 7: a repeated answer POST leaves the same state. Rule 10: the server binds `127.0.0.1` and refuses requests without the token.
+
+**Frontend pack.**
+
+| Rule | Ruling | Reason |
+| --- | --- | --- |
+| 1 to 11 | adopted | ui-web is small, but the rules cost nothing extra. Rule 6 covers no Truss dir yet, an empty run and the session error. Rules 10 and 11 back R-18. |
+| 12 | adopted, in the e2e run | The repo has no CI. `npm --prefix ui run e2e` runs an axe check (`@axe-core/playwright` 4.14.0, WCAG 2.2 AA tags) over each page state the e2e specs reach, and fails on any violation. ui-web writes that spec under `ui/e2e/`. |
+| 13 | dropped | No routes, no bundler and no public users: one local page on loopback. A per-route budget has nothing to measure against. R-15's 2 s and 1 s times are the budget, checked by the e2e specs. |
+| 14 | adapted | No rule-13 budget, but code the first screen doesn't need loads through `import()`: `marked` loads when the design panel first opens (ADR-0011 Decision 7). Mermaid isn't added. |
+
+**Service pack.**
+
+| Rule | Ruling | Reason |
+| --- | --- | --- |
+| 1, 2 | adapted | Config is flags, not environment: `--repo`, `--plugin`, `--truss-dir`, `--port`, with `INIT_CWD` as the repo default. Bad flags or a plugin root without `.claude-plugin/plugin.json` exit 2 at start. |
+| 3 | dropped | One process holds the session and the state in memory by design. A restart starts over (R-13). |
+| 4 | adopted | The only attached resource is the local Claude Code, reached through the SDK. |
+| 5 | dropped | Nothing polls a local tool for liveness; the SSE ping every 15 s tells the tab the process is there. |
+| 6 | dropped | No backing service to check; there is one process and one user. |
+| 7 | adopted | `SIGINT` and `SIGTERM` close the session and the server and exit 0. |
+| 8 | adapted | The process prints one stdout line, the URL. Errors go to stderr, one line each. |
+| 9, 10 | dropped | There is one environment, the client's machine, and no build artifact. |
+| 11 | adopted | `ui/package.json` pins exact versions and `ui/package-lock.json` locks them. |
+| 12 | adopted | Each git child process has a 10 s timeout. The SDK call has none, by R-22 and because a `canUseTool` prompt may wait for the client indefinitely. |
+| 13 | dropped | No admin or one-off tasks; the UI has no data to migrate. |
+
+**AI pack.** The UI hosts the PM session; it makes no model call of its own and owns no prompt.
+
+| Rule | Ruling | Reason |
+| --- | --- | --- |
+| 1 to 4 | dropped | The UI changes no prompt, model or retrieval setup, so there is nothing to eval. Truss's prompts and evals stay in the plugin (ADR-0007). |
+| 5 | dropped | R-20: the session uses Claude Code's default model. The UI passes no model and shows the one `init` reports. |
+| 6 | dropped | Claude Code traces its own calls. The UI shows the model, cost and token counts the SDK reports (R-22) and keeps no trace (R-13). |
+| 7 | adopted | ui-session is the only module that imports the SDK. |
+| 8 | adopted | ui-session parses SDK messages and `canUseTool` input into the schema's types at the seam; a message it doesn't know is ignored, not passed on. |
+| 9 | adopted | Routing a prompt to a card kind, and the at-most-once answer rule, are code in ui-session. |
+| 10 | adopted | `session.check.ts` replays the recorded stream with no network. `live.check.ts` is the only live check, and no acceptance test runs it. |
+| 11 | adopted | Every tool the session can't run unprompted waits for the client's approval card. The UI never sends `updatedPermissions`. |
+| 12 | adopted | The client's text goes in as a user message. The UI adds no system prompt. |
+| 13 | dropped | R-22: no spending ceiling. The header shows the session's total cost instead. |
+| 14 | dropped | A turn may run, or a prompt may wait for the client, as long as the PM needs; a timeout would cut a run off. |
+
+### Not verified yet
+
+The open points are in ADR-0011, "Not confirmed". The one that can stop a run: whether the `[truss] dir:` note reaches the PM when the SDK hosts the session. `ui/contract/live.check.ts` and the client's own R-21 run must show it.
+
 ## Failure modes and recovery
 
 **A stalled agent.** The heartbeat prompts the PM. The PM messages the stalled agent's foreman, or the foreman itself, and asks for its state. `/truss` keeps showing the agent as stalled until it does something. Before stopping it, the PM or foreman reads its transcript tail: a resumed agent may be compacting.

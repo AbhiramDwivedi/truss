@@ -2,7 +2,7 @@
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
 // truss ADR-0009 Decision 1 (the factory CLI, bin/factory.ts) and Decision 2 (roles.json). Written
 // from the ADR before the code. This file pins settings, plan-args, plan-write, plan-check, approve, check, integrate,
-// sync, owns-check, the roles table, the label parse, the events schema and the usage-error contract. `start` and
+// sync, owns-check, tests-check, the roles table, the label parse, the events schema and the usage-error contract. `start` and
 // `finish` are pinned in tests/fixtures/workflow-run/start.cases.ts and finish.cases.ts, loaded at the end of this file.
 //
 // Run with: node --test tests/factory.check.ts
@@ -554,6 +554,42 @@ test('check adds a new record each run and never changes an old one', () => {
   assert.equal(JSON.parse(readFileSync(`${env.dir}/checks/s-2.json`, 'utf8')).head, head(env.repo))
 })
 
+test('check: a failure whose output names an environment failure carries it as env; red is then not met, green is still a failure', () => {
+  const lines = [
+    'browserType.launch: Host system is missing dependencies to run browsers.',
+    "Error: browserType.launch: Executable doesn't exist at /home/u/.cache/ms-playwright/webkit-2104/pw_run.sh",
+    'webkit: error while loading shared libraries: libicu74.so: cannot open shared object file',
+  ]
+  for (const line of lines) {
+    const env = checkEnv(`echo before; echo "${line}"; for i in $(seq 1 60); do echo pad$i; done; exit 1`)
+    const red = env.run('check', { slug: 's', cwd: env.repo, expect: 'red' })
+    assert.equal(red.status, 1, `${line}: ${red.stdout}`)
+    const j = assertOneLine(red)
+    assert.equal(j.ok, false)
+    assert.equal(j.env, line, 'the matched line is quoted, even when it fell out of the 40-line tail')
+    assert.equal(JSON.parse(readFileSync(`${env.dir}/checks/s-1.json`, 'utf8')).env, line)
+    const green = assertOneLine(env.run('check', { slug: 's', cwd: env.repo, expect: 'green' }))
+    assert.equal(green.ok, false)
+    assert.equal(green.env, line)
+  }
+  const plain = checkEnv('echo "AssertionError: expected 1 to equal 2"; exit 1')
+  const j = assertOneLine(plain.run('check', { slug: 's', cwd: plain.repo, expect: 'red' }))
+  assert.equal(j.ok, true)
+  assert.ok(!('env' in j), 'an ordinary failure has no env key')
+  const passing = checkEnv('echo "Host system is missing dependencies"; exit 0')
+  assert.ok(!('env' in assertOneLine(passing.run('check', { slug: 's', cwd: passing.repo, expect: 'green' }))), 'a passing run is never env')
+})
+
+test('check: ERR_MODULE_NOT_FOUND is env only for a package the nearest package.json declares', () => {
+  const env = checkEnv('exit 1')
+  writeFileSync(`${env.repo}/package.json`, JSON.stringify({ devDependencies: { '@playwright/test': '1.0.0' } }))
+  const msg = (pkg) => `Error [ERR_MODULE_NOT_FOUND]: Cannot find package '${pkg}' imported from ${env.repo}/tests/a.test.ts`
+  writePlan(env.dir, planObj([crew('s', { acceptanceTest: `echo "${msg('@playwright/test/reporter')}"; exit 1` })]))
+  assert.equal(assertOneLine(env.run('check', { slug: 's', cwd: env.repo, expect: 'green' })).env, msg('@playwright/test/reporter'))
+  writePlan(env.dir, planObj([crew('s', { acceptanceTest: `echo "${msg('left-pad')}"; exit 1` })]))
+  assert.ok(!('env' in assertOneLine(env.run('check', { slug: 's', cwd: env.repo, expect: 'green' }))), 'an undeclared package is the code\'s to fix')
+})
+
 test('check: n is per slug, and an unknown slug is an error that writes no record', () => {
   const env = checkEnv('exit 0')
   assertUsageError(env.run('check', { slug: 'ghost', cwd: env.repo, expect: 'green' }))
@@ -592,6 +628,36 @@ test('integrate: merges the branch into the crew worktree with --no-ff and print
   const again = env.run('integrate', { slug: 's', branch: 'member' })
   assert.equal(again.status, 0)
   assert.equal(again.stdout, res.stdout)
+})
+
+test('integrate: a commit whose Truss-Crew or Truss-Role line git does not parse as a trailer is refused before the merge, named by sha', () => {
+  const { env, wt, start } = crewEnv()
+  git(env.repo, ['branch', 'member', 'truss-s'])
+  const mw = `${tmp('fcli-member-')}/m`
+  git(env.repo, ['worktree', 'add', '-q', mw, 'member'])
+  git(mw, ['config', 'user.name', 'T'])
+  git(mw, ['config', 'user.email', 't@example.invalid'])
+  const commit = (rel, msg) => {
+    putFile(mw, rel, `${rel}\n`)
+    git(mw, ['add', '--', rel])
+    git(mw, ['commit', '-q', '-m', msg])
+    return head(mw)
+  }
+  const good = commit('src/s/a.ts', 'good\n\nbody\n\nTruss-Crew: s\nTruss-Role: builder\nCo-Authored-By: X <x@example.invalid>')
+  const split = commit('src/s/b.ts', 'split block\n\nTruss-Crew: s\n\nTruss-Role: builder')
+  const late = commit('src/s/c.ts', 'blank before co-author\n\nTruss-Crew: s\nTruss-Role: builder\n\nCo-Authored-By: X <x@example.invalid>')
+  commit('src/s/d.ts', 'no trailers at all')
+  const res = env.run('integrate', { slug: 's', branch: 'member' })
+  assert.equal(res.status, 1, res.stderr + res.stdout)
+  const j = assertOneLine(res)
+  assert.equal(j.merged, false)
+  assert.deepEqual(j.conflicts, [])
+  assert.deepEqual(j.trailers.sort(), [`${late} blank before co-author`, `${split} split block`].sort())
+  assert.ok(!j.trailers.some((x) => x.startsWith(good)))
+  assert.equal(head(wt), start, 'nothing merged')
+  assert.notEqual(gitStatus(wt, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']), 0, 'no merge in progress')
+  git(mw, ['reset', '-q', '--hard', good])
+  assert.equal(env.run('integrate', { slug: 's', branch: 'member' }).status, 0, 'a branch whose trailers parse merges')
 })
 
 test('integrate: a conflict leaves the merge in progress, lists the paths, exit 1', () => {
@@ -692,6 +758,46 @@ test('owns-check: <base> is the merge-base with the target, so after a sync anot
   const stray = env.run('owns-check', { slug: 's' })
   assert.equal(stray.status, 1)
   assert.deepEqual(assertOneLine(stray).outside, ['lib/stray.ts'])
+})
+
+const roleMsg = (role) => `work\n\nTruss-Crew: s\nTruss-Role: ${role}`
+
+test('tests-check: a builder commit that touches a file a test-writer commit wrote is listed (exit 1); other files are not', () => {
+  const { env, wt } = crewEnv()
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('test-writer'))
+  const clean = env.run('tests-check', { slug: 's' })
+  assert.equal(clean.status, 0, clean.stdout)
+  assert.deepEqual(assertOneLine(clean), { ok: true, tests: ['src/s/a.test.ts'] })
+  putFile(wt, 'src/s/a.ts', 'code\n', roleMsg('builder'))
+  assert.equal(env.run('tests-check', { slug: 's' }).status, 0, 'a builder writing its own file is fine')
+  const bad = putFile(wt, 'src/s/a.test.ts', 'weakened\n', roleMsg('builder'))
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('builder'))
+  const res = env.run('tests-check', { slug: 's' })
+  assert.equal(res.status, 1, res.stdout)
+  const j = assertOneLine(res)
+  assert.equal(j.ok, false)
+  assert.deepEqual(j.tests, ['src/s/a.test.ts'])
+  assert.equal(j.touched.length, 2, 'history counts: restoring the file does not clear the touch')
+  assert.deepEqual(j.touched[0], { commit: bad, role: 'builder', files: ['src/s/a.test.ts'] })
+})
+
+test('tests-check: a resolver merge counts only for the files its resolution changed', () => {
+  const { env, wt } = crewEnv()
+  git(wt, ['checkout', '-q', '-b', 'tester'])
+  putFile(wt, 'src/s/a.test.ts', 'test\n', roleMsg('test-writer'))
+  git(wt, ['checkout', '-q', 'truss-s'])
+  git(wt, ['merge', '-q', '--no-ff', '-m', roleMsg('resolver'), 'tester'])
+  assert.equal(env.run('tests-check', { slug: 's' }).status, 0, 'merging the tester branch in is no touch')
+  git(wt, ['checkout', '-q', '-b', 'tester2'])
+  putFile(wt, 'src/s/a.test.ts', 'test v2\n', roleMsg('test-writer'))
+  git(wt, ['checkout', '-q', 'truss-s'])
+  putFile(wt, 'src/s/a.test.ts', 'crew side\n', roleMsg('test-writer'))
+  assert.notEqual(gitStatus(wt, ['merge', '-q', '-m', 'm', 'tester2']), 0, 'a conflict')
+  putFile(wt, 'src/s/a.test.ts', 'resolved\n')
+  git(wt, ['commit', '-q', '-a', '-m', roleMsg('resolver')])
+  const j = assertOneLine(env.run('tests-check', { slug: 's' }))
+  assert.equal(j.ok, false)
+  assert.deepEqual(j.touched.map((t) => [t.role, t.files]), [['resolver', ['src/s/a.test.ts']]])
 })
 
 // ---------------------------------------------------------------------------------------------------------------

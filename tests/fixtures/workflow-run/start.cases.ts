@@ -352,6 +352,27 @@ test('start --scripts-dir copies stage.js byte for byte to <S>/truss-stage.js an
   assert.equal(workflowCallVerdict(plan, { scriptPath: j.truss.scriptPath, scriptText, args: j, pluginDir: env.plugin, pluginScriptTexts: [planJs, stageJs] }), undefined)
 })
 
+test('start --args-file P writes the whole output to P and prints a short pointer; a relative P is a usage error', () => {
+  const env = world([crew('x'), crew('y')])
+  const p = `${tmp('fcli-args-')}/sub/stage-args.json`
+  const j = assertOneLine(start(env, 'next', { 'args-file': p }))
+  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.equal(j.argsFile, flat(p))
+  assert.deepEqual(j.crews, ['x', 'y'])
+  const text = readFileSync(p, 'utf8')
+  assert.ok(text.endsWith('}\n') && !text.slice(0, -1).includes('\n'), 'one line, as stdout would be')
+  const args = JSON.parse(text)
+  assert.deepEqual(Object.keys(args).sort(), OUTPUT_KEYS)
+  assert.equal(args.truss.scriptPath, j.scriptPath)
+  assert.deepEqual(slugsOf(args.truss.crews), ['x', 'y'])
+  const plan = parsePlan(readFileSync(`${env.dir}/plan.json`, 'utf8'))
+  const texts = ['plan.js', 'stage.js'].map((n) => readFileSync(`${env.plugin}/workflows/${n}`, 'utf8'))
+  assert.equal(workflowCallVerdict(plan, { scriptPath: args.truss.scriptPath, args, pluginDir: env.plugin, pluginScriptTexts: texts }), undefined)
+  const rel = start(world([crew('z')]), 'next', { 'args-file': 'stage-args.json' })
+  assert.equal(rel.status, 2, rel.stdout)
+  assert.match(rel.json.error, /absolute/)
+})
+
 test('start is idempotent: a second run adds no spawn line and does not return the running crew again', () => {
   const env = world([crew('x')])
   assertOneLine(start(env))
@@ -461,6 +482,27 @@ test('start --resume answers: a PASS qc report does not count as spend', () => {
   const e = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).truss.crews[0]
   assert.equal(e.spent, 1)
   assert.deepEqual(e.labelFrom, { qc: 3 })
+})
+
+test('start --resume answers: tasks and done combine every run of the crew next to T; a later re-split drops the older done', () => {
+  const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 3 * HOUR) } })
+  const wt = makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
+  memberBranch(wt, 'truss-x', 'member-t1', true)
+  memberBranch(wt, 'truss-x', 'member-t2', true)
+  const member = (n: string, branch: string) => ({ task: n, marker: 'DONE', branch, commit: 'c0ffee', proof: 'ran it', text: 'ok' })
+  const tasks = [task('t1'), task('t2'), task('t3')]
+  // run 1 planned and merged t1; run 2 was a resume that took the saved tasks (no planner) and merged t2
+  deadRun(env, 'wf_first', [{ label: 'x-planner', result: { tasks, stop: null } }, { label: 'x-builder', result: member('t1', 'member-t1') }], { agoMs: 30 * MIN })
+  const second = deadRun(env, 'wf_second', [{ label: 'x-builder-2', result: member('t2', 'member-t2') }], { agoMs: 20 * MIN })
+  const e = assertOneLine(resume(env, 'x', 'answers', { transcript: second.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.deepEqual(e.tasks, tasks, 'the plan comes from run 1: run 2 has no planner result')
+  assert.deepEqual(e.done.map((d: any) => (typeof d === 'string' ? d : d.name)), ['t1', 't2'], 't1 was merged in run 1, t2 in run 2')
+  // run 3 re-split (planner-2): only its own members count, so run 1's t1 never matches a task of the new plan by name
+  const resplit = [task('t1'), task('t4')]
+  const third = deadRun(env, 'wf_third', [{ label: 'x-planner-2', result: { tasks: resplit, stop: null } }], { agoMs: 10 * MIN })
+  const r = assertOneLine(resume(env, 'x', 'answers', { transcript: third.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.deepEqual(r.tasks, resplit)
+  assert.deepEqual(r.done, [])
 })
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
-import { fencedBlock, qcFails, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
+import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
 
 // ==== core ====
@@ -255,9 +255,21 @@ export function reportsOf(dir: string, slug: string): QcFile[] {
   if (!existsSync(d)) return []
   return readdirSync(d).filter((n) => n.endsWith('.md')).sort().map((name) => ({ name, text: readFileSync(`${d}/${name}`, 'utf8'), mtimeMs: statSync(`${d}/${name}`).mtimeMs }))
 }
+// The k of the crew's newest logged re-plan, decision line `re-planned: <slug> from qc-<k>`, or undefined when none.
+export function replannedFrom(log: string, slug: string): number | undefined {
+  let k: number | undefined
+  for (const m of log.matchAll(/^- [^|]*\|\s*re-planned: ([A-Za-z0-9._-]+) from qc-(\d+)\b/gm)) if (m[1] === slug) k = Number(m[2])
+  return k
+}
+// The crew's QC files that count toward its spend: a logged re-plan starts a fresh count, so only -qc-<k> and later count.
+export function countedQc(dir: string, slug: string, files: readonly QcFile[]): QcFile[] {
+  const p = `${dir}/decisions.md`
+  const k = existsSync(p) ? replannedFrom(readFileSync(p, 'utf8'), slug) : undefined
+  return k === undefined ? [...files] : files.filter((f) => qcK(f.name) >= k)
+}
 // The crew's repair spend: its QC FAIL reports only (client ruling: stress-test rounds add nothing).
 export function spentOf(dir: string, slug: string, since = 0): number {
-  return qcFails(slug, reportsOf(dir, slug), since)
+  return qcFails(slug, countedQc(dir, slug, reportsOf(dir, slug)), since)
 }
 // {role: next free label number} from the crew's report files: `<slug>-qc.md` and `-qc-2.md` give {"qc": 3}.
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
@@ -429,6 +441,45 @@ function cmdApprove(f: Flags): Obj {
   return { approvedAt }
 }
 
+// Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
+// fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
+export const ENV_PATTERNS: RegExp[] = [
+  /Host system is missing dependencies/, // Playwright: the browser's system libraries are not installed
+  /browserType\.launch: /, // Playwright: the browser process could not start
+  /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
+  /error while loading shared libraries: /, // the dynamic loader: a system library is missing
+]
+// The package name of a bare import specifier (`@scope/name/sub` -> `@scope/name`, `name/sub` -> `name`).
+const packageName = (spec: string): string => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
+// True when the package.json nearest to `from` (walking up) declares `pkg` in any dependency list.
+function declares(from: string, pkg: string): boolean {
+  for (let d = path.dirname(from); ; d = path.dirname(d)) {
+    const p = `${d}/package.json`
+    if (existsSync(p)) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8'))
+        return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].some((k) => isObj(j?.[k]) && Object.hasOwn(j[k], pkg))
+      } catch {
+        return false
+      }
+    }
+    if (path.dirname(d) === d) return false
+  }
+}
+// The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
+// ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
+// nearest to <file> declares x: the dependency is declared but not installed. An undeclared package is a code failure.
+export function envFailure(text: string): string | undefined {
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    let hit = ENV_PATTERNS.some((re) => re.test(line))
+    const m = /Cannot find package '([^']+)' imported from (\S+)/.exec(line)
+    if (!hit && m && !m[1].startsWith('.') && !m[1].startsWith('/')) hit = declares(m[2].replace(/^file:\/\//, ''), packageName(m[1]))
+    if (hit) return line.length > 300 ? `${line.slice(0, 299)}…` : line
+  }
+  return undefined
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -458,9 +509,11 @@ function cmdCheck(f: Flags): Obj {
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail }) + '\n', { flag: 'wx' })
-  const ok = expect === 'red' ? exit !== 0 : exit === 0
-  const body = { ok, exit, head, tail }
+  // a failing run whose output names an environment failure carries it as `env`: never a red, and no fix builder for a green
+  const env = exit === 0 ? undefined : envFailure(text)
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }) }) + '\n', { flag: 'wx' })
+  const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
+  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }) }
   if (!ok) throw refuse(body)
   return body
 }
@@ -488,9 +541,21 @@ function cmdSync(f: Flags): Obj {
   const c = crewCtx(f)
   return mergeIn(c.wt, [c.target])
 }
+// Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
+// a blank line inside the trailer block, or between it and a later one such as Co-Authored-By. QC reads the role with
+// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; [] when the range can't be read.
+export function unparsedTrailers(wt: string, branch: string): string[] {
+  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`])
+  if (r.status !== 0) return []
+  const missed = (parsed: string | undefined, key: string, body: string | undefined): boolean => String(parsed).trim() === '' && new RegExp(`^${key}:`, 'm').test(String(body))
+  return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
+    .filter(([, crew, role, body]) => missed(crew, 'Truss-Crew', body) || missed(role, 'Truss-Role', body)).map(([id]) => String(id))
+}
 function cmdIntegrate(f: Flags): Obj {
   const branch = need(f, 'branch')
   const c = crewCtx(f)
+  const trailers = unparsedTrailers(c.wt, branch)
+  if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   return mergeIn(c.wt, ['--no-ff', branch])
 }
 function cmdOwnsCheck(f: Flags): Obj {
@@ -502,6 +567,28 @@ function cmdOwnsCheck(f: Flags): Obj {
   const outside = files.filter((file) => !owns.some((g) => path.matchesGlob(file, g)))
   if (outside.length > 0) throw refuse({ ok: false, outside })
   return { ok: true }
+}
+
+// The acceptance-test files are the files a `Truss-Role: test-writer` commit in <base>..HEAD touched. Lists every builder or
+// resolver commit there that touched one, the check of agents/qc-engineer.md step 8 done before a QC engineer is paid for it.
+// A merge commit counts only for the files its resolution changed (`--cc`: different from every parent), so integrating a
+// tester's branch is no touch. History is what QC reads, so a later commit that restores the file doesn't clear it.
+function cmdTestsCheck(f: Flags): Obj {
+  const c = crewCtx(f)
+  const out = gitOrFail(c.wt, ['log', '--cc', '--name-only', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
+    const [first = '', ...rest] = b.split('\n')
+    const [sha = '', roles = ''] = first.split(' ')
+    return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), files: rest.map((l) => l.trim()).filter(Boolean) }
+  })
+  const tests = [...new Set(commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files))].sort()
+  const touched = commits.flatMap((x) => {
+    const role = x.roles.find((r) => r === 'builder' || r === 'resolver')
+    const files = x.files.filter((file) => tests.includes(file))
+    return role !== undefined && files.length > 0 ? [{ commit: x.sha, role, files }] : []
+  }).reverse()
+  if (touched.length > 0) throw refuse({ ok: false, touched, tests })
+  return { ok: true, tests }
 }
 
 // ==== start ====
@@ -571,7 +658,10 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
 const runsNextTo = (transcript: string): WfRun[] => runsOf(path.dirname(flat(transcript).replace(/\/+$/, '')))
 const eventsOf = (dir: string): Obj[] => (existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : [])
 
-type CrewState = { kind: 'none' } | { kind: 'unfinished'; run: string | null } | { kind: 'returned' } | { kind: 'live' } | { kind: 'stale'; wfRun: WfRun | undefined; since: string }
+// The runs that hold one of the crew's labels, oldest first (newest mtime, then id).
+const crewRunsOf = (runs: WfRun[], slug: string): WfRun[] =>
+  runs.filter((r) => r.agents.some((a) => parseLabel(a.label)?.slug === slug)).sort((a, b) => newestMtime(a.dir) - newestMtime(b.dir) || (a.id < b.id ? -1 : 1))
+type CrewState = { kind: 'none' } | { kind: 'unfinished'; run: string | null } | { kind: 'returned' } | { kind: 'live' } | { kind: 'stale'; since: string }
 // The state of a running workflow crew, read from files (ADR-0009 "start, stale runs"); `none` when rule 1 fails.
 // runs undefined means no --transcript was given: nothing can be read, so the crew fails closed as unfinished.
 function crewState(dir: string, crew: Obj, runs: WfRun[] | undefined, events: Obj[], now: number): CrewState {
@@ -579,42 +669,46 @@ function crewState(dir: string, crew: Obj, runs: WfRun[] | undefined, events: Ob
   const spawn = factorySpawned(dir, slug)
   if (crew.status !== 'running' || spawn === undefined) return { kind: 'none' }
   if (runs === undefined) return { kind: 'unfinished', run: null }
-  const holding = runs.filter((r) => r.agents.some((a) => parseLabel(a.label)?.slug === slug)).sort((a, b) => newestMtime(a.dir) - newestMtime(b.dir) || (a.id < b.id ? -1 : 1))
+  const holding = crewRunsOf(runs, slug)
   const newest = holding[holding.length - 1]
   if (newest !== undefined) {
     if (!events.some((e) => e.event === 'spawn' && e.crew === slug && e.by === `workflow:${newest.id}`)) return { kind: 'unfinished', run: newest.id }
     if (!events.some((e) => e.event === 'incomplete' && e.crew === slug && e.run === newest.id)) return { kind: 'returned' }
   }
   if (isLive(String(spawn.ts), newest?.dir, now)) return { kind: 'live' }
-  return { kind: 'stale', wfRun: newest, since: String(spawn.ts) }
+  return { kind: 'stale', since: String(spawn.ts) }
 }
 
-// The tasks of the highest-numbered `<slug>-planner*` result in a run.
-function plannerTasks(wfRun: WfRun | undefined, slug: string): unknown[] {
+// The tasks of the highest-numbered `<slug>-planner*` result over the crew's runs, and the index of the run that holds it
+// (0 when none does). labelFrom numbers labels on across runs, so the highest is the newest plan; on a tie the later run wins.
+function plannerTasks(runs: WfRun[], slug: string): { tasks: unknown[]; from: number } {
   let best = 0
-  let tasks: unknown[] = []
-  for (const a of wfRun?.agents ?? []) {
-    const p = parseLabel(a.label)
-    if (p === undefined || p.slug !== slug || p.role !== 'planner' || !a.hasResult || p.n < best) continue
-    let r = a.result
-    if (typeof r === 'string') {
-      try {
-        r = JSON.parse(r)
-      } catch {
-        continue
+  let out = { tasks: [] as unknown[], from: 0 }
+  runs.forEach((wfRun, i) => {
+    for (const a of wfRun.agents) {
+      const p = parseLabel(a.label)
+      if (p === undefined || p.slug !== slug || p.role !== 'planner' || !a.hasResult || p.n < best) continue
+      let r = a.result
+      if (typeof r === 'string') {
+        try {
+          r = JSON.parse(r)
+        } catch {
+          continue
+        }
+      }
+      if (isObj(r) && Array.isArray(r.tasks)) {
+        best = p.n
+        out = { tasks: r.tasks, from: i }
       }
     }
-    if (isObj(r) && Array.isArray(r.tasks)) {
-      best = p.n
-      tasks = r.tasks
-    }
-  }
-  return tasks
+  })
+  return out
 }
-// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report).
-function doneTasks(wfRun: WfRun | undefined, slug: string, wt: string): string[] {
+// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report),
+// over the given runs: a task done in an earlier run, and passed in `done` to a later one that never re-ran it, stays done.
+function doneTasks(runs: WfRun[], slug: string, wt: string): string[] {
   const done: string[] = []
-  for (const a of wfRun?.agents ?? []) {
+  for (const a of runs.flatMap((r) => r.agents)) {
     const r = a.result
     if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
     if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
@@ -635,19 +729,28 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
   if (crew === undefined || crew.status !== 'running' || factorySpawned(c.dir, slug) === undefined) throw refuse({ slug, why: kind === 'stale' ? 'not stale' : 'not restartable' })
-  let wfRun: WfRun | undefined
+  // tasks and done are rebuilt from every run of the crew in the runs root (T's parent), T included, not from T alone:
+  // a resumed run that took saved tasks has no planner result, and its done list holds tasks no member of it ran.
+  let runs: WfRun[] = []
   if (kind === 'stale') {
-    const st = crewState(c.dir, crew, runsNextTo(transcript), eventsOf(c.dir), Date.now())
+    const all = runsNextTo(transcript)
+    const st = crewState(c.dir, crew, all, eventsOf(c.dir), Date.now())
     if (st.kind === 'returned' || st.kind === 'none') throw refuse({ slug, why: 'not stale' })
     if (st.kind === 'unfinished') throw refuse({ slug, why: 'run not finished' })
     if (st.kind === 'live') throw refuse({ slug, why: 'run may be live' })
-    wfRun = st.wfRun
-  } else if (kind === 'answers') wfRun = runOf(transcript)
+    runs = crewRunsOf(all, slug)
+  } else if (kind === 'answers') {
+    const t = runOf(transcript)
+    const all = runsNextTo(transcript)
+    runs = crewRunsOf(all.some((r) => r.id === t.id) ? all : [...all, t], slug)
+  }
   const wt = ensureWorktree(c.repo, slug, c.settings.target)
   // A stale crew whose branch has no commit beyond the base starts from step 1.
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
   const rebuild = kind !== 'merge-ready' && !noWork
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: rebuild ? plannerTasks(wfRun, slug) : [], done: rebuild ? doneTasks(wfRun, slug, wt) : [], answers })
+  // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
+  const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt) : [], answers })
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
@@ -751,6 +854,22 @@ function cmdStart(f: Flags): Obj {
   return stageOut(ctx, entries, foremen, refused, stale, unfinished)
 }
 
+// --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
+// so the stage args never fill the PM's Bash output. A Workflow script has no file system and the Workflow gate reads
+// args.truss from the call, so the PM still Reads P and passes that object as the Workflow's args.
+function argsFileOut(f: Flags, out: Obj): Obj {
+  const p = str(f, 'args-file')
+  if (p === undefined) return out
+  if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
+  try {
+    mkdirSync(path.dirname(p), { recursive: true })
+    writeFileSync(p, JSON.stringify(out) + '\n')
+  } catch (e) {
+    throw usage(`cannot write ${flat(p)}: ${(e as Error).message}`)
+  }
+  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished }
+}
+
 // ==== finish ====
 
 import { utimesSync } from 'node:fs'
@@ -828,6 +947,27 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
   return audits
 }
 
+// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
+// counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
+// QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
+// file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
+function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj[] | undefined, plan: Obj): void {
+  const events = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
+  const allowance = intOr(plan.reworkAllowance, 2, 0)
+  const since = runStart(plan as any) ?? 0
+  for (const c of crews) {
+    const slug = String(c.slug)
+    const res = results?.find((r) => r.slug === slug)
+    const tag = res !== undefined && res.state === 'stopped' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(res.tag) ? String(res.tag) : undefined
+    if (tag !== undefined && !events.some((e) => e.event === 'tag' && e.crew === slug && e.run === wfRun.id)) appendEvent(dir, { event: 'tag', crew: slug, agent: slug, tag, run: wfRun.id })
+    const fails = countedQc(dir, slug, reportsOf(dir, slug)).filter((f) => qcFails(slug, [f], since) === 1).sort((a, b) => qcK(a.name) - qcK(b.name))
+    const spender = fails[allowance]
+    if (spender === undefined) continue
+    const agent = spender.name.replace(/\.md$/, '')
+    if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent })
+  }
+}
+
 // Session audit: every Workflow run of the session at or after the run start, in scope as ADR-0009 "finish, session audit" says.
 function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
   const audits: Audit[] = []
@@ -881,7 +1021,8 @@ function patchOf(wt: string, base: string, head: string): string | undefined {
   return patchIdOf(p.stdout)
 }
 
-// The lowest-numbered D/checks/<slug>-<n>.json: the red record. undefined when none.
+// The lowest-numbered D/checks/<slug>-<n>.json that has no `env` key: the red record. A run that failed on the environment
+// proves nothing about the code, so it is passed over. undefined when none.
 function redRecord(dir: string, slug: string): Obj | undefined {
   const d = `${dir}/checks`
   if (!existsSync(d)) return undefined
@@ -889,14 +1030,18 @@ function redRecord(dir: string, slug: string): Obj | undefined {
   const found = readdirSync(d).flatMap((n) => {
     const m = re.exec(n)
     return m?.[1] === undefined ? [] : [{ n: Number(m[1]), name: n }]
-  }).sort((x, y) => x.n - y.n)[0]
-  if (found === undefined) return undefined
-  try {
-    const v = JSON.parse(readFileSync(`${d}/${found.name}`, 'utf8'))
-    return isObj(v) ? v : undefined
-  } catch {
-    return undefined
+  }).sort((x, y) => x.n - y.n)
+  for (const f of found) {
+    let v
+    try {
+      v = JSON.parse(readFileSync(`${d}/${f.name}`, 'utf8'))
+    } catch {
+      return undefined
+    }
+    if (!isObj(v)) return undefined
+    if (v.env === undefined) return v
   }
+  return undefined
 }
 
 type Outcome = { merged?: true; rework?: string; blocked?: string; refused?: string }
@@ -987,11 +1132,24 @@ function cmdFinish(f: Flags): Obj {
   const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
   const inRun = factoryCrews.filter((c) => wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug))
-  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[] }
+  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[] }
   const finishWith = (): Obj => {
-    const body = { merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete }
+    const body = { merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped }
     if (out.refused.length > 0 || out.rework.length > 0 || out.blocked.length > 0 || out.audit.length > 0) throw refuse(body)
     return body
+  }
+
+  // every running crew whose result is not `passed`, or that the run holds with no result at all, is listed so the PM
+  // can't miss it; why is the stop text's first line (the full text is in the result file). It never changes the exit code.
+  for (const c of results === undefined ? [] : factoryCrews) {
+    const res = results.find((r) => r.slug === c.slug)
+    if (res === undefined && !inRun.includes(c)) continue
+    if (res === undefined) out.stopped.push({ slug: c.slug, tag: null, at: null, why: 'no result for this crew in --result' })
+    else if (res.state !== 'passed') {
+      const first = String(res.text ?? '').replace(/\r/g, '').split('\n').find((l) => l.trim() !== '')?.trim()
+      const why = first === undefined ? `state ${String(res.state)}` : first.length > 300 ? `${first.slice(0, 299)}…` : first
+      out.stopped.push({ slug: c.slug, tag: typeof res.tag === 'string' ? res.tag : null, at: typeof res.at === 'string' ? res.at : null, why })
+    }
   }
 
   if (results === undefined) {
@@ -1003,6 +1161,7 @@ function cmdFinish(f: Flags): Obj {
 
   const audits = recordRun(dir, wfRun, factorySlugs, roles)
   for (const a of audits) out.audit.push({ label: a.label, why: a.why })
+  recordEscalations(dir, wfRun, inRun, results, plan)
 
   if (results === undefined) {
     const have = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
@@ -1033,7 +1192,7 @@ function cmdFinish(f: Flags): Obj {
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, files, since))
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since))
     if (r.merged) out.merged.push(c.slug)
     else if (r.rework !== undefined) out.rework.push({ slug: c.slug, why: r.rework })
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })
@@ -1045,8 +1204,8 @@ function cmdFinish(f: Flags): Obj {
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
-  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: cmdStart,
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, finish: cmdFinish,
+  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish,
 }
 
 // Runs one command and returns what it printed and its exit code.
