@@ -663,3 +663,40 @@ test('stopped result: listed under stopped with its tag, step and the first line
   const passed = scenario([{ slug: 's' }])
   assert.deepEqual(assertOneLine(passed.finish()).stopped, [])
 })
+
+test('escalations: a stopped result writes one tag line per crew and run; finish run twice adds none', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'q' }, { slug: 'p' }])
+  writeFileSync(w.resFile, JSON.stringify([
+    { slug: 's', state: 'stopped', tag: 'BLOCKED', text: 'webkit cannot launch', at: 'green' },
+    { slug: 'q', state: 'stopped', tag: 'QUESTION', text: 'Extend owns?', at: 'scope' },
+    { slug: 'p', state: 'passed', head: w.c.p.head, base: w.c.p.base, qc: 'p-qc' },
+  ]))
+  w.finish()
+  w.finish()
+  const tags = readEvents(w.env.dir).filter((e) => e.event === 'tag')
+  assert.deepEqual(tags.map((e) => [e.crew, e.agent, e.tag, e.run]).sort(), [['q', 'q', 'QUESTION', 'wf_1'], ['s', 's', 'BLOCKED', 'wf_1']])
+  for (const e of tags) assert.deepEqual(validateEvent(e), [])
+})
+
+test('escalations: the QC FAIL that takes the counted FAILs past reworkAllowance gets one allowance-spent line; a re-plan resets the count', () => {
+  const fail = (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
+  const mk = (line) => {
+    const w = scenario([{ slug: 's' }], { qcLabel: 's-qc-4' })
+    for (let i = 1; i <= 3; i++) writeReport(w.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(w.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+    if (line !== undefined) writeFileSync(`${w.env.dir}/decisions.md`, `${line}\n`, { flag: 'a' })
+    return w
+  }
+  const spent = mk(undefined)
+  spent.finish()
+  spent.finish()
+  const lines = readEvents(spent.env.dir).filter((e) => e.event === 'allowance-spent')
+  assert.deepEqual(lines.map((e) => [e.crew, e.agent]), [['s', 's-qc-3']])
+  for (const e of lines) assert.deepEqual(validateEvent(e), [])
+  const fresh = mk('- 11:00 | re-planned: s from qc-4 | allowance spent, successor | none | followed')
+  fresh.finish()
+  assert.deepEqual(readEvents(fresh.env.dir).filter((e) => e.event === 'allowance-spent'), [])
+  const within = scenario([{ slug: 's' }], { qcLabel: 's-qc-3' })
+  for (let i = 1; i <= 2; i++) writeReport(within.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(within.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+  within.finish()
+  assert.deepEqual(readEvents(within.env.dir).filter((e) => e.event === 'allowance-spent'), [])
+})

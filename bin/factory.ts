@@ -884,6 +884,27 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
   return audits
 }
 
+// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
+// counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
+// QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
+// file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
+function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj[] | undefined, plan: Obj): void {
+  const events = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
+  const allowance = intOr(plan.reworkAllowance, 2, 0)
+  const since = runStart(plan as any) ?? 0
+  for (const c of crews) {
+    const slug = String(c.slug)
+    const res = results?.find((r) => r.slug === slug)
+    const tag = res !== undefined && res.state === 'stopped' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(res.tag) ? String(res.tag) : undefined
+    if (tag !== undefined && !events.some((e) => e.event === 'tag' && e.crew === slug && e.run === wfRun.id)) appendEvent(dir, { event: 'tag', crew: slug, agent: slug, tag, run: wfRun.id })
+    const fails = countedQc(dir, slug, reportsOf(dir, slug)).filter((f) => qcFails(slug, [f], since) === 1).sort((a, b) => qcK(a.name) - qcK(b.name))
+    const spender = fails[allowance]
+    if (spender === undefined) continue
+    const agent = spender.name.replace(/\.md$/, '')
+    if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent })
+  }
+}
+
 // Session audit: every Workflow run of the session at or after the run start, in scope as ADR-0009 "finish, session audit" says.
 function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
   const audits: Audit[] = []
@@ -1072,6 +1093,7 @@ function cmdFinish(f: Flags): Obj {
 
   const audits = recordRun(dir, wfRun, factorySlugs, roles)
   for (const a of audits) out.audit.push({ label: a.label, why: a.why })
+  recordEscalations(dir, wfRun, inRun, results, plan)
 
   if (results === undefined) {
     const have = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []

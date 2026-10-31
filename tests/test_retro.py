@@ -48,6 +48,18 @@ class RetroEdges(unittest.TestCase):
         self.assertEqual(out["eventsSkipped"], 4)
         self.assertEqual(out["runs"][0]["escalations"], {"QUESTION": 1, "BLOCKED": 0, "PROPOSAL": 0})
 
+    def test_workflow_finish_lines_count_as_escalations_and_spent_allowances(self):
+        # the shapes factory finish writes for a Workflow crew (ADR-0009 "finish, escalation lines")
+        self.write("decisions.md", "## Run 2026-01-01T00:00:00Z | g\n")
+        lines = [ev("2026-01-01T01:00:00.000Z", "tag", crew="ui-web", agent="ui-web", tag="BLOCKED", run="wf_1"),
+                 ev("2026-01-01T01:00:00.000Z", "tag", crew="ui-api", agent="ui-api", tag="QUESTION", run="wf_1"),
+                 ev("2026-01-01T02:00:00.000Z", "tag", crew="ui-web", agent="ui-web", tag="BLOCKED", run="wf_2"),
+                 ev("2026-01-01T02:00:00.000Z", "allowance-spent", crew="ui-session", agent="ui-session-qc-3")]
+        self.write("events.jsonl", "\n".join(lines) + "\n")
+        run = self.run_retro()["runs"][0]
+        self.assertEqual(run["escalations"], {"QUESTION": 1, "BLOCKED": 2, "PROPOSAL": 0})
+        self.assertEqual(run["allowancesSpent"], 1)
+
     def test_non_utf8_bytes_do_not_crash(self):
         self.write("decisions.md", b"## Run 2026-01-01T00:00:00Z | g\xff\xfe\n- 09:00 | a\xff | b | c | followed\n")
         self.write("events.jsonl", b"\xff\xfe\x00garbage\n")

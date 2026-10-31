@@ -16,7 +16,7 @@
     {
       "if": { "properties": { "event": { "const": "allowance-spent" } } },
       "then": {
-        "description": "A crew's rework allowance is spent: its QC FAIL count passed reworkAllowance (truss ADR-0004 section 5).",
+        "description": "A crew's rework allowance is spent: its QC FAIL count passed reworkAllowance (truss ADR-0004 section 5). Written by the hooks on the foreman path and by factory finish for a Workflow crew (truss ADR-0009).",
         "additionalProperties": false,
         "properties": { "v": true, "ts": true, "event": true, "crew": true, "agent": true }
       }
@@ -65,12 +65,13 @@
     {
       "if": { "properties": { "event": { "const": "tag" } } },
       "then": {
-        "description": "A foreman's tagged message to main.",
+        "description": "A foreman's tagged message to main, or a Workflow crew's stage.js stop as factory finish records it (truss ADR-0009): then agent repeats crew and run is the Workflow run id.",
         "additionalProperties": false,
         "required": ["tag"],
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
-          "tag": { "enum": ["QUESTION", "BLOCKED", "PROPOSAL"] }
+          "tag": { "enum": ["QUESTION", "BLOCKED", "PROPOSAL"] },
+          "run": { "type": "string", "minLength": 1 }
         }
       }
     },
