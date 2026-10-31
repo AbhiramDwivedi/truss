@@ -221,7 +221,7 @@ Source: client
 Example: Given a finding fixed by an earlier retro and recorded with its id, when a later run's retro runs, then it reports for each fixed finding whether its evidence pattern recurred, and a recurrence is a new finding that cites the earlier fix.
 
 ## R-32: Raw transcript text stays local; committed files stay clean
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
 Source: client
