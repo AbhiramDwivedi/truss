@@ -518,6 +518,7 @@ test.describe('header', () => {
       const task = (n: number) => ({ taskId: `t${n}`, description: `task ${n}`, subagentType: null })
       iface.setSession({ status: 'waiting', backgroundTasks: [task(1), task(2)] })
       await expect(banner(page)).toContainText(/2\s+background|background[^0-9]{0,30}2/i, WITHIN)
+      await expect(banner(page)).toContainText('working (2 background tasks)', WITHIN)
       iface.setSession({ backgroundTasks: [task(1)] })
       await expect(banner(page)).toContainText(/1\s+background|background[^0-9]{0,30}1/i, WITHIN)
     })
@@ -529,6 +530,9 @@ test.describe('header', () => {
       const notice = `Config file missing ${rand()}`
       iface.emit({ notices: [{ id: 'no-config', text: notice }] })
       await expect(page.getByText(notice).first()).toBeVisible(WITHIN)
+      const item = page.getByRole('listitem').filter({ hasText: notice })
+      await expect(item).toContainText('Status:', WITHIN)
+      await expect(item).not.toContainText('Notice:')
       iface.emit({ notices: [] })
       await expect(page.getByText(notice)).toHaveCount(0, WITHIN)
     })
@@ -539,6 +543,9 @@ test.describe('header', () => {
     await withIface({ state: { notices: [{ id: 'no-truss-dir', text }] } }, async (iface) => {
       await open(page, iface)
       await expect(page.getByText(text).first()).toBeVisible(WITHIN)
+      const item = page.getByRole('listitem').filter({ hasText: text })
+      await expect(item).toContainText('Status:', WITHIN)
+      await expect(item).not.toContainText('Notice:')
     })
   })
 })
