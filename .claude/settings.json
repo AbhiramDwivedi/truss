@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_message",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "Bash(systemctl --user is-active *)",
+      "Bash(journalctl --user -u *)",
+      "Bash(systemctl --user list-timers *)",
+      "Bash(git check-ignore *)",
+      "Bash(mise ls *)"
+    ]
+  }
+}
