@@ -1770,6 +1770,37 @@ function queueLimit($: $, wakes: Wakes, what: string, step: () => Promise<unknow
   return wakes.work
 }
 
+// One refusal line for a call's result when it is one and the session has a plan (P24). The caller and the plan
+// check each wait at most EVENT_WAIT_MS, as the fetch gate's do; never throws and never changes the result.
+// `logged` holds the results already logged, so a deny that passes up through several of truss's hooks is counted once.
+// Top-level function declarations, not closures in register: the hooks loader takes $ only into functions declared at
+// the top of the file (Claude Code 2.1.316 refuses to load the module otherwise).
+async function noteRefusal($: $, state: State, logged: WeakSet<object>, e: { readonly agentId?: string; readonly tool: string }, result: unknown): Promise<void> {
+  if (typeof result !== 'object' || result === null || logged.has(result) || refusalOf(result) === undefined) return
+  logged.add(result)
+  await safely($, 'refusal log', async () => {
+    const caller = await within($, EVENT_WAIT_MS, async () => {
+      if (e.agentId === undefined) return { crew: 'main', agent: 'main' }
+      const all = (await agentsOf($, state)).all
+      const self = all.find(a => a.id === e.agentId)
+      return { crew: crewOf(e.agentId, all)?.crew ?? 'main', agent: self === undefined ? e.agentId : labelOf(self) }
+    })
+    const hasPlan =
+      (await within($, EVENT_WAIT_MS, async () => {
+        const dir = await rootOf($, state)
+        return dir !== undefined && (await $.fs.exists(planPath(dir)))
+      })) === true
+    const line = refusalLine(e.tool, e as { readonly command?: unknown }, result, caller?.crew ?? 'main', caller?.agent ?? e.agentId ?? 'main', hasPlan)
+    if (line !== null) await logEvent($, state, line)
+  })
+}
+
+// truss's own deny, logged as a refusal before it goes back
+async function refuse<R>($: $, state: State, logged: WeakSet<object>, e: { readonly agentId?: string; readonly tool: string }, refused: R): Promise<R> {
+  await noteRefusal($, state, logged, e, refused)
+  return refused
+}
+
 export const register: Register = on => {
   const state: State = {
     known: new Map(),
@@ -1800,32 +1831,6 @@ export const register: Register = on => {
   let appending: Promise<unknown> = Promise.resolve()
   // results already logged as refusals: a deny that passes up through several of truss's hooks is counted once
   const refusalsLogged = new WeakSet<object>()
-  // One refusal line for a call's result when it is one and the session has a plan (P24). The caller and the plan
-  // check each wait at most EVENT_WAIT_MS, as the fetch gate's do; never throws and never changes the result.
-  const noteRefusal = async ($: $, e: { readonly agentId?: string; readonly tool: string }, result: unknown): Promise<void> => {
-    if (typeof result !== 'object' || result === null || refusalsLogged.has(result) || refusalOf(result) === undefined) return
-    refusalsLogged.add(result)
-    await safely($, 'refusal log', async () => {
-      const caller = await within($, EVENT_WAIT_MS, async () => {
-        if (e.agentId === undefined) return { crew: 'main', agent: 'main' }
-        const all = (await agentsOf($, state)).all
-        const self = all.find(a => a.id === e.agentId)
-        return { crew: crewOf(e.agentId, all)?.crew ?? 'main', agent: self === undefined ? e.agentId : labelOf(self) }
-      })
-      const hasPlan =
-        (await within($, EVENT_WAIT_MS, async () => {
-          const dir = await rootOf($, state)
-          return dir !== undefined && (await $.fs.exists(planPath(dir)))
-        })) === true
-      const line = refusalLine(e.tool, e as { readonly command?: unknown }, result, caller?.crew ?? 'main', caller?.agent ?? e.agentId ?? 'main', hasPlan)
-      if (line !== null) await logEvent($, state, line)
-    })
-  }
-  // truss's own deny, logged before it goes back
-  const refuse = async <R>($: $, e: { readonly agentId?: string; readonly tool: string }, refused: R): Promise<R> => {
-    await noteRefusal($, e, refused)
-    return refused
-  }
 
   on('session.end', { reason: 'clear' }, async ($, e, next) => {
     state.known.clear()
@@ -1891,7 +1896,7 @@ export const register: Register = on => {
     }
     const sender = e.agentId
     const decided = await safely($, 'SendMessage check', async () => messageVerdict(sender, input.to, (await agentsOf($, state)).all))
-    if (decided?.kind === 'deny') return refuse($, e, { deny: decided.reason })
+    if (decided?.kind === 'deny') return refuse($, state, refusalsLogged, e, { deny: decided.reason })
     const result = await next(e)
     if (decided?.kind !== 'allow' || result.deny !== undefined) return result
     if (input.to === MAIN && typeof input.message === 'string') {
@@ -1929,7 +1934,7 @@ export const register: Register = on => {
         if (verdict !== undefined) await logRule($, `main-session rule refused a ${type} call: ${verdict.deny === MAIN_MODEL_REFUSAL ? 'no model' : 'no allowed effort'}`)
         return verdict
       })
-      if (refused !== undefined) return refuse($, e, refused)
+      if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
     }
     const caller = await safely($, 'Agent check', async () => {
       if (e.agentId === undefined) return undefined
@@ -1941,12 +1946,12 @@ export const register: Register = on => {
         refused: agentVerdict(e.agentId, e.model, all) ?? effortVerdict(e.agentId, e.effort, all),
       }
     })
-    if (caller?.refused !== undefined) return refuse($, e, caller.refused)
+    if (caller?.refused !== undefined) return refuse($, state, refusalsLogged, e, caller.refused)
     // ADR-0004 s5: a QC-named call from inside a crew whose rework allowance is spent
     const callerCrew = caller?.crew?.crew
     if (callerCrew !== undefined && isQcName(callerCrew.toLowerCase(), typeof e.name === 'string' ? e.name.toLowerCase() : e.name)) {
       const spent = await safely($, 'rework allowance gate', () => allowanceGate($, state, callerCrew, e.name))
-      if (spent !== undefined) return refuse($, e, spent)
+      if (spent !== undefined) return refuse($, state, refusalsLogged, e, spent)
     }
     const startsForeman = e.agentId === undefined && e.subagent_type === FOREMAN_TYPE
     // the plan gates (ADR-0001 s9): only the main thread starting a named foreman; any failure lets the call through
@@ -1956,7 +1961,7 @@ export const register: Register = on => {
         const plan = await planOf($, state)
         return plan === undefined ? undefined : planVerdict(plan, gated)
       })
-      if (refused !== undefined) return refuse($, e, refused)
+      if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
     }
     // a plan-mode design engineer from the main session (ADR-0015 s9): its hand-back is the plan to write. Marked before the
     // call runs, since a foreground agent spawns and hands back inside it; agent.spawn binds the id by this tool_use_id.
@@ -2027,7 +2032,7 @@ export const register: Register = on => {
         if (verdict !== undefined) await logRule($, `Workflow gate refused a call: ${verdict.deny}`)
         return verdict
       })
-      if (refused !== undefined) return refuse($, e, refused)
+      if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
     }
     return next(e)
   }).catch(failOpen)
@@ -2038,7 +2043,7 @@ export const register: Register = on => {
   // rule) and one line logged for it; a deny of truss's own is logged where it is made, and counted once.
   on('tool.call', async ($, e, next) => {
     const answered = async (result: Awaited<ReturnType<typeof next>>) => {
-      await noteRefusal($, e, result)
+      await noteRefusal($, state, refusalsLogged, e, result)
       return result
     }
     if (e.agentId === undefined) {
@@ -2053,7 +2058,7 @@ export const register: Register = on => {
     // outside every crew, or with the agent list down, an empty hand-back goes through
     if (isEmptyHandBack(message)) {
       const inCrew = await safely($, 'hand-back check', async () => crewOf(id, (await agentsOf($, state)).all) !== undefined)
-      if (inCrew === true) return refuse($, e, { deny: HANDBACK_REFUSAL })
+      if (inCrew === true) return refuse($, state, refusalsLogged, e, { deny: HANDBACK_REFUSAL })
     }
     if (message.trim() !== '') {
       // a real report is marked before any await, so a stop that races this capture never overwrites it
