@@ -98,12 +98,40 @@ test('a refusal from the worktree guard is steered through prompts, never an all
   assert.ok(s3.includes('never propose a rule to get past it'))
 })
 
-test('section 4 proposes only narrow allow rules for .claude/settings.json, which the client writes', () => {
+const settingsWordingOk = (s4: string): boolean => {
+  // flatten whitespace and hide the dot in the path so sentences split on real full stops only
+  const f = s4.replace(/\s+/g, ' ').replace(/`\.claude\/settings\.json`/g, '`SETTINGS`')
+  const trussWrites = /[Tt]russ writes (?:(?!\b(?:nothing|not|never|no|none)\b)[^.])*`SETTINGS`/.test(f)
+  const clientOnRefusal = f.split('.').some((sent) => sent.includes('client writes the rules') && sent.includes('classifier refuses'))
+  return trussWrites && clientOnRefusal && f.includes('is never worked around')
+}
+const INVERTED_S4 = '- A fix goal never touches `.claude/settings.json`.\n- When the classifier refuses, the client writes nothing and truss works around the refusal.'
+const ADR_SENTENCE = "Truss writes the approved rules into `.claude/settings.json`; when Claude Code's classifier refuses that write, truss shows the refusal and the client writes the rules, and the refusal is never worked around."
+const TAIL = '; the client writes the rules when the classifier refuses, and the refusal is never worked around.'
+const REJECTED: Record<string, string> = {
+  'inverted text': INVERTED_S4,
+  'truss writes nothing': 'Truss writes nothing into `.claude/settings.json`' + TAIL,
+  'truss writes the rules but not into the file': 'Truss writes the rules, but not into `.claude/settings.json`' + TAIL,
+  'client writes only when truss forgets': 'Truss writes the approved rules into `.claude/settings.json`; the client writes the rules only when truss forgets, and the refusal is never worked around.',
+  'refusal is worked around': 'Truss writes the approved rules into `.claude/settings.json`; the client writes the rules when the classifier refuses, and the refusal is worked around.',
+  'truss never writes': 'Truss never writes the rules into `.claude/settings.json`' + TAIL,
+}
+
+test('section 4 proposes only narrow allow rules, truss writes them into .claude/settings.json, the client writes them when the classifier refuses, and the refusal is never worked around', () => {
   const s4 = section(HEADING4)
   assert.ok(s4.includes('`.claude/settings.json` `permissions.allow`'))
   for (const wild of ['`Bash(*)`', '`Bash(node:*)`', '`Bash(python3:*)`', '`Bash(bash:*)`', '`Bash(npx:*)`']) assert.ok(s4.includes(wild), wild)
   assert.ok(s4.includes('Never propose a wildcard over anything that runs code it is handed'))
   assert.ok(s4.includes("`.claude/settings.local.json` is not checked in, so it never reaches the agents' worktrees"))
-  assert.ok(s4.includes('truss never writes a settings file'))
+  assert.ok(!s4.includes('truss never writes a settings file'), 'ADR-0012 section 6 replaces that sentence')
+  assert.ok(settingsWordingOk(s4), 'section 4: truss writes the rules into `.claude/settings.json`; the client writes the rules when the classifier refuses; the refusal is never worked around')
   assert.ok(section('## 5. Write only what the client approves').includes('for the client to write'))
+})
+
+test('negative controls: the settings wording pin rejects each inverted or weakened section 4', () => {
+  for (const [name, text] of Object.entries(REJECTED)) assert.ok(!settingsWordingOk(text), `accepted: ${name}`)
+})
+
+test('positive control: the ADR-0012 settings sentence passes the settings wording pin', () => {
+  assert.ok(settingsWordingOk(ADR_SENTENCE))
 })
