@@ -6,7 +6,7 @@ The commands below run from the Truss plugin root, the directory that holds `ui/
 
 ## Check the requirements
 
-- Node 24 or later. `ui/package.json` sets `"engines": { "node": ">=24" }`, and `node` runs the server's `.ts` files as they are.
+- Node 24 or later. `ui/package.json` sets `"engines": { "node": ">=24" }`, and `node` runs the server's `.ts` files as they are. On an older Node the server prints a one-line warning to stderr at startup and carries on.
 - Claude Code, logged in. The UI drives your local Claude Code through `@anthropic-ai/claude-agent-sdk` on your existing login. It asks for no API key of its own.
 - A git repo to run Truss in.
 

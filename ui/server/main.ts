@@ -33,6 +33,11 @@ function parseArgs(argv: string[]) {
   return o;
 }
 
+// Warn, never exit: the UI is tested on the engines range but still runs on older Node.
+const { nodeVersionWarning, readEnginesRange } = await import('./node-version.ts');
+const nodeWarning = nodeVersionWarning(process.versions.node, readEnginesRange(uiDir) ?? '');
+if (nodeWarning) process.stderr.write(nodeWarning + '\n');
+
 const args = parseArgs(process.argv.slice(2));
 const repo = resolve(args.repo ?? process.env.INIT_CWD ?? process.cwd());
 const pluginPath = resolve(args.plugin ?? join(uiDir, '..'));
