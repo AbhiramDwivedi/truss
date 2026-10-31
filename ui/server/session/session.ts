@@ -5,6 +5,8 @@ import { createRegistry } from './registry.ts'
 import type { AnswerResult, Registry } from './registry.ts'
 import { addUserEntry, endView, errorView, foldMessage, initialView, setRunning } from './fold.ts'
 import type { SessionView } from './fold.ts'
+import { replyStep } from './reply.ts'
+import type { ReplyState } from './reply.ts'
 
 export interface SessionControl {
   send(text: string): { ok: true } | { ok: false; error: 'text' | 'ended' }
@@ -40,7 +42,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
 
   let started = false
   let closed = false
-  let turnRunning = false
+  let reply: ReplyState = { turnRunning: false, held: null }
   const outbox: string[] = []
   const queue: string[] = []
   let wake: (() => void) | undefined
@@ -59,7 +61,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
   }
 
   function dispatch(text: string) {
-    turnRunning = true
+    reply = { ...reply, turnRunning: true }
     outbox.push(text)
     wake?.()
     update(setRunning(base))
@@ -71,7 +73,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
       started = true
       loop = run()
     }
-    if (turnRunning) {
+    if (reply.turnRunning) {
       queue.push(text)
       notify()
     } else dispatch(text)
@@ -93,23 +95,19 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
 
   function onMessage(msg: unknown) {
     base = foldMessage(base, msg)
+    const step = replyStep(reply, msg, base.session.backgroundTasks.length)
+    reply = step.state
     if (isObj(msg) && msg.type === 'system' && msg.subtype === 'init') {
-      turnRunning = true
       // A turn the session started by itself: no client send answered the open reply card.
       for (const r of openReplies()) registry.cancel(r.id, 'superseded')
-    } else if (isObj(msg) && msg.type === 'result' && !msg.parent_tool_use_id) {
-      turnRunning = false
-      const { id } = registry.open({
-        kind: 'reply',
-        text: typeof msg.result === 'string' ? msg.result : '',
-        isError: msg.is_error === true,
-        backgroundTasks: base.session.backgroundTasks.length,
-        decision: null,
-        message: null,
-      })
+    }
+    let id: string | undefined
+    if (step.open) id = registry.open({ kind: 'reply', ...step.open, decision: null, message: null }).id
+    // A top-level result ends the turn: a queued message goes out, answering the card when one opened.
+    if (isObj(msg) && msg.type === 'result' && !msg.parent_tool_use_id) {
       const queued = queue.shift()
       if (queued !== undefined) {
-        registry.answer(id, { decision: 'message', message: queued })
+        if (id !== undefined) registry.answer(id, { decision: 'message', message: queued })
         dispatch(queued)
         return
       }
