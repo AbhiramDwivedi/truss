@@ -305,6 +305,83 @@ describe('retro/scrub.ts: bearer values, JWTs and secret key names', () => {
   })
 })
 
+// ---------- R-32 widening: "/" and "+" continue a value after a key word ----------
+describe('retro/scrub.ts: a key-word value may hold / and + (R-32)', () => {
+  const WORDS = ['token', 'secret', 'password', 'api_key', 'apikey']
+  const SEPS = ['=', ':', ' = ', ': ']
+  const rnd = (lo: number, hi: number) => lo + (randomBytes(1)[0] % (hi - lo + 1)) // inclusive
+  // a value of n characters with `sepChar` at a random index 1..15
+  const split = (n: number, sepChar: string) => {
+    const v = chars(n)
+    const k = rnd(1, 15)
+    return { value: v.slice(0, k) + sepChar + v.slice(k + 1), k }
+  }
+
+  test('each key word and separator: a 16+ character value with / or + at a random index under 16 hits', async () => {
+    const { scrub } = await scrubMod()
+    for (const w of WORDS) {
+      for (const sep of SEPS) {
+        for (const ch of ['/', '+']) {
+          for (const n of [16, 16 + rnd(1, 20)]) {
+            const { value, k } = split(n, ch)
+            const line = `cfg ${w}${sep}${value} end`
+            assert.deepEqual(at(scrub(line), 1), ['token'], `${w}${JSON.stringify(sep)} ${ch} at ${k}, length ${n}`)
+          }
+        }
+      }
+    }
+  })
+
+  test('a 40 character base64-shaped value with several / and + hits for every key word and separator', async () => {
+    const { scrub } = await scrubMod()
+    for (const w of WORDS) {
+      for (const sep of SEPS) {
+        const c = chars(40).split('')
+        const spots = new Set<number>()
+        while (spots.size < 6) spots.add(rnd(1, 38))
+        let i = 0
+        for (const s of spots) c[s] = i++ % 2 ? '/' : '+'
+        const value = c.join('')
+        assert.equal(value.length, 40)
+        assert.deepEqual(at(scrub(`${w}${sep}${value}`), 1), ['token'], `${w}${JSON.stringify(sep)} ${value.length} chars`)
+      }
+    }
+  })
+
+  test('a secret access key name with / or + at a random index under 16 hits', async () => {
+    const { scrub } = await scrubMod()
+    for (const ch of ['/', '+', randomBytes(1)[0] % 2 ? '/' : '+']) {
+      const { value, k } = split(40, ch)
+      assert.deepEqual(at(scrub(`aws_secret_access_key = ${value}`), 1), ['token'], `${ch} at ${k}`)
+    }
+  })
+
+  test('negatives stay clean: short value, key named in prose, secret_santa, and under 16 counted characters with / or +', async () => {
+    const { scrub } = await scrubMod()
+    assert.deepEqual(scrub(`aws_secret_access_key = ${chars(8)}`), [])
+    assert.deepEqual(scrub('set aws_secret_access_key in your shell config'), [])
+    assert.deepEqual(scrub('the secret_santa list is fun'), [])
+    for (const w of WORDS) {
+      for (const sep of SEPS) {
+        for (const ch of ['/', '+']) {
+          const value = chars(7) + ch + chars(7) // 15 counted characters
+          assert.equal(value.length, 15)
+          assert.deepEqual(scrub(`cfg ${w}${sep}${value} end`), [], `${w}${JSON.stringify(sep)} 15 with ${ch}`)
+        }
+      }
+    }
+  })
+
+  test('scope boundary: a prefix token of 10 characters, a slash, then 10 more is no token; Bearer still takes / and +', async () => {
+    const { scrub } = await scrubMod()
+    assert.deepEqual(scrub(`${PREFIXES_FIRST()}${chars(10)}/${chars(10)}`), [])
+    assert.deepEqual(scrub(`${PREFIXES_FIRST()}${chars(10)}+${chars(10)}`), [])
+    for (const ch of ['/', '+']) {
+      assert.deepEqual(at(scrub(`Authorization: Bearer ${chars(15)}${ch}${chars(15)}`), 1), ['token'], `Bearer with ${ch}`)
+    }
+  })
+})
+
 describe('retro/scrub.ts: a package pin is not an email', () => {
   test('name@version pins are clean, a real address next to a pin still hits, and look-alikes with a letter-led last label hit', async () => {
     const { scrub } = await scrubMod()
