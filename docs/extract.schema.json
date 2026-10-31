@@ -34,7 +34,7 @@
       "items": { "$ref": "#/$defs/item" }
     },
     "catalogHits": {
-      "description": "Lines of tool_result text and journal result text that hit a catalog entry: the line holds the entry's anchor and matches one of its patterns. At most one hit per entry per record.",
+      "description": "Lines of tool_result text and journal result text that hit a catalog entry: the line holds the entry's anchor and matches one of its patterns. At most one hit per entry per record. A tool_result of a quiet call gives no hits: Read, Grep, Glob, or a Bash command that names catalog.json or only shows text (ADR-0012 Decision 2, Quiet results). Journal results are never quiet.",
       "type": "array",
       "items": {
         "type": "object",
@@ -157,7 +157,7 @@
           }
         },
         {
-          "description": "stop: a journal result, or an agent's last assistant text, whose first non-empty line starts with BLOCKED:, CHECKPOINT: or QUESTION:.",
+          "description": "stop: a journal result whose result.marker or result.stop.tag is BLOCKED, CHECKPOINT or QUESTION (marker is that tag; quote is the first non-empty line of result.text, empty when it has none); else a journal result whose `text`, or else whose `report` (or the result itself, when it is a string), has a first non-empty line starting `BLOCKED:`, `CHECKPOINT:` or `QUESTION:` (retro/extract.ts:215, :223-229), or an agent's last assistant text that does. One item per result, at the journal line.",
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "file", "line", "agent", "ts", "quote", "marker"],

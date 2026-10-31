@@ -256,7 +256,7 @@ flowchart TB
   hook -->|"reads plan, crew status"| fdir
 ```
 
-*The Workflow engine's parts and what passes between them, as designed.* Traces to: `docs/adr/0009-workflow-factory.md:86-115` (the diagram, copied), which traces to `hooks/register.ts:1641-1715` (the Agent gates it mirrors), `:327-349` (`planVerdict`), `:499-565` (`qcRuling`, `patchIdOf`, `headVerdict`) and `:848-904` (the plan-file route), line numbers the ADR took at `fa0fa9f` and unchanged at `b81ad50` (`git diff fa0fa9f b81ad50 -- hooks/register.ts` is empty), and to the probe run's `journal.jsonl` and `agent-*.meta.json`.
+*The Workflow engine's parts and what passes between them, as designed.* Traces to: `docs/adr/0009-workflow-factory.md:86-115` (the diagram, copied), which traces to `hooks/register.ts`, its line numbers re-taken at `f01caf4`: `:1928-2003` (the Agent gates it mirrors), `:400-438` (`gateOf` and `planVerdict`), `:619-684` (`qcRuling`, `patchIdOf` and `headVerdict`, with `branchOf` and `examinedVerdict` between them) and `:1029-1087` (`fencedBlock` and the plan-file route); and to the probe run's `journal.jsonl` and `agent-*.meta.json`. ADR-0009's own caption keeps the line numbers it took when it was written.
 
 ```mermaid
 sequenceDiagram
@@ -893,7 +893,7 @@ the stress test's first step becomes `git reset --hard <sha>` in its own worktre
 
 ### The self-improving retro (ADR-0012)
 
-This section is the design of goal `retro-judge`; its stage-1 and stage-2 crews build it. Until they merge, none of `retro/`, `agents/retro-judge.md` or `factory.ts doctor` exists. [ADR-0012](adr/0012-self-improving-retro.md) holds every rule; this section maps the parts.
+This section is the design of goal `retro-judge`, whose stage-1 and stage-2 crews have merged: `retro/`, `agents/retro-judge.md` and `factory.ts doctor` exist at `f01caf4`. [ADR-0012](adr/0012-self-improving-retro.md) holds every rule; this section maps the parts.
 
 | Part | Path | What it does | Built by |
 | --- | --- | --- | --- |
@@ -952,7 +952,7 @@ flowchart LR
 | Run skill sections 5 and 10, the init sentence | run-wiring | the PM | ADR-0012 Decisions 6 and 12 | `tests/run-retro.check.ts`, `tests/init.check.ts` |
 | `<truss dir>/retro/state.json`, the `retro` state key and the `Retro stage` region | `retro/cli.ts state`; ui-retro | ui-state; the client | `retro-state.schema.json`, `ui/contract/state.schema.json`; ADR-0012 Decision 8 | `ui/contract/state.check.ts` |
 
-TODO: the "Pinned by" column names the check files the `retro-design` crew owns in `plan.json`; confirm each file and what it pins once the crew's tests merge.
+Every file in the "Pinned by" column exists at `f01caf4`. The build crews' own tests add to them: `tests/retro/catalog.check.ts`, `cli.check.ts`, `extract.check.ts` and `scrub.check.ts`, and `tests/factory-retro.check.ts` (the stress cases and `stage.js`'s `known problem` text, its header says).
 
 ### Heartbeat and stalls
 
@@ -1047,8 +1047,10 @@ Traces to: ADR-0011, Decisions 1 to 9.
 | --- | --- | --- | --- |
 | ui-state | `ui/server/state/**` | Reads the Truss dir, `.claude/truss.json`, the architecture doc, the ADR dir and git. Reduces them, with the session view, into one in-memory state. Emits a snapshot and numbered deltas, and keeps a replay ring of 1024. | crew `ui-state`, stage 1 |
 | ui-session | `ui/server/session/**` | Hosts the session with `query()`. Turns `canUseTool` calls and turn ends into question, approval and reply-needed requests, and answers each at most once. The only module that imports the SDK (ai rule 7). | crew `ui-session`, stage 1 |
-| ui-server | `ui/server/http/**`, `ui/server/main.ts` | Serves `ui/web/`, the SSE stream and the POST routes on `127.0.0.1`, behind the Host, Origin and token checks. `main.ts` parses flags, wires the modules and prints the URL. | crew `ui-server`, stage 1 |
+| ui-server | `ui/server/http/**`, `ui/server/main.ts`, `ui/server/node-version.ts`, `ui/server/lifecycle.ts` | Serves `ui/web/`, the SSE stream and the POST routes on `127.0.0.1`, behind the Host, Origin and token checks. `main.ts` parses flags, wires the modules and prints the URL. | crew `ui-server`, stage 1 |
 | ui-web | `ui/web/**`, `ui/e2e/**`, `ui/README.md` | Static HTML, CSS and plain ES modules. Applies the snapshot and deltas, and renders cards, crew lanes, decisions, ADRs and the design panel. No bundler. | crew `ui-web`, stage 2 |
+
+ui-server's two startup files came after its crew, outside any crew. `node-version.ts` is the startup check: `readEnginesRange(dir)` reads `engines.node` from `<dir>/package.json`, or null, and `nodeVersionWarning(running, range)` returns one warning line when the running Node is older than a `>=X[.Y[.Z]]` or `^X[.Y[.Z]]` range, and null otherwise; it never throws or exits (`ui/server/node-version.ts:1-36`, `ui/server/main.ts:37-38`; commits `de8abc9` and `d133450`). `lifecycle.ts` is the process lifecycle for `main.ts`: shutdown on `SIGINT`, `SIGTERM`, `SIGHUP` and `SIGBREAK`; a parent-death watch on an unref'd timer, skipped under ppid 1; a per-port lockfile `truss-ui-<port>.json` in the OS temp dir, created exclusively with mode 0600 and holding no token; and the "port in use" message, naming a live lock's pid when there is one. It uses Node built-ins only, and no function throws (`ui/server/lifecycle.ts:1-110`, `ui/server/main.ts:70-103`; commits `8489b53` and `668c05b`).
 
 `ui-design` (stage 0) owns the shared files: `ui/package.json`, its lockfile, `ui/.gitignore`, `ui/playwright.config.ts`, `ui/contract/**` and `ui/spike/**`.
 
@@ -1064,7 +1066,7 @@ Traces to: ADR-0011, Decisions 1 to 9.
 | The page, by role and accessible name | ui-web | the client | R-3 to R-7, R-15, R-18 | `ui/contract/e2e/live-status.spec.ts` |
 | SDK messages and `canUseTool` | Claude Code | ui-session | the recorded stream `ui/contract/fixtures/sdk-stream.jsonl`; ADR-0011 Spike | `ui/contract/session.check.ts` (replay), `ui/contract/live.check.ts` (live) |
 | Truss files the UI reads | Truss hooks and the PM | ui-state | `docs/events.schema.json`, `docs/plan.schema.json`, "On disk" above | `ui/contract/state.check.ts` on `tests/fixtures/retro-040` and `docs/plan.example.json` |
-| The retro stage: `<truss dir>/retro/state.json`, the state's `retro` key, and the region `Retro stage` with one list item per step, `<label>: <status>` | `retro/cli.ts state`; ui-state; ui-web | the client | `docs/retro-state.schema.json`, `ui/contract/state.schema.json` `$defs.retro`; ADR-0012 Decision 8 | TODO: the check that pins it, once ui-retro's tests merge |
+| The retro stage: `<truss dir>/retro/state.json`, the state's `retro` key, and the region `Retro stage` with one list item per step, `<label>: <status>` | `retro/cli.ts state`; ui-state; ui-web | the client | `docs/retro-state.schema.json`, `ui/contract/state.schema.json` `$defs.retro`; ADR-0012 Decision 8 | `ui/contract/state.check.ts`, `ui/contract/e2e/retro-stage.spec.ts`, `ui/test/state/retro.test.ts` |
 
 Each contract check imports its producer and, when the import fails, fails with `producer missing: ui/server/<module>`.
 
