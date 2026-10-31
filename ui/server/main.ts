@@ -98,7 +98,7 @@ async function shutdown() {
   removeLock(lock);
   process.exit(0);
 }
-// SIGINT, SIGTERM, SIGHUP and SIGBREAK, and the parent (npm, a shell) going away, all end the server.
+// SIGINT, SIGTERM, SIGHUP and SIGBREAK, and the parent or any ancestor (npm, cmd.exe, a shell) going away, all end the server.
 onShutdownSignals(process, shutdown);
 watchParent(shutdown);
 // Printed last, so whoever waits on this line can already stop the server with any of the signals above.
