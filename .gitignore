@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+node_modules/
+.claude/worktrees/
+.claude/settings.local.json
+**/.claude-plugin/types/
