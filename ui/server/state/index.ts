@@ -182,13 +182,13 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
     if (!cfg.complete) {
       n.push({
         id: 'no-config',
-        text: '.claude/truss.json is missing, or has no "architecture" or no "adr" key, so the design panel or the ADR list is empty.',
+        text: 'No design panel or ADR list yet: add .claude/truss.json with "architecture" and "adr" keys to show them (/truss:init sets this up).',
       })
     }
     if (!exists) {
       n.push({
         id: 'no-truss-dir',
-        text: trussDir === null ? 'The Truss directory is not known yet; it is set once the session starts.' : `The Truss directory ${trussDir} is not on disk yet; the hooks create it when a run begins.`,
+        text: trussDir === null ? 'Waiting for a session: the Truss directory is set when one starts.' : `Waiting for a run: the Truss directory ${trussDir} appears when the hooks create it at the start of a run.`,
       })
     }
     notices = n
