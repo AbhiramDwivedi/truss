@@ -282,9 +282,19 @@ export function refusalLine(tool: string, input: { readonly command?: unknown },
 const MARKERS = ['VERDICT: PASS', 'VERDICT: FAIL', 'STRESSTEST', 'CHECKPOINT', 'BLOCKED', 'QUESTION', 'PROPOSAL'] as const
 export type ReportMarker = (typeof MARKERS)[number]
 
+// drops one leading "[harness:" paragraph (up to the next blank line) before the first non-empty line; stage.js mirrors it
+export function unbannered(text: string): string {
+  const lines = text.split('\n')
+  const i = lines.findIndex(l => l.trim() !== '')
+  if (i < 0 || !lines[i].trimStart().startsWith('[harness:')) return text
+  let j = i
+  while (j < lines.length && lines[j].trim() !== '') j++
+  return lines.slice(j).join('\n')
+}
+
 // the marker a report's first non-empty line starts with, or null
 export function markerOf(text: string): ReportMarker | null {
-  const first = text.split('\n').find(l => l.trim() !== '')?.trimStart() ?? ''
+  const first = unbannered(text).split('\n').find(l => l.trim() !== '')?.trimStart() ?? ''
   if (/^VERDICT: (PASS|FAIL) \| /.test(first)) return null // the template line, not a verdict
   return MARKERS.find(m => first.startsWith(m)) ?? null
 }

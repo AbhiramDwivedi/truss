@@ -453,8 +453,18 @@ async function green(crew) {
   }
 }
 
+// drops one leading "[harness:" paragraph (up to the next blank line) before the first non-empty line; mirrors register.ts unbannered
+const unbannered = (text) => {
+  const lines = String(text || '').replace(/^﻿/, '').replace(/\r/g, '').split('\n')
+  const i = lines.findIndex((l) => l.trim() !== '')
+  if (i < 0 || !lines[i].trimStart().startsWith('[harness:')) return lines.join('\n')
+  let j = i
+  while (j < lines.length && lines[j].trim() !== '') j++
+  return lines.slice(j).join('\n')
+}
+
 const stressTestCount = (text) => {
-  const first = String(text || '').replace(/\r/g, '').split('\n').find((l) => l.trim() !== '')
+  const first = unbannered(text).split('\n').find((l) => l.trim() !== '')
   const m = first && first.trim().match(/^STRESSTEST: (\d+) findings$/)
   return m ? Number(m[1]) : null
 }
@@ -540,7 +550,7 @@ async function testsGuard(crew) {
 
 // the same rule as register.ts qcRuling and markerOf: the first non-empty line decides
 function verdictOf(text) {
-  const lines = String(text || '').replace(/^﻿/, '').replace(/\r/g, '').split('\n')
+  const lines = unbannered(text).split('\n')
   const first = (lines.find((l) => l.trim() !== '') || '').trimStart()
   if (first.startsWith('VERDICT: PASS')) return 'PASS'
   if (first.startsWith('VERDICT: FAIL')) return 'FAIL'
