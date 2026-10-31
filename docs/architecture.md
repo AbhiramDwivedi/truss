@@ -20,6 +20,8 @@ Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by t
 
 [ADR-0015](adr/0015-resource-aware.md) (proposed 2026-10-31 by the `resource-design` crew) sizes crews to the host. It is truss's ADR-0015, not the claude-ops worktree-cleanup ADR that "ADR-0015 item 9" below cites. A new module, `resources/index.ts`, samples free memory and load. `factory.ts admit` holds a crew or member start below a free-memory threshold, `factory.ts heavy` runs each red and green check through one heavy slot shared by every crew, and `factory.ts reap` kills a finished check's leftover process group by its recorded pgid. A Haiku agent, `truss:resource-monitor`, recommends an effective parallelism, and the PM writes it to the truss dir. Details are in "Resource-aware sizing (ADR-0015, proposed)" below.
 
+[ADR-0016](adr/0016-plugin-fixes.md) (proposed 2026-10-31 by the `plugin-fixes-design` crew) fixes the plugin gaps this run proved, on the client's ruling "Don't just log a plugin bug, fix it." `factory.ts start` gains a `warnings` key that says when a stress crew needs `truss:stress-engineer` changed after the session started, and refuses a crew whose goal file is missing, by path. The hooks refuse a SendMessage that resumes a plan or amend design engineer, and `envFailure` and `tests-check` get stricter.
+
 The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
 
 ```mermaid
@@ -682,6 +684,8 @@ A member may message its own foreman and the other members of its crew. A forema
 - A name that resolves to live agents in different crews: `[truss] Refused: more than one live agent is named "<address>", in different crews. Address it by its agent id.`
 
 A foreman's message to `main` that starts with `QUESTION:`, `BLOCKED:` or `PROPOSAL:` sets its tag in `/truss`; an untagged one clears it. Any message from the PM to a foreman clears that foreman's tag.
+
+[ADR-0016](adr/0016-plugin-fixes.md), proposed, adds three hook changes. `designerResumeVerdict` refuses a main-session SendMessage to a plan or amend design engineer and says to start a fresh one. `MAIN_MODEL_REFUSAL` stops naming a model. `workflowCallVerdict` parses an `args` given as a JSON string. Until its build crew merges, the rules above describe the code.
 
 ### Agent calls
 
