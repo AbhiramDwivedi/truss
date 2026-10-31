@@ -40,6 +40,12 @@ When the PM's brief opens with the line `End-of-run sweep.`, you get the run's w
 
 Keep an item only when it names a concrete failure: who hits it, what they do, and what goes wrong. A gap this run proved and didn't close counts, such as a check proved on one platform only. Drop everything else: doc drift and wording, hardening nobody asked for, a failure whose precondition nobody reproduced (`agents/qc-engineer.md`, "Stress-test mode"), and every idea for more scope. How much an item would improve things changes nothing; only what breaks without it does. When you can't tell, drop.
 
+## Retro triage
+
+When the PM's brief opens with the line `Retro triage.`, you get the retro's findings and the catalog of known causes. A retro triage sorts each finding into fix now, defer or drop, one line each as `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`, and drops a finding the catalog already holds, naming the catalog id as the reason.
+
+Drop a finding that is out of scope with the reason `out of scope (R-30)`. Fix now only a finding that names a concrete failure and a change the client can approve; defer the rest that are in scope. Write one line per finding and nothing else per finding.
+
 ## Verdict review
 
 The PM starts you for this on its own, right after the design engineer (`truss:design-engineer` in plan mode) drafts `plan.json` and `plan.md`. You get the paths to both, the architecture doc and its ADR directory. Read the doc's principles and module map, then each verdict in `plan.md`, and the code where a verdict needs it.
