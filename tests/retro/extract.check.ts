@@ -555,3 +555,112 @@ describe('retro/extract.ts writeExtract', () => {
     assert.equal(readFileSync(p2, 'utf8'), JSON.stringify(x2, null, 2) + '\n')
   })
 })
+
+// ---------- stop items from a journal result's marker or stop.tag ----------
+
+describe('retro/extract.ts: a journal result whose marker or stop.tag is BLOCKED, CHECKPOINT or QUESTION is one stop', () => {
+  test('marker and stop.tag each give one stop with the first non-empty line of text and the journal line; other tags and no tag give none', async () => {
+    const { extractSession } = await extractMod()
+    const run = `wf_${hex(3)}`
+    const q1 = `why-${hex(4)}`
+    const q2 = `which-${hex(4)}`
+    const q3 = `wait-${hex(4)}`
+    const q4 = `both-${hex(4)}`
+    const res = (key: string, result: any) => ({ type: 'result', key, agentId: `a-${key}`, result })
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [prompt('go', 0)],
+      [`${sid}/subagents/workflows/${run}/journal.jsonl`]: [
+        { type: 'launched' }, // 1
+        res('k1', { task: 't', marker: 'BLOCKED', branch: 'b', commit: 'c', proof: 'p', text: `\n   \n  ${q1}  \nsecond line ${hex(3)}` }), // 2: marker, quote is the first non-empty line
+        res('k2', { task: 't', stop: { tag: 'QUESTION' }, text: `${q2}\nmore` }), // 3: stop.tag
+        res('k3', { task: 't', marker: 'CHECKPOINT', text: q3 }), // 4
+        res('k4', { task: 't', marker: 'DONE', text: `finished ${hex(3)}` }), // 5: other tag
+        res('k5', { task: 't', stop: { tag: 'DONE' }, text: `finished ${hex(3)}` }), // 6: other tag
+        res('k6', { task: 't', text: `no marker at all ${hex(3)}` }), // 7: no marker
+        res('k7', { task: 't', marker: 'BLOCKED', stop: { tag: 'BLOCKED' }, text: `BLOCKED: ${q4}` }), // 8: marker, tag and prefix together are one item
+      ],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    assertExtractSchema(x)
+    const stops = x.items.filter((i: any) => i.kind === 'stop')
+    const journal = x.files.map((f: any) => f.path).find((p: string) => p.endsWith('/journal.jsonl'))
+    assert.deepEqual(
+      stops.map((i: any) => [i.file, i.line, i.marker, i.quote]),
+      [
+        [journal, 2, 'BLOCKED', q1],
+        [journal, 3, 'QUESTION', q2],
+        [journal, 4, 'CHECKPOINT', q3],
+        [journal, 8, 'BLOCKED', `BLOCKED: ${q4}`],
+      ],
+    )
+  })
+})
+
+// ---------- results that only show text are not the run hitting the problem ----------
+
+describe('retro/extract.ts: a catalog anchor quoted by a show-only command or a Read is no hit; a real run of it is', () => {
+  const body = (a: string) => `${a}: line ${hex(3)}`
+
+  test('git diff, git show, git log -p, gh pr diff, gh pr view, grep, rg, cat, sed -n, head, tail and pipelines of them give no hit', async () => {
+    const { extractSession } = await extractMod()
+    const a = `qa${hex(4)}`
+    const id = `e-${hex(4)}`
+    const quiet = [
+      'git diff HEAD~1',
+      'git show HEAD',
+      'git log -p -3',
+      'gh pr diff 12',
+      'gh pr view 12',
+      `grep -rn ${a} .`,
+      `rg ${a} src`,
+      'cat notes.md',
+      'sed -n 1,40p notes.md',
+      'head -50 notes.md',
+      'tail -50 notes.md',
+      'git diff | head -40',
+      `git diff | grep ${hex(2)}`,
+      `cat notes.md | sed -n 1,5p | tail -2`,
+    ]
+    const loud = ['npm test', 'git diff | node script.js', 'git diff | tee out.txt', `echo ${hex(3)}`, 'git commit -m x']
+    const cmds = [...quiet, ...loud]
+    const recs: any[] = []
+    cmds.forEach((c, i) => {
+      recs.push(use(`b${i}`, 'Bash', { command: c }, 2 * i + 1))
+      recs.push(result(`b${i}`, body(a), false, 2 * i + 2))
+    })
+    const s = session(sid => ({ [`${sid}.jsonl`]: recs }))
+    const x = extractSession(s.sessionDir, await catalogOf(s.root, [entry(id, a, [`${a}: `])]))
+    assertExtractSchema(x)
+    const want = loud.map((_, j) => 2 * (quiet.length + j) + 2)
+    assert.deepEqual(
+      x.catalogHits.filter((h: any) => h.id === id).map((h: any) => h.line),
+      want,
+      'only the commands that run something give a hit',
+    )
+  })
+
+  test('a Read, Grep or Glob result and a Bash command naming catalog.json give no hit; a Bash failure with the same line does', async () => {
+    const { extractSession } = await extractMod()
+    const a = `qb${hex(4)}`
+    const id = `e-${hex(4)}`
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [
+        use('r1', 'Read', { file_path: '/w/app/catalog.json' }, 1), // 1
+        result('r1', body(a), false, 2), // 2
+        use('g1', 'Grep', { pattern: a }, 3), // 3
+        result('g1', body(a), false, 4), // 4
+        use('l1', 'Glob', { pattern: '**/*' }, 5), // 5
+        result('l1', body(a), false, 6), // 6
+        use('c1', 'Bash', { command: `node retro/cli.ts recur t retro/catalog.json` }, 7), // 7
+        result('c1', body(a), false, 8), // 8
+        use('b1', 'Bash', { command: 'npx playwright test' }, 9), // 9
+        result('b1', body(a), true, 10), // 10
+      ],
+    }))
+    const x = extractSession(s.sessionDir, await catalogOf(s.root, [entry(id, a, [`${a}: `])]))
+    assert.deepEqual(
+      x.catalogHits.filter((h: any) => h.id === id).map((h: any) => h.line),
+      [10],
+    )
+  })
+})

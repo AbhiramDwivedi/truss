@@ -333,3 +333,19 @@ describe('retro/catalog.ts recurrences(x, catalog): fixed entries that were hit 
     assert.ok(both.includes(a) && both.includes(b))
   })
 })
+
+describe('retro/catalog.json tracked-pyc: it names the problem, not the fix that removes it', () => {
+  test('lines that show the fixed .gitignore, a numbered listing or an added ignore line are no hit; a status line, a tab-indented path and a .pyc path still are', async () => {
+    const { catalog, matchLine } = await seedCatalog()
+    const dir = `${hex(3)}/__pycache__/`
+    const none = [
+      '     3\t__pycache__/', // a numbered listing of .gitignore
+      '.gitignore lists `__pycache__/`, `*.pyc` now',
+      '+__pycache__/', // the added ignore line in a diff
+      '__pycache__/',
+    ]
+    for (const line of none) assert.ok(!matchLine(line, catalog).includes('tracked-pyc'), JSON.stringify(line))
+    const hit = [`?? ${dir}`, `\t${dir}`, `new file: ${dir}retro.cpython-312.pyc`, `${dir}${hex(3)}.cpython-312.pyc`]
+    for (const line of hit) assert.deepEqual(matchLine(line, catalog), ['tracked-pyc'], JSON.stringify(line))
+  })
+})
