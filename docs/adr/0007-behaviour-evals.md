@@ -128,12 +128,12 @@ It returns `ok: code === 0`, `code` (the exit status, or `null` on a timeout or 
 
 ### 6. The 0.9.1 git-dir check, fed to the runner
 
-The stress-test check is inline code in `qc-engineer.md`'s stress-test section, not a fence. Its rule is a comparison of two commands, so the contract test feeds it to `runSnippet` as one comparison script, built from literal strings:
+The stress-test check is inline code in `agents/stress-engineer.md`, the stress persona's own prompt, not a fence. It lived in `qc-engineer.md`'s stress-test section until [ADR-0014](0014-retro-fixes.md) moved that section to `truss:stress-engineer`. Until crew `stress-persona` of goal `retro-fixes` writes that file, `tests/contract-evals.check.ts` fails with `producer missing: agents/stress-engineer.md`. Its rule is a comparison of two commands, so the contract test feeds it to `runSnippet` as one comparison script, built from literal strings:
 
 - **Broken, from `897528e`:** `[ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]`
 - **Fixed, from `4e43d5c`:** `[ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]`
 
-The script exits 0 when the two are equal, which is the main checkout: the stress test must refuse to run there. In the main checkout's `subdir` the broken script must give `ok: false` (the paths differ, so the broken check let the stress test through), and the fixed script `ok: true`. In a linked `worktree` the fixed script gives `ok: false`, because a worktree's git dir and common dir differ. The test also builds the same comparison from the two inline spans `extractSnippet` finds in today's `qc-engineer.md` (the last two `## Snippets` lines) and requires the fixed results. A runner that never runs the script can't give both answers.
+The script exits 0 when the two are equal, which is the main checkout: the stress test must refuse to run there. In the main checkout's `subdir` the broken script must give `ok: false` (the paths differ, so the broken check let the stress test through), and the fixed script `ok: true`. In a linked `worktree` the fixed script gives `ok: false`, because a worktree's git dir and common dir differ. The test also builds the same comparison from the two inline spans `extractSnippet` finds in today's `stress-engineer.md` (the last two `## Snippets` lines) and requires the fixed results. A runner that never runs the script can't give both answers.
 
 ### 7. The model runner, `evals/run-model.ts`
 
@@ -209,8 +209,8 @@ A check moves only when a suite check covers what it asserts. Two do. The qc-eng
 - agents/qc-engineer.md: `git diff --no-color` (fenced; placeholders: <base>=HEAD~1, <head>=HEAD)
 - agents/foreman.md: `git diff --no-color` (fenced; placeholders: <base>=HEAD~1, <head>=HEAD)
 - skills/run/SKILL.md: `git diff --no-color` (inline; placeholders: <base>=HEAD~1, <head>=HEAD)
-- agents/qc-engineer.md: `git rev-parse --path-format=absolute --git-dir` (inline; placeholders: none)
-- agents/qc-engineer.md: `git rev-parse --path-format=absolute --git-common-dir` (inline; placeholders: none)
+- agents/stress-engineer.md: `git rev-parse --path-format=absolute --git-dir` (inline; placeholders: none)
+- agents/stress-engineer.md: `git rev-parse --path-format=absolute --git-common-dir` (inline; placeholders: none)
 
 ## Checks replaced
 
@@ -230,7 +230,7 @@ The contract tests pin these. Stage 0's test-writer writes them; stage 1's `eval
 3. `parseSnippets` on this ADR's text returns at least the five lines above, and throws on a malformed `- ` line.
 4. For every parsed line, `extractSnippet` on the named file under the repo root returns a string (a missing snippet fails the test), and `runSnippet` with the line's `fills` gives `ok: true`. A fenced snippet prints at least one line. A snippet that contains `git patch-id` gives the same first stdout field as `runSnippet(PATCH_COMMAND, same fills)`, with `PATCH_COMMAND` imported from `hooks/register.ts`.
 5. `runSnippet` with an unfilled `<head>` gives `ok: false` and `code: null`.
-6. The git-dir scripts of section 6: broken in `subdir` gives `ok: false`; fixed in `subdir` gives `ok: true`; fixed in `worktree` gives `ok: false`; the same comparison from today's `qc-engineer.md` spans gives the fixed results.
+6. The git-dir scripts of section 6: broken in `subdir` gives `ok: false`; fixed in `subdir` gives `ok: true`; fixed in `worktree` gives `ok: false`; the same comparison from today's `stress-engineer.md` spans gives the fixed results.
 7. The golden set: every `golden/*.json` parses, carries each key in `case.schema.json`'s `required`, has `id` equal to its file name, `role` in the schema's enum, and a `source` that starts with `.git/truss/` and has no `..`, no backslash and no drive letter. At least 18 cases; at least 12 QC engineer, 4 or more `FAIL`; at least 6 checking engineer over at least 2 kinds. Each id in section 3's table exists with its role and kind. For each case, `score` of its own expected line (`VERDICT: PASS`, `RECOMMEND: answer`, ...) is `ok`. No QC engineer `input` has a line starting `VERDICT:`, and no checking engineer `input` contains `RECOMMEND`. The schema's `required` is checked by hand: no ajv (P19).
 
 `tests/contract-replaced.check.ts` (run with `node --test`; red until stage 2 deletes the checks):

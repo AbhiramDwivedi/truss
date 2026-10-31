@@ -130,7 +130,7 @@ Every finding cites at least one transcript `file` and `line`, says what it cost
 
 The PM logs each `TRIAGE:` line as a decision and follows it, as for the end-of-run sweep.
 
-**Scope (R-30).** A finding's `target` must be a file truss uses: on the truss repo, a file of the plugin; on any project, its `CLAUDE.md` or a file under its `.claude/`. A target that a crew of this run changed is code the run delivered, and is never in scope. Triage drops an out-of-scope finding with the reason `out of scope (R-30)`.
+**Scope (R-30).** A finding's `target` must be a file truss uses: on the truss repo, a file of the plugin; on any project, its `CLAUDE.md` or a file under its `.claude/`. A target that is product code a run delivered (on the truss repo, anything outside the plugin, such as ui/**) is never in scope; a plugin file stays in scope even when a crew of this run changed it (client rulings 03:39 and 04:26). Triage drops an out-of-scope finding with the reason `out of scope (R-30)`.
 
 **The truss repo or another project.** The repo is the truss repo when `.claude-plugin/plugin.json` exists and its `name` is `truss`. On another project, a fix whose target is a plugin file is not built: the PM writes it as a draft to `<truss dir>/retro/upstream/<finding id>.md` and reports it to the client. Fixes to the project's own `CLAUDE.md` and `.claude/` files are built there.
 

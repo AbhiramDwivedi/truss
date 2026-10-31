@@ -241,7 +241,7 @@ The one source of every Workflow agent's type, model, effort and isolation. `sta
 | `resolver` | project builder type | `sonnet` | `medium` | none | works in the crew worktree by absolute path; merge conflicts only; its commits carry `Truss-Role: resolver` |
 | `writer` | `truss:writer` | `opus` | `medium` | `worktree` | |
 | `rca` | `general-purpose` | `opus` | `medium` | none | writes no code |
-| `stress` | `truss:qc-engineer` | `opus` | `medium` | `worktree` | brief opens `Stress test:` |
+| `stress` | `truss:stress-engineer` | `opus` | `medium` | `worktree` | brief opens `Stress test:`; has Write and Edit for scratch dirs and its own worktree only ([ADR-0014](0014-retro-fixes.md); `truss:qc-engineer` before it) |
 | `qc` | `truss:qc-engineer` | `opus` | `medium` | none | |
 | `runner` | `general-purpose` | `sonnet` | `low` | none | runs one command the script writes out in full, `node <args.truss.plugin>/bin/factory.ts <command> --dir <D> --repo <R> ...` with every path absolute, and returns its stdout and exit code; it never changes directory and never composes a command itself |
 
