@@ -110,6 +110,8 @@ ul { margin: 0; padding: 0; list-style: none; }
   padding: 8px 12px;
 }
 .notice-tag { color: var(--warn); }
+.notice-status { border: 1px solid var(--border); }
+.notice-status .notice-tag { color: var(--muted); }
 
 /* transcript */
 .transcript { display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
