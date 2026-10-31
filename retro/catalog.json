@@ -67,8 +67,9 @@
       "title": "Python bytecode under __pycache__ is tracked or left untracked, so it shows in diffs and status",
       "anchor": "__pycache__",
       "patterns": [
-        "(?:^|\\s)\\S*__pycache__/",
-        "__pycache__\\S*\\.pyc"
+        "(?:\\?\\?|new file:) +\\S*__pycache__/",
+        "(?<!^\\s*\\d+)\\t\\S+/__pycache__/\\s*$",
+        "__pycache__/[^\\s*`'\"]+\\.pyc"
       ],
       "fix": "Remove the tracked bytecode with git rm -r --cached on the __pycache__ directories and add __pycache__/ and *.pyc to .gitignore, so no .pyc file is tracked and a crew's status is clean.",
       "probe": { "kind": "command", "run": "test -z \"$(git ls-files -- '*.pyc')\"" },
