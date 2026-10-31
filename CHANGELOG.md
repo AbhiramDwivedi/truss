@@ -2,6 +2,54 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.14.0
+
+Everything merged since 0.13.0. The resource checks are tested on Linux only, and ADR-0017's member-side heavy path is decided but not built.
+
+### Resource-aware crews
+
+- **Crews and members start only when the host has free memory** ([ADR-0015](docs/adr/0015-resource-aware.md)). A new module, `resources/index.ts`, samples free and total memory, CPUs and the 1-minute load; `node <plugin>/resources/index.ts [--worktrees <root>]` prints one sample as JSON. `factory.ts admit --slug S` exits 0 when the crew may start and 1 when it is held, with a `why`. A start is held when free memory is below `TRUSS_MIN_FREE_MB`, 2048 MB by default, and a planned crew is also held while running crews fill the effective parallelism. `start` applies the same rule and lists held crews under a new `held` key; they stay `planned` and get no worktree.
+- **`stage.js` admits before every member and reaps after it.** Before each spawn of a role other than `runner`, QC included, the stage runs `admit` as a runner call; a held answer stops the crew `BLOCKED` with `held by admission: <why>`, with no retry. After each such spawn, and once when the crew ends, it runs `reap --label <slug>-check`. A failed reap goes into the crew's proofs and doesn't stop the crew.
+- **Red and green checks run one at a time across the session.** `factory.ts heavy ... -- <cmd...>` takes the one heavy slot, a `resources/heavy.lock/` dir in the truss dir, waits for it up to 240000 ms, and once it holds the slot gives it back and waits again while free memory is below the threshold. It runs the command with no shell. It passes a JSON stdout through with a `heavy` key added, and prints the last 40 lines otherwise. A wait that runs out prints `"ran": false` and exits 1; the stage stops the crew `BLOCKED` with `heavy slot busy:`, never as a failing check. A waiter takes over a lock whose owner pid is dead, or one with no `owner.json` older than 10 s. When no `heavy` runs and a lock still blocks, delete `resources/heavy.lock/` by hand.
+- **`reap` kills only recorded process groups.** `heavy` starts its command in a new process group and records it under `resources/groups/<pgid>.json`. `reap` sends `SIGTERM` to each recorded group of that label whose `heavy` process is gone, then `SIGKILL` after about 2 s, and never matches processes by name. A zombie `heavy` process counts as gone.
+- **The PM can lower the parallelism with a Haiku monitor.** `truss:resource-monitor` (`model: haiku`, `tools: Bash, Read`) reads the sampler, the plan and `resources/parallelism.json`, takes `minFreeMB` from `factory admit`, and ends with `RECOMMEND parallelism <n>`. The PM starts it as an `Agent` call at effort `low`, at each stage start and when `held` or a `held by admission:` stop reaches it, never on a loop. The PM writes `resources/parallelism.json`; a value counts only as an integer from 1 to `maxParallelCrews`, so the file can lower the parallelism but never raise it above the cap.
+- **The resource checks fail open.** When the sampler throws, `admit`, `heavy` and `start` let the start through and append a `sampler-error` event, a new kind in `docs/events.schema.json`.
+- **What isn't proved.** Per-worktree memory is read from `/proc` and is empty on other platforms. Group kill and per-worktree sampling on macOS and Windows have not been run. A live `truss:resource-monitor` call needs a session restart to load the new agent. Members' own builds and tests don't go through the heavy slot; admission and the parallelism are their only guard.
+
+### Workflow factory
+
+- **`start` warns when a stress crew needs a role the session hasn't loaded** ([ADR-0016](docs/adr/0016-plugin-fixes.md)). A new `warnings` key, in the full output, the resume output and the `--args-file` pointer, holds one line per starting crew whose goal file says `## Stress test` yes when the stress role's agent file changed after the session started. The session start is `TRUSS_SESSION_START`, a test override, or the `CLAUDE_PID` process's start time from `/proc`. When neither can be read, the warning says it can't tell. Warnings never hold or refuse a crew.
+- **`start` refuses a crew whose goal file is missing.** It goes in `refused` with a reason that names `<truss dir>/goals/<slug>.md`, instead of falling through to the foreman path.
+- **An env string a test echoes in quotes is no longer an environment failure.** `envFailure` counts a match only when no quote or backtick comes before it on the line. A leading TAP `error:` key and its one opening quote don't count, so TAP's quoted one-line errors still count.
+- **`tests-check` guards the files the acceptance test names.** Besides the test-writer's files, every existing repo-relative path in the crew's `acceptanceTest` is guarded, so a builder or resolver commit that touches one fails, whoever added the file.
+- **Members and resolvers run plain `node --test <files>` commands.** Their briefs say the stage's green step runs the acceptance test, which keeps them past the worktree guard's refusal of multi-line shell.
+
+### Hooks
+
+- **The PM can't resume a design engineer by SendMessage.** `designerResumeVerdict` refuses a main-session message to a plan-mode or amend-mode design engineer, whose resumed hand-back no hook routes, and says to start a fresh one under the next unused name.
+- **`MAIN_MODEL_REFUSAL` names no model**, matching the check, which accepts any non-empty `model`.
+- **A Truss Workflow whose `args` is a JSON string is parsed** before the checks run. A string that isn't valid JSON is refused.
+
+### Self-improving retro
+
+- **`scrub` accepts the plugin manifest's `author.name` line** in `.claude-plugin/plugin.json`, and nothing wider: email, home-path and token hits on that line still count.
+- **`extract` raises fewer false items.** It never matches a line that is a quoted string literal ending in `,` against the catalog. A `toolError` quote that starts `Exit code N` takes the next line too. `handEdit` leaves out session scratchpad and auto-memory paths.
+
+### Prompt rules
+
+- **The design engineer validates with `factory.ts plan-check` only** and reports a refused command instead of retrying it another way. A crew's acceptance proof uses only files from earlier stages or the crew's own files.
+- **The planning engineer never makes a report, summary or findings `.md` a member's deliverable.**
+- **The retro skill falls back to a `general-purpose` agent** with `agents/retro-judge.md` as its prompt when `truss:retro-judge` isn't loaded.
+- **Stress-test rules point at `agents/stress-engineer.md`**, in the run skill, the checking engineer, a `stage.js` comment and the architecture doc, not at a QC engineer section that is gone. The checking engineer's prompt names where its report is saved, and the brief skill's example has a constraint requirement.
+
+### Local web UI
+
+- **`ui/README.md` uses a `<token>` placeholder** in the example launch line, and advises starting the server from your own terminal: a Claude Code background shell's reaper can kill it under memory pressure, which ends the Truss session.
+
+### Decided, not built
+
+- **Members' own heavy commands would go through `factory heavy`** ([ADR-0017](docs/adr/0017-member-heavy-commands.md)). A probe from a Workflow member's worktree ran one plain `factory.ts heavy ... -- node --version` command, with the plugin and the truss dir outside the worktree, and the worktree guard didn't refuse it. The ADR picks a path: each member brief would carry that line with literal paths and `--label <slug>-check`, so the existing reap covers it. Nothing of it is built in this release; a later build crew does it. The probe ran on Linux under this session's permission settings only.
+
 ## 0.13.0
 
 Everything merged since 0.12.0. Text checks show the prompt rules are written into the prompts, not that a live PM or member obeys them.

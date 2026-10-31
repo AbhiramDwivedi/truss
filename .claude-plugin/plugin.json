@@ -1,6 +1,6 @@
 {
   "name": "truss",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "types": "./types/index.d.ts",
   "description": "Intelligence, engineered together. Runs several crews of agents in parallel from the main session: each crew's foreman delegates to your project's agents in its own worktree, and the crews' branches merge one at a time or into one integration branch",
   "author": {
