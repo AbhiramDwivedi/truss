@@ -488,9 +488,21 @@ function cmdSync(f: Flags): Obj {
   const c = crewCtx(f)
   return mergeIn(c.wt, [c.target])
 }
+// Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
+// a blank line inside the trailer block, or between it and a later one such as Co-Authored-By. QC reads the role with
+// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; [] when the range can't be read.
+export function unparsedTrailers(wt: string, branch: string): string[] {
+  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`])
+  if (r.status !== 0) return []
+  const missed = (parsed: string | undefined, key: string, body: string | undefined): boolean => String(parsed).trim() === '' && new RegExp(`^${key}:`, 'm').test(String(body))
+  return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
+    .filter(([, crew, role, body]) => missed(crew, 'Truss-Crew', body) || missed(role, 'Truss-Role', body)).map(([id]) => String(id))
+}
 function cmdIntegrate(f: Flags): Obj {
   const branch = need(f, 'branch')
   const c = crewCtx(f)
+  const trailers = unparsedTrailers(c.wt, branch)
+  if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   return mergeIn(c.wt, ['--no-ff', branch])
 }
 function cmdOwnsCheck(f: Flags): Obj {

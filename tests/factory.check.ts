@@ -594,6 +594,36 @@ test('integrate: merges the branch into the crew worktree with --no-ff and print
   assert.equal(again.stdout, res.stdout)
 })
 
+test('integrate: a commit whose Truss-Crew or Truss-Role line git does not parse as a trailer is refused before the merge, named by sha', () => {
+  const { env, wt, start } = crewEnv()
+  git(env.repo, ['branch', 'member', 'truss-s'])
+  const mw = `${tmp('fcli-member-')}/m`
+  git(env.repo, ['worktree', 'add', '-q', mw, 'member'])
+  git(mw, ['config', 'user.name', 'T'])
+  git(mw, ['config', 'user.email', 't@example.invalid'])
+  const commit = (rel, msg) => {
+    putFile(mw, rel, `${rel}\n`)
+    git(mw, ['add', '--', rel])
+    git(mw, ['commit', '-q', '-m', msg])
+    return head(mw)
+  }
+  const good = commit('src/s/a.ts', 'good\n\nbody\n\nTruss-Crew: s\nTruss-Role: builder\nCo-Authored-By: X <x@example.invalid>')
+  const split = commit('src/s/b.ts', 'split block\n\nTruss-Crew: s\n\nTruss-Role: builder')
+  const late = commit('src/s/c.ts', 'blank before co-author\n\nTruss-Crew: s\nTruss-Role: builder\n\nCo-Authored-By: X <x@example.invalid>')
+  commit('src/s/d.ts', 'no trailers at all')
+  const res = env.run('integrate', { slug: 's', branch: 'member' })
+  assert.equal(res.status, 1, res.stderr + res.stdout)
+  const j = assertOneLine(res)
+  assert.equal(j.merged, false)
+  assert.deepEqual(j.conflicts, [])
+  assert.deepEqual(j.trailers.sort(), [`${late} blank before co-author`, `${split} split block`].sort())
+  assert.ok(!j.trailers.some((x) => x.startsWith(good)))
+  assert.equal(head(wt), start, 'nothing merged')
+  assert.notEqual(gitStatus(wt, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']), 0, 'no merge in progress')
+  git(mw, ['reset', '-q', '--hard', good])
+  assert.equal(env.run('integrate', { slug: 's', branch: 'member' }).status, 0, 'a branch whose trailers parse merges')
+})
+
 test('integrate: a conflict leaves the merge in progress, lists the paths, exit 1', () => {
   const { env, wt } = crewEnv()
   git(env.repo, ['branch', 'member', 'truss-s'])
