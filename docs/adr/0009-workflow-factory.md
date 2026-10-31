@@ -144,6 +144,8 @@ sequenceDiagram
 
 One file, run as `node <plugin>/bin/factory.ts <command> [flags]`, where `<plugin>` is the absolute plugin dir (`args.truss.plugin` inside a script). No command depends on the caller's cwd when `--dir` and `--repo` are given, and the scripts and the PM always give both, as absolute paths. This matters because a Workflow agent with no isolation runs in the session cwd, which for the PM is the Truss dir inside `.git` (probe) (Node 22 strips the types, as the `tests/*.check.ts` files already rely on). It imports only Node built-ins and the exported functions of `../hooks/register.ts`, the hooks module's entry file, as `tests/contract-evals.check.ts:16` already does. Every command prints exactly one JSON object on one line to stdout and exits 0 when it did what was asked, 1 when a gate or an expectation refused, and 2 on a usage or I/O error (with `{"error": "<message>"}`). Every command is idempotent: run twice, it leaves the same state and prints the same result (core 7). The one exception is `check`, which adds a new record file each time it runs and never changes an old one.
 
+[ADR-0015](0015-resource-aware.md) (proposed, `0015-resource-aware.md`) adds three commands to this set, `admit`, `heavy` and `reap`, a `held` key to `start`'s output, and one import, `../resources/index.ts`. `heavy` runs a command, so like `check` it isn't idempotent. This section's other rules don't change.
+
 The CLI is the only writer of a crew's `status` on the Workflow path. Statuses keep `plan.schema.json`'s four values: `planned`, `running`, `merged` and `dropped`. `start` moves a crew from `planned` to `running`, and `finish` moves it from `running` to `merged`. Neither command ever changes a crew that is `merged` or `dropped`, and neither restarts a `running` one except through `start --slug` (below). It never runs `git push`, never opens a PR, and never touches any remote.
 
 Common flags: `--dir <truss dir>` (absolute), `--repo <repo root>` (absolute; default the cwd's `git rev-parse --show-toplevel`).
@@ -360,6 +362,8 @@ Faster here means fewer waits between checked steps, not fewer checks. It does n
 ## Seams to pin
 
 The test-writers of the build crews pin these with `node --test` contract tests; no test calls a model, the Workflow tool or the client.
+
+The seams of `admit`, `heavy`, `reap`, `start`'s `held` key and the `stage.js` admit, heavy and reap calls are pinned in [ADR-0015](0015-resource-aware.md), "Seams to pin".
 
 - `factory.ts` commands, flags, one-line JSON output and exit codes (Decision 1), including these cases:
   - the engine split;
