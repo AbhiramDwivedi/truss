@@ -174,6 +174,8 @@ test('the scope rule (R-30): a target is a file truss uses, a run-delivered file
   has(SKILL, 'out of scope (R-30)', 'retro SKILL.md')
   matches(SKILL, /`target`[^.]*(file truss uses|plugin)/, 'retro SKILL.md')
   matches(SKILL, /never (in scope|code (that )?a (truss )?run delivered)|code (that )?a (truss )?run delivered/, 'retro SKILL.md')
+  has(SKILL, 'a plugin file stays in scope even when a crew of this run changed it', 'retro SKILL.md')
+  assert.ok(!SKILL.includes('A target that a crew of this run changed'), 'retro SKILL.md still carries the old S-0 sentence')
   has(SKILL, '`<truss dir>/retro/upstream/<finding id>.md`', 'retro SKILL.md')
 })
 
