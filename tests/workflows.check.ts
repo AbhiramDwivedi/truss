@@ -71,7 +71,15 @@ async function exec(file, args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      // heavy first: its line holds the inner `factory.ts check` after ` -- `, so match heavy, then read the real command after the cut
+      const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
+      let m
+      if (mh) {
+        const cut = mh[1].indexOf(' -- ')
+        m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
+      } else {
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      }
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -83,16 +91,18 @@ async function exec(file, args, o = {}) {
       const branch = flag('branch')
       const key = cmd === 'check' ? `check:${expect}` : cmd === 'integrate' ? `integrate:${branch}` : cmd
       const name = `runner:${slug}:${key}`
-      call.runner = { cmd, slug, expect, branch, key, name }
+      const heavy = !!mh
+      call.runner = { cmd, slug, expect, branch, key, name, heavy }
       const n = (counters[name] = (counters[name] ?? -1) + 1)
       timeline.push(`start:${name}`)
       inflight[slug] = (inflight[slug] ?? 0) + (cmd === 'integrate' ? 1 : 0)
       if (cmd === 'integrate') maxInflight[slug] = Math.max(maxInflight[slug] ?? 0, inflight[slug])
-      let out = o.runner ? await o.runner({ cmd, key, slug, expect, branch, n, prompt, call }) : undefined
+      let out = o.runner ? await o.runner({ cmd, key, slug, expect, branch, n, prompt, call, heavy }) : undefined
       if (out === undefined) {
         const head = (o.heads ?? {})[slug] ?? HEAD
+        const plain = expect === 'red' ? { ok: true } : { ok: true, head }
         out =
-          cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
+          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(heavy ? { ...plain, heavy: { label: `${slug}-check`, waitedMs: 0, exit: 0 } } : plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
       }
       await ticks(cmd === 'integrate' ? 3 : 1)
       if (cmd === 'integrate') inflight[slug]--
@@ -135,7 +145,12 @@ async function exec(file, args, o = {}) {
   } catch (e) {
     error = e
   }
-  return { result, error, calls, unscripted, timeline, maxInflight, labels: calls.map((c) => c.label) }
+  // admit and reap are their own runner calls around every non-runner spawn; `labels` and `timeline` leave them out so the
+  // assertions about members and the other runner commands keep their meaning. allLabels/allTimeline keep everything.
+  const isAR = (c) => c.runner?.cmd === 'admit' || c.runner?.cmd === 'reap'
+  const arNames = new Set(calls.filter(isAR).map((c) => c.runner.name))
+  const notAR = (e) => !arNames.has(e.replace(/^(start|end):/, ''))
+  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, maxInflight, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.map((c) => c.label) }
 }
 
 function checkSpawns(calls, roles) {
@@ -1147,15 +1162,19 @@ t('stage labels: labelFrom numbers the first agent of a role and the later ones 
 t('stage labels: labelFrom runner starts runner labels at a-runner-5', async () => {
   const r = await runStage([entry('a', { labelFrom: { runner: 5 } })], { labels: base() })
   assert.equal(r.calls[0].label, 'a-runner-5')
-  assert.equal(r.calls[1].label, 'a-planner')
-  assert.equal(r.calls.filter((c) => /runner/.test(c.label))[1].label, 'a-runner-6')
+  const nonAR = r.calls.filter((c) => c.runner?.cmd !== 'admit' && c.runner?.cmd !== 'reap')
+  assert.equal(nonAR[1].label, 'a-planner')
+  // every runner call, admit and reap included, takes the next number: 5, 6, 7 ... with no gap
+  const nums = r.allLabels.filter((l) => /runner/.test(l)).map((l) => Number(l.replace('a-runner-', '')))
+  assert.ok(nums.length >= 2)
+  assert.deepEqual(nums, nums.map((_, i) => 5 + i))
 })
 t('stage labels: runner labels run a-runner, a-runner-2, a-runner-3 ... and are all unique', async () => {
   const r = await runStage([entry('a')], { labels: base() })
-  const rl = r.labels.filter((l) => /runner/.test(l))
+  const rl = r.allLabels.filter((l) => /runner/.test(l))
   assert.equal(rl[0], 'a-runner')
   assert.equal(rl[1], 'a-runner-2')
-  assert.equal(new Set(r.labels).size, r.labels.length)
+  assert.equal(new Set(r.allLabels).size, r.allLabels.length)
 })
 
 // ---------------------------------------------------------------- stage.js: several crews

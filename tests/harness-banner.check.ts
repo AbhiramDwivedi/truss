@@ -36,19 +36,36 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const tick = () => new Promise((r) => setImmediate(r))
 const rj = (obj, exit = 0) => ({ exit, stdout: JSON.stringify(obj) })
 
-async function exec(args, labels) {
+async function exec(args, labels, o = {}) {
   const body = readFileSync(STAGE, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
   const unscripted = []
   const agent = async (prompt, opts = {}) => {
-    calls.push({ prompt, opts, label: opts.label })
+    const call = { prompt, opts, label: opts.label }
+    calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
-      if (!m) throw new Error(`unparsable runner prompt for label ${opts.label}`)
+      // heavy first: its line holds the inner `factory.ts check` after ` -- `, so match heavy, then read the real command after the cut
+      const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
+      let m
+      if (mh) {
+        const cut = mh[1].indexOf(' -- ')
+        m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
+      } else {
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      }
+      if (!m) {
+        unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
+        throw new Error(`unparsable runner prompt for label ${opts.label}`)
+      }
       const cmd = m[1]
+      const heavy = !!mh
       const expect = (m[2].match(/--expect\s+([^\s`]+)/) || [])[1]
-      return cmd === 'check' ? (expect === 'red' ? rj({ ok: true }) : rj({ ok: true, head: HEAD })) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
+      call.runner = { cmd, expect, heavy }
+      const hooked = o.runner ? await o.runner({ cmd, expect, heavy, prompt, call }) : undefined
+      if (hooked !== undefined) return hooked
+      const plain = expect === 'red' ? { ok: true } : { ok: true, head: HEAD }
+      return cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(heavy ? { ...plain, heavy: { label: 'a-check', waitedMs: 0, exit: 0 } } : plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : rj({ merged: true })
     }
     if (!Object.hasOwn(labels, opts.label)) {
       unscripted.push(String(opts.label))
@@ -100,7 +117,7 @@ const labelsFor = (over = {}) => ({
 })
 async function runStage(crew, labels, o = {}) {
   const args = { truss: { kind: 'stage', dir: '/proj/.truss', repo: '/proj', plugin: PLUGIN, target: 'main', reworkAllowance: o.reworkAllowance ?? 2, roles: ROLES, scriptPath: STAGE, crews: [crew] } }
-  const r = await exec(args, labels)
+  const r = await exec(args, labels, o)
   assert.deepEqual(r.unscripted, [], `unscripted label(s): ${r.unscripted.join(', ')}`)
   if (r.error) throw r.error
   r.res = r.result[0]
