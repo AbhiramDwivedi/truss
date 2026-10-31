@@ -26,6 +26,9 @@ const PROOF = [
   '- output from another commit.',
 ].join('\n')
 
+const REFUSAL = 'A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
+const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
+
 const RUNNER_SCHEMA = { type: 'object', properties: { exit: { type: 'number' }, stdout: { type: 'string' } }, required: ['exit', 'stdout'] }
 const MEMBER_SCHEMA = {
   type: 'object',
@@ -190,12 +193,15 @@ function memberPrompt(crew, role, parts) {
     '',
     SHELL,
     '',
-    'Run each long command once with run_in_background and wait for its completion notification; no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
+    'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
+    '',
+    REFUSAL,
+    PKILL,
     '',
     'Every commit you make ends with these trailers:',
     `Truss-Crew: ${crew.slug}`,
     `Truss-Role: ${TRAILER_ROLE[role]}`,
-    'They go in the message\'s last block, with no blank line between them or before any Co-Authored-By line, or git does not read them. After each commit, check that `git log -1 --format=\'%(trailers:key=Truss-Role,valueonly)\'` prints the role; if it prints nothing, fix the message with git commit --amend. A merge refuses a commit whose Truss-Crew or Truss-Role git cannot read.',
+    "They go in the message's last block, with no blank line between them or before any Co-Authored-By line, or git does not read them. After each commit, run `git log -1 --format=%B` and check that its last block holds the Truss-Crew and Truss-Role lines; if it does not, fix the message with git commit --amend. A merge refuses a commit whose Truss-Crew or Truss-Role git cannot read.",
     '',
     'You have no Agent tool; do the work yourself.',
     'Commit on your branch and report the branch and commit. Put your proof in the proof field. marker is DONE when finished, CHECKPOINT when you must stop early (put a handoff note in text), QUESTION, BLOCKED or PROPOSAL when you cannot go on.',
@@ -213,11 +219,22 @@ function taskPrompt(crew, task, note) {
   return memberPrompt(crew, task.role, { start, body })
 }
 
-function fixPrompt(crew, what, detail) {
+// the files of the crew's tester tasks (from split or e.tasks); empty on a merge-ready resume
+const testerFiles = (crew) => [...new Set((crew.tasks || []).filter((t) => t.role === 'tester').flatMap((t) => t.files || []))]
+
+function fixPrompt(crew, what, detail, role = 'builder') {
   const e = crew.e
-  const body = [`Task: fix, ${what}`, `Files you may change: ${e.owns.join(', ')}`, '', 'Fix this, and only this:', detail]
+  const tf = testerFiles(crew)
+  const body = [`Task: fix, ${what}`]
+  if (role === 'tester') {
+    body.push(`Files you may change: ${tf.join(', ')}`)
+  } else {
+    body.push(`Files you may change: ${e.owns.filter((o) => !tf.includes(o)).join(', ')}`)
+    if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`)
+  }
+  body.push('', 'Fix this, and only this:', detail)
   const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
-  return memberPrompt(crew, 'builder', { start, body })
+  return memberPrompt(crew, role, { start, body })
 }
 
 function resolverPrompt(crew, what, conflicts) {
@@ -312,12 +329,33 @@ async function runMembers(crew, tasks) {
 }
 
 // fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
-async function fixBuilder(crew, what, detail) {
+async function fixBuilder(crew, what, detail, role = 'builder') {
   const at = crew.step
   guardAllowance(crew, at)
-  const report = await runMember(crew, 'builder', (note) => fixPrompt(crew, what, note ? `${detail}\n\nCheckpoint note from the member before you:\n${note}` : detail), {}, at)
+  const report = await runMember(crew, role, (note) => fixPrompt(crew, what, note ? `${detail}\n\nCheckpoint note from the member before you:\n${note}` : detail, role), {}, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
+}
+
+// the findings of a report: one per "- " line (with its continuation lines); a text with no bullet is one finding
+function findingsOf(text) {
+  const out = []
+  for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
+    if (line.startsWith('- ')) out.push(line)
+    else if (line.trim() !== '' && out.length) out[out.length - 1] += `\n${line}`
+  }
+  return out.length ? out : String(text || '').trim() ? [String(text).trim()] : []
+}
+
+// QC and stress-test findings: those naming a tester task file go to a tester fix member first, the rest to a builder fix member
+async function fixFindings(crew, what, header, findingsText, wholeDetail) {
+  const tf = testerFiles(crew)
+  const all = findingsOf(findingsText)
+  const mine = tf.length ? all.filter((f) => tf.some((file) => f.includes(file))) : []
+  if (!mine.length) return fixBuilder(crew, what, wholeDetail)
+  await fixBuilder(crew, what, `${header}\n${mine.join('\n')}`, 'tester')
+  const rest = all.filter((f) => !mine.includes(f))
+  if (rest.length) await fixBuilder(crew, what, `${header}\n${rest.join('\n')}`)
 }
 
 // ---------------------------------------------------------------- split
@@ -483,10 +521,15 @@ function stressTestPrompt(crew) {
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
     `Architecture doc: ${e.architecture}`,
+    `Base: ${e.base}`,
+    `Patch: git diff ${e.base}...${crew.head}`,
     '',
     WF_WORKTREE,
     '',
     SHELL,
+    '',
+    REFUSAL,
+    PKILL,
     '',
     'Each finding names a plausible producer: the real caller or input that would produce the break.',
     'Class each finding as a real defect or a test gap. Only real defects count in STRESSTEST <n> and go under ## Findings; test gaps go under ## Notes and are not fixed.',
@@ -524,7 +567,7 @@ async function stressTest(crew) {
   crew.step = 'stress'
   // a report with no ## Findings heading (bullets straight after the STRESSTEST line) goes whole, less its ## Notes section
   const findings = /^## Findings\s*$/m.test(text) ? sectionOf(text, '## Findings').join('\n') : String(text).replace(/\r/g, '').split('\n## Notes')[0]
-  await fixBuilder(crew, 'stress-test findings', `A stress test reported these findings:\n${findings}`)
+  await fixFindings(crew, 'stress-test findings', 'A stress test reported these findings:', findings, `A stress test reported these findings:\n${findings}`)
   await green(crew)
 }
 
@@ -651,7 +694,8 @@ async function qc(crew) {
     const detail = unscoped.length
       ? `The QC passed the work but left claims with no stated scope:\n${unscoped.join('\n')}\nFor each claim, state its scope (in ## Examined or beside the claim) or withdraw it.`
       : `The QC ruled FAIL:\n${j.text}`
-    await fixBuilder(crew, 'QC findings', detail)
+    if (unscoped.length) await fixBuilder(crew, 'QC findings', detail)
+    else await fixFindings(crew, 'QC findings', 'The QC ruled FAIL, with these findings:', /^## Findings\s*$/m.test(j.text) ? sectionOf(j.text, '## Findings').join('\n') : j.text, detail)
     await green(crew)
   }
 }
@@ -685,6 +729,7 @@ async function chain(crew) {
     return qc(crew)
   }
   let tasks = e.tasks || []
+  crew.tasks = tasks
   // an answers resume skips the red check, unless the stop it answers was at red (an environment failure the client fixed)
   const redAnswered = (e.answers || []).some((a) => a.at === 'red')
   if ((e.resume !== 'answers' || redAnswered) && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
@@ -694,6 +739,7 @@ async function chain(crew) {
     if (errors.length) throw new Stop('BLOCKED', `the saved tasks failed these checks:\n${errors.map((x) => `- ${x}`).join('\n')}`, 'split')
   } else {
     tasks = await split(crew)
+    crew.tasks = tasks
   }
   await runMembers(crew, tasks)
   await green(crew)
