@@ -435,11 +435,59 @@ function registerTests(mod: any): void {
     await until(store, (st) => member(crew(st, 'auth'), marker) !== undefined, 2000, `${marker} with 30 MiB loaded`)
     assert.equal(crew(store.snapshot().state, 'auth').latest.agent, marker)
   })
+
+  // R-23: ADR-0012 Decision 8. <truss dir>/retro/state.json shows under the state's retro key.
+  test('R-23: a per-run value in retro/state.json shows under the retro key, null while the file is absent or unreadable', async () => {
+    const w = makeWorld()
+    const file = path.join(w.truss, 'retro/state.json')
+    const run = Math.random().toString(36).slice(2, 10)
+    const at = '2026-10-31T08:30:00Z'
+    const steps = (over: Record<string, any>): any => {
+      const base: any = {}
+      for (const k of ['extract', 'judges', 'triage', 'fixGoal', 'applied']) base[k] = { status: 'pending', at: null, detail: null }
+      return { ...base, ...over }
+    }
+    const write = (v: any, extra: any = {}) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, JSON.stringify({ v, updatedAt: at, steps: steps(extra) }))
+    }
+    // Absent file: the key is there and null.
+    const store = await ready(w)
+    const first = state(store)
+    if (!('retro' in first)) throw new Error(`producer missing: ${MODULE} retro (the state has no retro key)`)
+    assert.equal(first.retro, null)
+    // A file with a per-run detail shows under the key, step by step.
+    const d1 = `${run} findings kept`
+    write(1, { extract: { status: 'done', at, detail: d1 }, judges: { status: 'running', at, detail: null } })
+    await until(store, (s) => s.retro?.steps?.extract?.detail === d1, 2000, `retro extract detail ${d1}`)
+    let s = state(store)
+    assert.equal(s.retro.v, 1)
+    assert.equal(s.retro.updatedAt, at)
+    assert.equal(s.retro.steps.judges.status, 'running')
+    assert.equal(s.retro.steps.applied.status, 'pending')
+    assert.equal(s.run.crews.length, 6, 'the crew lanes stay as they were')
+    // A change shows: fixes applied.
+    const d2 = `${run} crews merged`
+    write(1, { extract: { status: 'done', at, detail: d1 }, judges: { status: 'done', at, detail: null }, triage: { status: 'done', at, detail: null }, fixGoal: { status: 'done', at, detail: null }, applied: { status: 'done', at, detail: d2 } })
+    await until(store, (st) => st.retro?.steps?.applied?.detail === d2, 2000, `retro applied detail ${d2}`)
+    assert.equal(state(store).retro.steps.applied.status, 'done')
+    // Not JSON, or a v other than 1: null again.
+    fs.writeFileSync(file, '{ not json')
+    await until(store, (st) => st.retro === null, 2000, 'retro null for a file that is not JSON')
+    write(2, { extract: { status: 'done', at, detail: d1 } })
+    await new Promise((r) => setTimeout(r, 300)) // several 50 ms polls
+    assert.equal(state(store).retro, null, 'a v other than 1 reads as absent')
+    write(1, { extract: { status: 'done', at, detail: d1 } })
+    await until(store, (st) => st.retro?.steps?.extract?.detail === d1, 2000, 'retro back for a v 1 file')
+  })
 }
 
 if (producer === null) {
   test(`producer missing: ${MODULE}`, () => {
     throw new Error(`producer missing: ${MODULE}`)
+  })
+  test(`R-23: producer missing: ${MODULE} retro`, () => {
+    throw new Error(`producer missing: ${MODULE} retro`)
   })
 } else {
   registerTests(producer)
