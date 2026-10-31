@@ -706,7 +706,7 @@ describe('retro/extract.ts: pf F-43, handEdit leaves out scratchpad and memory p
     const { extractSession } = await extractMod()
     const p = `p${hex(3)}`
     const scratch = `/tmp/claude-1000/${p}/${sidOf()}/scratchpad/x.json`
-    const mem = `/home/u/.claude/projects/${p}/memory/m.md`
+    const mem = `/home/<name>/.claude/projects/${p}/memory/m.md`
     const repo = `/repo/src/a-${hex(3)}.ts`
     const named1 = '/repo/src/scratchpad.ts'
     const named2 = '/repo/docs/memory.md'
