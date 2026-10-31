@@ -1,0 +1,6 @@
+{"type":"launched"}
+{"type":"started","key":"v2:fixture-key-1","agentId":"wf-agent-1","label":"fixture-tester-1"}
+{"type":"started","key":"v2:fixture-key-2","agentId":"wf-agent-2","label":"fixture-qc-1"}
+{"type":"result","key":"v2:fixture-key-1","agentId":"wf-agent-1","result":{"task":"fixture","marker":"BLOCKED","branch":"fixture-branch","commit":"abc1234","proof":"none","text":"BLOCKED: the fixture crew needs a decision\n@@T_CAT@@: planted failure"}}
+{"type":"result","key":"v2:fixture-key-2","agentId":"wf-agent-2","result":{"task":"fixture-qc","marker":"DONE","branch":"fixture-branch","commit":"abc1234","proof":"none","text":"VERDICT: FAIL\nthe fixture check failed"}}
+{"type":"journal-future","v":2}
