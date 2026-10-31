@@ -64,6 +64,8 @@ export function createRegistry(onChange?: () => void): Registry {
         if (typeof v !== 'string') return null
         answers[k] = v
       }
+      const asked = (r as QuestionRequest).questions.map((q) => q.question)
+      if (Object.keys(answers).some((k) => !asked.includes(k)) || asked.some((q) => !(q in answers))) return null
       r.answers = answers
       const input = e.raw ?? { questions: (r as QuestionRequest).questions }
       return { value: questionAnswer(input, answers) }

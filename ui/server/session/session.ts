@@ -165,6 +165,8 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
     },
     answer(id, body) {
       const kind = registry.list().find((r) => r.id === id)?.kind
+      // A reply answer that cannot be sent into a finished or closing session must not look accepted.
+      if (kind === 'reply' && finished()) registry.cancel(id, 'ended')
       const res = registry.answer(id, body)
       if (res.ok && kind === 'reply' && res.request.kind === 'reply' && res.request.message && !finished()) {
         enqueue(res.request.message)
