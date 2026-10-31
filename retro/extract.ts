@@ -53,6 +53,29 @@ function firstLine(text: string): string {
   return ''
 }
 
+/** True when a line, trimmed, is a quoted string literal ending in a comma: `"..."` or `'...'` then `,`. */
+function isQuotedLiteral(line: string): boolean {
+  const t = line.trim()
+  if (t.length < 3 || !t.endsWith(',')) return false
+  const q = t[0]
+  return (q === '"' || q === "'") && t[t.length - 2] === q
+}
+
+/** The toolError quote: a first line `Exit code N` joins the next non-empty line. */
+function errorQuote(body: string): string {
+  const first = firstLine(body)
+  if (!/^Exit code \d+$/.test(first)) return first
+  const at = body.indexOf(first)
+  const rest = firstLine(body.slice(at + first.length))
+  return rest === '' ? first : `${first} ${rest}`.slice(0, QUOTE_MAX)
+}
+
+const SCRATCH_PATH = /^\/tmp\/claude-\d+\/.*\/scratchpad\//
+const MEMORY_PATH = /\/\.claude\/projects\/[^/]+\/memory\//
+
+/** True when a path is a session scratchpad or an auto-memory file. */
+const isNoteFile = (p: string): boolean => SCRATCH_PATH.test(p) || MEMORY_PATH.test(p)
+
 /** True when some line of the text, trimmed, is exactly `want`. */
 function hasLine(text: string, want: string): boolean {
   let pos = 0
@@ -157,6 +180,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
           if (e === -1) e = t.length
           const l = t.slice(pos, Math.min(e, pos + LINE_CAP))
           pos = e + 1
+          if (isQuotedLiteral(l)) continue
           for (const id of matchLine(l, catalog)) {
             if (seen.has(id)) continue
             seen.add(id)
@@ -260,7 +284,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
             }
             if (isMain && name !== null && EDIT_TOOLS.has(name)) {
               const p = nonEmpty(input.file_path) ? input.file_path : nonEmpty(input.notebook_path) ? input.notebook_path : null
-              if (p !== null && !p.includes('/.git/truss/')) add('handEdit', line, { agent: 'main', ts, quote: quoteOf(p), tool: name, path: p })
+              if (p !== null && !p.includes('/.git/truss/') && !isNoteFile(p)) add('handEdit', line, { agent: 'main', ts, quote: quoteOf(p), tool: name, path: p })
             }
           } else if (b.type === 'text' && isStr(b.text)) texts.push(b.text)
         }
@@ -291,7 +315,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
             add('refusal', line, { agent, ts, quote, tool: name, source: 'factory', category: fm[1] })
             continue
           }
-          add('toolError', line, { agent, ts, quote, tool: name })
+          add('toolError', line, { agent, ts, quote: errorQuote(body), tool: name })
           if (name === 'Bash') {
             const traces: string[] = []
             const scan = body.slice(0, TRACE_SCAN)

@@ -39,7 +39,7 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 2. Wait for the one line the server prints:
 
    ```
-   truss-ui listening on http://127.0.0.1:36581/?token=ogXqIyj3yDKjMM6wPHv9lbupqUkSA5f2s5nXAQhNWus
+   truss-ui listening on http://127.0.0.1:36581/?token=<token>
    ```
 
    The port and token differ on every start.

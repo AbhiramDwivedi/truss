@@ -338,6 +338,37 @@ function scrubNames(): string[] {
   return [...all]
 }
 
+// ADR-0016 Decision 3: the plugin manifest's published author.name is accepted, and nothing wider. Returns the
+// 1-based line that holds the author.name value when the text parses as JSON with a string author.name and that
+// line carries the name only as that value; 0 (nothing accepted) otherwise. Only the `name` hit on that line is
+// dropped by the caller; email, home-path and token hits there, and every other line, stay.
+function manifestAuthorLine(text: string, names: string[]): number {
+  let value: unknown
+  try {
+    const author = (JSON.parse(text) as { author?: { name?: unknown } } | null)?.author
+    value = author?.name
+  } catch {
+    return 0
+  }
+  if (typeof value !== 'string' || value.length === 0) return 0
+  const quoted = JSON.stringify(value)
+  const lines = text.split('\n')
+  const from = lines.findIndex(l => l.includes('"author"'))
+  if (from === -1) return 0
+  for (let i = from; i < lines.length; i++) {
+    const l = lines[i]!
+    const k = l.indexOf(quoted)
+    // author.name is the first `name` key at or after the author line; a later one is not it
+    if (!/"name"\s*:/.test(l)) continue
+    if (k === -1 || !/"name"\s*:\s*$/.test(l.slice(0, k))) return 0
+    // the name must not also sit elsewhere on that line (a one-line manifest)
+    const rest = l.slice(0, k) + l.slice(k + quoted.length)
+    if (scrub(rest, names).some(h => h.kind === 'name')) return 0
+    return i + 1
+  }
+  return 0
+}
+
 function runScrub(paths: string[]): { code: number; lines: string[] } {
   const lines: string[] = []
   const names = scrubNames()
@@ -353,7 +384,12 @@ function runScrub(paths: string[]): { code: number; lines: string[] } {
     }
     if (!existsSync(p)) throw new Fatal(`cannot read ${p} (ENOENT)`)
     checked++
-    for (const h of scrub(read(p), names)) lines.push(`HIT: ${p}:${h.line} | ${h.kind}`)
+    const text = read(p)
+    const accepted = p.replace(/\\/g, '/').endsWith('.claude-plugin/plugin.json') ? manifestAuthorLine(text, names) : 0
+    for (const h of scrub(text, names)) {
+      if (h.kind === 'name' && h.line === accepted) continue
+      lines.push(`HIT: ${p}:${h.line} | ${h.kind}`)
+    }
   }
   if (lines.some(l => l.startsWith('HIT: '))) return { code: 1, lines: lines.filter(l => l.startsWith('HIT: ')) }
   const gone = lines.length
