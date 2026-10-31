@@ -139,6 +139,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
 
     const tools = new Map<string, { name: string | null; command: string | null }>()
     const errored = new Set<string>()
+    const quiet = new Set<string>()
     const runs = new Map<string, Run[]>()
     const seenRunIds = new Set<string>()
     let lastText: { line: number; ts: string | null; agent: string; text: string } | null = null
@@ -212,11 +213,19 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
         } else if (type === 'result') {
           const res = rec.result
           const cands = isStr(res) ? [res] : isObj(res) ? [res.text, res.report].filter(isStr) : []
-          for (const c of cands) {
-            const s = stopOf(c)
-            if (s !== null) {
-              add('stop', line, { agent, ts, quote: s.quote, marker: s.marker })
-              break
+          // a result's own marker or stop.tag names the stop; its text only supplies the quote
+          const tags = isObj(res) ? [res.marker, isObj(res.stop) ? res.stop.tag : undefined] : []
+          const tag = tags.find((t): t is string => t === 'BLOCKED' || t === 'CHECKPOINT' || t === 'QUESTION')
+          if (tag !== undefined) {
+            const t = isObj(res) && isStr(res.text) ? res.text : ''
+            add('stop', line, { agent, ts, quote: firstLine(t), marker: tag })
+          } else {
+            for (const c of cands) {
+              const s = stopOf(c)
+              if (s !== null) {
+                add('stop', line, { agent, ts, quote: s.quote, marker: s.marker })
+                break
+              }
             }
           }
           const fail = cands.find(c => hasLine(c, 'VERDICT: FAIL'))
@@ -239,7 +248,9 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
             const input = isObj(b.input) ? b.input : {}
             const id = isStr(b.id) ? b.id : null
             const command = name === 'Bash' && isStr(input.command) ? input.command : null
-            if (id !== null) tools.set(id, { name, command: command !== null && command.includes('factory.ts') ? command : null })
+            // a result that only shows a file or search (Read, Grep, Glob, a command naming the catalog) is not the run hitting the problem
+            if (id !== null && (name === 'Read' || name === 'Grep' || name === 'Glob' || (command !== null && (command.includes('catalog.json') || showsOnly(command))))) quiet.add(id)
+            if (id !== null) tools.set(id,{ name, command: command !== null && command.includes('factory.ts') ? command : null })
             if (command !== null && !(id !== null && seenRunIds.has(id))) {
               if (id !== null) seenRunIds.add(id)
               const list = runs.get(command)
@@ -262,7 +273,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
         for (const b of content) {
           if (!isObj(b) || b.type !== 'tool_result') continue
           const parts = partsOf(b.content)
-          for (const p of parts) resultTexts.push(p)
+          if (!(isStr(b.tool_use_id) && quiet.has(b.tool_use_id))) for (const p of parts) resultTexts.push(p)
           if (b.is_error !== true) continue
           const id = isStr(b.tool_use_id) ? b.tool_use_id : null
           if (id !== null) errored.add(id)
@@ -343,6 +354,31 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
     catalogHits: hits.map(h => ({ id: h.id, file: paths[h.fileIdx], line: h.line, quote: h.quote })),
     skipped: { json: skippedJson, type: Object.fromEntries(types.map(k => [k, skippedTypes.get(k)])) },
   }
+}
+
+/** True when every pipeline segment of a command only shows text (a diff, a log, a search, a file or its head or tail), so its result quotes text rather than running anything. */
+function showsOnly(command: string): boolean {
+  const segs = command.split(/\|\|?|&&|;/).map(s => s.trim())
+  if (segs.length === 0) return false
+  return segs.every(seg => {
+    const w = seg.split(/\s+/)
+    switch (w[0]) {
+      case 'git':
+        return w[1] === 'diff' || w[1] === 'show' || (w[1] === 'log' && w.some(x => x === '-p' || x === '--patch'))
+      case 'gh':
+        return w[1] === 'pr' && (w[2] === 'diff' || w[2] === 'view')
+      case 'sed':
+        return w[1] === '-n'
+      case 'grep':
+      case 'rg':
+      case 'cat':
+      case 'head':
+      case 'tail':
+        return true
+      default:
+        return false
+    }
+  })
 }
 
 /** An errored result of a factory.ts command that exited 1 with a JSON body: `Exit code 1`, then the body. */

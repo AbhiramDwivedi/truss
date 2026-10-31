@@ -3,7 +3,8 @@
 // the input failed a check (a scrub hit), 2 means a usage error or a file it cannot read. Evidence is checked against
 // the extract's files and line counts, never the transcripts (R-35). Erasable TypeScript only, Node standard library
 // only (P19).
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync,mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { KINDS, loadCatalog, recurrences } from './catalog.ts'
@@ -313,14 +314,45 @@ function runExtract(trussDir: string, sessionDir: string, catalogPath: string | 
   return [`OK: ${x.items.length} items, ${x.catalogHits.length} catalog hits from ${x.files.length} files`]
 }
 
+// the person names scrub looks for: the git user name and TRUSS_SCRUB_NAMES (comma separated); never written to a file
+function scrubNames(): string[] {
+  const out: string[] = []
+  const env = process.env.TRUSS_SCRUB_NAMES
+  if (env) out.push(...env.split(','))
+  try {
+    out.push(execFileSync('git', ['config', 'user.name'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }))
+  } catch {
+    // no git or no name set: nothing to add
+  }
+  // each name whole, plus each of its parts of 4 or more characters
+  const all = new Set<string>()
+  for (const n of out.map(s => s.trim())) {
+    if (n.length >= 4) all.add(n)
+    for (const part of n.split(/\s+/)) if (part.length >= 4) all.add(part)
+  }
+  return [...all]
+}
+
 function runScrub(paths: string[]): { code: number; lines: string[] } {
   const lines: string[] = []
-  for (const p of paths) {
+  const names = scrubNames()
+  let checked = 0
+  for (const arg of paths) {
+    // --deleted=PATH names a file the fix removed: absent is fine, present is scrubbed like any other
+    const deleted = arg.startsWith('--deleted=')
+    const p = deleted ? arg.slice('--deleted='.length) : arg
+    if (p.length === 0) throw new Fatal('--deleted= needs a path')
+    if (deleted && !existsSync(p)) {
+      lines.push(`GONE: ${p}`)
+      continue
+    }
     if (!existsSync(p)) throw new Fatal(`cannot read ${p} (ENOENT)`)
-    for (const h of scrub(read(p))) lines.push(`HIT: ${p}:${h.line} | ${h.kind}`)
+    checked++
+    for (const h of scrub(read(p), names)) lines.push(`HIT: ${p}:${h.line} | ${h.kind}`)
   }
-  if (lines.length > 0) return { code: 1, lines }
-  return { code: 0, lines: [`OK: ${paths.length} files clean`] }
+  if (lines.some(l => l.startsWith('HIT: '))) return { code: 1, lines: lines.filter(l => l.startsWith('HIT: ')) }
+  const gone = lines.length
+  return { code: 0, lines: [`OK: ${checked} files clean${gone > 0 ? `, ${gone} deleted` : ''}`, ...lines] }
 }
 
 const run = (cmd: string, a: string[]): { code: number; lines: string[] } => {
