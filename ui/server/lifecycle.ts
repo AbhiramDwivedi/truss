@@ -1,6 +1,6 @@
 // Process lifecycle for ui/server/main.ts: shutdown signals, parent-death watch, the per-port lockfile
 // and the "port in use" message. Node built-ins only; every function here never throws.
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, lstatSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -44,37 +44,50 @@ export function watchParent(onGone: () => void, opts: { intervalMs?: number; get
   return () => clearInterval(t);
 }
 
-export interface Lock { pid: number; url: string; startedAt: string }
+// No token: the URL with its token is printed once, by the server that owns it (ADR-0011 Decision 6).
+export interface Lock { pid: number; host: string; port: number; startedAt: string }
 
 // One file per port in the OS temp dir, never in the user's repo.
 export function lockPath(port: number, dir: string = tmpdir()): string {
   return join(dir, `truss-ui-${port}.json`);
 }
 
-// Overwrites any earlier lockfile (a live server can't hold the port we just bound). Mode 0600:
-// the URL carries the session token. Returns false when the file couldn't be written.
+function isRegularFile(path: string): boolean {
+  try { return lstatSync(path).isFile(); } catch { return false; }
+}
+
+// Called once we hold the port, so any file already there is stale or foreign: it is unlinked (a
+// symlink itself, never its target), then the lockfile is created exclusively with mode 0600. Returns
+// false when that fails (for example another user's file in a shared /tmp); the caller runs without one.
 export function writeLock(path: string, lock: Lock): boolean {
+  try { unlinkSync(path); } catch { /* absent, or not ours to remove: the exclusive create decides */ }
+  let fd: number | undefined;
   try {
-    writeFileSync(path, JSON.stringify(lock) + '\n', { mode: 0o600 });
+    fd = openSync(path, 'wx', 0o600);
+    writeSync(fd, JSON.stringify(lock) + '\n');
     return true;
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
-// The lock at path when it is well formed and its pid is alive; a stale or bad file reads as null.
+// The lock at path when it is a regular file, well formed and its pid is alive; anything else is null.
 export function readLiveLock(path: string): Lock | null {
+  if (!isRegularFile(path)) return null;
   try {
     const l = JSON.parse(readFileSync(path, 'utf8'));
-    if (typeof l?.pid !== 'number' || typeof l?.url !== 'string' || !pidAlive(l.pid)) return null;
-    return { pid: l.pid, url: l.url, startedAt: String(l.startedAt ?? '') };
+    if (typeof l?.pid !== 'number' || typeof l?.host !== 'string' || typeof l?.port !== 'number' || !pidAlive(l.pid)) return null;
+    return { pid: l.pid, host: l.host, port: l.port, startedAt: String(l.startedAt ?? '') };
   } catch {
     return null;
   }
 }
 
-// Removes the lockfile only when it is still ours.
+// Removes the lockfile only when it is a regular file that is still ours.
 export function removeLock(path: string, pid: number = process.pid): void {
+  if (!isRegularFile(path)) return;
   try {
     if (JSON.parse(readFileSync(path, 'utf8'))?.pid === pid) unlinkSync(path);
   } catch {
@@ -85,7 +98,8 @@ export function removeLock(path: string, pid: number = process.pid): void {
 export function addrInUseMessage(host: string, port: number, lock: Lock | null): string {
   const lines = [`truss-ui: ${host}:${port} is already in use; a truss UI may already be running there.`];
   if (lock) {
-    lines.push(`  Running truss UI: ${lock.url} (pid ${lock.pid}${lock.startedAt ? `, started ${lock.startedAt}` : ''}).`);
+    lines.push(`  Running truss UI: ${lock.host}:${lock.port}, pid ${lock.pid}${lock.startedAt ? `, started ${lock.startedAt}` : ''}.`);
+    lines.push('  Open the URL that process printed when it started, or stop it and start again.');
     lines.push(`  To stop it: kill ${lock.pid}   (Windows: taskkill /PID ${lock.pid} /F)`);
   } else {
     lines.push('  No running truss UI is recorded for this port; another program may hold it.');

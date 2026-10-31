@@ -82,7 +82,7 @@ try {
   fail(1, `listen failed: ${oneLine(e)}`);
 }
 const lock = lockPath(port);
-if (!writeLock(lock, { pid: process.pid, url, startedAt: new Date().toISOString() })) {
+if (!writeLock(lock, { pid: process.pid, host: '127.0.0.1', port, startedAt: new Date().toISOString() })) {
   process.stderr.write(`truss-ui: could not write lockfile ${lock}; carrying on without it\n`);
 }
 process.on('exit', () => removeLock(lock));

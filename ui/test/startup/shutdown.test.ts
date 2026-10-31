@@ -3,7 +3,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -71,7 +71,12 @@ describe('main.ts lifecycle', () => {
     assert.equal(x.code, 1, second.err);
     assert.match(second.err, new RegExp(`127\\.0\\.0\\.1:${port} is already in use`));
     assert.match(second.err, /truss UI may already be running/);
-    assert.ok(second.err.includes(url), `names the URL: ${second.err}`);
+    const token = new URL(url).searchParams.get('token')!;
+    assert.ok(token.length > 10);
+    assert.ok(!second.err.includes(token), `the second start never prints the token: ${second.err}`);
+    assert.ok(!readFileSync(lockFor(port), 'utf8').includes(token), 'the lockfile holds no token');
+    assert.match(second.err, new RegExp(`Running truss UI: 127\\.0\\.0\\.1:${port}, pid ${first.child.pid}, started `));
+    assert.match(second.err, /Open the URL that process printed when it started/);
     assert.match(second.err, new RegExp(`kill ${first.child.pid}\\b`));
     assert.match(second.err, new RegExp(`taskkill /PID ${first.child.pid} /F`));
     assert.match(second.err, /--port/);
@@ -106,7 +111,9 @@ describe('main.ts lifecycle', () => {
       const url = await s.ready;
       const lock = JSON.parse(readFileSync(lockFor(port), 'utf8'));
       assert.equal(lock.pid, s.child.pid);
-      assert.equal(lock.url, url);
+      assert.deepEqual(Object.keys(lock).sort(), ['host', 'pid', 'port', 'startedAt']);
+      assert.equal(lock.port, port);
+      assert.ok(!readFileSync(lockFor(port), 'utf8').includes(new URL(url).searchParams.get('token')!), 'no token in the lockfile');
       assert.ok(!Number.isNaN(Date.parse(lock.startedAt)), lock.startedAt);
       s.child.kill(sig);
       const x = await s.exited;
@@ -141,12 +148,14 @@ describe('main.ts lifecycle', () => {
 
   it('a stale lockfile (dead pid) is ignored and overwritten', async () => {
     const port = await freePort();
-    writeFileSync(lockFor(port), JSON.stringify({ pid: 2 ** 22 + 12345, url: 'http://127.0.0.1:1/?token=stale', startedAt: '2020-01-01T00:00:00Z' }));
+    writeFileSync(lockFor(port), JSON.stringify({ pid: 2 ** 22 + 12345, host: '127.0.0.1', port, startedAt: '2020-01-01T00:00:00Z' }), { mode: 0o644 });
     const s = start(port);
     const url = await s.ready;
     const lock = JSON.parse(readFileSync(lockFor(port), 'utf8'));
     assert.equal(lock.pid, s.child.pid);
-    assert.equal(lock.url, url);
+    assert.equal(lock.port, port);
+    assert.ok(!readFileSync(lockFor(port), 'utf8').includes(new URL(url).searchParams.get('token')!));
+    if (process.platform !== 'win32') assert.equal(lstatSync(lockFor(port)).mode & 0o777, 0o600, 'stale 0644 file replaced by a 0600 one');
     s.child.kill('SIGTERM');
     await s.exited;
     assert.ok(!existsSync(lockFor(port)));
@@ -156,12 +165,12 @@ describe('main.ts lifecycle', () => {
     const blocker = net.createServer();
     await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', () => r()));
     const port = (blocker.address() as net.AddressInfo).port;
-    writeFileSync(lockFor(port), JSON.stringify({ pid: 2 ** 22 + 12345, url: 'http://127.0.0.1:1/?token=stale', startedAt: 't' }));
+    writeFileSync(lockFor(port), JSON.stringify({ pid: 2 ** 22 + 12345, host: '127.0.0.1', port, startedAt: '1999-stale' }));
     try {
       const s = start(port);
       const x = await s.exited;
       assert.equal(x.code, 1);
-      assert.doesNotMatch(s.err, /token=stale/);
+      assert.doesNotMatch(s.err, /1999-stale/);
       assert.doesNotMatch(s.err, /kill \d/);
     } finally {
       await new Promise<void>((r) => blocker.close(() => r()));
