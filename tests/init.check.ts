@@ -37,9 +37,9 @@ test('init proposes a narrow permissions allowlist for .claude/settings.json', (
   }
 })
 
-test('init never writes the settings file and says why the local file and the guard are out of reach', () => {
+test('init writes the approved rules, hands a classifier refusal to the client, and says why the local file and the guard are out of reach', () => {
   const flat = init.replace(/\s+/g, ' ')
-  assert.ok(flat.includes('The client writes the approved rules into `.claude/settings.json` themselves: truss never writes a settings file'))
+  assert.ok(flat.includes("Truss writes the approved rules into `.claude/settings.json`; when Claude Code's classifier refuses that write, truss shows the refusal and the client writes the rules, and the refusal is never worked around."))
   assert.ok(flat.includes('`.claude/settings.local.json` is not checked in, so it never reaches the agents\' worktrees'))
   assert.ok(flat.includes("No allow rule reaches Claude Code's worktree guard"))
   assert.ok(flat.includes('"no verdict" refusals on Write and Edit come from the classifier service'))
