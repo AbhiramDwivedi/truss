@@ -17,12 +17,12 @@
 // - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../../../hooks/register.ts'
 import {
   addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, flat, git, head, qcReport, mkEnv, mkRun, planObj, pluginCopy, putFile,
-  readEvents, readPlan, tmp, validateEvent, writeGoal, writePlan, writeReport,
+  readEvents, readPlan, runCli, tmp, validateEvent, writeGoal, writePlan, writeReport,
 } from './harness.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, parsePlan, planVerdict } = reg
@@ -39,7 +39,7 @@ const norm = (p: string): string => {
 }
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
-const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished']
+const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
 const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'highImpact', 'labelFrom', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
@@ -357,7 +357,7 @@ test('start --args-file P writes the whole output to P and prints a short pointe
   const env = world([crew('x'), crew('y')])
   const p = `${tmp('fcli-args-')}/sub/stage-args.json`
   const j = assertOneLine(start(env, 'next', { 'args-file': p }))
-  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished'])
+  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished', 'warnings'])
   assert.deepEqual(j.held, [])
   assert.equal(j.argsFile, flat(p))
   assert.deepEqual(j.crews, ['x', 'y'])
@@ -526,6 +526,54 @@ test('start --resume merge-ready: one entry with resume "merge-ready"; base is t
   assert.equal(b.truss.crews[0].base, moved, 'after the merge of the target, the base moves')
   assert.equal(b.truss.crews[0].base, git(wt, ['merge-base', 'main', 'HEAD']))
   assert.equal(b.truss.crews[0].resume, 'merge-ready')
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// ADR-0016 Decision 1: `warnings` on a resume, and a missing goal file
+
+/** A merge-ready resume of crew `slug` with the session start pinned by TRUSS_SESSION_START. The plugin copy's agents/stress-engineer.md was written when the copy was made (now). */
+function resumeWithSession(env: any, slug: string, sessionStart: number) {
+  return runCli(env.factory, 'start', ['--dir', env.dir, '--repo', env.repo, '--slug', slug, '--resume', 'merge-ready'], env.repo, { TRUSS_SESSION_START: String(sessionStart) })
+}
+
+test('pf resume: a resume of a stress-yes crew whose agent file is newer than the session start carries one warning naming it', () => {
+  const env = world([crew('x', { status: 'running' })], { goals: { x: { stressTest: 'yes' } } })
+  makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
+  const res = resumeWithSession(env, 'x', 1)
+  const j = assertOneLine(res)
+  assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
+  assert.ok(Array.isArray(j.warnings), `the resume output has warnings: ${res.stdout.slice(0, 300)}`)
+  assert.equal(j.warnings.length, 1, JSON.stringify(j.warnings))
+  assert.ok(String(j.warnings[0]).includes('x') && String(j.warnings[0]).includes('truss:stress-engineer'), String(j.warnings[0]))
+  assert.equal(j.truss.crews.length, 1, 'a warning never holds the crew')
+})
+
+test('pf resume: a resume of a stress-no crew carries warnings: [] and a session that began after the agent file gives none', () => {
+  const no = world([crew('x', { status: 'running' })])
+  makeRunning(no, 'x', iso(Date.now() - 5 * MIN))
+  const a = assertOneLine(resumeWithSession(no, 'x', 1))
+  assert.deepEqual(a.warnings, [])
+  const yes = world([crew('x', { status: 'running' })], { goals: { x: { stressTest: 'yes' } } })
+  makeRunning(yes, 'x', iso(Date.now() - 5 * MIN))
+  const b = assertOneLine(resumeWithSession(yes, 'x', Date.now() + 24 * HOUR))
+  assert.deepEqual(b.warnings, [])
+})
+
+test('pf missing goal: a crew with no goal file is refused naming the path as missing, not routed to foremen, and stays planned', () => {
+  const env = world([crew('has'), crew('gone')])
+  rmSync(`${env.dir}/goals/gone.md`)
+  const res = start(env)
+  const j = assertOneLine(res)
+  assert.equal(res.status, 0, res.stderr)
+  const r = j.refused.find((x: any) => x.slug === 'gone')
+  assert.ok(r, `gone is refused: ${res.stdout.slice(0, 400)}`)
+  assert.ok(flat(String(r.reason)).includes(`${flat(env.dir)}/goals/gone.md`), String(r.reason))
+  assert.match(String(r.reason), /missing/i)
+  assert.ok(!/Engine/.test(String(r.reason)), 'not the old "no ## Engine section" reason')
+  assert.deepEqual(slugsOf(j.foremen), [])
+  assert.deepEqual(slugsOf(j.truss.crews), ['has'])
+  assert.ok(!existsSync(wtPath(env, 'gone')), 'no worktree')
+  assert.equal(statusOf(env, 'gone'), 'planned')
 })
 
 // ---------------------------------------------------------------------------------------------------------------

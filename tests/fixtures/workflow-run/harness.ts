@@ -230,7 +230,7 @@ export function mkRun(transcripts: string, runId: string, agents: RunAgent[], op
   return { dir: flat(dir), ids }
 }
 
-const COPY_DIRS = ['bin', 'hooks', 'docs', 'workflows', 'resources']
+const COPY_DIRS = ['bin', 'hooks', 'docs', 'workflows', 'resources', 'agents']
 let sharedCopy: string | undefined
 
 /** A temp copy of the plugin (bin, hooks, docs, workflows, resources from this checkout; bin/factory.ts imports resources/index.ts) where workflows/plan.js and stage.js are stub files (so tests do not depend on another crew's scripts); returns its dir. Built once per process and shared, so never write inside it. */
@@ -264,6 +264,8 @@ export function runCli(factory: string, command: string, args: string[] = [], cw
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   delete env.TRUSS_SAMPLE
   delete env.TRUSS_MIN_FREE_MB
+  delete env.TRUSS_SESSION_START
+  delete env.CLAUDE_PID
   env.TRUSS_SAMPLE = highSampleFile()
   Object.assign(env, extraEnv)
   const r = spawnSync(process.execPath, [factory, command, ...args], { cwd, encoding: 'utf8', timeout: 120_000, env })
