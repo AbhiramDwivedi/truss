@@ -358,7 +358,9 @@ function manifestAuthorLine(text: string, names: string[]): number {
   for (let i = from; i < lines.length; i++) {
     const l = lines[i]!
     const k = l.indexOf(quoted)
-    if (k === -1 || !/"name"\s*:\s*$/.test(l.slice(0, k))) continue
+    // author.name is the first `name` key at or after the author line; a later one is not it
+    if (!/"name"\s*:/.test(l)) continue
+    if (k === -1 || !/"name"\s*:\s*$/.test(l.slice(0, k))) return 0
     // the name must not also sit elsewhere on that line (a one-line manifest)
     const rest = l.slice(0, k) + l.slice(k + quoted.length)
     if (scrub(rest, names).some(h => h.kind === 'name')) return 0
