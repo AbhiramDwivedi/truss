@@ -737,10 +737,10 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
   }
 }
-function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[]): Obj {
+function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    foremen, refused, stale, unfinished,
+    held, foremen, refused, stale, unfinished,
   }
 }
 
@@ -900,9 +900,15 @@ function cmdStart(f: Flags): Obj {
   const foremen: Obj[] = []
   const refused: Obj[] = []
   const entries: Obj[] = []
+  const held: Obj[] = []
   for (const crew of crews) {
     if (!startsNow(crew) || crew.status !== 'planned') continue
     if (slots <= 0) break
+    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length)
+    if (!adm.admitted) {
+      held.push({ slug: String(crew.slug), why: adm.why })
+      continue
+    }
     const slug = String(crew.slug)
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
@@ -941,7 +947,7 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return stageOut(ctx, entries, foremen, refused, stale, unfinished)
+  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held)
 }
 
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
@@ -957,7 +963,173 @@ function argsFileOut(f: Flags, out: Obj): Obj {
   } catch (e) {
     throw usage(`cannot write ${flat(p)}: ${(e as Error).message}`)
   }
-  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished }
+  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished }
+}
+
+// ==== resources (ADR-0015): admit, heavy, reap ====
+
+import { spawn } from 'node:child_process'
+import { admits, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
+
+const HEAVY_WAIT_MS = 240000
+const sleepSync = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const pidAlive = (pid: unknown): boolean => {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: any) {
+    return e.code === 'EPERM'
+  }
+}
+
+// D/resources/parallelism.json counts only as an integer from 1 to the cap; anything else means the cap.
+function effectiveParallelism(dir: string, cap: number): number {
+  try {
+    const v = JSON.parse(readFileSync(`${dir}/resources/parallelism.json`, 'utf8'))
+    if (isObj(v) && Number.isInteger(v.parallelism) && v.parallelism >= 1 && v.parallelism <= cap) return v.parallelism
+  } catch {
+    // missing or bad: the cap
+  }
+  return cap
+}
+
+type Admission = { admitted: boolean; parallelism: number; running: number; freeMB: number | null; minFreeMB: number; why?: string }
+// Memory first, then (for a planned crew) the effective parallelism. A sampler error admits and logs a sampler-error event.
+function admission(dir: string, plan: Obj, crew: Obj, command: string, running: number): Admission {
+  const slug = String(crew.slug)
+  const cap = intOr(plan.maxParallelCrews, 4, 1)
+  const parallelism = effectiveParallelism(dir, cap)
+  const min = minFreeMB()
+  let freeMB: number | null = null
+  try {
+    freeMB = sample().freeMB
+  } catch (e) {
+    appendEvent(dir, { event: 'sampler-error', crew: slug, agent: slug, command, error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+  }
+  const base = { parallelism, running, freeMB, minFreeMB: min }
+  if (freeMB !== null && !admits({ freeMB, totalMB: 0 }, min)) return { admitted: false, ...base, why: `free memory ${freeMB} MB is below ${min} MB` }
+  if (crew.status === 'planned' && running >= parallelism) return { admitted: false, ...base, why: `${running} crew(s) running already fill the parallelism ${parallelism}` }
+  return { admitted: true, ...base }
+}
+
+function cmdAdmit(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  const plan = loadPlan(dir)
+  const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
+  if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+  const a = admission(dir, plan, crew, 'admit', plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length)
+  if (!a.admitted) throw refuse(a)
+  return a
+}
+
+const GROUPS = (dir: string): string => `${dir}/resources/groups`
+
+function cmdReap(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  const label = need(f, 'label')
+  const reaped: number[] = []
+  const skipped: number[] = []
+  const gdir = GROUPS(dir)
+  for (const name of existsSync(gdir) ? readdirSync(gdir) : []) {
+    const file = `${gdir}/${name}`
+    let rec: Obj
+    try {
+      rec = JSON.parse(readFileSync(file, 'utf8'))
+    } catch {
+      continue
+    }
+    if (!isObj(rec) || rec.slug !== slug || rec.label !== label || !Number.isInteger(rec.pgid)) continue
+    if (pidAlive(rec.heavyPid)) {
+      skipped.push(rec.pgid)
+      continue
+    }
+    if (groupAlive(rec.pgid)) {
+      killGroup(rec.pgid, 'SIGTERM')
+      for (let i = 0; i < 20 && groupAlive(rec.pgid); i++) sleepSync(100)
+      if (groupAlive(rec.pgid)) killGroup(rec.pgid, 'SIGKILL')
+    }
+    rmSync(file, { force: true })
+    reaped.push(rec.pgid)
+  }
+  return { reaped, skipped }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+// The one async command: runs argv (after the first `--`) through the heavy slot.
+export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  try {
+    const cut = argv.indexOf('--')
+    const cmd = cut < 0 ? [] : argv.slice(cut + 1)
+    const f = parseFlags(cut < 0 ? argv : argv.slice(0, cut))
+    const dir = dirOf(f)
+    const slug = need(f, 'slug')
+    const label = need(f, 'label')
+    const cwd = flat(need(f, 'cwd'))
+    if (cmd.length === 0) throw usage('heavy needs a command after --')
+    const t0 = Date.now()
+    let token: string | null = null
+    for (;;) {
+      token = takeHeavySlot(dir, { label, slug, pid: process.pid })
+      if (token !== null) {
+        let low = false
+        try {
+          low = !admits(sample(), minFreeMB())
+        } catch (e) {
+          appendEvent(dir, { event: 'sampler-error', crew: slug, agent: slug, command: 'heavy', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+        }
+        if (!low) break
+        releaseHeavySlot(dir, token)
+        token = null
+      }
+      if (Date.now() - t0 >= HEAVY_WAIT_MS) {
+        return { body: { heavy: { label, ran: false, why: `waited ${Date.now() - t0} ms for the heavy slot and free memory` } }, code: 1 }
+      }
+      await sleep(500)
+    }
+    const waitedMs = Date.now() - t0
+    const scratch = mkdtempSync(`${tmpdir()}/factory-heavy-`)
+    let pgid: number | undefined
+    try {
+      const outFd = openSync(`${scratch}/out.txt`, 'w')
+      const errFd = openSync(`${scratch}/err.txt`, 'w')
+      const exit = await new Promise<number>((resolve) => {
+        const child = spawn(cmd[0], cmd.slice(1), { cwd, detached: true, stdio: ['ignore', outFd, errFd] })
+        child.on('error', () => resolve(127))
+        if (child.pid !== undefined) {
+          pgid = child.pid
+          mkdirSync(GROUPS(dir), { recursive: true })
+          writeFileSync(`${GROUPS(dir)}/${pgid}.json`, JSON.stringify({ pgid, heavyPid: process.pid, label, slug, since: Date.now() }))
+        }
+        child.on('exit', (code, signal) => resolve(code ?? (signal === null ? 1 : 128)))
+      })
+      closeSync(outFd)
+      closeSync(errFd)
+      releaseHeavySlot(dir, token)
+      if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
+      const stdout = readFileSync(`${scratch}/out.txt`, 'utf8')
+      const meta = { label, waitedMs, exit }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(stdout)
+      } catch {
+        parsed = undefined
+      }
+      if (isObj(parsed)) return { body: { ...parsed, heavy: meta }, code: exit }
+      const lines = (stdout + readFileSync(`${scratch}/err.txt`, 'utf8')).split('\n')
+      if (lines[lines.length - 1] === '') lines.pop()
+      return { body: { heavy: meta, tail: lines.slice(-40).join('\n') }, code: exit }
+    } finally {
+      releaseHeavySlot(dir, token)
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  } catch (e) {
+    if (e instanceof CliError) return { body: e.body, code: e.code }
+    return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
 }
 
 // ==== finish ====
@@ -1320,6 +1492,10 @@ function cmdFinish(f: Flags): Obj {
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
+  admit: cmdAdmit, reap: cmdReap,
+  heavy: () => {
+    throw usage('heavy is async: run it from the command line')
+  },
 }
 
 // Runs one command and returns what it printed and its exit code.
@@ -1343,7 +1519,8 @@ const isMain = ((): boolean => {
   }
 })()
 if (isMain) {
-  const { body, code } = main(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
   process.stdout.write(JSON.stringify(body) + '\n')
   process.exitCode = code
 }
