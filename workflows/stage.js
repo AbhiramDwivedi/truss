@@ -134,7 +134,8 @@ function guardAllowance(crew, at) {
 
 const clip = (s, n = 4000) => (s.length > n ? s.slice(s.length - n) : s)
 
-// Runs one factory.ts command through the runner. met: exit 0 and the parsed stdout has key === true.
+// Runs one factory.ts command through the runner. met: the parsed stdout has key === true. The key decides, not res.exit:
+// the runner relays the JSON's own exit field (the acceptance test's exit), and factory.ts prints the key true only when it exits 0.
 // one shell word: bare when only safe characters, else single-quoted with each ' written as '\''
 const sh = (v) => {
   const s = String(v)
@@ -157,7 +158,7 @@ async function runFactory(crew, command, key) {
   } catch {
     parsed = null
   }
-  const met = res.exit === 0 && parsed !== null && typeof parsed === 'object' && parsed[key] === true
+  const met = parsed !== null && typeof parsed === 'object' && parsed[key] === true
   return { met, parsed, out: `exit ${res.exit}\n${res.stdout}` }
 }
 
