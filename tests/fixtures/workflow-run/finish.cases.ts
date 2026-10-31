@@ -388,6 +388,24 @@ test('gate: qcFails above reworkAllowance is refused even with a later PASS; at 
   assertMerged(ok, assertOneLine(ok.finish()))
 })
 
+test('gate: a logged "re-planned: <slug> from qc-<k>" counts only QC files -qc-<k> and later', () => {
+  const fail = (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
+  const mk = (line) => {
+    const w = scenario([{ slug: 's' }], { qcLabel: 's-qc-4' })
+    for (let i = 1; i <= 3; i++) writeReport(w.env.dir, 's', i === 1 ? 's-qc' : `s-qc-${i}`, fail(w.c.s), Date.parse('2026-10-29T09:00:00Z') + i)
+    if (line !== undefined) writeFileSync(`${w.env.dir}/decisions.md`, `${line}\n`, { flag: 'a' })
+    return w
+  }
+  const fresh = mk('- 11:00 | re-planned: s from qc-4 | allowance spent, successor | none | followed')
+  assertMerged(fresh, assertOneLine(fresh.finish()))
+  for (const line of [undefined, '- 11:00 | re-planned: other from qc-4 | x | none | followed', '- 11:00 | re-planned: s from qc-1 | x | none | followed']) {
+    const w = mk(line)
+    const j = assertOneLine(w.finish())
+    assert.ok(listed(j, 'refused', 's'), `${line}: ${JSON.stringify(j)}`)
+    assertHeld(w, j)
+  }
+})
+
 test('gate: the red record must exist and have a non-zero exit', () => {
   const none = scenario([{ slug: 's', red: false }])
   const jn = assertOneLine(none.finish())

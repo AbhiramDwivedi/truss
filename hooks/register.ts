@@ -507,7 +507,7 @@ export function qcFails(crew: string, files: readonly QcFile[], since: number): 
 }
 
 // the k of <crew>-qc-<k>.md; the bare <crew>-qc.md is 1
-const qcK = (name: string): number => Number(/-qc-(\d+)\.md$/.exec(name)?.[1] ?? 1)
+export const qcK = (name: string): number => Number(/-qc-(\d+)\.md$/.exec(name)?.[1] ?? 1)
 
 // the crew's newest QC file this run; ties go to the higher -qc-<k>
 export function latestQc(crew: string, files: readonly QcFile[], since: number): QcFile | undefined {
