@@ -104,7 +104,7 @@ test('wiring: every deny the hooks return goes through refuse(), and the catch-a
   // a deny returned bare from a hook would not be counted; the fetch gate's never fires today and logs its own line
   const bare = [...body.matchAll(/return \{ deny: [^}]*\}/g)].map(m => m[0])
   assert.deepEqual(bare, ['return { deny: verdict.reason }'])
-  for (const site of ['refuse($, e, { deny: decided.reason })', 'refuse($, e, caller.refused)', 'refuse($, e, spent)', 'refuse($, e, { deny: HANDBACK_REFUSAL })']) assert.ok(body.includes(site), site)
-  assert.equal([...body.matchAll(/return refuse\(\$, e, refused\)/g)].length, 3)
+  for (const site of ['refuse($, state, refusalsLogged, e, { deny: decided.reason })', 'refuse($, state, refusalsLogged, e, caller.refused)', 'refuse($, state, refusalsLogged, e, spent)', 'refuse($, state, refusalsLogged, e, { deny: HANDBACK_REFUSAL })']) assert.ok(body.includes(site), site)
+  assert.equal([...body.matchAll(/return refuse\(\$, state, refusalsLogged, e, refused\)/g)].length, 3)
   assert.ok(body.includes('return answered(await next(e))') && body.includes('return answered(passed)'))
 })
