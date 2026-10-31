@@ -2,7 +2,7 @@
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
 // truss ADR-0012 Decision 3 and Decision 7: edge checks for retro/catalog.ts and the seed retro/catalog.json.
 // Written from the ADR and docs/catalog.schema.json before retro/ exists. tests/retro-contract.check.ts holds the
-// first-line cases (schema, six ids, clean lines, planted hits); this file adds the edges it lacks.
+// first-line cases (schema, seed ids, clean lines, planted hits); this file adds the edges it lacks.
 //
 // Run with: node --test tests/retro/catalog.check.ts
 // Self-contained on purpose: no shared helper, no import of another check file, and no import of retro/extract.ts.
@@ -107,7 +107,7 @@ describe('retro/catalog.json seeds: every realistic line hits its own entry and 
       const e = catalog.entries.find((x: any) => x.id === id)
       for (const line of lines) {
         assert.ok(line.includes(e.anchor), `sanity: the sample holds the anchor of ${id}`)
-        assert.deepEqual(matchLine(line, catalog), [id], `${id}: ${JSON.stringify(line)}`)
+        assert.deepEqual(matchLine(line, catalog), [id], `${id}#${lines.indexOf(line)}`)
         const tok = hex(4)
         assert.deepEqual(matchLine(`${line} ${tok}`, catalog), [id], `${id}: with a token after`)
         assert.deepEqual(matchLine(`${tok} ${line}`, catalog), [id], `${id}: with a token before`)
@@ -142,14 +142,71 @@ describe('retro/catalog.json seeds: every realistic line hits its own entry and 
 
   test('a line holding several seeds’ anchors returns their ids in catalog order, not call or alphabetical order', async () => {
     const { catalog, matchLine } = await seedCatalog()
-    const ids = catalog.entries.map((e: any) => e.id)
+    // the seed ids in catalog order (later fixedBy entries may follow them)
+    const ids = catalog.entries.map((e: any) => e.id).filter((id: string) => id in SAMPLES)
+    assert.equal(ids.length, Object.keys(SAMPLES).length, 'every seed is in the catalog')
     const first = SAMPLES[ids[0]]
     const last = SAMPLES[ids[ids.length - 1]]
-    assert.ok(first && last, 'the first and last catalog entries are seeds')
+    assert.ok(first && last, 'the first and last seeds have samples')
     assert.deepEqual(matchLine(`${last[0]} || ${first[0]}`, catalog), [ids[0], ids[ids.length - 1]])
     // all six on one line, written in reverse catalog order
     const all = [...ids].reverse().map(id => SAMPLES[id][0])
     assert.deepEqual(matchLine(all.join(' || '), catalog), ids)
+  })
+})
+
+describe('retro/catalog.json retro-fixes entries: F-17 (two) and P-1 are found by anchor, carry a fixedBy, hit their lines and miss clean ones', () => {
+  const find = (catalog: any, anchor: string) => catalog.entries.find((x: any) => x.anchor === anchor)
+  const WANTED = [
+    { name: 'F-17 host-missing', anchor: 'Host system is missing dependencies', finding: '/F-17' },
+    { name: 'F-17 apt-libicu', anchor: 'apt-get install libicu', finding: '/F-17' },
+    { name: 'P-1', anchor: "Cannot find module 'claude-code", finding: '/P-1' },
+  ]
+
+  test('each of the three entries exists by its exact anchor, has no probe, and cites its finding in fixedBy', async () => {
+    const { catalog } = await seedCatalog()
+    WANTED.forEach((w, i) => {
+      const e = find(catalog, w.anchor)
+      assert.ok(e, `new entry #${i} (${w.name}) is missing from the catalog`)
+      assert.equal(e.probe, undefined, `new entry #${i} (${w.name}) has no probe`)
+      assert.ok(e.fixedBy, `new entry #${i} (${w.name}) has a fixedBy`)
+      assert.ok(String(e.fixedBy.finding).endsWith(w.finding), `new entry #${i} (${w.name}) fixedBy.finding ends with ${w.finding}`)
+    })
+  })
+
+  test('hit lines (with a per-run token before and after) hit their own entry', async () => {
+    const { catalog, matchLine } = await seedCatalog()
+    const tok = hex(4)
+    const cases = [
+      { anchor: WANTED[0].anchor, lines: ['Host system is missing dependencies to run browsers.'] },
+      { anchor: WANTED[1].anchor, lines: [`sudo apt-get install libicu${10 + (randomBytes(1)[0] % 90)} libxml2`] },
+      { anchor: WANTED[2].anchor, lines: ["Error: Cannot find module 'claude-code'", `Error: Cannot find module 'claude-code/${hex(4)}'`] },
+    ]
+    cases.forEach((c, ci) => {
+      const e = find(catalog, c.anchor)
+      assert.ok(e, `new entry #${ci} is missing from the catalog`)
+      c.lines.forEach((line, li) => {
+        for (const [shape, l] of [['bare', line], ['after', `${line} ${tok}`], ['before', `${tok} ${line}`]]) {
+          assert.ok(matchLine(l, catalog).includes(e.id), `new entry #${ci}: hit line #${li} (${shape}) missed ${e.id}`)
+        }
+      })
+    })
+  })
+
+  test('clean lines hit none of the three new entries', async () => {
+    const { catalog, matchLine } = await seedCatalog()
+    const newIds = WANTED.map(w => find(catalog, w.anchor)?.id)
+    newIds.forEach((id, i) => assert.ok(id, `new entry #${i} is missing from the catalog`))
+    const clean = ['Host system is ready', 'sudo apt-get install curl', `Error: Cannot find module 'pkg${hex(4)}'`, "Error: Cannot find module 'lodash'"]
+    clean.forEach((line, i) => {
+      const got = matchLine(line, catalog)
+      for (const id of newIds) assert.ok(!got.includes(id), `clean line #${i} hit new entry ${id}`)
+    })
+  })
+
+  test('the webkit-host-libs sample line still gives exactly webkit-host-libs', async () => {
+    const { catalog, matchLine } = await seedCatalog()
+    assert.deepEqual(matchLine(SAMPLES['webkit-host-libs'][1], catalog), ['webkit-host-libs'], 'webkit-host-libs#1')
   })
 })
 

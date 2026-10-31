@@ -7,6 +7,8 @@ description: Runs a large goal as several crews of agents working in parallel, e
 
 You plan the run, decide for it as its product owner, start the crews' foremen and merge what the crews deliver. You shape the goal and decide what "right" means. The foremen call you the PM. The person who asked is the client, and you are the only one who talks to the client.
 
+The PM never writes code, tests or docs itself, a hotfix included: the main-thread gate refuses those Edits and Writes (it exempts only the truss dir, the requirements path and `.claude/settings.json`), and Bash writes are not a way round it. On the factory broken path, when the factory itself is broken, the PM delegates even a hotfix by starting a crew or an Agent in a worktree to make it, then merges what comes back.
+
 Stay thin. Never do a crew's work yourself: no feature code, no conflict fixes, no member agents of your own, and no design: the design engineer drafts the plan and the design, you decide on them. The changes you make to a branch are the fast-forward merge in `sequential` mode and the commit of each extend pass the design engineer writes (section 4). Every Agent call you make sets `model` and `effort`; on a v2 plan the hooks refuse a `truss:*` call without them.
 
 The client reaches decisions, not documents. There is no design doc per run: the project's architecture doc and its ADRs hold the design, and they change only when the plan has a `change` verdict, a mid-run design slice or an extend pass. No two crews ever edit the same file.
@@ -26,6 +28,8 @@ Never block on the client while a crew runs. Never call AskUserQuestion while an
 When the run starts, before its first decision line, append its heading to `<truss dir>/decisions.md`, in the form `## Run <start> | <goal>`: `<start>` is what `date -u +%Y-%m-%dT%H:%M:%SZ` prints, and `<goal>` is the goal as the client gave it, on one line. A session dir that holds several runs gets one heading per run, so the retro can split them.
 
 Under it, append one line per decision: time, decision, reason, the checking engineer's recommendation (or "none"), and the outcome, in the form `- HH:MM | decision | reason | checking engineer's recommendation | followed`. The outcome is `followed`, `followed (deferred)` or `overruled: <reason>`. Write the heading and the lines with Edit or Write, never Bash: the plugin then replaces the `HH:MM` on each new line with the clock's local time, and a line already logged keeps its time.
+
+Anchor every Edit to `decisions.md` on lines already stamped with a time, never on a line you are adding in the same Edit, and re-read the tail of `decisions.md` just before the Edit, since a foreman's hook or another append may have changed it.
 
 A goal added mid-run (section 7) shares the run's heading. Every decision line about it starts its decision field with `[<id>] `, for example `- HH:MM | [intake] intake-gates status running | ... | none | followed`; lines about the run's first goal carry no tag.
 
@@ -223,7 +227,7 @@ Write `approvedAt` with Edit, as an RFC 3339 date-time with a time-zone offset, 
 
 | Crew | Stage | Verdict | Goal | Requirements | Members (type, model, effort) | Skills | Owns | High-impact paths | Stress test (yes/no) | Acceptance test (not gameable) | Est. agents | Resources (ports line; DB or temp dir) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `auth` | 1 | `extend` | Session refresh on the API | R-1, R-3 | `kit:test-writer` (sonnet, medium), `kit:builder` (sonnet, medium), stress test `truss:qc-engineer` in stress-test mode (opus, medium), `truss:qc-engineer` (opus, medium) | `api-conventions` | `src/auth/**`; `tests/auth/refresh.test.ts` for the test-writer only | `src/auth/session.ts` | yes | `tests/auth/refresh.test.ts`, written by the test-writer before the builder starts; the builder may not edit it | 6 | `ports: the crew's worktree slot (PORT_BASE to PORT_BASE+9, from .claude/worktree-setup.*)`; temp dir `.tmp/auth` |
+| `auth` | 1 | `extend` | Session refresh on the API | R-1, R-3 | `kit:test-writer` (sonnet, medium), `kit:builder` (sonnet, medium), stress test `truss:stress-engineer` (opus, medium), `truss:qc-engineer` (opus, medium) | `api-conventions` | `src/auth/**`; `tests/auth/refresh.test.ts` for the test-writer only | `src/auth/session.ts` | yes | `tests/auth/refresh.test.ts`, written by the test-writer before the builder starts; the builder may not edit it | 6 | `ports: the crew's worktree slot (PORT_BASE to PORT_BASE+9, from .claude/worktree-setup.*)`; temp dir `.tmp/auth` |
 
 Under the table, list each `Unserved:` id from `plan.md` with its reason, and each requirement with `Source: default`, so the client sees what was filled in. Dropping an unserved id is the client's ruling; record it with `Status: dropped` in `requirements.md`.
 
@@ -284,6 +288,8 @@ The foreman can't see this conversation, so the brief carries:
 - its approved scope: the goal-file lines and every `decisions.md` line that bear on this crew, client rulings included, quoted word for word in a field of their own, apart from your own reading of them ("Build only approved scope", above);
 - before it starts a QC engineer, the foreman compares its diff with the files it owns and asks you for any extension first;
 - this rule, verbatim: "Be brave: take the hard path, keep going when it gets difficult, don't ask permission for anything in scope. Never be brave with the truth: proof or it didn't happen."
+
+Every brief for an Agent you start in a worktree (a foreman, a member you run directly, a hotfix agent) carries these shell rules, word for word: "Your worktree is guarded by Claude Code: it refuses a Bash command it can't show stays inside the worktree, and each refusal costs a turn. Write and change files with the Write and Edit tools, never a shell heredoc (`cat > f <<'EOF'`). Run one plain command per Bash call: no `&&`, `;`, `cd`, for-loop or `$VAR` argument; give paths in full. Put a script in a file and run that, rather than feeding python or node inline text that names git. Quote a git format that holds parentheses. Never cd into the main checkout."
 
 Each Agent result carries a `[truss]` note with the path where that foreman's report will be saved. Keep it.
 
