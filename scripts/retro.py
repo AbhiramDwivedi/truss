@@ -15,6 +15,10 @@ GIT_OPTIONAL_LOCKS=0: rev-parse and for-each-ref, worktree list --porcelain, sta
 temporary object directory, removed before it returns), cherry and branch --show-current. See truss
 ADR-0006, section 1.
 
+Each run's "refusals" counts the tool calls refused under it, from the hooks' refusal lines: by source
+(truss, worktree-guard, classifier, permission, other), by tool, by "<source>: <category>", Bash calls by
+their first word, and by shape. A line never holds a command's or a message's text (P24).
+
 The script counts and the skill judges. Where the log does not say, the output says "not recorded"
 and never a zero. Message, prompt and report text is never printed (P8): a QC report is read
 only as far as its first non-empty line.
@@ -179,6 +183,7 @@ def new_run(started, goal, start_dt):
         "_qcs": {"pass": 0, "fail": 0},
         "_allowance_crews": set(),
         "_fetches": {"total": 0, "perAgent": {}},
+        "_refusals": {"total": 0, "bySource": {}, "byTool": {}, "byCategory": {}, "byProgram": {}, "byShape": {}},
         "_goals": {},
     }
 
@@ -270,11 +275,12 @@ def valid_event(line):
 
 def process_events(files, runs):
     """Fill the runs' event counters. Return (skipped, outside). With no runs, every valid event is
-    outside: a dir without headings cannot be split. The third value says whether the log holds any
-    valid fetch line."""
+    outside: a dir without headings cannot be split. The third and fourth values say whether the log
+    holds any valid fetch line, and any valid refusal line."""
     skipped = 0
     outside = 0
     fetch_seen = False
+    refusal_seen = False
     for path in files:
         for line in read_lines(path):
             if line is None:
@@ -289,6 +295,8 @@ def process_events(files, runs):
             ev, ts = got
             if ev.get("event") == "fetch":
                 fetch_seen = True
+            elif ev.get("event") == "refusal":
+                refusal_seen = True
             run = assign(runs, ts)
             if run is None:
                 outside += 1
@@ -308,6 +316,23 @@ def process_events(files, runs):
                 f = run["_fetches"]
                 f["total"] += 1
                 f["perAgent"][name] = f["perAgent"].get(name, 0) + 1
+            elif kind == "refusal":
+                # counts only: the line holds the refusal's reason and the command's first word, never its text (P24)
+                def named(k):
+                    v = ev.get(k)
+                    return v if isinstance(v, str) and v else "unset"
+                f = run["_refusals"]
+                f["total"] += 1
+                source, tool = named("source"), named("tool")
+                for key, value in (("bySource", source), ("byTool", tool),
+                                   ("byCategory", source + ": " + named("category"))):
+                    f[key][value] = f[key].get(value, 0) + 1
+                if tool == "Bash":
+                    program = named("program")
+                    f["byProgram"][program] = f["byProgram"].get(program, 0) + 1
+                shape = ev.get("shape")
+                for part in sorted(set(p for p in shape if isinstance(p, str))) if isinstance(shape, list) else ():
+                    f["byShape"][part] = f["byShape"].get(part, 0) + 1
             elif kind == "stall":
                 if ev.get("kind") == "agent":
                     run["_stalls"]["agent"] += 1
@@ -329,7 +354,7 @@ def process_events(files, runs):
                         run["_qcs"]["pass"] += 1
                     elif ev.get("marker") == "VERDICT: FAIL":
                         run["_qcs"]["fail"] += 1
-    return skipped, outside, fetch_seen
+    return skipped, outside, fetch_seen, refusal_seen
 
 
 def process_messages(files, runs, pre):
@@ -753,7 +778,7 @@ def retro(directory):
     message_files = drop_duplicate_files(list_files(directory, "messages*.jsonl"))
 
     pre_msgs = process_messages(message_files, runs, pre)
-    skipped, outside, fetch_seen = process_events(event_files, runs)
+    skipped, outside, fetch_seen, refusal_seen = process_events(event_files, runs)
     root = repo_root(directory)
     log = commit_log(root)
     defaults = count_default_decisions(root)
@@ -781,6 +806,7 @@ def retro(directory):
             "qcs": r["_qcs"] if placed else NR,
             "allowancesSpent": len(r["_allowance_crews"]) if placed and r["_allowance_crews"] else NR,
             "fetches": r["_fetches"] if placed and fetch_seen else NR,
+            "refusals": r["_refusals"] if placed and refusal_seen else NR,
             "extendPasses": extend,
             "defaultDecisions": defaults,
             "openClientActions": client_open,
