@@ -11,6 +11,7 @@ import type { JsonlReader } from './jsonl.ts'
 import { createReducer } from './reduce.ts'
 import type { Reducer, Run } from './reduce.ts'
 import { createFileReaders } from './files.ts'
+import { readRetro } from './retro.ts'
 import { createImageTracker, trussDirFor } from './git.ts'
 import type { Adr, Decision } from './files.ts'
 
@@ -58,7 +59,7 @@ const emptySession = {
   error: null,
 }
 
-const KEYS = ['trussDir', 'session', 'requests', 'run', 'decisions', 'adrs', 'design', 'notices'] as const
+const KEYS = ['trussDir', 'session', 'requests', 'run', 'decisions', 'adrs', 'design', 'notices', 'retro'] as const
 
 function isDir(p: string): boolean {
   try {
@@ -90,6 +91,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
   let adrs: Adr[] = []
   let design: unknown = { planMd: null, architecture: null, images: [] }
   let notices: { id: string; text: string }[] = []
+  let retro: unknown = null
 
   const values: Record<string, unknown> = {}
   const json: Record<string, string> = {}
@@ -160,10 +162,12 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
       const dir = trussDir
       run = reducer.build(files.plan(dir), (slug) => files.qc(dir, slug))
       decisions = files.decisions(dir)
+      retro = readRetro(dir)
       watch(dir)
     } else {
       run = null
       decisions = []
+      retro = null
       watch(null)
     }
 
@@ -207,6 +211,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
       adrs,
       design,
       notices: all,
+      retro,
     }
   }
 
