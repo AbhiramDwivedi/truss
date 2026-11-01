@@ -1,6 +1,6 @@
 # ADR-0013: plugin layout: the plugin in plugins/truss, the catalog on a marketplace branch
 
-The move to plugins/truss/ is not done yet: today every plugin path (agents/, skills/, hooks/, bin/, docs/, .claude-plugin/ and the rest) stays at the repo root until the later goal (plugin-move) merges, and neither plugins/truss/ nor marketplace/ exists in this repo yet.
+The move to plugins/truss/ is done: goal plugin-move moved every plugin path (agents/, skills/, hooks/, bin/, docs/, .claude-plugin/ and the rest) into plugins/truss/, beside ui/ at the repo root, and the catalog is `marketplace/.claude-plugin/marketplace.json`, with `marketplace/README.md` beside it. Publishing the `marketplace` branch from marketplace/ is still a PM ship step (see "Ship steps").
 
 Status: proposed, 2026-10-31. Written by the design crew `home-design` (stage 0 of goal `repo-home`). It becomes accepted when the PM (project manager) merges this crew. The goal's approval is `auto`, under the client's pre-approval of 04:29 ("don't wait for me, go with the recommended layout"), after plan-check and checker-13's review (decisions.md, 06:06). This ADR is design only: nothing moves in goal `repo-home`.
 
@@ -21,7 +21,7 @@ Today:
 - The repo has no catalog. README.md:16-17 tells users to install from claude-ops: `claude plugin marketplace add AbhiramDwivedi/claude-ops` and `claude plugin install truss@claude-ops`.
 - `.claude/truss.json` points at `docs/architecture.md` and `docs/adr`.
 
-Every ADR in the ADR dir reaches each later crew: `cmdStart()` in `bin/factory.ts:779-780` lists every `<arch dir>/adr/*.md` into the crew's start context. That is why this ADR opens with the `not done yet` line.
+Every ADR in the ADR dir reaches each later crew: `cmdStart()` in `bin/factory.ts:779-780` lists every `<arch dir>/adr/*.md` into the crew's start context. That is why this ADR opens with a line that says whether the move is done.
 
 ## The client's rulings
 
@@ -192,7 +192,7 @@ Other files the move must fix, from the plan's scratch move (plan-repo-home.md, 
 - Every change to `main:marketplace/` needs a re-publish of the branch, so the later goal adds a sync check.
 - The claude-ops truss entry must change in the same release as the move, to the git-subdir entry with `"ref":"main"` (client ruling, decisions.md 05:07). After the move, claude-ops' current `{"source":"github","repo":"AbhiramDwivedi/truss"}` finds no plugin.json at the root.
 - The PM's live `--plugin-dir <repo>` session loses its plugin when the move merges, and restarts on `--plugin-dir <repo>/plugins/truss`.
-- When plugin-move merges, it rewrites this ADR's opening `not done yet` line to say the move is done.
+- Goal plugin-move rewrites this ADR's opening line to say the move is done.
 
 ### Ship steps (the PM, after the later goal merges; not run)
 
