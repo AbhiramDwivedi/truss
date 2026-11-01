@@ -1,8 +1,14 @@
 # Truss local web UI
 
-`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live: brief questions and approvals as cards, one line per crew, decisions and ADRs, and a design panel. The design is in [ADR-0011](../docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [docs/architecture.md](../docs/architecture.md).
+`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live: brief questions and approvals as cards, one line per crew, decisions and ADRs, and a design panel. The design is in [ADR-0011](../plugins/truss/docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [plugins/truss/docs/architecture.md](../plugins/truss/docs/architecture.md).
 
-The commands below run from the Truss plugin root, the directory that holds `ui/`.
+The UI is not part of the plugin install: `claude plugin install truss@truss` installs only `plugins/truss/`. To get the UI, clone the repo:
+
+```
+git clone -b main https://github.com/AbhiramDwivedi/truss.git
+```
+
+The commands below run from the repo root, the directory that holds `ui/` and `plugins/`.
 
 ## Check the requirements
 
@@ -20,7 +26,7 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 
 ## Start the UI
 
-1. Start the server, and point it at the repo you want Truss to work in. Run this from the plugin root:
+1. Start the server, and point it at the repo you want Truss to work in. Run this from the repo root:
 
    ```
    node ui/server/main.ts --repo /path/to/your/repo
@@ -53,7 +59,7 @@ This installs the exact versions in `ui/package-lock.json` into `ui/node_modules
 | Flag | Default | What it does |
 |---|---|---|
 | `--repo <path>` | `$INIT_CWD` when set, else the current directory | The repo the session runs in. `npm` sets `INIT_CWD` to the directory you ran `npm` from. With `node` directly, it is the current directory unless `INIT_CWD` is set. |
-| `--plugin <path>` | The directory that holds `ui/` | The Truss plugin root. It must contain `.claude-plugin/plugin.json`, or the server exits with code 2. |
+| `--plugin <path>` | `plugins/truss` beside `ui/` | The Truss plugin root. It must contain `.claude-plugin/plugin.json`, or the server exits with code 2. |
 | `--truss-dir <path>` | Found from the session id | Read this Truss dir instead. Meant for tests on a copy of real Truss files. |
 | `--port <n>` | `0` | The port to listen on, 0 to 65535. `0` lets the OS pick a free port. |
 
@@ -71,7 +77,7 @@ Press Ctrl+C in the terminal that runs the server. On `SIGINT` or `SIGTERM` the 
 
 ## Run the checks
 
-Run these from the plugin root.
+Run these from the repo root.
 
 ### Unit and contract tests
 
@@ -97,7 +103,7 @@ This runs `node --test` on `ui/contract/*.check.ts` (state, session, http) and `
 
    This runs `playwright test` in `ui/`, with `ui/playwright.config.ts`: the contract spec in `ui/contract/e2e/` and the UI specs in `ui/e2e/`. Each spec starts its own server on port 0. Arguments after `--` go to Playwright, for example `npm --prefix ui run e2e -- --list` to list the tests.
 
-   Use the `npm` script, not `npx --prefix ui playwright test` from the plugin root. `npx` runs in the current directory, so Playwright doesn't find `ui/playwright.config.ts` and picks up the plugin's own `tests/` instead.
+   Use the `npm` script, not `npx --prefix ui playwright test` from the repo root. `npx` runs in the current directory, so Playwright doesn't find `ui/playwright.config.ts`.
 
 ### Live check on your login
 

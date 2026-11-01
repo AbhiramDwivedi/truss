@@ -2,6 +2,36 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.15.0
+
+The repo is now the standalone home of the plugin ([ADR-0013](docs/adr/0013-plugin-layout.md)). This release is breaking for installs from claude-ops and for `--plugin-dir <repo>` users.
+
+### Install from this repo
+
+- **Install with two new commands:**
+
+  ```
+  claude plugin marketplace add AbhiramDwivedi/truss
+  claude plugin install truss@truss
+  ```
+
+  If the `marketplace` branch is not the repo's GitHub default branch, ADR-0013's fallback is `claude plugin marketplace add AbhiramDwivedi/truss#marketplace`.
+- **Breaking: installs from claude-ops.** The claude-ops truss entry, `{"source":"github","repo":"AbhiramDwivedi/truss"}`, looks for `.claude-plugin/plugin.json` at the repo root, which no longer holds one. Remove `truss@claude-ops` and run the two commands above. kit and worktrees still come from claude-ops.
+- **Breaking: `--plugin-dir <repo>`.** Load the plugin with `--plugin-dir <repo>/plugins/truss`.
+
+### Repo layout
+
+- **The plugin moved to `plugins/truss/`.** Every plugin path (`agents`, `bin`, `brief`, `docs`, `evals`, `hooks`, `resources`, `retro`, `scripts`, `skills`, `tests`, `types`, `workflows`, `.claude-plugin`, `tsconfig.json`, `README.md`, `CHANGELOG.md`) moved as a pure rename, and `plugins/truss/LICENSE` is a copy of the root `LICENSE`. The 24 tracked `tests/__pycache__/*.pyc` files are no longer tracked.
+- **The catalog lives in `marketplace/`, the source of its own `marketplace` branch.** `marketplace/.claude-plugin/marketplace.json` names the catalog `truss` and holds one entry, `truss`, with a `git-subdir` source: url `AbhiramDwivedi/truss`, path `plugins/truss`, ref `main`, and no `version`. The branch is `git subtree split --prefix=marketplace main`, so it holds only the catalog and its README, and the entry fetches only `plugins/truss/`: a plugin-only install gets no `ui/`. The root contract's install suite proves this against a local copy of the repo served over HTTP, not against github.com.
+- **The repo root holds a developer `README.md`, `LICENSE`, `.gitignore` and a `package.json` with scripts only.** `npm test` runs the plugin's Node and Python tests and the root contract `checks/repo-home.check.ts`; `npm run test:ui` runs the UI's tests. Clone with `git clone -b main` and open pull requests with `--base main`.
+- **`.claude/truss.json` names `plugins/truss/docs/architecture.md` and `plugins/truss/docs/adr`.**
+- **The UI's default `--plugin` is `plugins/truss` beside `ui/`** (`ui/server/main.ts`), and `ui/spike/run.ts` loads the plugin from there too. [ui/README.md](../../ui/README.md) now runs its commands from the repo root.
+- **The behaviour evals run each case in the plugin dir of the throwaway worktree** (`evals/run-model.ts`), not at the worktree's root.
+
+### Workflow factory
+
+- **`tests-check` guards test files only and follows renames.** Besides the test-writer's files, it guards each path the acceptance test names that is a test file by name. A pure rename (`R100`) of a guarded file is no touch and the guard follows the new path; a rename with an edit, a later edit at the new path, and a delete are touches. The QC engineer's step 8 says the same.
+
 ## 0.14.0
 
 Everything merged since 0.13.0. The resource checks are tested on Linux only, and ADR-0017's member-side heavy path is decided but not built.
@@ -56,7 +86,7 @@ Everything merged since 0.12.0. Text checks show the prompt rules are written in
 
 ### Local web UI
 
-- **An optional local web UI runs Truss from a browser tab** ([ADR-0011](docs/adr/0011-local-web-ui.md)). `ui/` is one Node process. It hosts a Claude Code session with the plugin loaded, through `@anthropic-ai/claude-agent-sdk` on your existing login, and serves a page that shows brief questions, permission requests and replies as cards, one line per crew, the decisions and ADRs, a design panel and the retro stage. It listens on `127.0.0.1` only, and every request needs the token the server prints at startup. Install it with `npm --prefix ui ci` and start it with `node ui/server/main.ts --repo <repo>`; [ui/README.md](ui/README.md) has the flags and the checks. It needs Node 24 or later and prints a warning at startup on an older Node.
+- **An optional local web UI runs Truss from a browser tab** ([ADR-0011](docs/adr/0011-local-web-ui.md)). `ui/` is one Node process. It hosts a Claude Code session with the plugin loaded, through `@anthropic-ai/claude-agent-sdk` on your existing login, and serves a page that shows brief questions, permission requests and replies as cards, one line per crew, the decisions and ADRs, a design panel and the retro stage. It listens on `127.0.0.1` only, and every request needs the token the server prints at startup. Install it with `npm --prefix ui ci` and start it with `node ui/server/main.ts --repo <repo>`; [ui/README.md](../../ui/README.md) has the flags and the checks. It needs Node 24 or later and prints a warning at startup on an older Node.
 - **The UI server stops cleanly and explains a busy port.** It shuts down on `SIGINT`, `SIGTERM`, `SIGHUP` and `SIGBREAK`, and when the process that started it goes away. It writes one lockfile per port in the OS temp dir, created exclusively with mode 0600 and without the token. When a later start finds the port in use, the message names the running UI's pid and the command that stops it.
 - **The UI server also watches the ancestors of its parent** ([ADR-0014](docs/adr/0014-retro-fixes.md), Decision 5). Under `npm start` on Windows, the server's parent is npm's `cmd.exe`, which can outlive the closed terminal. `watchParent` now reads the ancestor chain once at start (`/proc/<pid>/stat` on Linux, one `Win32_Process` snapshot on Windows, `ps` on macOS) and checks every pid each second; when any of them dies, the server shuts down. If the chain can't be read, it checks only the parent, as before. The tests use a simulated chain; the Windows and macOS reads have not been run on a real host. Starting with `node ui/server/main.ts` directly remains the advice in `ui/README.md`.
 - **A reply card waits for background tasks** (ADR-0014, Decision 3). A turn's result that arrives while background tasks still run holds its text and opens no card; one card opens when the count drops to 0. Meanwhile the header reads `working (N background tasks)`, and the page says "Agents still running; nothing needed from you", with no Approve or Deny button.
