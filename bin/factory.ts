@@ -666,18 +666,26 @@ function cmdOwnsCheck(f: Flags): Obj {
   return { ok: true }
 }
 
-// The acceptance-test files are the files a `Truss-Role: test-writer` commit in <base>..HEAD touched. Lists every builder or
-// resolver commit there that touched one, the check of agents/qc-engineer.md step 8 done before a QC engineer is paid for it.
-// A merge commit counts only for the files its resolution changed (`--cc`: different from every parent), so integrating a
-// tester's branch is no touch. History is what QC reads, so a later commit that restores the file doesn't clear it.
+// Guarded = every file a `Truss-Role: test-writer` commit in <base>..HEAD touched, whatever its name, plus every existing path
+// the acceptanceTest names that is a test file by name (isTestPath). Lists every builder or resolver commit there that touched
+// one, the check of agents/qc-engineer.md step 8 done before a QC engineer is paid for it. Read oldest first with
+// `--name-status -M`: a pure rename (R100) of a guarded file is no touch and the guard follows the new path; a rename with an
+// edit, a later edit at the new path, and a delete are touches. A merge commit counts only for the files its resolution changed
+// (`--cc`), so integrating a tester's branch is no touch. History is what QC reads, so a later commit that restores the file
+// doesn't clear it.
 function cmdTestsCheck(f: Flags): Obj {
   const c = crewCtx(f)
-  const out = gitOrFail(c.wt, ['log', '--cc', '--name-only', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--cc', '--name-status', '-M', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  // Oldest first; each entry is a status letter (R keeps its score) with the old path and, for a rename, the new one.
   const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
     const [first = '', ...rest] = b.split('\n')
     const [sha = '', roles = ''] = first.split(' ')
-    return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), files: rest.map((l) => l.trim()).filter(Boolean) }
-  })
+    const entries = rest.filter((l) => l.trim() !== '').map((l) => {
+      const [st = '', p1 = '', p2 = ''] = l.split('\t')
+      return { st, from: p1, to: st.startsWith('R') || st.startsWith('C') ? p2 : p1 }
+    })
+    return { sha, roles: roles.split(',').map((r) => r.trim()).filter(Boolean), entries }
+  }).reverse()
   // Also guarded: every existing repo-relative path the crew's acceptanceTest names.
   const plan = loadPlan(c.dir)
   const crew = Array.isArray(plan.crews) ? plan.crews.find((x: unknown) => isObj(x) && x.slug === c.slug) : undefined
@@ -685,14 +693,38 @@ function cmdTestsCheck(f: Flags): Obj {
   const named = typeof crew?.acceptanceTest === 'string'
     ? crew.acceptanceTest.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
     : []
-  const tests = [...new Set([...commits.filter((x) => x.roles.includes('test-writer')).flatMap((x) => x.files), ...named])].sort()
-  const touched = commits.flatMap((x) => {
+  const guarded = new Set<string>(named.filter(isTestPath))
+  const touched: Obj[] = []
+  for (const x of commits) {
     const role = x.roles.find((r) => r === 'builder' || r === 'resolver')
-    const files = x.files.filter((file) => tests.includes(file))
-    return role !== undefined && files.length > 0 ? [{ commit: x.sha, role, files }] : []
-  }).reverse()
+    const writer = x.roles.includes('test-writer')
+    const files: string[] = []
+    for (const e of x.entries) {
+      const renamed = e.st.startsWith('R')
+      if (writer) {
+        if (renamed) guarded.delete(e.from)
+        if (!e.st.startsWith('D')) guarded.add(e.to)
+        continue
+      }
+      if (!guarded.has(e.from)) continue
+      if (renamed && e.st === 'R100') { guarded.delete(e.from); guarded.add(e.to); continue }
+      if (role !== undefined) files.push(e.to)
+      if (renamed) { guarded.delete(e.from); guarded.add(e.to) }
+    }
+    if (role !== undefined && !writer && files.length > 0) touched.push({ commit: x.sha, role, files })
+  }
+  const tests = [...guarded].sort()
   if (touched.length > 0) throw refuse({ ok: false, touched, tests })
   return { ok: true, tests }
+}
+
+// A test file by name: basename `.test|spec|check.[cm]?[jt]sx?`, `test_*.py`, `*_test.py|go`, `conftest.py`, or a directory segment
+// tests/ test/ __tests__/ spec/ checks/ e2e/ fixtures/.
+function isTestPath(p: string): boolean {
+  const parts = p.split('/')
+  const b = parts[parts.length - 1] ?? ''
+  return /\.(test|spec|check)\.[cm]?[jt]sx?$/.test(b) || /^test_.*\.py$/.test(b) || /_test\.(py|go)$/.test(b) || b === 'conftest.py'
+    || parts.slice(0, -1).some((s) => ['tests', 'test', '__tests__', 'spec', 'checks', 'e2e', 'fixtures'].includes(s))
 }
 
 // ==== start ====
