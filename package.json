@@ -1,6 +1,7 @@
 {
   "name": "truss-repo",
   "private": true,
+  "type": "module",
   "scripts": {
     "test": "node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && python3 -B -m unittest discover -s plugins/truss/tests && node --test checks/*.check.ts",
     "test:ui": "npm --prefix ui test"
