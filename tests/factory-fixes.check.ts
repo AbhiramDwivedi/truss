@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { addCrewWorktree, crew, flat, mkRepo, mkTrussDir, planObj, putFile, readEvents, readPlan, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
+import { addCrewWorktree, crew, flat, git, mkRepo, mkTrussDir, planObj, putFile, readEvents, readPlan, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\\/g, '/').replace(/\/$/, '')
 const LONG_AGO = 1_700_000_000_000 // 2023-11: before this host's boot and before the test process
@@ -172,8 +172,8 @@ test('ff 8: a single-quoted TAP error: \'browserType.launch: ...\' still counts,
 const msg = (role: string) => `work\n\nTruss-Crew: s\nTruss-Role: ${role}`
 
 /** A crew worktree whose acceptanceTest is `at`; tests/acc.check.ts exists on main. Returns the worktree and a runner for tests-check. */
-function checkWorld(at: string) {
-  const repo = mkRepo({ config: { merge: 'sequential', target: 'main' }, files: { 'tests/acc.check.ts': 'base\n' } })
+function checkWorld(at: string, extra: Record<string, string> = {}) {
+  const repo = mkRepo({ config: { merge: 'sequential', target: 'main' }, files: { 'tests/acc.check.ts': 'base\n', ...extra } })
   const dir = mkTrussDir()
   writePlan(dir, planObj([crew('s', { owns: ['src/s/**', 'tests/**'], status: 'running', acceptanceTest: at })]))
   const wt = addCrewWorktree(repo, 's')
@@ -216,4 +216,68 @@ test('control: an acceptanceTest token that names no existing file guards nothin
   assert.equal(r.status, 0, say(r))
   assert.equal(r.json?.ok, true)
   assert.deepEqual(r.json?.tests, ['tests/other.check.ts'])
+})
+
+// ---------- tests-check: the named-path guard keeps only test files and follows renames (ADR-0016, tests-guard-fix) ----------
+
+const LONG30 = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n') + '\n'
+
+/** A builder commit that `git mv`s `from` to `to` (creating the target dir); returns the commit sha. */
+function mvCommit(wt: string, from: string, to: string, role = 'builder'): string {
+  mkdirSync(`${wt}/${to.split('/').slice(0, -1).join('/')}`, { recursive: true })
+  git(wt, ['mv', from, to])
+  git(wt, ['commit', '-q', '-m', msg(role)])
+  return git(wt, ['rev-parse', 'HEAD'])
+}
+
+test('tg 1: tests-check passes a builder commit to a non-test file the acceptanceTest inspects with cmp', () => {
+  const { wt, run } = checkWorld('cmp src/out.txt src/want.txt && node --test tests/acc.check.ts', { 'src/out.txt': 'old\n', 'src/want.txt': 'new\n' })
+  putFile(wt, 'src/out.txt', 'new\n', msg('builder'))
+  const r = run()
+  assert.equal(r.status, 0, say(r))
+  assert.equal(r.json?.ok, true, say(r))
+})
+
+test('tg 2: tests-check refuses a builder commit to a named tests/*.check.ts file', () => {
+  const { wt, run } = checkWorld('cmp src/out.txt src/want.txt && node --test tests/acc.check.ts', { 'src/out.txt': 'old\n', 'src/want.txt': 'new\n' })
+  const bad = putFile(wt, 'tests/acc.check.ts', 'edited\n', msg('builder'))
+  const r = run()
+  assert.equal(r.status, 1, say(r))
+  assert.equal(r.json?.ok, false, say(r))
+  assert.deepEqual((r.json?.touched ?? []).map((t) => [t.commit, t.files]), [[bad, ['tests/acc.check.ts']]], say(r))
+})
+
+test('tg 3: tests-check passes a builder pure rename (R100) of a test-writer file', () => {
+  const { wt, run } = checkWorld('node --test tests/acc.check.ts')
+  putFile(wt, 'tests/tw.check.ts', LONG30, msg('test-writer'))
+  mvCommit(wt, 'tests/tw.check.ts', 'lib/moved/tw.check.ts')
+  const r = run()
+  assert.equal(r.status, 0, say(r))
+  assert.equal(r.json?.ok, true, say(r))
+})
+
+test('tg 4: tests-check refuses a later builder edit at the renamed path, naming the new path', () => {
+  const { wt, run } = checkWorld('node --test tests/acc.check.ts')
+  putFile(wt, 'tests/tw.check.ts', LONG30, msg('test-writer'))
+  mvCommit(wt, 'tests/tw.check.ts', 'lib/moved/tw.check.ts')
+  const bad = putFile(wt, 'lib/moved/tw.check.ts', LONG30 + 'late\n', msg('builder'))
+  const r = run()
+  assert.equal(r.status, 1, say(r))
+  assert.equal(r.json?.ok, false, say(r))
+  assert.deepEqual((r.json?.touched ?? []).map((t) => [t.commit, t.files]), [[bad, ['lib/moved/tw.check.ts']]], say(r))
+})
+
+test('tg 5: tests-check refuses a builder rename with an edit of a test-writer file', () => {
+  const { wt, run } = checkWorld('node --test tests/acc.check.ts')
+  putFile(wt, 'tests/tw.check.ts', LONG30, msg('test-writer'))
+  mkdirSync(`${wt}/lib/moved`, { recursive: true })
+  git(wt, ['mv', 'tests/tw.check.ts', 'lib/moved/tw.check.ts'])
+  writeFileSync(`${wt}/lib/moved/tw.check.ts`, LONG30.replace('line 7', 'line seven'))
+  git(wt, ['add', '--', 'lib/moved/tw.check.ts'])
+  git(wt, ['commit', '-q', '-m', msg('builder')])
+  const bad = git(wt, ['rev-parse', 'HEAD'])
+  const r = run()
+  assert.equal(r.status, 1, say(r))
+  assert.equal(r.json?.ok, false, say(r))
+  assert.ok((r.json?.touched ?? []).some((t) => t.commit === bad), say(r))
 })
