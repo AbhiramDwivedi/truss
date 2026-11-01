@@ -14,7 +14,8 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(PLUGIN, '..', '..')
 const REFUSE = "'[truss] Refused: delegate this edit to a crew or agent'"
 
 const contracts = [
@@ -48,7 +49,7 @@ function runStub(c: (typeof contracts)[number], kind: 'deny' | 'allow') {
   const dir = mkdtempSync(join(tmpdir(), `contract-stubs-${c.name}-${kind}-`))
   try {
     mkdirSync(dirname(join(dir, c.contract)), { recursive: true })
-    cpSync(join(ROOT, c.contract), join(dir, c.contract))
+    cpSync(join(c.contract.startsWith('tests/') ? PLUGIN : ROOT, c.contract), join(dir, c.contract))
     mkdirSync(dirname(join(dir, c.stub)), { recursive: true })
     writeFileSync(join(dir, c.stub), c[kind])
     const env = { ...process.env }

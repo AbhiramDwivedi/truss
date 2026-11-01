@@ -12,12 +12,12 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOT = PLUGIN
+const ROOT = join(PLUGIN, '..', '..')
 const RUN_MODEL = join(PLUGIN, 'evals', 'run-model.ts')
 const STUB = join(PLUGIN, 'tests', 'fixtures', 'claude-stub', 'claude.mjs')
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
@@ -456,7 +456,7 @@ test('run-model: a case that outlives CASE_TIMEOUT_MS is killed and scored timeo
   assert.ok(readFileSync(RUN_MODEL, 'utf8').includes('CASE_TIMEOUT_MS = 600000'), 'real run-model.ts must keep CASE_TIMEOUT_MS = 600000')
   const tmp = mkdtempSync(join(tmpdir(), 'truss-copy-'))
   try {
-    const base = tmp
+    const base = join(tmp, 'plugins', 'truss')
     mkdirSync(join(base, 'hooks'), { recursive: true })
     mkdirSync(join(base, 'agents'), { recursive: true })
     mkdirSync(join(base, 'evals', 'golden'), { recursive: true })
@@ -534,7 +534,7 @@ test('run-model: honours no environment variable that filters cases', () => {
 test('run-model: model and effort come from each agent frontmatter, not a constant', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'truss-copy-'))
   try {
-    const base = tmp
+    const base = join(tmp, 'plugins', 'truss')
     mkdirSync(join(base, 'hooks'), { recursive: true })
     mkdirSync(join(base, 'agents'), { recursive: true })
     cpSync(join(PLUGIN, 'evals'), join(base, 'evals'), { recursive: true })
@@ -608,8 +608,10 @@ test('run-model: at call time the case cwd is a detached worktree of HEAD with t
       assert.equal(c.agents, true, `agents missing in ${c.cwd}`)
       assert.equal(c.head, HEAD, 'worktree is not at HEAD')
       assert.equal(c.detached, true, 'worktree is not detached')
-      assert.ok(c.worktrees.split('\n').some((l: string) => l.startsWith('worktree ') && norm(l.slice(9)) === norm(c.cwd)),
-        `git does not list ${c.cwd} as a worktree`)
+      // the case runs in the plugin dir inside the detached worktree: <worktree path>/<plugin path relative to the repo root>
+      const pluginRel = relative(ROOT, PLUGIN)
+      assert.ok(c.worktrees.split('\n').some((l: string) => l.startsWith('worktree ') && norm(join(l.slice(9), pluginRel)) === norm(c.cwd)),
+        `git does not list ${c.cwd} as a worktree path plus ${pluginRel}`)
       assertThrowawayCwd(c.cwd, 'probe cwd')
     }
   } finally { rm(probe.dir) }
@@ -699,7 +701,7 @@ const cleanEnv = () => { const e = { ...process.env }; for (const k of Object.ke
 // <git dir>/truss to its content; they are created unconditionally, so a copy assertion never skips.
 function synth(defs: { id: string; input: string }[], sources: Record<string, string>) {
   const tmp = mkdtempSync(join(tmpdir(), 'truss-synth-'))
-  const base = tmp
+  const base = join(tmp, 'plugins', 'truss')
   mkdirSync(join(base, 'hooks'), { recursive: true })
   mkdirSync(join(base, 'agents'), { recursive: true })
   mkdirSync(join(base, 'evals', 'golden'), { recursive: true })

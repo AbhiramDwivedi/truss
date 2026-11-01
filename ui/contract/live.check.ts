@@ -133,7 +133,7 @@ before(async () => {
   writeFileSync(join(repo, 'README.md'), '# tiny\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
-  child = spawn(process.execPath, [mainPath, '--repo', repo, '--plugin', root, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(process.execPath, [mainPath, '--repo', repo, '--plugin', join(root, 'plugins', 'truss'), '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
   child.stderr!.setEncoding('utf8');
   child.stderr!.on('data', (c: string) => { stderr += c; });
   child.stdout!.setEncoding('utf8');

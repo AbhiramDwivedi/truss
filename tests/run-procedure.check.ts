@@ -19,7 +19,7 @@ import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = PLUGIN
+const REPO = join(PLUGIN, '..', '..')
 const raw = (...parts: string[]): string => {
   try {
     return readFileSync(join(...parts), 'utf8')
@@ -147,8 +147,8 @@ describe('run-procedure: .claude/truss.json', () => {
     const cfg = json(REPO, '.claude', 'truss.json')
     assert.equal(cfg.merge, 'sequential')
     assert.equal(cfg.target, 'main')
-    assert.equal(cfg.architecture, 'docs/architecture.md')
-    assert.equal(cfg.adr, 'docs/adr')
+    assert.equal(cfg.architecture, 'plugins/truss/docs/architecture.md')
+    assert.equal(cfg.adr, 'plugins/truss/docs/adr')
   })
   test('factory.ts settings --repo prints target main and its source', () => {
     let out = ''

@@ -16,7 +16,7 @@ import { test } from 'node:test'
 import { codeOnly } from './hooks-load.check.ts'
 
 const REGISTER = new URL('../hooks/register.ts', import.meta.url)
-const REPO_ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
 
 async function exportOf(name: string): Promise<(...a: unknown[]) => any> {
   let mod: Record<string, unknown>
@@ -114,10 +114,10 @@ test('round trip: this repo layout refuses hooks/register.ts and allows docs/req
   const roots = worktreeRootsOf(git(REPO_ROOT, 'worktree', 'list', '--porcelain'))
   assert.ok(roots.length >= 1, 'this checkout lists at least one worktree')
   const repoRoot = roots[0]
-  const cfg = JSON.parse(readFileSync(new URL('../.claude/truss.json', import.meta.url), 'utf8'))
+  const cfg = JSON.parse(readFileSync(new URL('../../../.claude/truss.json', import.meta.url), 'utf8'))
   const planText = JSON.stringify({ version: 1, approval: 'auto', crews: [{ name: 'c1', status: 'running' }] })
   const ctx = { repoRoot, worktreeRoots: roots, trussDir: `${repoRoot}/.git/truss/sess`, planText, architecture: cfg.architecture }
-  const refused = mainEditVerdict({ tool: 'Edit', filePath: `${repoRoot}/hooks/register.ts` }, ctx)
+  const refused = mainEditVerdict({ tool: 'Edit', filePath: `${repoRoot}/plugins/truss/hooks/register.ts` }, ctx)
   assert.ok(refused && /^\[truss\] Refused:/.test(refused.deny), 'hooks/register.ts must be refused')
-  assert.equal(mainEditVerdict({ tool: 'Write', filePath: `${repoRoot}/docs/requirements.md` }, ctx), undefined)
+  assert.equal(mainEditVerdict({ tool: 'Write', filePath: `${repoRoot}/plugins/truss/docs/requirements.md` }, ctx), undefined)
 })

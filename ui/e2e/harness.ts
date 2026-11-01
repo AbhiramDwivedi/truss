@@ -20,7 +20,8 @@ import { createRegistry } from '../server/session/index.ts'
 
 const here = import.meta.dirname
 export const uiDir = resolve(here, '..')
-export const root = resolve(uiDir, '..')
+export const repoRoot = resolve(uiDir, '..')
+export const root = join(repoRoot, 'plugins', 'truss')
 export const WITHIN = { timeout: 2000 }
 
 // ---- locators ------------------------------------------------------------------------------------------

@@ -661,7 +661,7 @@ describe('retro/cli.ts scrub: pf item 3, the plugin manifest author name is acce
 describe('retro/cli.ts scrub: pf item 14, ui/README.md carries a placeholder token', () => {
   test('pf item 14: ?token=<token> is there, no real-looking ?token= value is, and scrub finds no token hit', async () => {
     const { main } = await cliMod()
-    const p = join(PLUGIN, 'ui', 'README.md')
+    const p = join(PLUGIN, '..', '..', 'ui', 'README.md')
     const rd = readFileSync(p, 'utf8')
     assert.ok(rd.includes('?token=<token>'), 'pf item 14: ui/README.md has the ?token=<token> placeholder')
     assert.ok(!/\?token=(?!<token>)[A-Za-z0-9_-]{8,}/.test(rd), 'pf item 14: ui/README.md carries a real-looking token value')

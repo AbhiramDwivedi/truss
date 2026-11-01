@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const uiDir = path.dirname(path.dirname(here))
-const root = path.dirname(uiDir)
+const root = path.join(path.dirname(uiDir), 'plugins', 'truss')
 const MODULE = 'ui/server/state'
 const producerUrl = pathToFileURL(path.join(uiDir, 'server/state/index.ts')).href
 const producer: any = await import(producerUrl).catch(() => null)
