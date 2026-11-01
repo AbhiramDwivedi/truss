@@ -13,9 +13,11 @@ One Claude Code session handles a task that fits in its head. Give it something 
 Truss splits the goal into crews. Each crew owns its files and works in its own git worktree, and test-writers go before builders. A read-only QC engineer that never saw the builder's reasoning must rule PASS on proof, such as test output, before a crew's branch merges. Your main session becomes the PM (project manager): it plans, decides and merges, writes no feature code, and is the only agent that talks to you. You're asked about scope, deploys and pushes, not trivia.
 
 ```
-claude plugin marketplace add AbhiramDwivedi/claude-ops
-claude plugin install truss@claude-ops
+claude plugin marketplace add AbhiramDwivedi/truss
+claude plugin install truss@truss
 ```
+
+The first command adds the `truss` catalog. The second installs `plugins/truss/` from the repo's `main` branch and nothing else: a plugin-only install gets no `ui/`. The optional [local web UI](https://github.com/AbhiramDwivedi/truss/blob/main/ui/README.md) comes only from a clone of the repo.
 
 Then run `/truss:run <goal>`. The first run writes your project's architecture doc if it has none. The [kit](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/kit) and [worktrees](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/worktrees) plugins are optional companions and still come from claude-ops.
 
