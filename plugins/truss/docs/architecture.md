@@ -1201,7 +1201,7 @@ The open points are in ADR-0011, "Not confirmed". The one that can stop a run: w
 
 ## Repo layout (ADR-0013)
 
-The move to plugins/truss/ is not done yet: at main 1cc086f the plugin's 17 top-level paths still sit at the repo root beside `ui/`, and neither `plugins/truss/` nor `marketplace/` exists; goal `plugin-move` (crew `plugin-move`, stage 1) does the move and rewrites this line.
+The move to plugins/truss/ is done: the plugin lives at `plugins/truss/`, beside `ui/` at the repo root, and the catalog is `marketplace/.claude-plugin/marketplace.json`, with `marketplace/README.md` beside it. Publishing the `marketplace` branch from `marketplace/` is still a PM ship step (ADR-0013, "Ship steps").
 
 This section is the design from [ADR-0013](adr/0013-plugin-layout.md) and its amendment for goal `plugin-move`. A user runs two commands, `claude plugin marketplace add AbhiramDwivedi/truss` and `claude plugin install truss@truss`, and gets the plugin with no `ui/` anywhere under their Claude config (ADR-0013, "The client's rulings"). Two things make that work: the plugin lives in its own directory, `plugins/truss/`, and the catalog lives on its own `marketplace` branch, whose one entry is a `git-subdir` source into `main:plugins/truss`. When the move lands, this section moves with the doc to `plugins/truss/docs/architecture.md`.
 
