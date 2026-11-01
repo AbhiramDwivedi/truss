@@ -161,7 +161,7 @@ Every case that must fail on today's producers is named `pf <n>: ...`. Every cas
 | `factory start` output | `bin/factory.ts` | Gains the key `warnings` (array of strings) in the full output, in the resume output and in the `--args-file` pointer (after `unfinished`), by the rule in Decision 1. The factory contract has a `pf` case for a start with no `TRUSS_SESSION_START`. Warnings never hold or refuse a crew. |
 | `factory start`, missing goal file | `bin/factory.ts` | A crew whose `<truss dir>/goals/<slug>.md` doesn't exist goes in `refused`, with a reason that names that path and says it is missing. It gets no worktree and is not under `foremen`, and its status stays `planned`. |
 | `envFailure` | `bin/factory.ts` | An `ENV_PATTERNS` match, or a `Cannot find package` match, counts only when no `"`, `'` or backtick comes before it on the trimmed line. A leading YAML `error:` key and its one opening quote don't count, so TAP's `error: "<msg>"` still counts. Controls: a TAP `error: \|-` block line, a TAP single-line `error: "browserType.launch: ..."`, a real loader line and a real Playwright line all still count. |
-| `factory tests-check` | `bin/factory.ts` | The guarded files are the test-writer files plus every existing repo-relative path that the crew's `acceptanceTest` names. |
+| `factory tests-check` | `bin/factory.ts` | By "Amendment: tests-guard-fix": the guarded files are the test-writer files plus every existing repo-relative path the crew's `acceptanceTest` names that matches a test-file pattern. It reads `git log --cc --name-status -M`. A builder or resolver pure rename (`R100`) of a guarded file is no touch, and the guard follows the new path; a rename below `R100`, a later edit at the new path and a delete of a guarded path are touches. The output shape is unchanged. |
 
 The factory-fixes crew also updates the two existing key pins: `OUTPUT_KEYS` in `tests/fixtures/workflow-run/start.cases.ts:42` and the pointer keys in `tests/factory-resources.check.ts:248`.
 
@@ -176,4 +176,65 @@ The factory-fixes crew also updates the two existing key pins: `OUTPUT_KEYS` in 
 - The PM learns before a stage, not at it, that a stress crew needs a role the session hasn't loaded. On a host with no `/proc`, or with no `CLAUDE_PID`, it gets a "can't tell" warning instead.
 - A PM can no longer resume a design engineer by SendMessage; it starts a fresh one under the next unused name.
 - A failing test that echoes an env string in quotes no longer stops a crew as an env failure. A real env failure in TAP output still does.
-- A crew whose acceptance test names a builder's file can no longer pass `tests-check` after a builder edits that file.
+- A crew whose acceptance test names a builder's test file can no longer pass `tests-check` after a builder edits that file. Which named files count as test files, and how renames count, is set by "Amendment: tests-guard-fix" below.
+
+## Amendment: tests-guard-fix
+
+Written by the design crew `guard-design` (stage 0 of goal `tests-guard-fix`), at main df3dbba. It records the new `factory tests-check` guard rule that the build crew `tests-guard` (stage 1) builds. Where it differs from the sections above, the amendment wins. Every line number below is at df3dbba.
+
+Decided by: checker-32's answer of 20:34 (`decisions.md:509`, followed), the client's standing ruling "Don't just log a plugin bug, fix it", and checker-35's delete control of 21:03, as plan revision 3 (`plan-tests-guard-fix.md`) settles them.
+
+### Why the rule changes
+
+Two gaps showed in goal `plugin-move` (`decisions.md:508`):
+
+- The rule in "`tests-check` guards the acceptance files" (Decision 1) guards every existing path the `acceptanceTest` names. It can't tell a test file from a deliverable the test only inspects, with `cmp` or `grep`, so a builder commit to such a deliverable is refused.
+- `cmdTestsCheck` reads `git log --cc --name-only` (`bin/factory.ts:675`), which has no rename detection and shows only a rename's new path. Builder commit 77f5f09 renamed two test-writer files and edited them in the same commit (99% renames), and `tests-check` did not list it.
+
+### The rule
+
+1. **Guarded files.** The guarded files are:
+   - every file a `Truss-Role: test-writer` commit in `<base>..HEAD` touched, whatever its name;
+   - every existing repo-relative path the crew's `acceptanceTest` names that matches a test-file pattern below.
+
+   A named path that matches no pattern is not guarded.
+2. **Test-file patterns.** A path matches when its basename matches one of:
+   - `.(test|spec|check).[cm]?[jt]sx?`, as a suffix (for example `a.spec.ts`, `b.test.mjs`, `c.check.tsx`);
+   - `test_*.py`;
+   - `*_test.py` or `*_test.go`;
+   - `conftest.py`, exactly;
+
+   or when one of its directory segments is `tests/`, `test/`, `__tests__/`, `spec/`, `checks/`, `e2e/` or `fixtures/`. A segment is a whole directory name, so `src/testdata/x.txt` does not match; nor do `latest.py`, `contest.py` or `a.spec.md`.
+3. **Rename detection.** `tests-check` reads `git log --cc --name-status -M <base>..HEAD`, oldest commit first. A merge still counts only for the files its resolution changed (`--cc`).
+4. **Pure rename.** A builder or resolver rename of a guarded file with similarity 100 (`R100`, as `git mv` gives) is no touch. The guard follows the new path: the new path is guarded from then on.
+5. **Rename with an edit.** A builder or resolver rename of a guarded file below `R100` (any edit, such as 77f5f09's) is a touch.
+6. **Later edit.** A later builder or resolver edit (`M`) at the new path of a renamed guarded file is a touch. This holds for a renamed test-writer file and for a renamed `acceptanceTest`-named file alike.
+7. **Delete.** A builder or resolver delete (`D`) of a guarded path is a touch, as it is today under `--name-only`.
+8. **Output.** The output shape does not change: `{"ok":true,"tests":[...]}`, or `{"ok":false,"touched":[{commit,role,files}],"tests":[...]}` with exit 1.
+
+### What this supersedes
+
+- **ADR-0016:102-104**, "`tests-check` guards the acceptance files" (Decision 1). Its rule, "the test-writer files plus every existing repo-relative path that the crew's `acceptanceTest` names", is replaced by rules 1 to 7 above: a named path is guarded only when it matches a test-file pattern, and renames count by rules 4 to 6. The seam row for `factory tests-check` in "Seams to pin" now states this rule.
+- **ADR-0009:279**, the "Tests guard" prose under Decision 4 step 6. Its rule, that the acceptance-test files are the files a `Truss-Role: test-writer` commit touched, read with `git log --cc` and no rename detection, is replaced by rules 1 to 8 above. Its other rules stand: a merge counts only for the files its resolution changed, a touch stops the crew `BLOCKED:` at `tests`, and no fix builder runs. ADR-0009:279 and the `tests-check` row of ADR-0009 Decision 1 (:170) now point here.
+
+The Context item 11 (F-21, :25) stays as the history of the earlier fix.
+
+### The QC engineer's step 8
+
+`agents/qc-engineer.md` step 8 (:47) states the same pure-rename rule: a pure rename (`R100`) of an acceptance-test file is no touch and the guard follows the new path, and a rename with any edit is a touch, so it is a FAIL for a builder or resolver. Crew `tests-guard` writes that sentence.
+
+### Pins
+
+The five pins `tg 1:` to `tg 5:` live in `tests/factory-fixes.check.ts`, next to `ff 9` and `ff 10`, as plan revision 3 places them. checker-32's answer named `tests/factory.check.ts`; the plan moved them next to the existing tests-check pins. Crew `tests-guard`'s test-writer writes them:
+
+1. `tg 1`: a builder commit to a non-test file the `acceptanceTest` inspects with `cmp` passes (exit 0, `ok` true).
+2. `tg 2`: a builder commit to a named `tests/*.check.ts` refuses (exit 1, `touched` names it).
+3. `tg 3`: a builder pure rename (`git mv`, `R100`) of a test-writer file passes.
+4. `tg 4`: a later builder edit at the renamed path refuses, naming the new path.
+5. `tg 5`: a builder rename with an edit of a test-writer file refuses (the 77f5f09 shape).
+
+On the base `bin/factory.ts`, `tg 1`, `tg 4` and `tg 5` fail and `tg 2` and `tg 3` hold. `ff 9` and `ff 10` keep passing.
+
+### Known limit
+
+This is a known limit, recorded and not fixed: a script the acceptance test runs whose name matches no pattern (for example `bash scripts/verify.sh`) loses its `tests-check` guard unless a test-writer commit wrote it. A builder can edit such a script and pass `tests-check`. QC step 8 still reads the history, so the QC engineer checks such scripts by hand.
