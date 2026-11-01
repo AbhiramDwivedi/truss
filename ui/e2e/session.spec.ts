@@ -6,12 +6,12 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { startInterface, rand, rx, root, WITHIN, type Iface, type QuestionSpec } from './harness.ts'
+import { startInterface, rand, rx, repoRoot, WITHIN, type Iface, type QuestionSpec } from './harness.ts'
 import { questionCard, permissionCard } from '../server/session/index.ts'
 
 // ---- fixture inputs ------------------------------------------------------------------------------------
 
-const fixtureLines = readFileSync(join(root, 'ui', 'contract', 'fixtures', 'sdk-stream.jsonl'), 'utf8').trim().split('\n')
+const fixtureLines = readFileSync(join(repoRoot, 'ui', 'contract', 'fixtures', 'sdk-stream.jsonl'), 'utf8').trim().split('\n')
 const rec = (seq: number): any => {
   const r = fixtureLines.map((l) => JSON.parse(l)).find((m) => m._seq === seq)
   if (!r) throw new Error(`no fixture line with _seq ${seq}`)

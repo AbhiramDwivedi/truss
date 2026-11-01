@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path'
 
 const here = import.meta.dirname
 const uiDir = resolve(here, '..', '..')
-const root = resolve(uiDir, '..')
+const root = join(resolve(uiDir, '..'), 'plugins', 'truss')
 const WITHIN = { timeout: 2000 }
 
 let dir = ''

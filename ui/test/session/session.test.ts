@@ -15,7 +15,7 @@ const { createSession } = (await import(pathToFileURL(path.join(uiDir, 'server/s
 function withSession(fn: (s: any) => void | Promise<void>) {
   return async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'truss-ui-session-'))
-    const s = createSession({ repo: dir, pluginPath: repoRoot })
+    const s = createSession({ repo: dir, pluginPath: path.join(repoRoot, 'plugins', 'truss') })
     try {
       await fn(s)
     } finally {
@@ -58,7 +58,7 @@ test('close resolves, and send after close gives "ended"', async () => {
   // Decision 9: send error 'ended'
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'truss-ui-session-'))
   try {
-    const s = createSession({ repo: dir, pluginPath: repoRoot })
+    const s = createSession({ repo: dir, pluginPath: path.join(repoRoot, 'plugins', 'truss') })
     await s.close()
     assert.deepEqual(s.send('hi'), { ok: false, error: 'ended' })
   } finally {
