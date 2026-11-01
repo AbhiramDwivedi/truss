@@ -40,7 +40,7 @@ if (nodeWarning) process.stderr.write(nodeWarning + '\n');
 
 const args = parseArgs(process.argv.slice(2));
 const repo = resolve(args.repo ?? process.env.INIT_CWD ?? process.cwd());
-const pluginPath = resolve(args.plugin ?? join(uiDir, '..'));
+const pluginPath = resolve(args.plugin ?? join(uiDir, '..', 'plugins', 'truss'));
 if (!existsSync(join(pluginPath, '.claude-plugin', 'plugin.json'))) {
   fail(2, `plugin root ${pluginPath} has no .claude-plugin/plugin.json; ${USAGE}`);
 }

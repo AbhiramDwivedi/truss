@@ -30,7 +30,7 @@ git('config', 'user.name', 'spike');
 writeFileSync(join(repo, 'README.md'), '# tiny\n');
 git('add', '.');
 git('commit', '-q', '-m', 'init');
-rec({ _spike: 'setup', repo, pluginPath: root });
+rec({ _spike: 'setup', repo, pluginPath: join(root, 'plugins', 'truss') });
 
 // Streaming input: next prompt is pushed when the previous turn's result arrives.
 const prompts = [
@@ -65,7 +65,7 @@ const q = query({
   prompt: input(),
   options: {
     cwd: repo,
-    plugins: [{ type: 'local', path: root }],
+    plugins: [{ type: 'local', path: join(root, 'plugins', 'truss') }],
     canUseTool: async (toolName: string, toolInput: Record<string, any>, opts: Record<string, any>) => {
       const { signal: _s, ...o } = opts;
       rec({ _spike: 'canUseTool', toolName, input: toolInput, options: o });
