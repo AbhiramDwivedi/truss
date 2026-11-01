@@ -115,6 +115,8 @@ if (cases.length === 0) fail('no golden cases')
 
 const common = resolve(here, git('rev-parse', '--git-common-dir'))
 const head = git('rev-parse', 'HEAD')
+// This file sits in <plugin>/evals, so the plugin dir is one up from the evals prefix ('.' when the plugin is the repo root).
+const pluginRel = join(git('rev-parse', '--show-prefix'), '..')
 const bin = process.env.CLAUDE || 'claude'
 const script = /\.(?:js|mjs|cjs)$/.test(bin)
 const out = mkdtempSync(join(tmpdir(), 'truss-evals-'))
@@ -140,7 +142,9 @@ for (const c of cases) {
   live = mkdtempSync(join(tmpdir(), 'truss-evals-wt-'))
   const wt = live
   git('worktree', 'add', '--detach', wt, 'HEAD')
-  rmSync(join(wt, 'evals', 'golden'), { recursive: true, force: true })
+  // The worktree is the whole repo; the case runs in the plugin dir inside it (the repo root when the plugin is the root).
+  const cwd = join(wt, pluginRel)
+  rmSync(join(cwd, 'evals', 'golden'), { recursive: true, force: true })
   // Files under .git/truss are copied in and named by relative path, so the input points nowhere outside the tree.
   const copied = new Map<string, string>()
   c.input = c.input.replace(/\S*\.git[\\/]truss[^\s"'`)]*/g, (p) => {
@@ -152,14 +156,14 @@ for (const c of cases) {
     let name = basename(rel)
     if (existsSync(src)) {
       for (let n = 2; [...copied.values()].includes(`inputs/${name}`); n++) name = `${n}-${basename(rel)}`
-      mkdirSync(join(wt, 'inputs'), { recursive: true })
-      if (statSync(src).isDirectory()) cpSync(src, join(wt, 'inputs', name), { recursive: true })
-      else copyFileSync(src, join(wt, 'inputs', name))
+      mkdirSync(join(cwd, 'inputs'), { recursive: true })
+      if (statSync(src).isDirectory()) cpSync(src, join(cwd, 'inputs', name), { recursive: true })
+      else copyFileSync(src, join(cwd, 'inputs', name))
     }
     copied.set(src, `inputs/${name}`)
     return `inputs/${name}` + tail
   })
-  const r = await runCase(script ? process.execPath : bin, script ? [bin, ...args] : args, wt, c.input)
+  const r = await runCase(script ? process.execPath : bin, script ? [bin, ...args] : args, cwd, c.input)
   if (stopping) await new Promise(() => {}) // the interrupt timer exits; the exit hook removes the worktree
   child = undefined
   dropWorktree(wt)

@@ -1,0 +1,15 @@
+{
+  "name": "truss",
+  "owner": { "name": "Abhiram Dwivedi" },
+  "plugins": [
+    {
+      "name": "truss",
+      "source": {
+        "source": "git-subdir",
+        "url": "AbhiramDwivedi/truss",
+        "path": "plugins/truss",
+        "ref": "main"
+      }
+    }
+  ]
+}
