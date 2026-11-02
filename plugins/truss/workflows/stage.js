@@ -210,7 +210,9 @@ const knownOf = (r) => {
 // which would land after the --, so this line carries both flags on each side.
 function heavyLine(crew, expect) {
   const bin = sh(`${F.plugin}/bin/factory.ts`)
-  const dr = `--dir ${sh(F.dir)} --repo ${sh(F.repo)}`
+  // the inner command runs with cwd = the crew worktree, where a relative truss dir (.git/truss/<id>) does not resolve
+  const dir = F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/, '')}/${F.dir}`
+  const dr = `--dir ${sh(dir)} --repo ${sh(F.repo)}`
   const slug = sh(crew.slug)
   const cwd = sh(crew.e.worktree)
   return `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} -- node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)} ${dr}`
