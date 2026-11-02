@@ -14,7 +14,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const realUi = join(here, '..');
 const plugin = join(realUi, '..', 'plugins', 'truss');
 const BUILD_CMD = 'npm --prefix ui run build';
-const PAGE_CSP = "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+const CSP_HEADER = 'Content-Security-Policy';
+const PAGE_CSP ="default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 const tmp = mkdtempSync(join(tmpdir(), 'truss-build-check-'));
 const children: ChildProcess[] = [];
@@ -88,7 +89,7 @@ describe('no client build: ui/web/index.html is missing', () => {
       const r = await get(s, path);
       assert.equal(r.status, 503, `GET ${path} with no build`);
       assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
-      assert.equal(r.headers.get('content-security-policy'), PAGE_CSP);
+      assert.equal(r.headers.get(CSP_HEADER), PAGE_CSP);
       assert.match(r.text, /<h1>Truss needs a client build<\/h1>/);
       assert.ok(r.text.includes(`<code>${BUILD_CMD}</code>`), `page names ${BUILD_CMD} in a <code> element`);
       assert.doesNotMatch(r.text, /<script|<style|\sstyle=|\son[a-z]+=/i, 'no inline script or style');
@@ -110,7 +111,7 @@ describe('a client build is present', () => {
     const s = await start(ui);
     const r = await get(s, '/');
     assert.equal(r.status, 200);
-    assert.equal(r.headers.get('content-security-policy'), PAGE_CSP);
+    assert.equal(r.headers.get(CSP_HEADER), PAGE_CSP);
     assert.equal(r.headers.get('content-type'), 'text/html; charset=utf-8');
     assert.ok(r.text.includes('<div id="root">'));
     assert.ok(!s.stderr().includes(BUILD_CMD), 'no missing-build message when the build exists: ' + s.stderr());
