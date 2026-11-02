@@ -1,0 +1,107 @@
+{
+  "version": 3,
+  "goal": "Build an optional local web UI that drives Truss runs and shows live crew status",
+  "architecture": "docs/architecture.md",
+  "approval": "client",
+  "approvedAt": "2026-10-30T22:37:14.922Z",
+  "maxParallelCrews": 4,
+  "reworkAllowance": 2,
+  "crews": [
+    {
+      "slug": "ui-design",
+      "stage": 0,
+      "verdict": "design",
+      "modules": [
+        "ui-state",
+        "ui-session"
+      ],
+      "owns": [
+        "docs/architecture.md",
+        "docs/adr/0011-local-web-ui.md"
+      ],
+      "acceptanceTest": "node --test ui-design.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 5,
+      "status": "merged"
+    },
+    {
+      "slug": "ui-state",
+      "stage": 0,
+      "verdict": "change",
+      "modules": [
+        "ui-state"
+      ],
+      "owns": [
+        "ui/server/state/**",
+        "ui/test/state/**"
+      ],
+      "acceptanceTest": "node --test ui-state.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 6,
+      "status": "merged"
+    },
+    {
+      "slug": "ui-session",
+      "stage": 1,
+      "verdict": "change",
+      "modules": [
+        "ui-session"
+      ],
+      "owns": [
+        "ui/server/session/**",
+        "ui/test/session/**"
+      ],
+      "acceptanceTest": "node --test ui-session.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 5,
+      "status": "running"
+    },
+    {
+      "slug": "ui-server",
+      "stage": 1,
+      "verdict": "change",
+      "modules": [
+        "ui-server"
+      ],
+      "owns": [
+        "ui/server/http/**",
+        "ui/server/main.ts"
+      ],
+      "acceptanceTest": "node --test ui-server.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 5,
+      "status": "running"
+    },
+    {
+      "slug": "ui-web",
+      "stage": 2,
+      "verdict": "change",
+      "modules": [
+        "ui-web"
+      ],
+      "owns": [
+        "ui/web/**",
+        "ui/e2e/**"
+      ],
+      "acceptanceTest": "node --test ui-web.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 7,
+      "status": "planned"
+    },
+    {
+      "slug": "ui-e2e",
+      "stage": 2,
+      "verdict": "change",
+      "modules": [
+        "ui-e2e"
+      ],
+      "owns": [
+        "ui-e2e/**"
+      ],
+      "acceptanceTest": "node --test ui-e2e.test.ts",
+      "acceptanceTestProved": true,
+      "estAgents": 5,
+      "status": "planned"
+    }
+  ]
+}
