@@ -49,7 +49,7 @@ Decided by: the plan, item 1(b) (approved auto, checker-41); the client approves
 "kit is loaded" means a `kit:` skill is among the session's skills.
 
 - **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json:5-7`) stand.
-- **Factory.** `rolesWithTypes` (`bin/factory.ts:305-318`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping applies only when kit is loaded; else the factory falls back to the `roles.json` defaults.
+- **Factory.** `rolesWithTypes` (`bin/factory.ts:305-318`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
 - **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts:9-13` pins today.
 - **Init, kit absent.** The kit-absent line stays word for word, because truss loaded alone by `--plugin-dir` still reaches it: `kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)`.
 
@@ -131,7 +131,7 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 - **The event line**, once per crew and label, so a second `finish` adds nothing:
   `{"v":1,"ts":"<iso>","event":"restart","crew":"<slug>","agent":"<label>","label":"<label>","n":<n>,"reason":"CHECKPOINT"|"no report"}`
 - **leftWorktrees.** `why` is one of `dirty`, `locked` or `unmerged`. Fixtures use a real-shaped id such as `wf_e804087f-eaa`; `wf_e804087f-eaa-1x`, `wf_e804087f-eaax-1` and another run's id stay.
-- **Roles.** `roles.build` sets builder and resolver, `roles.test` sets tester, only when kit is loaded; `--type` wins; no `roles` leaves `roles.json` as it is.
+- **Roles.** `roles.build` sets builder and resolver, `roles.test` sets tester, and the mapping maps whenever configured; the config author owns the kit dependency; `--type` wins; no `roles` leaves `roles.json` as it is.
 
 ### cp: init, run and foreman
 
