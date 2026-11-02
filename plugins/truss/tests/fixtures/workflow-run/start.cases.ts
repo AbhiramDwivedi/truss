@@ -40,7 +40,7 @@ const norm = (p: string): string => {
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
-const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'highImpact', 'labelFrom', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'ownTests', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {
@@ -284,7 +284,7 @@ test('start (workflow crew): an existing crew worktree is reused, its commits ke
 })
 
 test('start output: top-level keys, truss keys and crew entry keys are exactly the ADR row\'s', () => {
-  const env = world([crew('x', { owns: ['src/x/**', 'docs/x.md'], acceptanceTest: 'node --test t.ts' })], {
+  const env = world([crew('x', { owns: ['src/x/**', 'docs/x.md', 'tests/x.check.ts'], acceptanceTest: 'node --test t.ts' })], {
     plan: { reworkAllowance: 3 },
     goals: { x: { scope: 'Build only the x thing.', highImpact: 'src/x/core.ts', stressTest: 'yes, it takes input' } },
   })
@@ -311,7 +311,9 @@ test('start output: top-level keys, truss keys and crew entry keys are exactly t
   assert.equal(e.stage, 1)
   assert.equal(norm(e.goalFile), norm(`${env.dir}/goals/x.md`))
   assert.equal(typeof e.goal, 'string')
-  assert.deepEqual(e.owns, ['src/x/**', 'docs/x.md'])
+  assert.deepEqual(e.owns, ['src/x/**', 'docs/x.md', 'tests/x.check.ts'])
+  assert.deepEqual(e.ownTests, ['tests/x.check.ts'], 'ownTests: the owns entries the one test-path rule accepts (ADR-0019 item 9)')
+  assert.deepEqual(e.guarded, [], 'guarded: t.ts does not exist and no test-writer commit exists')
   assert.equal(e.acceptanceTest, 'node --test t.ts')
   assert.ok(JSON.stringify(e.highImpact).includes('src/x/core.ts'), 'high-impact section read from the goal file')
   assert.ok(e.stressTest === true || /yes/i.test(String(e.stressTest)), `stressTest from the goal file: ${JSON.stringify(e.stressTest)}`)
@@ -408,6 +410,8 @@ function stoppedWorld() {
   memberBranch(wt, 'truss-x', 'member-t1', true)
   memberBranch(wt, 'truss-x', 'member-t2', false)
   memberBranch(wt, 'truss-x', 'member-t3', true)
+  // a red record with a nonzero exit: a resume at a step after red is refused without one (ADR-0019 item 3)
+  putFile(env.dir, 'checks/x-1.json', JSON.stringify({ command: 'false', exit: 1, head: head(wt), tail: '' }))
   const plannerTasks = [task('t1'), task('t2'), task('t3'), task('t4')]
   const member = (n: string, marker: string, branch: string) => ({ task: n, marker, branch, commit: 'c0ffee', proof: 'ran it', text: 'ok' })
   const run = deadRun(env, 'wf_stopped', [
