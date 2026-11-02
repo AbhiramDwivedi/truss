@@ -50,6 +50,25 @@ export async function openPanel(page: Page, name: RegExp): Promise<void> {
   await t.click()
 }
 
+// ---- ADR-0018 shell, by role and accessible name --------------------------------------------------------
+// Roles and names are fixed by ADR-0018 section 10; none of these reaches the page by class, tag or id.
+export const yourMove = (page: Page): Locator => page.getByRole('region', { name: 'Your move', exact: true })
+export const goalBox = (page: Page): Locator => page.getByRole('textbox', { name: 'Goal or message', exact: true })
+export const sendButton = (page: Page): Locator => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: 'Send', exact: true })
+export const sessionStatus = (page: Page): Locator => page.getByRole('status', { name: 'Session', exact: true })
+export const runStatus = (page: Page): Locator => page.getByRole('list', { name: 'Run status', exact: true })
+export const CARD = {
+  question: /^Question from Claude: /,
+  permission: /^Permission request: /,
+  reply: /^Reply needed$/,
+} as const
+// A request card (an article) of one kind, optionally narrowed to the ones that hold `text`.
+export function card(page: Page, kind: keyof typeof CARD, text?: RegExp | string): Locator {
+  let l = page.getByRole('article', { name: CARD[kind] })
+  if (text !== undefined) l = l.filter({ hasText: typeof text === 'string' ? rx(text) : text })
+  return l
+}
+
 // ---- real files (startReal) ----------------------------------------------------------------------------
 
 // A valid 1x1 PNG.

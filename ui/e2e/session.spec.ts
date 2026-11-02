@@ -6,7 +6,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { startInterface, rand, rx, repoRoot, WITHIN, type Iface, type QuestionSpec } from './harness.ts'
+import { startInterface, rand, rx, repoRoot, WITHIN, yourMove, goalBox, sendButton, sessionStatus, runStatus, type Iface, type QuestionSpec } from './harness.ts'
 import { questionCard, permissionCard } from '../server/session/index.ts'
 
 // ---- fixture inputs ------------------------------------------------------------------------------------
@@ -26,32 +26,35 @@ const permCard = (r: any) => permissionCard(r.toolName, r.input, r.options)
 
 // ---- helpers -------------------------------------------------------------------------------------------
 
-const CARD_ROLES = ['article', 'group', 'region', 'listitem', 'form'] as const
-// The innermost card-like element that holds `text` and a control matching `controls` (a card still open).
+// ADR-0018: a request card is an `article` named `Question from Claude: <header>`, `Permission request: <tool>`
+// or `Reply needed`. An open card holds its buttons; an answered one keeps its name and loses them.
+const ANY_CARD = /^(Question from Claude: |Permission request: |Reply needed$)/
+// The open card that holds `text` and a button matching `controls`.
 function openCard(page: Page, text: RegExp | string, controls: RegExp): Locator {
   const hasText = typeof text === 'string' ? rx(text) : text
-  return CARD_ROLES.map((r) => page.getByRole(r as 'article').filter({ hasText }).filter({ has: page.getByRole('button', { name: controls }) })).reduce((a, b) => a.or(b)).last()
+  return page.getByRole('article', { name: ANY_CARD }).filter({ hasText }).filter({ has: page.getByRole('button', { name: controls }) }).last()
 }
-// Any card-like element that holds all the given texts (works after the card lost its buttons).
+// Any request card (open, answered or cancelled) that holds all the given texts.
 function cardHolding(page: Page, ...texts: Array<RegExp | string>): Locator {
-  return CARD_ROLES.map((r) => {
-    let l = page.getByRole(r as 'article')
-    for (const t of texts) l = l.filter({ hasText: typeof t === 'string' ? rx(t) : t })
-    return l
-  }).reduce((a, b) => a.or(b)).first()
+  let l = page.getByRole('article', { name: ANY_CARD })
+  for (const t of texts) l = l.filter({ hasText: typeof t === 'string' ? rx(t) : t })
+  return l.first()
 }
-const APPROVE = /approve|allow/i
-const DENY = /deny|reject/i
-const SUBMIT = /submit|send|answer|reply/i
+const APPROVE = /^Approve$/
+const DENY = /^Deny$/
+const SUBMIT = /^Submit answers$/
 const ANSWERED = /answered|approved|allowed|denied|replied/i
+const MESSAGE_WITH_ANSWER = { name: 'Message with your answer', exact: true } as const
 
-function option(card: Locator, label: string): Locator {
+// An option of a question: a radio (single select) or a checkbox (multi select), by its label, inside the
+// radiogroup named after the question text when one is given.
+function option(card: Locator, label: string, question?: string): Locator {
   const name = rx(label.replace(/ \(Recommended\)$/, ''))
-  return card.getByRole('radio', { name }).or(card.getByRole('checkbox', { name })).or(card.getByRole('button', { name })).first()
+  const scope = question ? card.getByRole('radiogroup', { name: rx(question.slice(0, 40)) }) : card
+  return scope.getByRole('radio', { name }).or(scope.getByRole('checkbox', { name })).first()
 }
 async function submit(card: Locator): Promise<void> {
-  const b = card.getByRole('button', { name: SUBMIT })
-  if ((await b.count()) > 0) await b.first().click()
+  await card.getByRole('button', { name: SUBMIT }).click()
 }
 const banner = (page: Page) => page.getByRole('banner')
 
@@ -104,7 +107,13 @@ test.describe('R-3 question cards', () => {
         }
       }
       // The recommended option comes first and is marked in words, not by color (R-18).
-      const rec1 = option(card, first.options[0]!.label)
+      await expect(page.getByRole('article', { name: rx(`Question from Claude: ${first.header}`) })).toBeVisible()
+      await expect(yourMove(page).getByRole('article', { name: rx(`Question from Claude: ${first.header}`) })).toBeVisible()
+      for (const q of specs) {
+        await expect(card.getByRole('radiogroup', { name: rx(q.question.slice(0, 40)) }).getByRole('radio')).toHaveCount(q.options.length)
+        await expect(card.getByRole('textbox', { name: 'Your own answer', exact: true })).toHaveCount(specs.length)
+      }
+      const rec1 = option(card, first.options[0]!.label, first.question)
       await expect(rec1).toBeVisible()
       await expect(rec1).toHaveAccessibleName(/node\.js cli.*recommended/i)
       expect(iface.calls.length).toBe(0)
@@ -118,8 +127,8 @@ test.describe('R-3 question cards', () => {
       const id = iface.question(specs)
       const card = openCard(page, rx(specs[0]!.header), SUBMIT)
       await expect(card).toBeVisible(WITHIN)
-      await option(card, 'Python CLI').click()
-      await option(card, 'Bare semver, exit 0 (Recommended)').click()
+      await option(card, 'Python CLI', specs[0]!.question).click()
+      await option(card, 'Bare semver, exit 0 (Recommended)', specs[1]!.question).click()
       const t0 = Date.now()
       await submit(card)
       const call = await nextCall(iface, 'answer', 0)
@@ -141,6 +150,7 @@ test.describe('R-3 question cards', () => {
       const card = openCard(page, rx(`Parts ${tag}`), SUBMIT)
       await expect(card).toBeVisible(WITHIN)
       await expect(card.getByRole('checkbox')).toHaveCount(3)
+      await expect(card.getByRole('radio')).toHaveCount(0)
       await card.getByRole('checkbox', { name: rx(`Alpha ${tag}`) }).check()
       await card.getByRole('checkbox', { name: rx(`Gamma ${tag}`) }).check()
       await submit(card)
@@ -157,10 +167,9 @@ test.describe('R-3 question cards', () => {
       iface.question([{ header: `Name ${tag}`, question: q, options: [{ label: `One ${tag} (Recommended)` }, { label: `Two ${tag}` }] }])
       const card = openCard(page, rx(`Name ${tag}`), SUBMIT)
       await expect(card).toBeVisible(WITHIN)
-      const other = card.getByRole('radio', { name: /other|own|free|type/i }).or(card.getByRole('button', { name: /other|own answer|free|type/i }))
-      if ((await other.count()) > 0) await other.first().click()
+      // The text box `Your own answer` is always shown under the options; no radio has to be opened first.
       const typed = `my own words ${tag}`
-      await card.getByRole('textbox').first().fill(typed)
+      await card.getByRole('textbox', { name: 'Your own answer', exact: true }).fill(typed)
       await submit(card)
       const call = await nextCall(iface, 'answer', 0)
       expect(call.body).toEqual({ answers: { [q]: typed } })
@@ -214,7 +223,7 @@ test.describe('R-7 permission cards', () => {
         const card = openCard(page, rx(tag), button)
         await expect(card).toBeVisible(WITHIN)
         await expect(card).toContainText(c.summary)
-        if (message) await card.getByRole('textbox').first().fill(message)
+        if (message) await card.getByRole('textbox', MESSAGE_WITH_ANSWER).fill(message)
         const t0 = Date.now()
         await card.getByRole('button', { name: button }).click()
         const call = await nextCall(iface, 'answer', 0)
@@ -325,7 +334,7 @@ test.describe('R-7 reply cards', () => {
         const id = iface.reply({ text: `Push now? ${tag}` })
         const card = openCard(page, rx(tag), button)
         await expect(card).toBeVisible(WITHIN)
-        if (message) await card.getByRole('textbox').first().fill(message)
+        if (message) await card.getByRole('textbox', MESSAGE_WITH_ANSWER).fill(message)
         const t0 = Date.now()
         await card.getByRole('button', { name: button }).click()
         const call = await nextCall(iface, 'answer', 0)
@@ -349,8 +358,8 @@ test.describe('R-7 reply cards', () => {
       await expect(openCard(page, rx(tag), APPROVE)).toBeVisible(WITHIN)
       const typed = `Yes, go on ${tag}`
       const t0 = Date.now()
-      await page.getByRole('textbox', { name: /goal|message/i }).fill(typed)
-      await page.getByRole('button', { name: /^(send|start)|send message|start/i }).click()
+      await goalBox(page).fill(typed)
+      await sendButton(page).click()
       const call = await nextCall(iface, 'send', 0)
       expect(call.at - t0).toBeLessThan(2000)
       expect(call.text).toBe(typed)
@@ -370,12 +379,13 @@ test.describe('goal and message box', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const typed = `Build the thing ${rand()}`
-      const box = page.getByRole('textbox', { name: /goal|message/i })
+      const box = goalBox(page)
       await expect(box).toBeVisible()
+      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
       const posted = page.waitForRequest((r) => r.url().endsWith('/api/message') && r.method() === 'POST')
       const t0 = Date.now()
       await box.fill(typed)
-      await page.getByRole('button', { name: /send|start/i }).click()
+      await sendButton(page).click()
       const req = await posted
       expect(req.postDataJSON()).toEqual({ text: typed })
       const call = await nextCall(iface, 'send', 0)
@@ -391,14 +401,24 @@ test.describe('goal and message box', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const typed = `by keyboard ${rand()}`
-      const box = page.getByRole('textbox', { name: /goal|message/i })
+      const box = goalBox(page)
       await box.focus()
       await page.keyboard.type(typed)
       await page.keyboard.press('Tab')
-      await expect(page.getByRole('button', { name: /send|start/i })).toBeFocused()
+      await expect(sendButton(page)).toBeFocused()
       await page.keyboard.press('Enter')
       const call = await nextCall(iface, 'send', 0)
       expect(call.text).toBe(typed)
+      // ADR-0018: Ctrl+Enter in the box sends too, and a plain Enter only adds a line.
+      const tag2 = rand()
+      await box.focus()
+      await page.keyboard.type(`line one ${tag2}`)
+      await page.keyboard.press('Enter')
+      await page.keyboard.type(`line two ${tag2}`)
+      expect(iface.calls.filter((c) => c.kind === 'send')).toHaveLength(1)
+      await page.keyboard.press('Control+Enter')
+      await expect.poll(() => iface.calls.filter((c) => c.kind === 'send').length, { timeout: 1000 }).toBe(2)
+      expect(iface.calls.filter((c) => c.kind === 'send')[1]!.text).toBe(`line one ${tag2}\nline two ${tag2}`)
     })
   })
 
@@ -408,17 +428,19 @@ test.describe('goal and message box', () => {
       iface.setSession({ status: 'ended' })
       iface.endSession()
       const typed = `too late ${rand()}`
-      const box = page.getByRole('textbox', { name: /goal|message/i })
+      const box = goalBox(page)
       await box.fill(typed)
       const resp = page.waitForResponse((r) => r.url().endsWith('/api/message'))
-      await page.getByRole('button', { name: /send|start/i }).click().catch(() => {})
+      await sendButton(page).click().catch(() => {})
       const r = await resp.catch(() => null)
       if (r) {
         expect(r.status()).toBe(409)
         expect(await r.json()).toEqual({ error: 'ended' })
+        // ADR-0018 section 9: the 409 shows this sentence in the Your move region.
+        await expect(yourMove(page)).toContainText('The session has ended. Start the UI again to send more.', WITHIN)
       }
       // Either the control is off or the page says so in words; the text is not lost and nothing was sent.
-      await expect(page.getByText(/ended/i).first()).toBeVisible(WITHIN)
+      await expect(sessionStatus(page)).toContainText(/ended/i, WITHIN)
       expect(iface.calls.filter((c) => (c.result as any).ok === true)).toHaveLength(0)
       if (await box.isEnabled()) await expect(box).toHaveValue(typed)
     })
@@ -427,8 +449,8 @@ test.describe('goal and message box', () => {
   test('R-15: an empty message is not sent', async ({ page }) => {
     await withIface({}, async (iface) => {
       await open(page, iface)
-      await page.getByRole('textbox', { name: /goal|message/i }).fill('   ')
-      await page.getByRole('button', { name: /send|start/i }).click({ force: true, timeout: 1000 }).catch(() => {})
+      await goalBox(page).fill('   ')
+      await sendButton(page).click({ force: true, timeout: 1000 }).catch(() => {})
       await page.waitForTimeout(300)
       expect(iface.calls.filter((c) => c.kind === 'send' && (c.result as any).ok === true)).toHaveLength(0)
     })
@@ -467,6 +489,8 @@ test.describe('header', () => {
         await open(page, iface)
         iface.setSession({ status })
         await expect(banner(page)).toContainText(words, WITHIN)
+        // ADR-0018: the words are the text of the `status` named Session.
+        await expect(sessionStatus(page)).toHaveText(words, WITHIN)
       })
     })
   }
@@ -477,6 +501,7 @@ test.describe('header', () => {
       const line = `claude exited with code 1 ${rand()}`
       iface.setSession({ status: 'error', error: line })
       await expect(banner(page)).toContainText(/error/i, WITHIN)
+      await expect(sessionStatus(page)).toHaveText(`error: ${line}`, WITHIN)
       await expect(page.getByText(line).first()).toBeVisible(WITHIN)
     })
   })
@@ -519,6 +544,7 @@ test.describe('header', () => {
       iface.setSession({ status: 'waiting', backgroundTasks: [task(1), task(2)] })
       await expect(banner(page)).toContainText(/2\s+background|background[^0-9]{0,30}2/i, WITHIN)
       await expect(banner(page)).toContainText('working (2 background tasks)', WITHIN)
+      await expect(sessionStatus(page)).toHaveText('working (2 background tasks)', WITHIN)
       iface.setSession({ backgroundTasks: [task(1)] })
       await expect(banner(page)).toContainText(/1\s+background|background[^0-9]{0,30}1/i, WITHIN)
     })
@@ -530,7 +556,7 @@ test.describe('header', () => {
       const notice = `Config file missing ${rand()}`
       iface.emit({ notices: [{ id: 'no-config', text: notice }] })
       await expect(page.getByText(notice).first()).toBeVisible(WITHIN)
-      const item = page.getByRole('listitem').filter({ hasText: notice })
+      const item = runStatus(page).getByRole('listitem').filter({ hasText: notice })
       await expect(item).toContainText('Status:', WITHIN)
       await expect(item).not.toContainText('Notice:')
       iface.emit({ notices: [] })
@@ -543,7 +569,7 @@ test.describe('header', () => {
     await withIface({ state: { notices: [{ id: 'no-truss-dir', text }] } }, async (iface) => {
       await open(page, iface)
       await expect(page.getByText(text).first()).toBeVisible(WITHIN)
-      const item = page.getByRole('listitem').filter({ hasText: text })
+      const item = runStatus(page).getByRole('listitem').filter({ hasText: text })
       await expect(item).toContainText('Status:', WITHIN)
       await expect(item).not.toContainText('Notice:')
     })

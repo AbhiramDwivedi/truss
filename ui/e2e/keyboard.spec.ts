@@ -3,7 +3,7 @@
 // always visible, every control has an accessible name, html has lang="en" (R-19).
 // Servers bind port 0 (harness). Written before ui/web exists: every test fails now on the missing page.
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { WITHIN, itemWith, rand, rx, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { WITHIN, card as cardOf, goalBox, sendButton, rand, rx, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const MAX_TABS = 150
@@ -62,15 +62,17 @@ async function use(page: Page, t: Locator): Promise<void> {
   await act(page, t)
 }
 
-const messageBox = (page: Page) => page.getByRole('textbox', { name: /message|goal/i }).first()
-const sendButton = (page: Page) => page.getByRole('button', { name: /send/i }).first()
+const messageBox = goalBox
 const status = (i: Iface, id: string) => i.requests().find((r) => r.id === id)
+const APPROVE = { name: 'Approve', exact: true } as const
+const DENY = { name: 'Deny', exact: true } as const
 
 test('R-19: html has lang="en" and the page has a title', async ({ page }) => {
   iface = await startInterface()
   await page.goto(iface.url)
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en', LOAD)
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang), LOAD).toBe('en')
   await expect(page).toHaveTitle(/\S/)
+  await expect(page).toHaveTitle('Truss', LOAD)
 })
 
 test('R-18: send a message with the keyboard only', async ({ page }) => {
@@ -90,17 +92,16 @@ test('R-18: answer a question card by choosing an option with arrow keys and Spa
   iface = await startInterface()
   await page.goto(iface.url)
   const id = iface.question([{ question, header: 'Store', options: [{ label: `Postgres ${run}` }, { label: `SQLite ${run} (Recommended)` }, { label: `Files ${run}` }] }])
-  const card = itemWith(page, question)
+  const card = cardOf(page, 'question', question)
   await expect(card).toBeVisible(LOAD)
 
   // The recommended option is listed first and says so in words.
-  const options = card.getByRole('radio').or(card.getByRole('checkbox')).or(card.getByRole('option')).or(card.getByRole('button', { name: new RegExp(run) }))
-  await expect(options.first()).toHaveAccessibleName(/\(Recommended\)|recommended/i)
+  const options = card.getByRole('radiogroup', { name: rx(question) }).getByRole('radio')
+  await expect(options).toHaveCount(3)
+  await expect(options.first()).toHaveAccessibleName(/\(Recommended\)/)
 
-  const pick = options.filter({ hasText: new RegExp(`Files ${run}`) }).or(card.getByRole('radio', { name: new RegExp(`Files ${run}`) })).first()
-  await use(page, pick)
-  const submit = card.getByRole('button', { name: /submit|answer|send|reply|done|ok/i }).first()
-  if (await submit.count()) await use(page, submit)
+  await use(page, options.filter({ hasText: new RegExp(`Files ${run}`) }))
+  await use(page, card.getByRole('button', { name: 'Submit answers', exact: true }))
   await expect.poll(() => status(iface!, id)?.status, WITHIN).toBe('answered')
   expect(JSON.stringify(status(iface!, id)?.answers)).toContain(`Files ${run}`)
   expect(JSON.stringify(status(iface!, id)?.answers)).not.toContain(`Postgres ${run}`)
@@ -112,14 +113,13 @@ test('R-18: answer a question card with free text typed by keyboard', async ({ p
   iface = await startInterface()
   await page.goto(iface.url)
   const id = iface.question([{ question, header: 'Port', options: [{ label: `Auto ${run}` }, { label: `Fixed ${run}` }] }])
-  const card = itemWith(page, question)
+  const card = cardOf(page, 'question', question)
   await expect(card).toBeVisible(LOAD)
-  const box = card.getByRole('textbox').first()
+  const box = card.getByRole('textbox', { name: 'Your own answer', exact: true })
   await reach(page, box)
   await page.keyboard.type(`my own answer ${run}`)
-  const submit = card.getByRole('button', { name: /submit|answer|send|reply|done|ok/i }).first()
-  if (await submit.count()) await use(page, submit)
-  else await page.keyboard.press('Enter')
+  // ADR-0018: Enter in the text box submits the answers.
+  await page.keyboard.press('Enter')
   await expect.poll(() => status(iface!, id)?.status, WITHIN).toBe('answered')
   expect(JSON.stringify(status(iface!, id)?.answers)).toContain(`my own answer ${run}`)
 })
@@ -129,13 +129,13 @@ test('R-18: approve and deny a permission card with the keyboard', async ({ page
   iface = await startInterface()
   await page.goto(iface.url)
   const a = iface.permission({ toolName: 'Bash', title: `Run build ${run}`, summary: `npm run build ${run}` })
-  await expect(page.getByText(rx(`Run build ${run}`)).first()).toBeVisible(LOAD)
-  await use(page, page.getByRole('button', { name: /approve|allow/i }).first())
+  await expect(cardOf(page, 'permission', `Run build ${run}`)).toBeVisible(LOAD)
+  await use(page, cardOf(page, 'permission', `Run build ${run}`).getByRole('button', APPROVE))
   await expect.poll(() => status(iface!, a)?.decision, WITHIN).toBe('allow')
 
   const b = iface.permission({ toolName: 'Write', title: `Write file ${run}`, summary: `/tmp/x-${run}` })
-  await expect(page.getByText(rx(`Write file ${run}`)).first()).toBeVisible(WITHIN)
-  const deny = itemWith(page, `Write file ${run}`).getByRole('button', { name: /deny/i }).first()
+  await expect(cardOf(page, 'permission', `Write file ${run}`)).toBeVisible(WITHIN)
+  const deny = cardOf(page, 'permission', `Write file ${run}`).getByRole('button', DENY)
   await use(page, deny)
   await expect.poll(() => status(iface!, b)?.decision, WITHIN).toBe('deny')
 })
@@ -145,13 +145,13 @@ test('R-18: approve and deny a reply card with the keyboard', async ({ page }) =
   iface = await startInterface()
   await page.goto(iface.url)
   const a = iface.reply({ text: `Plan ready ${run}. Approve?` })
-  await expect(page.getByText(rx(`Plan ready ${run}`)).first()).toBeVisible(LOAD)
-  await use(page, itemWith(page, `Plan ready ${run}`).getByRole('button', { name: /approve/i }).first())
+  await expect(cardOf(page, 'reply', `Plan ready ${run}`)).toBeVisible(LOAD)
+  await use(page, cardOf(page, 'reply', `Plan ready ${run}`).getByRole('button', APPROVE))
   await expect.poll(() => status(iface!, a)?.decision, WITHIN).toBe('allow')
 
   const b = iface.reply({ text: `Push ready ${run}. Approve?` })
-  await expect(page.getByText(rx(`Push ready ${run}`)).first()).toBeVisible(WITHIN)
-  await use(page, itemWith(page, `Push ready ${run}`).getByRole('button', { name: /deny/i }).first())
+  await expect(cardOf(page, 'reply', `Push ready ${run}`)).toBeVisible(WITHIN)
+  await use(page, cardOf(page, 'reply', `Push ready ${run}`).getByRole('button', DENY))
   await expect.poll(() => status(iface!, b)?.decision, WITHIN).toBe('deny')
 })
 
@@ -171,10 +171,11 @@ test('R-18: expand and collapse a crew line with Enter and Space, then open the 
   await expect(line).toHaveAttribute('aria-expanded', 'false')
   await page.keyboard.press('Enter')
   await expect(line).toHaveAttribute('aria-expanded', 'true')
-  await expect(itemWith(page, member)).toBeVisible()
+  const members = page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: member })
+  await expect(members).toBeVisible()
   await page.keyboard.press('Space')
   await expect(line).toHaveAttribute('aria-expanded', 'false')
-  await expect(itemWith(page, member)).toBeHidden()
+  await expect(members).toBeHidden()
 
   // Shift+Tab goes back to the line before; Tab brings the focus forward again.
   const before = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))
@@ -183,18 +184,18 @@ test('R-18: expand and collapse a crew line with Enter and Space, then open the 
   await page.keyboard.press('Tab')
   expect(await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))).toBe(before)
 
-  const panel = (name: RegExp) => page.getByRole('tab', { name }).or(page.getByRole('button', { name })).or(page.getByRole('link', { name })).first()
-  await use(page, panel(/decisions|ADR/i))
-  await expect(page.getByText(rx(`choose-${run}-store`)).first()).toBeVisible(WITHIN)
-  await use(page, panel(/design/i))
+  // ADR-0018: the Run tablist is one Tab stop; Left and Right move and activate (reach uses the arrows).
+  const tab = (name: string) => page.getByRole('tablist', { name: 'Run', exact: true }).getByRole('tab', { name, exact: true })
+  await use(page, tab('Decisions and ADRs'))
+  await expect(tab('Decisions and ADRs')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByText(rx(`choose-${run}-store`)).first()).toBeVisible(WITHIN)
+  await use(page, tab('Design'))
+  await expect(tab('Design')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText(rx(`The plan for run ${run}.`)).first()).toBeVisible(LOAD)
 
-  // Escape closes a panel that opens as a dialog, and focus returns to what opened it.
-  if (await page.getByRole('dialog').count()) {
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('dialog')).toHaveCount(0)
-    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY')
-  }
+  // There are no modals: nothing opens as a dialog, and focus stays on a control.
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY')
 })
 
 // Every stop in the Tab order of a busy page: visible focus, and an accessible name.
@@ -242,6 +243,9 @@ test('R-18: every Tab stop of the card page has a visible focus style and an acc
   iface.permission({ toolName: 'Bash', title: `Run ${run}`, summary: `echo ${run}` })
   iface.reply({ text: `Approve ${run}?` })
   await expect(page.getByText(rx(`Approve ${run}?`)).first()).toBeVisible(LOAD)
+  // ADR-0018: the skip link is the first Tab stop.
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('link', { name: 'Skip to Your move', exact: true })).toBeFocused()
   await walk(page)
 })
 
