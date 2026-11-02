@@ -95,8 +95,14 @@ async function withRig(initial: Record<string, unknown>, body: (rig: Rig) => Pro
 
 async function open(page: Page, rig: Rig) {
   await page.goto(rig.url)
-  await expect(page.getByRole('heading', { level: 1, name: 'Truss' })).toBeVisible(WITHIN)
+  await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible(WITHIN)
 }
+// ADR-0018 section 10, by role and accessible name.
+const goalBox = (page: Page) => page.getByRole('textbox', { name: 'Goal or message', exact: true })
+const sendButton = (page: Page) => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: 'Send', exact: true })
+const questionCard = (page: Page) => page.getByRole('article', { name: /^Question from Claude: / })
+const permissionCard = (page: Page) => page.getByRole('article', { name: /^Permission request: / })
+const transcript = (page: Page) => page.getByRole('log', { name: 'Transcript', exact: true })
 
 test('R-18: after a keyboard answer to a question card, focus is on the next actionable element, never BODY', async ({ page }) => {
   await withRig({ session: baseState().session }, async (rig) => {
@@ -105,14 +111,22 @@ test('R-18: after a keyboard answer to a question card, focus is on the next act
     rig.question({ question: q1, header: 'Lane', options: [keep, `other-${rand()}`] })
     rig.permission(`echo ${rand()}`)
     await open(page, rig)
-    const radio = page.getByRole('radio', { name: keep })
+    const radio = questionCard(page).getByRole('radio', { name: keep })
     await expect(radio).toBeVisible(WITHIN)
     await radio.focus()
     await page.keyboard.press('Space')
     await expect(radio).toBeChecked()
-    await page.getByRole('button', { name: 'Submit answers' }).focus()
+    await questionCard(page).getByRole('button', { name: 'Submit answers', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('article', { name: /Question from Claude/ }).getByText('Answered.')).toBeVisible(WITHIN)
+    await expect(questionCard(page).getByText('Answered.')).toBeVisible(WITHIN)
+    // ADR-0018 section 8: focus moves to the first control of the next open card (here the permission card).
+    const inNextCard = async () => {
+      for (const l of [permissionCard(page).getByRole('button'), permissionCard(page).getByRole('textbox')]) {
+        for (const el of await l.all()) if (await el.evaluate((e) => e === document.activeElement)) return true
+      }
+      return false
+    }
+    await expect.poll(inNextCard, WITHIN).toBe(true)
     const active = await page.evaluate(() => {
       const a = document.activeElement as HTMLElement | null
       if (!a) return { tag: 'NONE', ok: false }
@@ -129,7 +143,8 @@ test('the header reads "working (N background tasks)" while waiting with N backg
   const n = 2 + (parseInt(rand().slice(0, 2), 16) % 7)
   await withRig({ session: { ...baseState().session, status: 'waiting', backgroundTasks: tasks(n) } }, async (rig) => {
     await open(page, rig)
-    await expect(page.getByText(`working (${n} background tasks)`)).toBeVisible(WITHIN)
+    await expect(page.getByRole('status', { name: 'Session', exact: true })).toContainText(`working (${n} background tasks)`, WITHIN)
+    await expect(page.getByRole('banner')).toContainText(`working (${n} background tasks)`)
   })
 })
 
@@ -141,13 +156,13 @@ test('waiting with background tasks and no reply card: says agents still running
     transcript: [{ n: 1, role: 'assistant', text: resultText, ts: new Date().toISOString() }],
   }, async (rig) => {
     await open(page, rig)
-    await expect(page.getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
+    await expect(page.getByRole('region', { name: 'Your move', exact: true }).getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
     await expect(page.getByRole('button', { name: /^(Approve|Deny)$/ })).toHaveCount(0)
-    await expect(page.getByText(resultText)).toBeVisible()
-    const box = page.getByRole('textbox', { name: 'Goal or message' })
+    await expect(transcript(page).getByText(resultText)).toBeVisible()
+    const box = goalBox(page)
     await expect(box).toBeEnabled()
     await box.fill(sent)
-    await page.getByRole('button', { name: 'Send' }).click()
+    await sendButton(page).click()
     await expect.poll(() => rig.calls.filter((c) => c.kind === 'send' && c.text === sent).length, WITHIN).toBe(1)
   })
 })
@@ -155,7 +170,7 @@ test('waiting with background tasks and no reply card: says agents still running
 test('the goal box grows with its text (no inner scroll after 10 lines) and is resizable', async ({ page }) => {
   await withRig({}, async (rig) => {
     await open(page, rig)
-    const box = page.getByRole('textbox', { name: 'Goal or message' })
+    const box = goalBox(page)
     await box.focus()
     for (let i = 1; i <= 10; i++) {
       await page.keyboard.type(`line ${i} ${rand()}`)
@@ -173,7 +188,7 @@ test('the no-config and no-truss-dir notices read as status, tagged "Status:", n
   await withRig({ notices: [{ id: 'no-config', text: a }, { id: 'no-truss-dir', text: b }] }, async (rig) => {
     await open(page, rig)
     for (const text of [a, b]) {
-      const item = page.getByRole('listitem').filter({ hasText: text })
+      const item = page.getByRole('list', { name: 'Run status', exact: true }).getByRole('listitem').filter({ hasText: text })
       await expect(item).toBeVisible(WITHIN)
       await expect(item).toContainText('Status:')
       await expect(item).not.toContainText('Notice:')
@@ -224,10 +239,11 @@ test('desktop notifications: nothing asked before the enable click; question and
     await page.waitForTimeout(400)
     expect(await asks(), 'nothing is asked before a click on the enable control').toBe(0)
     expect(await notes()).toBe(0)
-    const enable = page.getByRole('button', { name: /notification/i })
+    const enable = page.getByRole('button', { name: 'Turn on notifications', exact: true })
     await expect(enable, 'an enable-notifications control exists').toBeVisible(WITHIN)
     await enable.click()
     await expect.poll(asks, WITHIN).toBe(1)
+    await expect(page.getByRole('button', { name: 'Notifications on', exact: true })).toBeVisible(WITHIN)
     rig.question({ question: `q ${rand()}`, header: 'Q', options: [`a-${rand()}`, `b-${rand()}`] })
     await expect.poll(notes, WITHIN).toBe(1)
     rig.permission(`rm ${rand()}`)
