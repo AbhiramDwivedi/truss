@@ -37,7 +37,7 @@ Anything that adds scope goes to main as a `PROPOSAL:`; it doesn't go into a tas
 
 ## 3. Split the work into member tasks
 
-If the `subagent-limits:split-work` skill is available, load it before splitting work.
+Load the `subagent-limits:split-work` skill before splitting work.
 
 The design engineer already split the run into crews along the module map. Split your crew's goal into member tasks by the same leaf test. A task stops splitting when all four hold:
 
