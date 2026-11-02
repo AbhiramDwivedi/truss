@@ -12,9 +12,9 @@ A Workflow run that is resumed (run `wf_0dff946d-af1`) can hold two agentIds und
 
 ### The filing rule
 
-The agent with the k-th distinct agentId under a label in the run's journal (`started` order) owns `<label>.md` for k=1 and `<label>.run<k>.md` for k>=2. N is that rank, not the first free name on disk.
+Among the agentIds under a label that returned a result text, the k-th distinct one in the run's journal (`started` order) owns `<label>.md` for k=1 and `<label>.run<k>.md` for k>=2. N is that rank, not the first free name on disk.
 
-`recordRun` computes the rank from the run's agents (the `started` lines, in journal order, deduplicated by agentId, per label). Spawn lines (once per agentId and run) and report lines (once per crew, label and marker) are appended as before, with `agent` set to the label, not the file name.
+`recordRun` computes the rank from the run's agents (the `started` lines, in journal order, deduplicated by agentId, per label), counting only agentIds that left a result text: an agent interrupted before it returned has no report, takes no rank, and so a resumed agent after it is rank 1 and files `<label>.md`. Spawn lines (once per agentId and run) and report lines (once per crew, label and marker) are appended as before, with `agent` set to the label, not the file name.
 
 A refusal ("a report file with different text already exists; not overwritten") happens only when the file an agentId owns by this rule already holds different text. That includes a file whose origin is unknown: a first-rank agent finds `<label>.md` holding other text and is refused, so the existing finish case that pre-seeds a different report stays green unchanged. Every other audit in `recordRun` is unchanged.
 
@@ -24,7 +24,7 @@ A report file does not record who wrote it. The rank is the only link between a 
 
 ### The gate-role exception
 
-The merge gate reads one QC file per label and the stress gate one `<slug>-stress.md`. For a label whose role is `qc` or `stress`, a second agentId (rank 2 or more) is not filed as `.run<k>`. It keeps a refusal, with its own audit text: "a second agentId (...) under the gate label ...; the merge and stress gates read one file per label, so it is not filed". The audit blocks the crew's merge, as before. The rank-1 agent of a gate label is filed as `<label>.md` as always.
+The merge gate reads one QC file per label and the stress gate one `<slug>-stress.md`. For a label whose role is `qc` or `stress`, a second agentId that also returned a result (rank 2 or more) is not filed as `.run<k>`. It keeps a refusal, with its own audit text: "a second agentId (...) under the gate label ...; the merge and stress gates read one file per label, so it is not filed". The audit blocks the crew's merge, as before. The rank-1 agent of a gate label is filed as `<label>.md` as always.
 
 ### labelFromOf
 
