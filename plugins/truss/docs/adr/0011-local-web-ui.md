@@ -2,6 +2,8 @@
 
 Status: proposed, 2026-10-30. Written by the design crew `ui-design` (stage 0 of the UI run). It becomes accepted when the PM merges this crew.
 
+Superseded in part by [ADR-0018](0018-ui-redesign.md) (proposed 2026-11-02): its web-client parts only, that is Decision 1's ui-web row (no bundler, no build step) and Decision 7's no-bundler import of `marked`. The client source moves to `ui/app/`, and `ui/web/` becomes the untracked output of `npm --prefix ui run build`. The server contract in Decisions 5 and 6 is unchanged.
+
 VERDICT: change. Four new modules under `ui/`: ui-state, ui-session, ui-server and ui-web. Nothing in the repo hosts a Claude Code session or serves a browser; the plugin always runs inside a session. R-9 forbids changing the plugin, so the UI is a separate package that reads Truss's files and hosts the session through `@anthropic-ai/claude-agent-sdk`.
 
 ## Context
@@ -88,7 +90,7 @@ Not confirmed: which prompts a repo's own `.claude/settings*.json` allow rules r
 | ui-state | `ui/server/state/index.ts` | Reads the Truss dir, `.claude/truss.json`, the architecture doc, the ADR dir and git into one state in memory; emits snapshots and deltas. |
 | ui-session | `ui/server/session/index.ts` | The only module that imports the SDK. Hosts the session, turns `canUseTool` calls and turn ends into requests, and answers them. |
 | ui-server | `ui/server/http/index.ts`, `ui/server/main.ts` | HTTP and SSE, the token, Host and Origin guard, static files. `main.ts` wires the modules together. |
-| ui-web | `ui/web/**` | Static HTML, CSS and plain ES modules. No bundler, no build step. |
+| ui-web | `ui/web/**` | Static HTML, CSS and plain ES modules. No bundler, no build step. Superseded by ADR-0018: source in `ui/app/`, built into `ui/web/`. |
 
 Rules:
 

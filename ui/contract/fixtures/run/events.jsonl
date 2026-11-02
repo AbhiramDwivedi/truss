@@ -1,0 +1,14 @@
+{"v":1,"ts":"2026-10-31T10:00:00.000Z","event":"spawn","crew":"ui-design","agent":"ui-design-builder","agentId":"a0001","type":"general-purpose","model":"claude-sonnet-5-5","effort":"medium","by":"ui-design"}
+{"v":1,"ts":"2026-10-31T10:01:00.000Z","event":"report","crew":"ui-design","agent":"ui-design-builder","marker":"DONE"}
+{"v":1,"ts":"2026-10-31T10:02:00.000Z","event":"spawn","crew":"ui-design","agent":"ui-design-qc","agentId":"a0003","type":"truss:qc-engineer","model":"claude-opus-5-5","effort":"medium","by":"ui-design"}
+{"v":1,"ts":"2026-10-31T10:03:00.000Z","event":"report","crew":"ui-design","agent":"ui-design-qc","marker":"VERDICT: PASS"}
+{"v":1,"ts":"2026-10-31T10:04:00.000Z","event":"spawn","crew":"ui-state","agent":"ui-state-builder","agentId":"a0005","type":"general-purpose","model":"claude-sonnet-5-5","effort":"medium","by":"ui-state"}
+{"v":1,"ts":"2026-10-31T10:05:00.000Z","event":"report","crew":"ui-state","agent":"ui-state-builder","marker":"DONE"}
+{"v":1,"ts":"2026-10-31T10:06:00.000Z","event":"spawn","crew":"ui-state","agent":"ui-state-qc","agentId":"a0007","type":"truss:qc-engineer","model":"claude-opus-5-5","effort":"medium","by":"ui-state"}
+{"v":1,"ts":"2026-10-31T10:07:00.000Z","event":"report","crew":"ui-state","agent":"ui-state-qc","marker":"VERDICT: PASS"}
+{"v":1,"ts":"2026-10-31T10:08:00.000Z","event":"spawn","crew":"ui-session","agent":"ui-session-planner","agentId":"a0009","type":"truss:planning-engineer","model":"claude-opus-5-5","effort":"medium","by":"ui-session"}
+{"v":1,"ts":"2026-10-31T10:09:00.000Z","event":"report","crew":"ui-session","agent":"ui-session-planner","marker":"DONE"}
+{"v":1,"ts":"2026-10-31T10:10:00.000Z","event":"spawn","crew":"ui-session","agent":"ui-session-builder","agentId":"a0011","type":"general-purpose","model":"claude-sonnet-5-5","effort":"medium","by":"ui-session"}
+{"v":1,"ts":"2026-10-31T10:11:00.000Z","event":"spawn","crew":"ui-server","agent":"ui-server-planner","agentId":"a0012","type":"truss:planning-engineer","model":"claude-opus-5-5","effort":"medium","by":"ui-server"}
+{"v":1,"ts":"2026-10-31T10:12:00.000Z","event":"report","crew":"ui-server","agent":"ui-server-planner","marker":"DONE"}
+{"v":1,"ts":"2026-10-31T10:13:00.000Z","event":"spawn","crew":"ui-server","agent":"ui-server-builder","agentId":"a0014","type":"general-purpose","model":"claude-sonnet-5-5","effort":"medium","by":"ui-server"}

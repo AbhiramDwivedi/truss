@@ -26,28 +26,29 @@ export const WITHIN = { timeout: 2000 }
 
 // ---- locators ------------------------------------------------------------------------------------------
 
-// Roles a status line, member line, decision, ADR entry or card may have; the accessible name carries the value.
-const ROLES = ['listitem', 'row', 'article', 'group', 'region', 'button', 'link', 'heading', 'cell', 'treeitem', 'status', 'log', 'img'] as const
-export function byName(page: Page, name: RegExp): Locator {
-  return ROLES.map((r) => page.getByRole(r, { name })).reduce((a, b) => a.or(b))
-}
 export const rx = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
 export const rand = () => randomBytes(4).toString('hex')
 
-// The innermost list item, row, article or tree item that holds `text`: a member line, a card, a decision.
-export function itemWith(page: Page, text: RegExp | string): Locator {
-  const hasText = typeof text === 'string' ? rx(text) : text
-  return ['listitem', 'row', 'article', 'treeitem', 'group'].map((r) => page.getByRole(r as 'listitem', {}).filter({ hasText })).reduce((a, b) => a.or(b)).last()
-}
-
-// Opens a panel (tab, toggle button or link) by its name unless it already shows.
-export async function openPanel(page: Page, name: RegExp): Promise<void> {
-  const t = page.getByRole('tab', { name }).or(page.getByRole('button', { name })).or(page.getByRole('link', { name })).first()
-  if ((await t.count()) === 0) return
-  const expanded = await t.getAttribute('aria-expanded')
-  const selected = await t.getAttribute('aria-selected')
-  if (expanded === 'true' || selected === 'true') return
-  await t.click()
+// ---- ADR-0018 shell, by role and accessible name --------------------------------------------------------
+// Roles and names are fixed by ADR-0018 section 10; none of these reaches the page by class, tag or id.
+export const yourMove = (page: Page): Locator => page.getByRole('region', { name: 'Your move', exact: true })
+export const goalBox = (page: Page): Locator => page.getByRole('textbox', { name: 'Goal or message', exact: true })
+export const sendButton = (page: Page): Locator => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: 'Send', exact: true })
+// A crew line: the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
+export const crewLine = (page: Page, slug: string): Locator =>
+  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
+export const sessionStatus = (page: Page): Locator => page.getByRole('status', { name: 'Session', exact: true })
+export const runStatus = (page: Page): Locator => page.getByRole('list', { name: 'Run status', exact: true })
+export const CARD = {
+  question: /^Question from Claude: /,
+  permission: /^Permission request: /,
+  reply: /^Reply needed$/,
+} as const
+// A request card (an article) of one kind, optionally narrowed to the ones that hold `text`.
+export function card(page: Page, kind: keyof typeof CARD, text?: RegExp | string): Locator {
+  let l = page.getByRole('article', { name: CARD[kind] })
+  if (text !== undefined) l = l.filter({ hasText: typeof text === 'string' ? rx(text) : text })
+  return l
 }
 
 // ---- real files (startReal) ----------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 // ui-web: SSE drop and replay (ADR-0011 Decision 5; R-3, R-15). The real createServer on port 0 behind the
 // harness proxy; the proxy cuts the browser's connection while the same server instance keeps emitting deltas.
-// Written from the spec before ui/web exists.
+// Pinned to ADR-0018: the transcript is a log named Transcript, a card is an article, the status is a role.
 import { test, expect, type Page } from '@playwright/test'
-import { startInterface, rand, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
+import { card, rand, sessionStatus, startInterface, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
 
 async function withIface(fn: (iface: Iface) => Promise<void>): Promise<void> {
   const iface = await startInterface({})
@@ -10,12 +10,15 @@ async function withIface(fn: (iface: Iface) => Promise<void>): Promise<void> {
 }
 async function open(page: Page, iface: Iface): Promise<void> {
   await page.goto(iface.url)
-  await expect(page.getByRole('banner')).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible({ timeout: 10000 })
 }
+// The transcript is the record of the conversation (ADR-0018 section 5): a log named Transcript.
+const transcript = (page: Page) => page.getByRole('log', { name: 'Transcript', exact: true })
 let n = 0
 const entry = (text: string) => ({ n: ++n, role: 'assistant', text, ts: new Date().toISOString() })
 // Delivers one transcript entry per call, as the server would.
 const say = (iface: Iface, text: string) => iface.emit(null, [entry(text)])
+// Counted on the whole page, so a copy anywhere else would fail 'exactly once' too.
 const count = (page: Page, text: string) => page.getByText(text, { exact: false }).count()
 
 test.describe('SSE drop and replay', () => {
@@ -25,7 +28,7 @@ test.describe('SSE drop and replay', () => {
       await page.evaluate(() => { (window as any).__noReload = 'still here' })
       const tag = rand()
       say(iface, `before-${tag}`)
-      await expect(page.getByText(`before-${tag}`)).toBeVisible(WITHIN)
+      await expect(transcript(page).getByText(`before-${tag}`)).toBeVisible(WITHIN)
       await expect.poll(() => iface.sseRequests.length).toBeGreaterThan(0)
       const connections = iface.sseRequests.length
       const seqAtCut = iface.seq
@@ -41,8 +44,9 @@ test.describe('SSE drop and replay', () => {
 
       iface.refuse(false)
       // The page reconnects by itself and shows everything it missed, within 2 s of the line being back.
-      for (const t of dropped) await expect(page.getByText(t)).toBeVisible({ timeout: 5000 })
+      for (const t of dropped) await expect(transcript(page).getByText(t)).toBeVisible({ timeout: 5000 })
       await expect(page.getByRole('banner')).toContainText(`model-while-dropped-${tag}`, WITHIN)
+      await expect(sessionStatus(page)).toContainText('running', WITHIN)
 
       // Exactly once each, including the one shown before the drop.
       for (const t of [`before-${tag}`, ...dropped]) expect(await count(page, t), t).toBe(1)
@@ -57,7 +61,7 @@ test.describe('SSE drop and replay', () => {
 
       // A delta after the replay still arrives, once.
       say(iface, `after-${tag}`)
-      await expect(page.getByText(`after-${tag}`)).toBeVisible(WITHIN)
+      await expect(transcript(page).getByText(`after-${tag}`)).toBeVisible(WITHIN)
       expect(await count(page, `after-${tag}`)).toBe(1)
     })
   })
@@ -74,7 +78,7 @@ test.describe('SSE drop and replay', () => {
         for (let i = 0; i < 3; i++) { const t = `r${round}-${i}-${tag}`; all.push(t); say(iface, t) }
         await page.waitForTimeout(150)
         iface.refuse(false)
-        for (const t of all) await expect(page.getByText(t)).toBeVisible({ timeout: 5000 })
+        for (const t of all) await expect(transcript(page).getByText(t)).toBeVisible({ timeout: 5000 })
       }
       for (const t of all) expect(await count(page, t), t).toBe(1)
       expect(await page.evaluate(() => (window as any).__noReload)).toBe('still here')
@@ -90,9 +94,11 @@ test.describe('SSE drop and replay', () => {
       iface.permission({ toolName: 'Bash', title: `Opened while dropped ${tag}`, summary: 'ls', input: { command: 'ls' } })
       await page.waitForTimeout(200)
       iface.refuse(false)
-      await expect(page.getByText(`Opened while dropped ${tag}`).first()).toBeVisible({ timeout: 5000 })
+      const opened = card(page, 'permission', `Opened while dropped ${tag}`)
+      await expect(opened).toBeVisible({ timeout: 5000 })
       expect(await count(page, `Opened while dropped ${tag}`)).toBeGreaterThan(0)
-      await expect(page.getByRole('button', { name: /approve|allow/i })).toHaveCount(1)
+      await expect(opened.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(1)
+      await expect(opened.getByRole('button', { name: 'Deny', exact: true })).toHaveCount(1)
     })
   })
 
@@ -103,7 +109,7 @@ test.describe('SSE drop and replay', () => {
       const tag = rand()
       const oldInstance = iface.instance
       say(iface, `old-instance-${tag}`)
-      await expect(page.getByText(`old-instance-${tag}`)).toBeVisible(WITHIN)
+      await expect(transcript(page).getByText(`old-instance-${tag}`)).toBeVisible(WITHIN)
       const connections = iface.sseRequests.length
 
       iface.refuse(true)
@@ -124,7 +130,7 @@ test.describe('SSE drop and replay', () => {
 
       // Deltas of the new instance start again at seq 1 and still show, once.
       say(iface, `new-instance-${tag}`)
-      await expect(page.getByText(`new-instance-${tag}`)).toBeVisible(WITHIN)
+      await expect(transcript(page).getByText(`new-instance-${tag}`)).toBeVisible(WITHIN)
       expect(await count(page, `new-instance-${tag}`)).toBe(1)
       expect(iface.seq).toBe(1)
     })
@@ -148,11 +154,11 @@ test.describe('SSE drop and replay', () => {
       iface.cut() // the page reconnects and is served the v: 2 snapshot
       await navigated
       // The reload came back with a fresh page that talks to the real server again.
-      await expect(page.getByRole('banner')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible({ timeout: 10000 })
       expect(await page.evaluate(() => (window as any).__before)).toBeUndefined()
       const tag = rand()
       say(iface, `after-reload-${tag}`)
-      await expect(page.getByText(`after-reload-${tag}`)).toBeVisible(WITHIN)
+      await expect(transcript(page).getByText(`after-reload-${tag}`)).toBeVisible(WITHIN)
     })
   })
 })
