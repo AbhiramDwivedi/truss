@@ -7,6 +7,7 @@
   },
   "scripts": {
     "start": "node server/main.ts",
+    "build": "vite build",
     "test": "node --test contract/state.check.ts contract/session.check.ts contract/http.check.ts test/*/*.test.ts",
     "e2e": "playwright test",
     "check:live": "node --test contract/live.check.ts"

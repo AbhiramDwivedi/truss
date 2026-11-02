@@ -11,5 +11,6 @@ export default defineConfig({
   projects: [
     { name: 'contract', testDir: './contract/e2e', testMatch: '**/*.spec.ts' },
     { name: 'ui', testDir: './e2e', testMatch: '**/*.spec.ts' },
+    { name: 'redesign', testDir: './contract/redesign', testMatch: '**/*.spec.ts' },
   ],
 })
