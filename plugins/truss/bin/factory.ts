@@ -1309,7 +1309,8 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     if (text === undefined) continue
     // ADR-0020: the k-th distinct agentId under a label (journal `started` order) owns <label>.md for k=1 and <label>.run<k>.md for k>=2.
     const ids: string[] = []
-    for (const o of wfRun.agents) if (o.label === a.label && !ids.includes(o.agentId)) ids.push(o.agentId)
+    // Only an agentId that returned a result text has a report to file, so only it holds a rank (an interrupted one never competes).
+    for (const o of wfRun.agents) if (o.label === a.label && o.hasResult && textOfResult(o.result) !== undefined && !ids.includes(o.agentId)) ids.push(o.agentId)
     const rank = ids.indexOf(a.agentId) + 1
     const gate = parsed.role === 'qc' || parsed.role === 'stress'
     const file = `${dir}/reports/${slug}/${a.label}${rank >= 2 && !gate ? `.run${rank}` : ''}.md`
