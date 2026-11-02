@@ -14,11 +14,10 @@ const uiDir = resolve(here, '..', '..')
 const root = join(resolve(uiDir, '..'), 'plugins', 'truss')
 const WITHIN = { timeout: 2000 }
 
-// Roles a crew line, member line, decision or ADR entry may have; the name carries the value.
-const ROLES = ['listitem', 'row', 'article', 'group', 'region', 'button', 'link', 'heading', 'cell', 'treeitem', 'status', 'log'] as const
-function byName(page: Page, name: RegExp): Locator {
-  return ROLES.map((r) => page.getByRole(r, { name })).reduce((a, b) => a.or(b))
-}
+// A crew line: the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
+const crewLine = (page: Page, slug: string): Locator =>
+  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem')
+    .getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
 const rx = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
 
 let dir = ''
@@ -63,31 +62,40 @@ test.afterAll(() => {
 test('changes to the Truss files show on the page within 2 s without a reload', async ({ page }) => {
   await page.goto(url)
   // The plan from docs/plan.example.json is on the page: the quotas crew.
-  await expect(byName(page, /quotas/i).first()).toBeVisible({ timeout: 10000 })
+  await expect(crewLine(page, 'quotas')).toBeVisible({ timeout: 10000 })
   expect(page.url()).not.toContain('token=') // the server redirects the token away (Decision 6)
 
   // 1. plan.json: quotas becomes running (R-3).
   const plan = JSON.parse(readFileSync(join(trussDir, 'plan.json'), 'utf8'))
   plan.crews.find((c: { slug: string }) => c.slug === 'quotas').status = 'running'
   writeFileSync(join(trussDir, 'plan.json'), JSON.stringify(plan, null, 2))
-  await expect(byName(page, /quotas.*running|running.*quotas/i).first()).toBeVisible(WITHIN)
+  await expect(crewLine(page, 'quotas')).toHaveAccessibleName(/running/i, WITHIN)
 
   // 2. events.jsonl: a spawn line naming a per-run member (R-3, R-4). The member line sits
   // inside the crew's expandable line, so open the crew line first when it is a button.
   const member = `quotas-builder-${run}`
   const fields = [['v', 1], ['ts', new Date().toISOString()], ['event', 'spawn'], ['crew', 'quotas'], ['agent', member], ['agentId', `a${run}`], ['type', 'kit:builder'], ['model', 'sonnet'], ['effort', 'medium'], ['by', 'quotas']]
   appendFileSync(join(trussDir, 'events.jsonl'), JSON.stringify(Object.fromEntries(fields)) + '\n')
-  const toggle = page.getByRole('button', Object.assign({ name: /quotas/i }, { expanded: false })).first()
-  if (await toggle.count()) await toggle.click()
-  await expect(byName(page, rx(member)).first()).toBeVisible(WITHIN)
+  const line = crewLine(page, 'quotas')
+  await expect(line).toHaveAccessibleName(new RegExp(`${member} spawned`, 'i'), WITHIN)
+  if ((await line.getAttribute('aria-expanded')) !== 'true') await line.click()
+  await expect(line).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: rx(member) })).toBeVisible(WITHIN)
+
+  // The decisions and ADRs tab holds the next two (R-5).
+  const tab = page.getByRole('tab', { name: 'Decisions and ADRs', exact: true })
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  const decisions = page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByRole('region', { name: 'Decisions', exact: true })
+  const adrs = page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByRole('region', { name: 'ADRs', exact: true })
 
   // 3. decisions.md: a line with a per-run value (R-5).
   const decision = `choose-${run}-store`
   appendFileSync(join(trussDir, 'decisions.md'), `- 10:00 | ${decision} | because ${run} | checker: none | followed\n`)
-  await expect(byName(page, rx(decision)).first()).toBeVisible(WITHIN)
+  await expect(decisions.getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
 
   // 4. a new ADR file in the repo's ADR dir (R-5).
   const adrTitle = `Adopt ${run} queue`
   writeFileSync(join(dir, 'repo', 'docs', 'adr', `0099-${run}.md`), `# ADR-0099: ${adrTitle}\n\nStatus: accepted\n`)
-  await expect(byName(page, rx(adrTitle)).first()).toBeVisible(WITHIN)
+  await expect(adrs.getByRole('listitem').filter({ hasText: rx(adrTitle) })).toBeVisible(WITHIN)
 })

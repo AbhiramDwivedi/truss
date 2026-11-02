@@ -68,8 +68,10 @@ test.afterAll(() => {
 test('R-23: the retro lane shows running and then fixes applied within 2 s without a reload', async ({ page }) => {
   await page.goto(url)
   // The work lanes are on the page first; the retro lane is not there while no retro state file exists.
-  await expect(page.getByText(/quotas/i).first()).toBeVisible({ timeout: 10000 })
-  const lane = page.getByRole('region', { name: 'Retro stage' })
+  const crews = page.getByRole('region', { name: 'Crews', exact: true })
+  await expect(crews.getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
+  const lane = page.getByRole('region', { name: 'Retro stage', exact: true })
+  await expect(lane).toHaveCount(0)
 
   // 1. the retro starts: extract done with a per-run detail, judges running.
   const found = `${run} findings kept`
@@ -78,6 +80,8 @@ test('R-23: the retro lane shows running and then fixes applied within 2 s witho
   await expect(lane.getByRole('listitem', { name: 'Judges: running' })).toBeVisible(WITHIN)
   await expect(lane.getByRole('listitem', { name: 'Extract: done' })).toBeVisible(WITHIN)
   await expect(lane.getByRole('listitem', { name: 'Fixes applied: pending' })).toBeVisible(WITHIN)
+  await expect(lane.getByRole('list').getByRole('listitem')).toHaveCount(5)
+  await expect(lane.getByText(found)).toBeVisible(WITHIN)
 
   // 2. the fix goal is applied: every step done, the last with a per-run detail.
   const merged = `${run} crews merged`
