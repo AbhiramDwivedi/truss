@@ -20,7 +20,6 @@ export const WIDTHS: Array<[string, number]> = (() => {
   if (!m) throw new Error('ADR-0018 has no "Screenshot widths:" line')
   return [['phone', +m[1]!], ['tablet', +m[2]!], ['desktop', +m[3]!]]
 })()
-export const THEMES = ['light', 'dark'] as const
 export const T = { timeout: 5000 }
 export const LOAD = { timeout: 10000 }
 
@@ -71,7 +70,8 @@ export function dropCopy(c: Copy): void { rmSync(c.dir, { recursive: true, force
 export interface Scenario {
   url: string
   run: string
-  copy: Copy
+  /** The mkdtemp fixture copy; absent for the three interface states, which have no truss dir. */
+  copy?: Copy
   real?: Real
   iface?: Iface
   /** Changes one thing the server reads (a file, or for the interface states a pushed delta). */
@@ -80,24 +80,27 @@ export interface Scenario {
 }
 
 export async function scenario(state: string): Promise<Scenario> {
+  const delta = (run: string) => () => { iface!.emit(null, [{ n: 1, role: 'user', text: `hello ${run}`, ts: new Date().toISOString() }]) }
+  let iface: Iface | undefined
+  if (state === 'empty' || state === 'pending-question' || state === 'pending-approval') {
+    // The fake interface serves state over HTTP and has no truss dir: the per-run value goes into that state
+    // and the change is a pushed transcript delta (ADR-0018 section 11).
+    const run = `${rand()}${randomBytes(2).toString('hex')}`
+    if (state === 'empty') iface = await startInterface({ state: { notices: [{ id: 'no-truss-dir', text: `No Truss directory yet ${run}` }] } })
+    else {
+      iface = await startInterface()
+      if (state === 'pending-question') iface.question([{ header: `Store ${run}`, question: `Which store should hold the quotas ${run}?`, options: [{ label: 'Postgres' }, { label: 'SQLite (Recommended)' }] }])
+      else {
+        iface.reply({ text: `The plan is ready ${run}` })
+        iface.permission({ toolName: 'Bash', title: `Run the checks ${run}`, summary: 'npm --prefix ui test' })
+      }
+    }
+    const i = iface
+    return { url: i.url, run, iface: i, change: delta(run), stop: async () => { await i.stop() } }
+  }
   const copy = copyFixture()
   const { run } = copy
   const done = async () => { dropCopy(copy) }
-  if (state === 'empty') {
-    const iface = await startInterface({ state: { notices: [{ id: 'no-truss-dir', text: `No Truss directory yet ${run}` }] } })
-    return { url: iface.url, run, copy, iface, change: () => iface.emit(null, [{ n: 1, role: 'user', text: `hello ${run}`, ts: new Date().toISOString() }]), stop: async () => { await iface.stop(); await done() } }
-  }
-  if (state === 'pending-question') {
-    const iface = await startInterface()
-    iface.question([{ header: `Store ${run}`, question: `Which store should hold the quotas ${run}?`, options: [{ label: 'Postgres' }, { label: 'SQLite (Recommended)' }] }])
-    return { url: iface.url, run, copy, iface, change: () => iface.emit(null, [{ n: 1, role: 'user', text: `hello ${run}`, ts: new Date().toISOString() }]), stop: async () => { await iface.stop(); await done() } }
-  }
-  if (state === 'pending-approval') {
-    const iface = await startInterface()
-    iface.reply({ text: `The plan is ready ${run}` })
-    iface.permission({ toolName: 'Bash', title: `Run the checks ${run}`, summary: 'npm --prefix ui test' })
-    return { url: iface.url, run, copy, iface, change: () => iface.emit(null, [{ n: 1, role: 'user', text: `hello ${run}`, ts: new Date().toISOString() }]), stop: async () => { await iface.stop(); await done() } }
-  }
   if (state === 'blocked-crew') putInCopy(copy, join('reports', copy.serverSlug, `${copy.serverSlug}-qc.md`), 'VERDICT: FAIL\n\nChecked by the redesign spec.\n')
   if (state === 'retro') {
     const step = (status: string, detail: string | null) => ({ status, at: new Date().toISOString(), detail })

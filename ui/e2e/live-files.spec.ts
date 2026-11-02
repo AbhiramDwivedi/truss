@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PNG, WITHIN, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
+import { PNG, WITHIN, crewLine, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 let real: Real | undefined
@@ -15,11 +15,6 @@ test.afterEach(async () => {
 })
 
 type Page = import('@playwright/test').Page
-// A crew line: the one button per crew, in its stage group of the Crews region (ADR-0018 section 10).
-const crewButtons = (page: Page, slug: string) =>
-  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem')
-    .getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') })
-const crewLine = (page: Page, slug: string) => crewButtons(page, slug).first()
 // The members of an open crew line: a list named "<slug> members".
 const members = (page: Page, slug: string) => page.getByRole('list', { name: `${slug} members`, exact: true })
 const member = (page: Page, slug: string, name: string) => members(page, slug).getByRole('listitem').filter({ hasText: name })

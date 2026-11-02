@@ -5,7 +5,7 @@
 // on the old client, which lacks the ADR-0018 roles and names.
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { WITHIN, card, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { WITHIN, card, crewLine, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -31,9 +31,6 @@ async function expectNoViolations(page: Page, state: string): Promise<void> {
 }
 
 const crewsRegion = (page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
-const crewButtons = (page: Page, slug: string) =>
-  crewsRegion(page).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') })
-const crewLine = (page: Page, slug: string) => crewButtons(page, slug).first()
 const members = (page: Page, slug: string) => page.getByRole('list', { name: `${slug} members`, exact: true })
 const openTab = async (page: Page, name: string) => {
   const tab = page.getByRole('tab', { name, exact: true })
