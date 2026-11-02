@@ -190,6 +190,8 @@ export type RunAgent = {
   phase?: string
   /** leave out the journal `result` line (an agent that never returned) */
   noResult?: boolean
+  /** the content of the transcript's first user record (default 'task text'); a member's real prompt is a string holding a `Task: <name>` line */
+  prompt?: string
 }
 
 /** Builds a Workflow run dir `<transcripts>/<runId>/` in the real probe shapes: journal.jsonl (launched, started, result lines), agent-<id>.meta.json and agent-<id>.jsonl (records with timestamp, an api-request-blob with output_config.effort, assistant records with message.model and tool_use blocks). `journalMtimeMs` sets journal.jsonl's mtime (default newest agent end). Returns {dir, ids} with ids[label] = agent id. */
@@ -212,7 +214,7 @@ export function mkRun(transcripts: string, runId: string, agents: RunAgent[], op
     if (a.metaModel !== undefined) meta.model = a.metaModel
     writeFileSync(`${dir}/agent-${id}.meta.json`, JSON.stringify(meta))
     const rec = (o: Record<string, unknown>, ts: string) => JSON.stringify({ parentUuid: null, isSidechain: true, agentId: id, ...o, timestamp: ts, userType: 'external', entrypoint: 'cli' })
-    const lines = [rec({ type: 'user', message: { role: 'user', content: 'task text' }, uuid: `u-${id}-1` }, startTs)]
+    const lines = [rec({ type: 'user', message: { role: 'user', content: a.prompt ?? 'task text' }, uuid: `u-${id}-1` }, startTs)]
     if (a.effort !== undefined) lines.push(rec({ type: 'api-request-blob', hash: 'h', message: { role: 'system', content: [{ type: 'text', text: 'sys' }], output_config: { effort: a.effort } } }, startTs))
     const model = a.model === undefined ? 'claude-opus-5-5' : a.model
     const content = (a.tools ?? []).map((t, k) => ({ type: 'tool_use', id: `t${k}`, name: t.name, input: t.file_path ? { file_path: t.file_path } : {} }))

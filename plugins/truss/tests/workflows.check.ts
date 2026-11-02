@@ -1227,6 +1227,16 @@ t('stage resume answers: skips red and done tasks; the builder prompt carries th
   assert.ok(had(r, 'a-stress'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc', e)
 })
+t('stage entry: guarded and ownTests keys (ADR-0019 item 9, stage 1) change nothing; today\'s stage.js behaves as without them', async () => {
+  const plain = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }] })
+  const extra = { ...plain, guarded: ['tests/a.check.ts'], ownTests: ['tests/*.ts'] }
+  const a = await runStage([plain], { labels: base('a', { 'a-stress': RT0 }) })
+  const b = await runStage([extra], { labels: base('a', { 'a-stress': RT0 }) })
+  assert.deepEqual(b.labels, a.labels, 'the same agents run in the same order')
+  assert.deepEqual(b.calls.map((c) => c.prompt), a.calls.map((c) => c.prompt), 'every prompt is the same')
+  assert.deepEqual(b.res.map((x) => ({ ...x, e: undefined })), a.res.map((x) => ({ ...x, e: undefined })))
+  passedShape(b.res[0], 'a', HEAD, 'a-qc', extra)
+})
 t('stage resume answers: with no tasks the planner runs again carrying every answer text', async () => {
   const e = entry('a', { resume: 'answers', answers: [{ at: 'split', text: 'ANSWER-ONE' }, { at: 'build-it', text: 'ANSWER-TWO' }] })
   const r = await runStage([e], { labels: base() })
