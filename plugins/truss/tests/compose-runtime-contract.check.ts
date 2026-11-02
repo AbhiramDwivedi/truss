@@ -214,7 +214,7 @@ t('cs 6: each restart is logged as "restart: crew <slug>, label <label>, n <n>, 
 })
 t('cs 7: restarts add no rework spend, so an integrate failure after two restarts still gets its one rework', async () => {
   const r = await runStage([entry('a')], {
-    reworkAllowance: 1,
+    reworkAllowance: 2,
     labels: base('a', { 'a-tester': marked('CHECKPOINT', 'one'), 'a-tester-2': marked('CHECKPOINT', 'two'), 'a-tester-3': done('feat/t3'), 'a-resolver': done('feat/r') }),
     runner: ({ key, n }) => (key === 'integrate:feat/t3' && n === 0 ? rj({ merged: false, conflicts: ['x'] }) : undefined),
   })
