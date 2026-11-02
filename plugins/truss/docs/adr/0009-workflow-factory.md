@@ -295,6 +295,12 @@ Run by the PM with `Workflow({ scriptPath: <args.truss.scriptPath>, args: <start
 
 A restart is always a new stage.js run with one crew, never `resumeFromRunId`. The probe didn't check how the Workflow cache keys agents when `args` change, so nothing here relies on the cache. `spent` and `labelFrom` carry over what earlier runs did.
 
+**Amendment, 2026-11-02 (truss 0.16.0, [ADR-0021](0021-plugin-dependencies.md)).** Three parts of this decision change:
+
+- Step 3's "`CHECKPOINT`: one fresh member from its text, then `BLOCKED:`" becomes: a `CHECKPOINT`, or a member that returns no report, restarts a fresh member of the same role up to `max(1, reworkAllowance)` times per chain. Each restart carries the previous note and is told to read the branch's commits, adds no rework spend, and is logged with its reason. Running out of restarts stops the crew `BLOCKED` (ADR-0021 Decision 5).
+- Step 2's planning engineer loads `subagent-limits:split-work` before it splits work (ADR-0021 Decision 4).
+- `finish` step 5 also removes the run's own merged, clean `worktree-wf_<id>-<n>` worktrees, and lists those it leaves in `leftWorktrees`. `finish` also appends a `restart` event per restarted member (ADR-0021 Decisions 6 and 7).
+
 The script never merges into the target, never pushes, never deploys, and asks the client nothing.
 
 ### 5. The planning engineer, `agents/planning-engineer.md`

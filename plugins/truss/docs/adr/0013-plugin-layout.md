@@ -62,7 +62,7 @@ main holds:
   - `marketplace/.claude-plugin/marketplace.json`: name `truss`, owner the repo owner, and one entry with no `version` (plugin.json keeps the version):
 
     ```json
-    {"name":"truss","source":{"source":"git-subdir","url":"AbhiramDwivedi/truss","path":"plugins/truss","ref":"main"}}
+    {"name":"truss","source":{"source":"git-subdir","url":"https://github.com/AbhiramDwivedi/truss.git","path":"plugins/truss","ref":"main"}}
     ```
 
   - `marketplace/README.md`: the GitHub landing page, with the install commands and a pointer to main;
@@ -162,7 +162,7 @@ Traces to: ADR-0013 Decision 2; marketplace-reference ("Plugin sources", "Fields
 
 | Seam | Producer | Consumer | Contract | Pinned by |
 | --- | --- | --- | --- | --- |
-| The catalog entry | marketplace | Claude Code's installer | `{"source":"git-subdir","url":"AbhiramDwivedi/truss","path":"plugins/truss","ref":"main"}`, no `version` | `checks/repo-home.check.ts`, suite `repo-home marketplace` |
+| The catalog entry | marketplace | Claude Code's installer | `{"source":"git-subdir","url":"https://github.com/AbhiramDwivedi/truss.git","path":"plugins/truss","ref":"main"}`, no `version` | `checks/repo-home.check.ts`, suite `repo-home marketplace` |
 | The published branch | the PM's publish step | `claude plugin marketplace add` | `origin/marketplace^{tree}` equals `main:marketplace` | the sync check in "Ship steps"; TODO: no automated check yet, the later goal adds one |
 | The install result | Claude Code | the user | no `ui/` anywhere under the config; one version dir; its version equals plugins/truss's plugin.json | `checks/repo-home.check.ts`, suite `repo-home install` |
 | The plugin root the UI loads | plugin | ui | today `ui/server/main.ts:43` defaults to ui/'s parent; after the move, `../plugins/truss` | the ui seam files below |
@@ -277,7 +277,7 @@ This replaces the two-file list above.
 
 - `ui/server/main.ts`: the default plugin dir becomes `join(uiDir, '..', 'plugins', 'truss')`; `--plugin` still overrides it.
 - `.claude/truss.json`: `architecture` = `plugins/truss/docs/architecture.md`, `adr` = `plugins/truss/docs/adr`; `merge` and `target` stay. The PM updates plan.json's `architecture` after the merge (C4).
-- `marketplace/.claude-plugin/marketplace.json`: one plugin `truss`, source `git-subdir`, url `AbhiramDwivedi/truss`, path `plugins/truss`, ref `main`.
+- `marketplace/.claude-plugin/marketplace.json`: one plugin `truss`, source `git-subdir`, url `https://github.com/AbhiramDwivedi/truss.git`, path `plugins/truss`, ref `main`.
 - Root `package.json`: `test` and `test:ui` scripts and no dependencies.
 
 `checks/repo-home.check.ts` (suites `repo-home layout` and `repo-home marketplace`) and the plugin-move acceptance test pin all four, so no new contract test is needed.
@@ -285,3 +285,7 @@ This replaces the two-file list above.
 ### 6. The architecture-doc text now lives in the doc
 
 The "Architecture-doc text for the later goal" section above is now the `## Repo layout (ADR-0013)` section of `docs/architecture.md`, updated for `resources/` and these seams. It moves with the doc to `plugins/truss/docs/architecture.md`.
+
+## Amendment (goal compose-ops)
+
+[ADR-0021](0021-plugin-dependencies.md) changes the install. truss now depends on kit, worktrees and subagent-limits from the claude-ops marketplace, and the catalog allows that with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. So a user adds the claude-ops marketplace first, with `claude plugin marketplace add AbhiramDwivedi/claude-ops`, before the two commands above. Without it, truss fails to load. The catalog entry's url is now the full `https://github.com/AbhiramDwivedi/truss.git`, not the `AbhiramDwivedi/truss` shorthand, so an install needs no SSH key (commit 748d090). The url examples in this ADR show the full form.
