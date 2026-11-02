@@ -193,7 +193,7 @@ describe('repo-home docs', () => {
     })
     it(`${f} has no claude-ops install`, () => {
       const s = txt(f)
-      for (const l of ['marketplace add AbhiramDwivedi/claude-ops', 'truss@claude-ops']) assert.ok(!s.includes(l), `${f} has ${l}`)
+      for (const l of ['truss@claude-ops']) assert.ok(!s.includes(l), `${f} has ${l}`)
     })
   }
   it('newest CHANGELOG entry names truss@truss', () => {

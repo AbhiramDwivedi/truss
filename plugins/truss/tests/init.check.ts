@@ -8,9 +8,9 @@ import { readFileSync } from 'node:fs'
 const init = readFileSync(new URL('../skills/init/SKILL.md', import.meta.url), 'utf8')
 const NO_MANIFEST = 'no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)'
 
-test('init prints the no-manifest line and does not run kit:init without a manifest', () => {
-  assert.ok(init.includes(NO_MANIFEST))
-  assert.ok(init.includes("**Missing, and `kit:init` is among the session's skills:** don't run `kit:init`"))
+test('init runs kit:init through the Skill tool on a missing manifest (ADR-0021 Decision 3)', () => {
+  assert.ok(!init.includes(NO_MANIFEST))
+  assert.ok(init.includes("**Missing, and `kit:init` is among the session's skills:** run it through the Skill tool, `Skill({ skill: \"kit:init\" })`"))
   assert.ok(!init.includes('kit sets the project up'))
 })
 
