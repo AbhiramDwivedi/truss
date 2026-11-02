@@ -5,7 +5,7 @@
 // firefox or webkit launcher and opens its own page at the width. Status and verdict are asserted as visible text, so color alone
 // cannot pass. Pinned to ADR-0018's roles and names: crew lines are found by role in the Crews region.
 import { test, expect, chromium, firefox, webkit, type Page } from '@playwright/test'
-import { rand, spawnEvent, startReal, type Real } from './harness.ts'
+import { crewLine, rand, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const WIDTHS = [1024, 1440]
@@ -17,10 +17,6 @@ test.afterEach(async () => {
   real = undefined
 })
 
-// A crew line is the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
-const crewLine = (page: Page, slug: string) =>
-  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem')
-    .getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
 
 for (const [browserName, launcher] of BROWSERS) {
   test.describe(`${browserName}${browserName === 'chromium' ? ' (also Edge)' : ''}`, () => {

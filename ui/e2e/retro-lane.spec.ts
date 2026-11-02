@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { WITHIN, rand, startReal, type Real } from './harness.ts'
+import { WITHIN, crewLine, rand, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -33,9 +33,6 @@ function writeRetro(r: Real, over: Partial<Record<(typeof STEPS)[number], Step>>
 
 const lane = (page: Page) => page.getByRole('region', { name: 'Retro stage' })
 const crews = (page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
-// A crew line: the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
-const crewLine = (page: Page, slug: string) =>
-  crews(page).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
 
 test('R-23: with no retro/state.json the page shows the crew lanes and no region named Retro stage', async ({ page }) => {
   real = await startReal()

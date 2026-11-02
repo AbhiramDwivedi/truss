@@ -43,7 +43,7 @@ function makeBuild(ui: string) {
   writeFileSync(join(web, 'assets', 'geist.woff2'), Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1, 0, 0]));
 }
 
-type Started = { child: ChildProcess; url: string; port: number; token: string; stderr: () => string; exited: () => boolean };
+type Started = { child: ChildProcess; url: string; port: number; token: string; stderr: () => string; stdout: () => string; exited: () => boolean };
 
 async function start(ui: string): Promise<Started> {
   const repo = join(tmp, 'repo-' + Math.random().toString(36).slice(2));
@@ -68,7 +68,7 @@ async function start(ui: string): Promise<Started> {
   });
   const url = await ready;
   const u = new URL(url);
-  return { child, url, port: Number(u.port), token: u.searchParams.get('token') ?? '', stderr: () => err, exited: () => gone };
+  return { child, url, port: Number(u.port), token: u.searchParams.get('token') ?? '', stderr: () => err, stdout: () => out, exited: () => gone };
 }
 
 async function get(s: Started, path: string): Promise<{ status: number; headers: Headers; text: string }> {
@@ -80,6 +80,9 @@ describe('no client build: ui/web/index.html is missing', () => {
   it('starts anyway, says on stderr how to build, and keeps stdout to the listening line', async () => {
     const s = await start(makeUi('missing-a'));
     assert.equal(s.exited(), false, 'main.ts must not exit when the build is missing');
+    const lines = s.stdout().split('\n').filter((l) => l.trim() !== '');
+    assert.equal(lines.length, 1, `stdout is the listening line only, got: ${JSON.stringify(s.stdout())}`);
+    assert.match(lines[0]!, /^truss-ui listening on \S+$/);
     assert.match(s.stderr(), new RegExp('truss-ui: no client build at .*web.index\\.html; run: ' + BUILD_CMD.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')));
   });
 

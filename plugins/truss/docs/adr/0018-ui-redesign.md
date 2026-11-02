@@ -195,7 +195,7 @@ The one orchestrated moment: a new request card slides 8 px down into Your move 
 
 Screenshot states: empty, pending-question, pending-approval, crews-running, blocked-crew, retro, decisions
 
-Each screenshot is `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, taken `fullPage: true` at deviceScaleFactor 1 from a fixture made from `ui/contract/fixtures/run/`, copied to an `mkdtemp` dir with a per-run value planted.
+Each screenshot is `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, taken `fullPage: true` at deviceScaleFactor 1 from a fixture made from `ui/contract/fixtures/run/`, copied to an `mkdtemp` dir with a per-run value planted (the states `empty`, `pending-question` and `pending-approval` have no truss dir: see section 11).
 
 Every state has this shell. The specs assert it in each state:
 
@@ -254,7 +254,7 @@ The Design tab, the session error state and the answered cards are not separate 
 
 ### 11. What the redesign specs check
 
-The redesign specs (`ui/contract/redesign/*.spec.ts`) load the real server through `ui/e2e/harness.ts`. For each state and theme they assert the roles and names above with `getByRole`, run axe (`new AxeBuilder(...)` with `.analyze()`, WCAG 2.2 AA tags) and fail on any violation. At each width they assert `documentElement.scrollWidth <= clientWidth` and write the full-page screenshot. They fail on any `securitypolicyviolation` and any console error. After load, each changes one fixture file and asserts the page shows the change.
+The redesign specs (`ui/contract/redesign/*.spec.ts`) load the real server through `ui/e2e/harness.ts`. For each state and theme they assert the roles and names above with `getByRole`, run axe (`new AxeBuilder(...)` with `.analyze()`, WCAG 2.2 AA tags) and fail on any violation. At each width they assert `documentElement.scrollWidth <= clientWidth` and write the full-page screenshot. They fail on any `securitypolicyviolation` and any console error. After load, each changes one fixture file and asserts the page shows the change. The three states `empty`, `pending-question` and `pending-approval` are served by the fake interface in `ui/e2e/harness.ts`, which has no truss dir and no fixture copy; for those the per-run value goes into the interface's state and the change is one pushed transcript delta, which the page must show.
 
 ## Rename table
 

@@ -7,12 +7,12 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { STATES, THEMES, WIDTHS, T, LOAD, scenario, screensDir, watch, type Scenario } from './support.ts'
+import { STATES, WIDTHS, T, LOAD, scenario, screensDir, watch, type Scenario } from './support.ts'
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const HEIGHT = 900
 
-const SCHEMES = ['light', 'dark'] as const
+const THEMES = ['light', 'dark'] as const
 type Theme = (typeof THEMES)[number]
 
 async function open(browser: Browser, s: Scenario, theme: Theme, width: number) {
@@ -88,7 +88,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
       await expect(group.getByRole('heading', { level: 3, name: `Stage ${n}` })).toBeVisible(T)
       await expect(group.getByRole('list').getByRole('listitem').first()).toBeVisible(T)
     }
-    for (const slug of ['ui-design', 'ui-state', 'ui-session', 'ui-server', s.copy.webSlug]) {
+    for (const slug of ['ui-design', 'ui-state', 'ui-session', 'ui-server', s.copy!.webSlug]) {
       const line = crews.getByRole('button', { name: new RegExp(`\\b${slug}\\b`) })
       await expect(line).toHaveCount(1, T)
       await expect(line).toHaveAttribute('aria-expanded', /^(true|false)$/, T)
@@ -101,7 +101,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
       await line.click()
       await expect(line).toHaveAttribute('aria-expanded', 'true', T)
       await expect(page.getByRole('list', { name: 'ui-session members' }).getByRole('listitem').first()).toBeVisible(T)
-      await expect(crews.getByRole('button', { name: new RegExp(`\\b${s.copy.webSlug}\\b`) })).toHaveAccessibleName(/planned/i, T)
+      await expect(crews.getByRole('button', { name: new RegExp(`\\b${s.copy!.webSlug}\\b`) })).toHaveAccessibleName(/planned/i, T)
     } else {
       const line = crews.getByRole('button', { name: /\bui-server\b/ })
       await expect(line).toHaveAccessibleName(/blocked/i, T)
@@ -135,7 +135,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
 // After change(): the page shows it.
 async function shows(page: Page, state: string, s: Scenario): Promise<void> {
   if (state === 'crews-running') {
-    await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: new RegExp(`\\b${s.copy.webSlug}\\b`) })).toHaveAccessibleName(/merged/i, LOAD)
+    await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: new RegExp(`\\b${s.copy!.webSlug}\\b`) })).toHaveAccessibleName(/merged/i, LOAD)
   } else if (state === 'blocked-crew') {
     await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: /\bui-session\b/ })).toHaveAccessibleName(/blocked/i, LOAD)
   } else if (state === 'retro') {
@@ -148,7 +148,7 @@ async function shows(page: Page, state: string, s: Scenario): Promise<void> {
 }
 
 for (const state of STATES) {
-  for (const theme of SCHEMES) {
+  for (const theme of THEMES) {
     test(`axe: ${state} in ${theme} has the ADR-0018 roles and no WCAG 2.2 AA violations`, async ({ browser }) => {
       const s = await scenario(state)
       const { page, problems, close } = await open(browser, s, theme, WIDTHS[2]![1])
