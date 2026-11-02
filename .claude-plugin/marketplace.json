@@ -1,6 +1,7 @@
 {
   "name": "truss",
   "owner": { "name": "Abhiram Dwivedi" },
+  "allowCrossMarketplaceDependenciesOn": ["claude-ops"],
   "plugins": [
     {
       "name": "truss",
