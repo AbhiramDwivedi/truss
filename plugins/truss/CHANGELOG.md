@@ -2,6 +2,48 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.16.0
+
+truss now installs with kit, worktrees and subagent-limits from the claude-ops marketplace, as plugin dependencies, and uses them by default ([ADR-0021](docs/adr/0021-plugin-dependencies.md)). Nothing from claude-ops is copied into truss.
+
+### Install with the claude-ops marketplace first
+
+- **Install with three commands:**
+
+  ```
+  claude plugin marketplace add AbhiramDwivedi/claude-ops
+  claude plugin marketplace add AbhiramDwivedi/truss
+  claude plugin install truss@truss
+  ```
+
+  `claude plugin install truss@truss` installs kit, worktrees and subagent-limits with truss.
+- **Breaking: truss fails to load when the claude-ops marketplace is missing.** The fix: run `claude plugin marketplace add AbhiramDwivedi/claude-ops`, then reinstall truss with `claude plugin install truss@truss`.
+- **`plugin.json` declares the dependencies** with `^` ranges, all from the `claude-ops` marketplace: kit `^0.3.1`, worktrees `^0.8.4` and subagent-limits `^0.3.1`. A patch or minor release of a dependency installs without a truss release.
+- **The catalog allows them.** `marketplace/.claude-plugin/marketplace.json` holds `"allowCrossMarketplaceDependenciesOn": ["claude-ops"]`; without it the dependencies don't install. Its entry's url is `https://github.com/AbhiramDwivedi/truss.git`.
+- **Every README puts the claude-ops line first**, and no README shows the shorthand url.
+- **`--plugin-dir` loads need the three plugins too.** Load them from the claude-ops marketplace or with their own `--plugin-dir`.
+
+### Init, run and the foreman use the dependencies
+
+- **Init runs `kit:init` on a missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `Skill({ skill: "kit:init" })`; kit proposes its setup and writes it only on your approval. This reverses ADR-0002's no-manifest row: init no longer says `no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)`. The kit-absent line stays as it was.
+- **Init proposes roles and limits.** When kit is loaded, init proposes `roles` `build: kit:builder` and `test: kit:test-writer`, even without a manifest. When subagent-limits is installed, it proposes `nudgeAtK` about 150 and `stopAtK` about 200, subagent-limits' own options, and writes them only on your approval.
+- **Run passes kit types by default.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts plan-args` and `start` only when kit is loaded, that is, when a `kit:` skill is among the session's skills. Otherwise it passes no `--type`, and the `roles.json` defaults stand.
+- **The foreman loads split-work every time.** `agents/foreman.md` says `Load the \`subagent-limits:split-work\` skill before splitting work.`, with no "if it is available".
+
+### Restarts and worktree clean-up
+
+TODO: the items below come from ADR-0021 Decisions 3 to 7, which the compose-runtime crew builds; none of them is in `workflows/stage.js` or `bin/factory.ts` at this commit. Check each against the code once that crew merges, and drop any it didn't build.
+
+- **The planning engineer loads split-work too.** stage.js's planner prompt holds `Load the \`subagent-limits:split-work\` skill before splitting work.`
+- **The factory maps `truss.json` roles.** `roles.build` sets the builder and resolver, `roles.test` the tester, only when kit is loaded; a `--type` wins over `roles`, and without kit the `roles.json` defaults stand.
+- **A CHECKPOINT or a missing report restarts a fresh member.** A member that returns `CHECKPOINT`, or no report, is replaced by a fresh member of the same role from the same task, which gets the previous note and reads the branch's commits. A chain restarts at most `max(1, reworkAllowance)` times; restarts add no rework spend. Running out of restarts stops the crew `BLOCKED`, with text starting `restarts spent:`.
+- **`finish` records restarts.** It appends one `restart` event to `events.jsonl` per restarted member, with `crew`, `label`, `n` and `reason` (`CHECKPOINT` or `no report`), once per crew and label.
+- **`finish` removes its own run's merged `wf_*` worktrees.** After a crew merges, `finish --transcript T` also removes the Workflow worktrees whose branch is exactly `worktree-<basename of T>-<digits>` and whose path ends `<basename of T>-<digits>`. It never forces, never touches a locked worktree, and deletes a branch only once it is merged. Each matching worktree it leaves goes in a new output field, `leftWorktrees`, as `{path, branch, why}` with `why` one of `dirty`, `locked` or `unmerged`; `finish` never refuses because of it. Another run's worktrees stay.
+
+### claude-ops
+
+- **Both claude-ops issues are resolved upstream.** claude-ops tags every plugin release `<name>--v<version>` (`kit--v0.3.1`, `worktrees--v0.8.4` and `subagent-limits--v0.3.1` among them), and worktrees 0.8.4 retires and cleans merged, clean `wf_*` worktrees itself. truss's own clean-up in `finish` stays, bounded to one run.
+
 ## 0.15.0
 
 The repo is now the standalone home of the plugin ([ADR-0013](docs/adr/0013-plugin-layout.md)). This release is breaking for installs from claude-ops and for `--plugin-dir <repo>` users.
