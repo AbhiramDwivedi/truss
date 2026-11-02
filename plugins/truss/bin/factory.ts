@@ -939,14 +939,35 @@ function plannerTasks(runs: WfRun[], slug: string): { tasks: unknown[]; from: nu
   })
   return out
 }
-// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report),
-// over the given runs: a task done in an earlier run, and passed in `done` to a later one that never re-ran it, stays done.
+// The task name a member's prompt gives: the `Task: <name>` line directly followed by a `Files you may change:` line, read from
+// the first user record of the agent transcript (a string, or an array of text blocks). undefined when there is none.
+function promptTask(transcript: string): string | undefined {
+  if (!existsSync(transcript)) return undefined
+  const first = jsonLines(transcript).find((rec) => rec.type === 'user')
+  const c = first?.message?.content
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map((b: unknown) => (typeof b === 'string' ? b : isObj(b) && typeof b.text === 'string' ? b.text : '')).join('\n') : ''
+  const lines = text.split('\n')
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const m = /^\s*Task: (.+?)\s*$/.exec(lines[i] as string)
+    if (m?.[1] !== undefined && /^\s*Files you may change:/.test(lines[i + 1] as string)) return m[1]
+  }
+  return undefined
+}
+// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch or has every commit
+// patch-id-matched on it (git decides, not the report), over the given runs: a task done in an earlier run, and passed in `done`
+// to a later one that never re-ran it, stays done. The name is the prompt's Task line, else result.task minus a leading `<slug>: `.
 function doneTasks(runs: WfRun[], slug: string, wt: string): string[] {
   const done: string[] = []
   for (const a of runs.flatMap((r) => r.agents)) {
     const r = a.result
     if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
-    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
+    const name = promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
+    if (done.includes(name)) continue
+    const picked = (): boolean => {
+      const c = run(wt, ['cherry', `truss-${slug}`, r.branch as string])
+      return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
+    }
+    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 || picked()) done.push(name)
   }
   return done
 }
@@ -979,13 +1000,18 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     const all = runsNextTo(transcript)
     runs = crewRunsOf(all.some((r) => r.id === t.id) ? all : [...all, t], slug)
   }
+  // An answer at a step after red needs the red record, as mergeCrew does; an answer at red itself does not.
+  if (kind === 'answers' && answers.length > 0 && !answers.some((x) => isObj(x) && x.at === 'red')) {
+    const red = redRecord(c.dir, slug)
+    if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) throw refuse({ slug, why: 'no red record: the lowest-numbered checks file is missing or has exit 0, so an answer after red has nothing to resume' })
+  }
   const wt = ensureWorktree(c.repo, slug, c.settings.target)
   // A stale crew whose branch has no commit beyond the base starts from step 1.
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
   const rebuild = kind !== 'merge-ready' && !noWork
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt) : [], answers })
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : [], answers })
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
@@ -1396,7 +1422,7 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
 function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, events: Obj[]): void {
   const startedAt = (id: string): number => wfRun.journal.findIndex((l) => l.type === 'started' && l.agentId === id)
   const resultAt = (id: string): number => wfRun.journal.reduce((at, l, i) => (l.type === 'result' && l.agentId === id ? i : at), -1)
-  const info = wfRun.agents.map((a) => ({ a, p: parseLabel(a.label), s: startedAt(a.agentId) }))
+  const info = wfRun.agents.map((a) => ({ a, p: parseLabel(a.label), s: startedAt(a.agentId), t: promptTask(a.transcript) }))
   const linked = new Set<string>()
   const nOf = new Map<string, number>()
   for (const x of info) {
@@ -1405,7 +1431,7 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
     const reason = isObj(r) ? (r.marker === 'CHECKPOINT' ? 'CHECKPOINT' : undefined) : 'no report'
     if (reason === undefined) continue
     const at = resultAt(x.a.agentId)
-    const next = info.find((y) => y !== x && y.p?.slug === x.p?.slug && y.p?.role === x.p?.role && y.s > at && !linked.has(y.a.agentId))
+    const next = info.find((y) => y !== x && y.p?.slug === x.p?.slug && y.p?.role === x.p?.role && (x.t === undefined || y.t === undefined || x.t === y.t) && y.s > at && !linked.has(y.a.agentId))
     if (next === undefined) continue
     linked.add(next.a.agentId)
     const n = (nOf.get(x.a.agentId) ?? 0) + 1
