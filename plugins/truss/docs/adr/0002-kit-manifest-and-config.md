@@ -27,6 +27,8 @@ The rows don't overlap, because init decides on the manifest before it looks at 
 
 **Amendment, 2026-10-27 (foundry 0.4.1).** As accepted, the no-manifest row ran `kit:init`, so kit set the project up inside Truss init. On the first live init (a repo with its own hooks and no kit) that made init stop and ask the client, because a full kit setup is a large, separate change and Truss needs only two read-only declarations from it. A missing manifest now gets the line and no `kit:init`; the client runs `/kit:init` on its own when they want kit. A manifest without the declarations still gets `kit:init` with the declare args, since kit is already set up there and only the declaration is shown.
 
+**Amendment, 2026-11-02 (truss 0.16.0, [ADR-0021](0021-plugin-dependencies.md)).** kit is no longer a soft dependency: plugin.json depends on kit `^0.3.1` from the claude-ops marketplace, which replaces "There is no plugin.json `dependencies` entry" above. The no-manifest row is reversed again: when the manifest is missing and `kit:init` is listed, init runs `kit:init` through the Skill tool, and kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`. The `kit is not installed` row stays word for word, because truss loaded alone by `--plugin-dir` still reaches it. The other rows don't change.
+
 The QC engineer and checking engineer are the declared types because both are `tools: Read, Grep, Glob, Bash`. The writer, commissioning engineer, foreman and design engineer edit files and stay isolated. Once kit records them, worktrees gives them no worktree (repo [ADR-0014](claude-ops/0014-worktrees-declared-read-only-agents.md)) and kit's stop gate skips them.
 
 ### 2. New truss.json keys

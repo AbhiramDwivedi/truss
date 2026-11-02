@@ -1231,7 +1231,7 @@ flowchart TB
   end
 
   mdir -->|"PM: git subtree split --prefix=marketplace main"| cat
-  cat -.->|"git-subdir entry: url AbhiramDwivedi/truss,<br/>path plugins/truss, ref main"| plugin
+  cat -.->|"git-subdir entry: url https://github.com/AbhiramDwivedi/truss.git,<br/>path plugins/truss, ref main"| plugin
   ui -->|"--plugin, default ui/../plugins/truss<br/>(ui/server/main.ts)"| plugin
   root -->|"architecture, adr = plugins/truss/docs/..."| plugin
   checks -->|"reads, runs the install commands"| mdir
@@ -1257,7 +1257,7 @@ sequenceDiagram
   GH-->>CC: .claude-plugin/marketplace.json, README.md
   CC->>Cfg: write plugins/marketplaces/truss/ (two files, no ui/)
   User->>CC: claude plugin install truss@truss
-  CC->>Cfg: read the truss entry: source git-subdir, url AbhiramDwivedi/truss, path plugins/truss, ref main
+  CC->>Cfg: read the truss entry: source git-subdir, url https://github.com/AbhiramDwivedi/truss.git, path plugins/truss, ref main
   CC->>GH: sparse fetch of main:plugins/truss
   GH-->>CC: plugins/truss/** only
   CC->>Cfg: write plugins/cache/truss/truss/VERSION/ (no ui/, checks/, plugins/ or package.json)
@@ -1274,11 +1274,54 @@ The install flow is proven against a local smart-HTTP copy of the repo, not agai
 | --- | --- | --- | --- | --- |
 | The plugin root the UI loads | plugin | `ui/server/main.ts` | Default plugin dir `join(uiDir, '..', 'plugins', 'truss')` when no `--plugin` is given. Today `ui/server/main.ts:43` is `resolve(args.plugin ?? join(uiDir, '..'))`, ui/'s parent. | the plugin-move acceptance test (the ui server starts with no `--plugin`) |
 | The architecture doc paths | repo layout | truss hooks and `bin/factory.ts` | `.claude/truss.json` `architecture` = `plugins/truss/docs/architecture.md`, `adr` = `plugins/truss/docs/adr`; `merge` `sequential` and `target` `main` stay. Today it names `docs/architecture.md` and `docs/adr`. | `checks/repo-home.check.ts:60-64` (suite `repo-home layout`); the plugin-move acceptance test |
-| The catalog entry | marketplace | Claude Code's installer | `marketplace/.claude-plugin/marketplace.json`: name `truss`, an owner, one plugin `truss` with no `version`, source `{"source":"git-subdir","url":"AbhiramDwivedi/truss","path":"plugins/truss","ref":"main"}`; `marketplace/` tracks exactly that file and `marketplace/README.md` | `checks/repo-home.check.ts:67-83` (suite `repo-home marketplace`) |
+| The catalog entry | marketplace | Claude Code's installer | `marketplace/.claude-plugin/marketplace.json`: name `truss`, an owner, one plugin `truss` with no `version`, source `{"source":"git-subdir","url":"https://github.com/AbhiramDwivedi/truss.git","path":"plugins/truss","ref":"main"}`; `marketplace/` tracks exactly that file and `marketplace/README.md` | `checks/repo-home.check.ts:67-83` (suite `repo-home marketplace`) |
 | Root scripts | repo layout | the developer | root `package.json` with no `dependencies` or `devDependencies`; `scripts.test` = `node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && python3 -B -m unittest discover -s plugins/truss/tests && node --test checks/*.check.ts`, `scripts["test:ui"]` = `npm --prefix ui test` | `checks/repo-home.check.ts:54-59`; the plugin-move acceptance test (exact scripts) |
 | The published branch | the PM's publish step | `claude plugin marketplace add` | `origin/marketplace^{tree}` equals `main:marketplace` | the sync check, a PM ship step (ADR-0013 amendment); no automated check |
 
 The ADR-0013 amendment lists the other files the move changes: 13 ui files that take the plugin to be ui/'s parent, and 6 plugin files that break under a pure move.
+
+## Plugin dependencies
+
+truss uses kit, worktrees and subagent-limits where they live, in the claude-ops marketplace, and copies none of them. [ADR-0021](adr/0021-plugin-dependencies.md) records the decisions; this section is the map.
+
+| Dependency | Range | What truss uses it for |
+| --- | --- | --- |
+| kit | `^0.3.1` | The project manifest init builds on, `kit:init` when the manifest is missing, and the `kit:builder` and `kit:test-writer` member types when kit is loaded |
+| worktrees | `^0.8.4` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); from 0.8.4 it also cleans merged, clean `wf_*` worktrees |
+| subagent-limits | `^0.3.1` | The context budget in every subagent's brief, the `nudgeAtK` checkpoint and `stopAtK` stop, and the `split-work` skill the foreman and planner load |
+
+Every entry names `marketplace: "claude-ops"`. The truss catalog allows it with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. A user installs with the claude-ops marketplace added first:
+
+```
+claude plugin marketplace add AbhiramDwivedi/claude-ops
+claude plugin marketplace add AbhiramDwivedi/truss
+claude plugin install truss@truss
+```
+
+Without the claude-ops marketplace, truss fails to load. Add it, then reinstall truss.
+
+```mermaid
+flowchart LR
+  truss["truss plugin<br/>[plugins/truss/.claude-plugin/plugin.json]"]
+  cat["truss catalog<br/>[marketplace/.claude-plugin/marketplace.json]"]
+  kit["kit ^0.3.1"]
+  wt["worktrees ^0.8.4"]
+  sl["subagent-limits ^0.3.1"]
+  truss -->|"dependencies, marketplace claude-ops"| kit
+  truss --> wt
+  truss --> sl
+  cat -.->|"allowCrossMarketplaceDependenciesOn: claude-ops"| truss
+```
+
+*truss's three dependencies, all from the claude-ops marketplace. The dotted arrow is the catalog's permission for a cross-marketplace dependency.*
+Traces to: ADR-0021 Decision 1.
+
+What changes at run time (ADR-0021 Decisions 2 to 7):
+
+- Init proposes `nudgeAtK` about 150 and `stopAtK` about 200 for the client to approve, below the 300/450 defaults that no Workflow agent has reached.
+- When a `kit:` skill is listed, the run skill passes `--type builder=kit:builder --type tester=kit:test-writer`, and the factory reads `.claude/truss.json` `roles`. Otherwise the `workflows/roles.json` defaults stand.
+- stage.js restarts a member that returns `CHECKPOINT` or no report, up to `max(1, reworkAllowance)` times per chain, with no rework spend, then stops `BLOCKED`. `finish` appends one `restart` event per restarted member to `events.jsonl`.
+- `finish` removes its own run's merged, clean `worktree-wf_<id>-<n>` worktrees, never with `--force` and never a locked one, and lists those it leaves in `leftWorktrees`.
 
 ## Failure modes and recovery
 
