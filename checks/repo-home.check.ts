@@ -75,7 +75,7 @@ describe('repo-home marketplace', () => {
   })
   it('entry source is git-subdir main:plugins/truss', () => {
     const m = rd('marketplace/.claude-plugin/marketplace.json')
-    assert.deepEqual(m.plugins[0].source, { source: 'git-subdir', url: 'AbhiramDwivedi/truss', path: 'plugins/truss', ref: 'main' }, 'marketplace entry source differs')
+    assert.deepEqual(m.plugins[0].source, { source: 'git-subdir', url: 'https://github.com/AbhiramDwivedi/truss.git', path: 'plugins/truss', ref: 'main' }, 'marketplace entry source differs')
   })
   it('marketplace/ tracks exactly two files', () => {
     assert.deepEqual(git('ls-files', 'marketplace').trim().split('\n').sort(), ['marketplace/.claude-plugin/marketplace.json', 'marketplace/README.md'])
