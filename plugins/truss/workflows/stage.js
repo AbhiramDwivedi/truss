@@ -121,10 +121,12 @@ function nextLabel(crew, role) {
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
   if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
-  const { at, ...rest } = opts
+  const { at, labelOut, ...rest } = opts
   await admit(crew, at ?? crew.step)
   try {
-    return await spawn(role, nextLabel(crew, role), prompt, rest)
+    const label = nextLabel(crew, role)
+    if (labelOut) labelOut.label = label
+    return await spawn(role, label, prompt, rest)
   } finally {
     await reap(crew)
   }
@@ -260,7 +262,7 @@ function taskPrompt(crew, task, note) {
   const answers = (e.answers || []).filter((a) => a.at === task.name).map((a) => `- ${a.text}`)
   const body = [`Task: ${task.name}`, `Files you may change: ${task.files.join(', ')}`, `Files to read: ${task.reads.join(', ') || 'none'}`, '', 'Brief:', task.brief]
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
-  if (note) body.push('', 'A member before you stopped at a checkpoint. Carry on from its note:', note)
+  if (note) body.push('', ...resumeLines(note))
   const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
   return memberPrompt(crew, task.role, { start, body })
 }
@@ -311,17 +313,30 @@ function resolverPrompt(crew, what, conflicts) {
 
 // ---------------------------------------------------------------- members
 
-function reportOf(report, at) {
-  if (!report || typeof report !== 'object') throw new Stop('BLOCKED', 'the member returned no report', at)
-  return report
+// the lines a restart successor's prompt adds (ADR-0021 Decision 5); resume is null for a first member
+function resumeLines(resume) {
+  if (!resume) return []
+  const lines = resume.reason === 'no report'
+    ? ['A member before you returned no report.']
+    : ['A member before you stopped at a checkpoint. Carry on from its note:', resume.note]
+  lines.push(resume.branch ? `Its branch was ${resume.branch}.` : '', "Read the branch's commits before you start.")
+  return lines.filter((l) => l !== '')
 }
 
-// one member run; a CHECKPOINT starts one fresh member of the same role from its note
+// one member chain; a CHECKPOINT or a missing report restarts a fresh member of the same role, up to max(1, reworkAllowance)
+// times. Restarts add no rework spend and call no guardAllowance.
 async function runMember(crew, role, makePrompt, opts, at) {
-  let report = reportOf(await ask(crew, role, makePrompt(''), { ...opts, schema: MEMBER_SCHEMA, at }), at)
-  if (report.marker === 'CHECKPOINT') {
-    report = reportOf(await ask(crew, role, makePrompt(report.text || ''), { ...opts, schema: MEMBER_SCHEMA, at }), at)
-    if (report.marker !== 'DONE') throw new Stop('BLOCKED', `stopped again after a checkpoint (${report.marker}): ${report.text}`, at)
+  const max = Math.max(1, F.reworkAllowance)
+  let resume = null
+  let report
+  for (let n = 0; ; n++) {
+    const got = {}
+    report = await ask(crew, role, makePrompt(resume), { ...opts, schema: MEMBER_SCHEMA, at, labelOut: got })
+    const reason = !report || typeof report !== 'object' ? 'no report' : report.marker === 'CHECKPOINT' ? 'CHECKPOINT' : null
+    if (!reason) break
+    if (n >= max) throw new Stop('BLOCKED', `restarts spent: ${max} restart${max === 1 ? '' : 's'} used, the last member ${got.label} ended with ${reason}`, at)
+    log(`restart: crew ${crew.slug}, label ${got.label}, n ${n + 1}, reason ${reason}`)
+    resume = { reason, note: reason === 'CHECKPOINT' ? report.text || '' : '', branch: reason === 'CHECKPOINT' && typeof report.branch === 'string' ? report.branch : '' }
   }
   if (report.marker !== 'DONE') {
     const tag = ['QUESTION', 'BLOCKED', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker) ? report.marker : 'BLOCKED'
@@ -392,7 +407,7 @@ async function runMembers(crew, tasks) {
 async function fixBuilder(crew, what, detail, role = 'builder') {
   const at = crew.step
   guardAllowance(crew, at)
-  const report = await runMember(crew, role, (note) => fixPrompt(crew, what, note ? `${detail}\n\nCheckpoint note from the member before you:\n${note}` : detail, role), {}, at)
+  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), {}, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -506,6 +521,7 @@ function plannerPrompt(crew, errors) {
   ]
   const answers = e.answers || []
   if (answers.length) lines.push('', 'Answers to earlier stops of this crew:', ...answers.map((a) => `- at ${a.at}: ${a.text}`))
+  lines.push('', 'Load the `subagent-limits:split-work` skill before splitting work.')
   if (errors) lines.push('', 'Your last plan failed these checks. Fix every one:', ...errors.map((x) => `- ${x}`))
   return lines.join('\n')
 }
