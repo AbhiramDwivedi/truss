@@ -288,7 +288,8 @@ export function spentOf(dir: string, slug: string, since = 0): number {
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
   const out: Record<string, number> = {}
   for (const f of reportsOf(dir, slug)) {
-    const p = parseLabel(f.name.replace(/\.md$/, ''))
+    if (/\.run\d+\.md$/.test(f.name)) continue
+    const p =parseLabel(f.name.replace(/\.md$/, ''))
     if (p !== undefined && p.slug === slug) out[p.role] = Math.max(out[p.role] ?? 1, p.n + 1)
   }
   return out
@@ -1306,9 +1307,17 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     if (!a.hasResult) continue
     const text = textOfResult(a.result)
     if (text === undefined) continue
-    const file = `${dir}/reports/${slug}/${a.label}.md`
+    // ADR-0020: the k-th distinct agentId under a label (journal `started` order) owns <label>.md for k=1 and <label>.run<k>.md for k>=2.
+    const ids: string[] = []
+    // Only an agentId that returned a result text has a report to file, so only it holds a rank (an interrupted one never competes).
+    for (const o of wfRun.agents) if (o.label === a.label && o.hasResult && textOfResult(o.result) !== undefined && !ids.includes(o.agentId)) ids.push(o.agentId)
+    const rank = ids.indexOf(a.agentId) + 1
+    const gate = parsed.role === 'qc' || parsed.role === 'stress'
+    const file = `${dir}/reports/${slug}/${a.label}${rank >= 2 && !gate ? `.run${rank}` : ''}.md`
     mkdirSync(`${dir}/reports/${slug}`, { recursive: true })
-    if (existsSync(file) && readFileSync(file, 'utf8') !== text) {
+    if (rank >= 2 && gate) {
+      bad(`a second agentId (${a.agentId}) under the gate label ${a.label}; the merge and stress gates read one file per label, so it is not filed`)
+    } else if (existsSync(file) && readFileSync(file, 'utf8') !== text) {
       bad('a report file with different text already exists; not overwritten')
     } else {
       if (!existsSync(file)) writeFileSync(file, text)
