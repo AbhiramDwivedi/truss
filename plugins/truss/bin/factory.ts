@@ -1655,6 +1655,15 @@ function cmdFinish(f: Flags): Obj {
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })
     else out.refused.push({ slug: c.slug, why: r.refused ?? 'refused' })
   }
+  // each merged crew's sweep reports what it left; a later crew's sweep may have removed it, and the same one is listed per pass.
+  // Report each still-present worktree once.
+  const present = new Set(worktreesOf(repo).map((w) => w.path))
+  const seen = new Set<string>()
+  out.leftWorktrees = out.leftWorktrees.filter((l) => {
+    if (!present.has(l.path) || seen.has(l.path)) return false
+    seen.add(l.path)
+    return true
+  })
   return finishWith()
 }
 
