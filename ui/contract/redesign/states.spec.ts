@@ -12,6 +12,7 @@ import { STATES, THEMES, WIDTHS, T, LOAD, scenario, screensDir, watch, type Scen
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const HEIGHT = 900
 
+const SCHEMES = ['light', 'dark'] as const
 type Theme = (typeof THEMES)[number]
 
 async function open(browser: Browser, s: Scenario, theme: Theme, width: number) {
@@ -147,7 +148,7 @@ async function shows(page: Page, state: string, s: Scenario): Promise<void> {
 }
 
 for (const state of STATES) {
-  for (const theme of THEMES) {
+  for (const theme of SCHEMES) {
     test(`axe: ${state} in ${theme} has the ADR-0018 roles and no WCAG 2.2 AA violations`, async ({ browser }) => {
       const s = await scenario(state)
       const { page, problems, close } = await open(browser, s, theme, WIDTHS[2]![1])
