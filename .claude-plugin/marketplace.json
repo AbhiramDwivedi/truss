@@ -6,7 +6,7 @@
       "name": "truss",
       "source": {
         "source": "git-subdir",
-        "url": "AbhiramDwivedi/truss",
+        "url": "https://github.com/AbhiramDwivedi/truss.git",
         "path": "plugins/truss",
         "ref": "main"
       }
