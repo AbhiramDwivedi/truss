@@ -1213,7 +1213,9 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       const exit = await new Promise<number>((resolve) => {
         // --dir and --repo are relative to this process's cwd; the child runs in the crew worktree, where a relative
         // .git/truss/... does not exist (.git is a file there), so hand it absolute paths.
-        const argv2 = cmd.map((a, i) => (i > 0 && (cmd[i - 1] === '--dir' || cmd[i - 1] === '--repo') ? path.resolve(a) : a))
+        // Only when the command is factory itself; any other command's --dir is its own and passes unchanged.
+        const isFactory = cmd.some((a) => /(^|\/)factory(\.ts)?$/.test(a))
+        const argv2 = cmd.map((a, i) => (isFactory && i > 0 && (cmd[i - 1] === '--dir' || cmd[i - 1] === '--repo') ? path.resolve(a) : a))
         const child = spawn(argv2[0], argv2.slice(1), { cwd, detached: true, stdio: ['ignore', outFd, errFd] })
         child.on('error', () => resolve(127))
         if (child.pid !== undefined) {
