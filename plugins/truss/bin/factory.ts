@@ -303,8 +303,15 @@ export function factorySpawned(dir: string, slug: string): Obj | undefined {
 }
 
 // The roles table copied for args, with `--type role=agentType` laid on the roles marked typeFromProject: true; resolver follows the role its typeFromProject names.
-function rolesWithTypes(plugin: string, types: string[]): Obj {
+function rolesWithTypes(plugin: string, types: string[], cfgRoles?: unknown): Obj {
   const roles = readRoles(plugin)
+  // ADR-0021 Decision 3: truss.json `roles.build` sets builder (and resolver, which follows it), `roles.test` sets tester; --type wins below.
+  if (isObj(cfgRoles)) {
+    for (const [key, role] of [['build', 'builder'], ['test', 'tester']] as const) {
+      const v = cfgRoles[key]
+      if (typeof v === 'string' && v !== '' && isObj(roles[role]) && roles[role].typeFromProject === true) roles[role].agentType = v
+    }
+  }
   for (const t of types) {
     const eq = t.indexOf('=')
     if (eq <= 0 || eq === t.length - 1) throw usage(`--type needs role=agentType, got ${t}`)
@@ -343,7 +350,7 @@ function cmdPlanArgs(f: Flags): Obj {
   return {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
-      maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: readRoles(PLUGIN),
+      maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
       scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')),
     },
     brief,
@@ -958,7 +965,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
 function cmdStart(f: Flags): Obj {
   const dir = dirOf(f)
   const repo = repoOf(f)
-  const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'))
+  const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
   const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
@@ -1204,7 +1211,12 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       const outFd = openSync(`${scratch}/out.txt`, 'w')
       const errFd = openSync(`${scratch}/err.txt`, 'w')
       const exit = await new Promise<number>((resolve) => {
-        const child = spawn(cmd[0], cmd.slice(1), { cwd, detached: true, stdio: ['ignore', outFd, errFd] })
+        // --dir and --repo are relative to this process's cwd; the child runs in the crew worktree, where a relative
+        // .git/truss/... does not exist (.git is a file there), so hand it absolute paths.
+        // Only when the command is factory itself; any other command's --dir is its own and passes unchanged.
+        const isFactory = cmd.some((a) => /(^|\/)factory(\.ts)?$/.test(a))
+        const argv2 = cmd.map((a, i) => (isFactory && i > 0 && (cmd[i - 1] === '--dir' || cmd[i - 1] === '--repo') ? path.resolve(a) : a))
+        const child = spawn(argv2[0], argv2.slice(1), { cwd, detached: true, stdio: ['ignore', outFd, errFd] })
         child.on('error', () => resolve(127))
         if (child.pid !== undefined) {
           pgid = child.pid
@@ -1333,7 +1345,34 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
       appendEvent(dir, { event: 'report', crew: slug, agent: a.label, marker })
     }
   }
+  recordRestarts(dir, wfRun, crewSlugs, events)
   return audits
+}
+
+// ADR-0021 Seams cf: one `restart` event per restarted member, learned from the journal. Per crew and role (tester, builder, writer),
+// in `started` order, an agent whose last result is a CHECKPOINT object or a non-object was restarted when a later agent of the same
+// crew and role started after that result line; the first such agent not already linked is its successor. No result line: never a restart.
+function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, events: Obj[]): void {
+  const startedAt = (id: string): number => wfRun.journal.findIndex((l) => l.type === 'started' && l.agentId === id)
+  const resultAt = (id: string): number => wfRun.journal.reduce((at, l, i) => (l.type === 'result' && l.agentId === id ? i : at), -1)
+  const info = wfRun.agents.map((a) => ({ a, p: parseLabel(a.label), s: startedAt(a.agentId) }))
+  const linked = new Set<string>()
+  const nOf = new Map<string, number>()
+  for (const x of info) {
+    if (x.p === undefined || !crewSlugs.has(x.p.slug) || !['tester', 'builder', 'writer'].includes(x.p.role) || !x.a.hasResult) continue
+    const r = x.a.result
+    const reason = isObj(r) ? (r.marker === 'CHECKPOINT' ? 'CHECKPOINT' : undefined) : 'no report'
+    if (reason === undefined) continue
+    const at = resultAt(x.a.agentId)
+    const next = info.find((y) => y !== x && y.p?.slug === x.p?.slug && y.p?.role === x.p?.role && y.s > at && !linked.has(y.a.agentId))
+    if (next === undefined) continue
+    linked.add(next.a.agentId)
+    const n = (nOf.get(x.a.agentId) ?? 0) + 1
+    nOf.set(next.a.agentId, n)
+    if (!events.some((e) => e.event === 'restart' && e.crew === x.p?.slug && e.label === x.a.label)) {
+      appendEvent(dir, { event: 'restart', crew: x.p.slug, agent: x.a.label, label: x.a.label, n, reason })
+    }
+  }
 }
 
 // Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
@@ -1387,14 +1426,14 @@ function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySl
 }
 
 // The git worktrees of the repo as {path, branch}.
-function worktreesOf(repo: string): { path: string; branch: string | undefined }[] {
-  const out: { path: string; branch: string | undefined }[] = []
+function worktreesOf(repo: string): { path: string; branch: string | undefined; locked: boolean }[] {
+  const out: { path: string; branch: string | undefined; locked: boolean }[] = []
   for (const block of run(repo, ['worktree', 'list', '--porcelain']).out.split(/\r?\n\r?\n/)) {
     const lines = block.split(/\r?\n/)
     const p = lines.find((l) => l.startsWith('worktree '))
     if (p === undefined) continue
     const b = lines.find((l) => l.startsWith('branch '))
-    out.push({ path: flat(p.slice('worktree '.length)), branch: b === undefined ? undefined : b.slice('branch refs/heads/'.length) })
+    out.push({ path: flat(p.slice('worktree '.length)), branch: b === undefined ? undefined : b.slice('branch refs/heads/'.length), locked: lines.some((l) => l === 'locked' || l.startsWith('locked ')) })
   }
   return out
 }
@@ -1433,7 +1472,7 @@ function redRecord(dir: string, slug: string): Obj | undefined {
   return undefined
 }
 
-type Outcome = { merged?: true; rework?: string; blocked?: string; refused?: string }
+type Outcome = { merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling, audits: Audit[], fails: number): Outcome {
@@ -1498,7 +1537,21 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     if (run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/truss-${slug}`]).status === 0) run(repo, ['worktree', 'remove', w.path])
   }
   run(repo, ['worktree', 'remove', wt])
-  return { merged: true }
+  // ADR-0021 Decision 7: this run's own wf_<id>-<digits> worktrees (branch worktree-<id>-<digits>, path ending <id>-<digits>), removed without --force
+  // once merged; one that is locked, unmerged or dirty stays and is reported, never refused on.
+  const runId = path.basename(flat(need(f, 'transcript')).replace(/\/+$/, ''))
+  const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
+  const pathRe = new RegExp(`(^|/)${idRe}-\\d+$`)
+  const left: { path: string; branch: string; why: string }[] = []
+  for (const w of worktreesOf(repo)) {
+    if (w.branch === undefined || !branchRe.test(w.branch) || !pathRe.test(w.path) || w.path === wt) continue
+    const merged = [`truss-${slug}`, target].some((b) => run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${b}`]).status === 0)
+    const why = w.locked ? 'locked' : !merged ? 'unmerged' : run(w.path, ['status', '--porcelain']).out !== '' ? 'dirty' : undefined
+    if (why === undefined && run(repo, ['worktree', 'remove', w.path]).status === 0) run(repo, ['branch', '-D', w.branch])
+    else left.push({ path: w.path, branch: w.branch, why: why ?? 'dirty' })
+  }
+  return { merged: true, ...(left.length > 0 ? { left } : {}) }
 }
 
 function cmdFinish(f: Flags): Obj {
@@ -1521,9 +1574,9 @@ function cmdFinish(f: Flags): Obj {
   const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
   const inRun = factoryCrews.filter((c) => wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug))
-  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[] }
+  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[], leftWorktrees: [] as Obj[] }
   const finishWith = (): Obj => {
-    const body = { merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped }
+    const body = { merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped, ...(out.leftWorktrees.length > 0 ? { leftWorktrees: out.leftWorktrees } : {}) }
     if (out.refused.length > 0 || out.rework.length > 0 || out.blocked.length > 0 || out.audit.length > 0) throw refuse(body)
     return body
   }
@@ -1594,11 +1647,23 @@ function cmdFinish(f: Flags): Obj {
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
     const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since))
-    if (r.merged) out.merged.push(c.slug)
+    if (r.merged) {
+      out.merged.push(c.slug)
+      out.leftWorktrees.push(...(r.left ?? []))
+    }
     else if (r.rework !== undefined) out.rework.push({ slug: c.slug, why: r.rework })
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })
     else out.refused.push({ slug: c.slug, why: r.refused ?? 'refused' })
   }
+  // each merged crew's sweep reports what it left; a later crew's sweep may have removed it, and the same one is listed per pass.
+  // Report each still-present worktree once.
+  const present = new Set(worktreesOf(repo).map((w) => w.path))
+  const seen = new Set<string>()
+  out.leftWorktrees = out.leftWorktrees.filter((l) => {
+    if (!present.has(l.path) || seen.has(l.path)) return false
+    seen.add(l.path)
+    return true
+  })
   return finishWith()
 }
 

@@ -8,7 +8,7 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
@@ -46,6 +46,20 @@
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
           "run": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "restart" } } },
+      "then": {
+        "description": "A Workflow member that returned CHECKPOINT or no report was restarted by stage.js (truss ADR-0021 Decision 5), recorded by factory finish from the run journal. agent repeats label; label is the restarted member; n counts from 1 within the chain.",
+        "additionalProperties": false,
+        "required": ["crew", "label", "n", "reason"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true, "agent": true,
+          "label": { "type": "string", "minLength": 1 },
+          "n": { "type": "integer", "minimum": 1 },
+          "reason": { "enum": ["CHECKPOINT", "no report"] }
         }
       }
     },

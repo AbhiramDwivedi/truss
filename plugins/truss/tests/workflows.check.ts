@@ -805,10 +805,12 @@ t('stage members: CHECKPOINT starts one fresh member of the same role from its t
   assert.ok(!had(r, 'a-tester-3'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc')
 })
-t('stage members: a second member that is not DONE after a CHECKPOINT stops BLOCKED at the task, with no third member', async () => {
-  const r = await runStage([entry('a')], { labels: base('a', { 'a-tester': marked('CHECKPOINT', 'one'), 'a-tester-2': marked('CHECKPOINT', 'two') }) })
+t('stage members: with reworkAllowance 2 three CHECKPOINT members stop BLOCKED at the task with "restarts spent:" and no fourth member', async () => {
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-tester': marked('CHECKPOINT', 'one'), 'a-tester-2': marked('CHECKPOINT', 'two'), 'a-tester-3': marked('CHECKPOINT', 'three') }) })
   stopped(r.res[0], 'BLOCKED', 'write-tests')
-  assert.ok(!had(r, 'a-tester-3'))
+  assert.ok(r.res[0].text.startsWith('restarts spent:'), `text should start with "restarts spent:", got ${JSON.stringify(r.res[0].text)}`)
+  assert.ok(had(r, 'a-tester-3'))
+  assert.ok(!had(r, 'a-tester-4'))
   assert.ok(!had(r, 'a-builder'))
 })
 for (const tag of ['QUESTION', 'PROPOSAL', 'BLOCKED']) {
