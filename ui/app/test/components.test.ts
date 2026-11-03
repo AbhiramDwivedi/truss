@@ -245,7 +245,7 @@ test('RadioGroupItem: role radio inside a label of at least 24px', () => {
 
 test('RadioGroupItem dot look and segment look', () => {
   const dot = allTokens(radio('dot'))
-  expectAll(dot, ['border-2', 'border-border-strong', 'border-brand', 'bg-brand', 'border-move-muted'], 'dot look')
+  expectAll(dot, ['border-2', 'border-subtle', 'border-brand', 'bg-brand', 'border-move-muted'], 'dot look')
   const seg = allTokens(radio('segment'))
   assert.ok(exact(seg, 'h-7'), seg.join(' '))
   expectAll(seg, ['rounded-chip', 'px-2.5', 'text-meta'], 'segment look')
