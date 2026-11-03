@@ -1,0 +1,218 @@
+// Your move (ADR-0023 section 4): what the run needs from the person right now. The oldest open request
+// is the hero on the move surface, the rest queue under it, and settled cards keep their names below.
+// With nothing open it is a quiet card: Start a run, or Nothing needs you right now.
+import { useEffect, useRef, useState } from 'react'
+import type { Request, RunState } from '../../store/types.ts'
+import { postAnswer } from '../../store/api.ts'
+import { Card } from '../../components/ui/card.tsx'
+import { Skeleton } from '../../components/ui/skeleton.tsx'
+import { Notice } from '../../components/ui/notice.tsx'
+import { Dot } from '../../components/ui/dot.tsx'
+import { QuestionCard } from './QuestionCard.tsx'
+import { ReplyCard } from './ReplyCard.tsx'
+import { PermissionCard } from './PermissionCard.tsx'
+import {
+  GOAL_BOX_ID,
+  SESSION_ENDED,
+  cardName,
+  hhmm,
+  noteResult,
+  openCards,
+  plural,
+  replyWaitsOnAgents,
+  settledWords,
+  usePageFlags,
+  type AnswerBody,
+} from './format.ts'
+
+export interface YourMoveProps {
+  state: RunState | null
+  now: number
+}
+
+const MAX_SETTLED = 20
+
+interface Local {
+  /** What this page posted and the server took (200, or 409 answered). */
+  sent?: AnswerBody
+  /** The server said 409 cancelled. */
+  cancelled?: boolean
+  error?: string | null
+}
+
+function answerError(status: number, error: string | null): string {
+  if (status === 404) return 'This request no longer exists on the server, so it could not be answered.'
+  if (status === 400) return 'The server did not accept that answer. Check it and try again.'
+  if (status === 0) return 'Could not reach the server; nothing was sent. Try again.'
+  if (status === 409 && error === 'ended') return SESSION_ENDED
+  return `The answer was not accepted (server answered ${status}). Try again.`
+}
+
+/** "2 crews running in stage 1." from the run's crews, or a fallback line. */
+function crewLine(state: RunState): string {
+  const crews = state.run?.crews ?? []
+  const running = crews.filter((c) => c.status === 'running')
+  if (running.length > 0) {
+    const stages = [...new Set(running.map((c) => c.stage).filter((s): s is number => s !== null))].sort((a, b) => a - b)
+    const where = stages.length === 1 ? ` in stage ${stages[0]}` : stages.length > 1 ? ` in stages ${stages.join(', ')}` : ''
+    return `${plural(running.length, 'crew')} running${where}.`
+  }
+  if (crews.length > 0 && crews.every((c) => c.status === 'merged' || c.status === 'dropped')) return 'Every crew has finished.'
+  if (crews.length > 0) return 'Crews are planned; Truss asks you here when one needs a call.'
+  return 'Claude is working. Truss asks you here when it needs a call.'
+}
+
+export function YourMove({ state, now }: YourMoveProps) {
+  const flags = usePageFlags()
+  const [local, setLocal] = useState<Record<string, Local>>({})
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const inFlight = useRef(new Set<string>())
+  const region = useRef<HTMLElement>(null)
+  const handOn = useRef(false)
+
+  const isSettledHere = (r: Request) => r.status !== 'open' || local[r.id]?.sent !== undefined || local[r.id]?.cancelled === true
+  const open = openCards(state).filter((r) => !isSettledHere(r))
+  const openCount = open.length
+
+  // The tab title counts what waits on the person.
+  useEffect(() => {
+    document.title = openCount > 0 ? `(${openCount}) Truss` : 'Truss'
+  }, [openCount])
+
+  // After an answer, focus goes to the next open card's first control, else the goal box.
+  useEffect(() => {
+    if (!handOn.current) return
+    handOn.current = false
+    const a = document.activeElement
+    if (a && a !== document.body && region.current?.contains(a) === false) return
+    const next = region.current?.querySelector<HTMLElement>(
+      'article[data-open="true"] :is(button, input, textarea, [role="radio"]):not(:disabled):not([tabindex="-1"])',
+    )
+    if (next) next.focus()
+    else document.getElementById(GOAL_BOX_ID)?.focus()
+  })
+
+  const answer = async (r: Request, body: AnswerBody) => {
+    if (inFlight.current.has(r.id)) return
+    inFlight.current.add(r.id)
+    setBusyId(r.id)
+    setLocal((m) => ({ ...m, [r.id]: { ...m[r.id], error: null } }))
+    const res = await postAnswer(r.id, body)
+    inFlight.current.delete(r.id)
+    setBusyId((b) => (b === r.id ? null : b))
+    noteResult(res.status, res.error)
+    if (res.status === 200 || (res.status === 409 && res.error === 'answered')) {
+      handOn.current = true
+      setLocal((m) => ({ ...m, [r.id]: { sent: body, error: null } }))
+      return
+    }
+    if (res.status === 409 && res.error === 'cancelled') {
+      handOn.current = true
+      setLocal((m) => ({ ...m, [r.id]: { cancelled: true, error: null } }))
+      return
+    }
+    setLocal((m) => ({ ...m, [r.id]: { ...m[r.id], error: answerError(res.status, res.error) } }))
+  }
+
+  const heading = (
+    <h2 id="your-move-title" className="text-title font-semibold text-fg">
+      Your move
+    </h2>
+  )
+
+  if (state === null) {
+    return (
+      <section id="your-move" aria-labelledby="your-move-title" aria-busy="true" tabIndex={-1} className="flex min-w-0 flex-col gap-3">
+        {heading}
+        <Skeleton className="h-[360px] w-full rounded-hero lg:h-[280px]" />
+      </section>
+    )
+  }
+
+  const settled = state.requests
+    .filter(isSettledHere)
+    .sort((a, b) => Date.parse(b.answeredAt ?? b.createdAt) - Date.parse(a.answeredAt ?? a.createdAt))
+    .slice(0, MAX_SETTLED)
+  const waitingOnAgents =
+    open.length === 0 &&
+    ((state.session.status === 'waiting' && state.session.backgroundTasks.length > 0) ||
+      state.requests.some((r) => r.status === 'open' && replyWaitsOnAgents(r)))
+
+  const renderOpen = (r: Request, hero: boolean) => {
+    const props = {
+      hero,
+      now,
+      busy: busyId === r.id,
+      error: local[r.id]?.error ?? null,
+    }
+    if (r.kind === 'question') return <QuestionCard key={r.id} request={r} {...props} onAnswer={(b) => void answer(r, b)} />
+    if (r.kind === 'permission') return <PermissionCard key={r.id} request={r} {...props} onAnswer={(b) => void answer(r, b)} />
+    return <ReplyCard key={r.id} request={r} {...props} onAnswer={(b) => void answer(r, b)} />
+  }
+
+  const [hero, ...rest] = open
+
+  return (
+    <section id="your-move" ref={region} aria-labelledby="your-move-title" tabIndex={-1} className="flex min-w-0 flex-col gap-3 outline-none">
+      {heading}
+
+      {flags.ended && <Notice tone="fail">{SESSION_ENDED}</Notice>}
+
+      {hero ? (
+        renderOpen(hero, true)
+      ) : (
+        <Card variant="sunken" className="flex min-w-0 flex-col gap-1.5 p-5">
+          {state.run === null && state.transcript.length === 0 && !waitingOnAgents ? (
+            <>
+              <h3 className="text-lead font-semibold text-fg">Start a run</h3>
+              <p className="text-ui text-muted">Type a goal. Truss plans it, and asks you here when it needs a call.</p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lead font-semibold text-fg">Nothing needs you right now</h3>
+              <p className="flex min-w-0 items-center gap-2 text-ui text-muted">
+                <Dot tone={waitingOnAgents ? 'ok' : 'neutral'} />
+                <span className="min-w-0">{waitingOnAgents ? 'Agents still running; nothing needed from you' : crewLine(state)}</span>
+              </p>
+            </>
+          )}
+        </Card>
+      )}
+
+      {rest.length > 0 && (
+        <div className="flex min-w-0 flex-col gap-3">
+          <p className="text-meta font-medium text-muted">{rest.length} more waiting on you</p>
+          {rest.map((r) => renderOpen(r, false))}
+        </div>
+      )}
+
+      {settled.length > 0 && (
+        <div className="flex min-w-0 flex-col gap-2">
+          <h3 className="text-meta font-medium text-muted">Earlier requests</h3>
+          {settled.map((r) => {
+            const { head, lines } = settledWords(local[r.id]?.cancelled ? { ...r, status: 'cancelled' } : r, local[r.id]?.sent ?? null)
+            const when = hhmm(r.answeredAt)
+            return (
+              <Card key={r.id} variant="default" density="compact" asChild>
+                <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium text-fg">{cardName(r)}</span>
+                    {when && <span className="font-mono text-meta text-muted tabular-nums">{when}</span>}
+                  </div>
+                  <p role="status" className="min-w-0 text-muted break-words">
+                    {head}
+                  </p>
+                  {lines.map((l, i) => (
+                    <p key={i} className="min-w-0 text-meta text-muted break-words">
+                      {l}
+                    </p>
+                  ))}
+                </article>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
