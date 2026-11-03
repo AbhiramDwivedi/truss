@@ -64,7 +64,7 @@ test.describe('floor', () => {
     })
   }
 
-  test('stuck-crew: Ask Claude and Restart builder POST an ordinary message to /api/message', async ({ browser }) => {
+  test('stuck-crew: Restart builder, Re-plan crew and Ask Claude each POST an ordinary message to /api/message', async ({ browser }) => {
     const s = await scenario('stuck-crew')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
@@ -74,14 +74,20 @@ test.describe('floor', () => {
       const line = crews.getByRole('button', { name: /stuck: stalled \d+ min/ })
       await expect(line).toHaveCount(1, LOAD)
       if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
-      const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/message', LOAD)
-      await crews.getByRole('button', { name: 'Ask Claude' }).click()
-      const req = await posted
-      expect(req.postData() ?? '').toContain(`Crew ${s.apiSlug} is stuck`)
-      await expect.poll(() => s.iface.calls.filter((c) => c.kind === 'send').length, T).toBeGreaterThanOrEqual(1)
-      const sent = s.iface.calls.find((c) => c.kind === 'send') as any
-      expect(sent.text).toContain(`Crew ${s.apiSlug} is stuck`)
-      expect(sent.text).toContain('What is happening, and what do you suggest?')
+      const sends = () => s.iface.calls.filter((c) => c.kind === 'send') as any[]
+      for (const label of ['Restart builder', 'Re-plan crew', 'Ask Claude']) {
+        const before = sends().length
+        const button = crews.getByRole('button', { name: label })
+        if (!(await button.isVisible()) && (await line.getAttribute('aria-expanded')) === 'false') await line.click()
+        const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/message', LOAD)
+        await button.click()
+        const req = await posted
+        expect(req.postData() ?? '', `${label} posts a message naming the crew`).toContain(s.apiSlug)
+        await expect.poll(() => sends().length, T).toBe(before + 1)
+        expect(sends()[before].text, `${label} send names the crew`).toContain(s.apiSlug)
+      }
+      expect(sends().at(-1).text).toContain(`Crew ${s.apiSlug} is stuck`)
+      expect(sends().at(-1).text).toContain('What is happening, and what do you suggest?')
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
