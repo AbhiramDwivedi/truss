@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { addCrewWorktree, crew, flat, git, mkRepo, mkTrussDir, planObj, putFile, readEvents, readPlan, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
@@ -26,6 +26,9 @@ const say = (r) => `exit ${r.status}; stdout ${r.stdout.slice(0, 300)}; stderr $
 function pluginWith(o: { mtime?: number; withAgent?: boolean } = {}): string {
   const d = tmp('ff-plugin-')
   for (const sub of ['bin', 'hooks', 'docs', 'workflows', 'resources', 'retro', 'agents']) if (existsSync(`${ROOT}/${sub}`)) cpSync(`${ROOT}/${sub}`, `${d}/${sub}`, { recursive: true })
+  // ADR-0024 item 24: every truss:* agent a starting crew runs is checked against the session start, so every copied agent
+  // file is back-dated; only the stress file's mtime is then a case's own choice.
+  for (const n of readdirSync(`${d}/agents`)) utimesSync(`${d}/agents/${n}`, LONG_AGO / 1000, LONG_AGO / 1000)
   if (o.withAgent === false) rmSync(`${d}/agents/stress-engineer.md`, { force: true })
   else {
     assert.ok(existsSync(`${d}/agents/stress-engineer.md`), 'the checkout has agents/stress-engineer.md')
@@ -44,13 +47,16 @@ function world(crews, goals: Record<string, { stressTest?: string }> = {}, noGoa
 }
 
 const start = (w, factory, env = {}) => runCli(factory, 'start', ['--stage', 'next', '--dir', w.dir, '--repo', w.repo], w.repo, env)
+/** The stress role's warnings only: ADR-0024 item 24 adds warnings for the crew's other truss:* types, which the stress cases below do not pin. */
+const stressOnly = (ws) => ws.filter((x) => String(x).includes('truss:stress-engineer'))
 
 // ---------- start: warnings ----------
 
 test('ff 1: a crew with Stress test no gets no warning, and a stage with no stress crew prints warnings: []', () => {
   const factory = pluginWith()
   const w = world([crew('plain'), crew('other')], { plain: { stressTest: 'no' }, other: { stressTest: 'no' } })
-  const r = start(w, factory, { TRUSS_SESSION_START: '1' })
+  // the session began after every agent file (all back-dated): ADR-0024 item 24 warns for any truss:* type newer than a session of start 1
+  const r = start(w, factory, { TRUSS_SESSION_START: String(LONG_AGO + 100_000) })
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
   assert.deepEqual(r.json.warnings, [])
@@ -63,13 +69,14 @@ test('ff 2: with two stress crews starting, each gets one warning naming its slu
   const r = start(w, factory, { TRUSS_SESSION_START: '1' })
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
-  assert.equal(r.json.warnings.length, 2, JSON.stringify(r.json.warnings))
+  const ws = stressOnly(r.json.warnings)
+  assert.equal(ws.length, 2, JSON.stringify(r.json.warnings))
   for (const slug of ['alpha', 'beta']) {
-    const mine = r.json.warnings.filter((x) => String(x).includes(slug))
+    const mine = ws.filter((x) => String(x).includes(slug))
     assert.equal(mine.length, 1, `one warning names ${slug}: ${JSON.stringify(r.json.warnings)}`)
     assert.ok(String(mine[0]).includes('truss:stress-engineer'), String(mine[0]))
   }
-  assert.ok(!r.json.warnings.some((x) => String(x).includes('plain')), 'the stress-no crew is not named')
+  assert.ok(!ws.some((x) => String(x).includes('plain')), 'the stress-no crew is not named')
   assert.equal(r.json.truss.crews.length, 3, 'warnings hold no crew')
 })
 
@@ -81,9 +88,10 @@ test('ff 3: CLAUDE_PID naming a pid with no /proc entry gives a "can\'t tell" wa
   const r = start(w, factory, { CLAUDE_PID: pid })
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
-  assert.equal(r.json.warnings.length, 1, JSON.stringify(r.json.warnings))
-  assert.ok(String(r.json.warnings[0]).includes("can't tell"), String(r.json.warnings[0]))
-  assert.ok(String(r.json.warnings[0]).includes('str'))
+  const ws = stressOnly(r.json.warnings)
+  assert.equal(ws.length, 1, JSON.stringify(r.json.warnings))
+  assert.ok(String(ws[0]).includes("can't tell"), String(ws[0]))
+  assert.ok(String(ws[0]).includes('str'))
 })
 
 test('ff 4: when the stress agent file cannot be stat\'d, the stress-yes crew still gets a "can\'t tell" warning', () => {
@@ -92,8 +100,9 @@ test('ff 4: when the stress agent file cannot be stat\'d, the stress-yes crew st
   const r = start(w, factory, { TRUSS_SESSION_START: '1' })
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
-  assert.equal(r.json.warnings.length, 1, JSON.stringify(r.json.warnings))
-  assert.ok(String(r.json.warnings[0]).includes("can't tell") && String(r.json.warnings[0]).includes('str'), String(r.json.warnings[0]))
+  const ws = stressOnly(r.json.warnings)
+  assert.equal(ws.length, 1, JSON.stringify(r.json.warnings))
+  assert.ok(String(ws[0]).includes("can't tell") && String(ws[0]).includes('str'), String(ws[0]))
   assert.equal(r.json.truss.crews.length, 1)
 })
 

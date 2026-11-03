@@ -18,7 +18,7 @@
 // - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync,realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../../../hooks/register.ts'
 import {
@@ -41,7 +41,7 @@ const norm = (p: string): string => {
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
-const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'members', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'head', 'highImpact', 'labelFrom', 'members', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {
@@ -546,6 +546,8 @@ test('start --resume merge-ready: one entry with resume "merge-ready"; base is t
 
 /** A merge-ready resume of crew `slug` with the session start pinned by TRUSS_SESSION_START. The plugin copy's agents/stress-engineer.md was written when the copy was made (now). */
 function resumeWithSession(env: any, slug: string, sessionStart: number) {
+  // ADR-0024 item 24 checks every truss:* agent a crew runs against the session start: back-date all the copy's agent files but the stress one (epoch 0, older than any session), so only the stress file's mtime is this case's choice
+  for (const n of readdirSync(`${env.plugin}/agents`)) if (n !== 'stress-engineer.md') utimesSync(`${env.plugin}/agents/${n}`, 0, 0)
   return runCli(env.factory, 'start', ['--dir', env.dir, '--repo', env.repo, '--slug', slug, '--resume', 'merge-ready'], env.repo, { TRUSS_SESSION_START: String(sessionStart) })
 }
 
