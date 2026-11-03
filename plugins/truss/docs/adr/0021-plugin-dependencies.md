@@ -20,7 +20,7 @@ Two interfaces can't take that as they stand: plugin.json has no `dependencies` 
 
 ### 1. plugin.json depends on the three plugins from claude-ops
 
-`plugins/truss/.claude-plugin/plugin.json` gets a `dependencies` list, each entry with `marketplace: "claude-ops"` and a `^` range: kit `^0.3.1`, worktrees `^0.8.4` and subagent-limits `^0.3.1`. The ranges are `^`, not exact pins, so a patch or minor release of a dependency installs without a truss release. The truss catalog adds `"allowCrossMarketplaceDependenciesOn": ["claude-ops"]`; without it the dependencies don't install. Nothing is copied into truss.
+`plugins/truss/.claude-plugin/plugin.json` gets a `dependencies` list, each entry with `marketplace: "claude-ops"` and a `^` range: kit `^0.3.1`, worktrees `^0.8.4` and subagent-limits `^0.3.2` (`^0.3.1` until factory-fixes2, 0.17.0; see the live-probe record in Decision 2). The ranges are `^`, not exact pins, so a patch or minor release of a dependency installs without a truss release. The truss catalog adds `"allowCrossMarketplaceDependenciesOn": ["claude-ops"]`; without it the dependencies don't install. Nothing is copied into truss.
 
 Installing takes two commands, with the claude-ops marketplace first:
 
@@ -43,6 +43,13 @@ Decided by: the client (12:30, "keep them there and just reference and use them 
 Init proposes `nudgeAtK` about 150 and `stopAtK` about 200 for the client to approve, and writes them only on approval. The defaults (300/450) sit above every context a Workflow agent has reached (181K), so they never fire for truss's members. At about 150K a member that grows large is asked to checkpoint, and stage.js restarts it fresh (Decision 5). 200K keeps `stopAtK` at least 50 above `nudgeAtK`, as subagent-limits requires (README:15), and stops a runaway member before its context costs more than a fresh one. PM gate 1 runs one Workflow member with `nudgeAtK=50` and records in `decisions.md` whether the nudge text reached it.
 
 Decided by: the plan, item 1(b) (approved auto, checker-41); the client approves the values at init.
+
+**Live-probe record (2026-11-02).** subagent-limits 0.3.1 never nudged: at gate 1 a Workflow member reached 197K with `nudgeAtK` 50 and got no "Your context has reached" note, and at gate 1b a plain Agent subagent missed it too (session 8a98061b, agent-ae4245f9146afc8e3), so the bug was in 0.3.1, not in Workflow members (`decisions.md` 15:33, 15:36). claude-ops fixed it in subagent-limits 0.3.2 (ed0c651, tag `subagent-limits--v0.3.2`): 0.3.1 judged each tool call by the previous request, because tools start before the step's usage lands (`decisions.md` 15:41). The verify probe against 0.3.2 at ed0c651, with `nudgeAtK` 50 and `stopAtK` 100, nudged each subagent once (`decisions.md` 15:43):
+
+- Plain Agent subagent, session 7896191d, agent a73f5234fe21bf05d, after the 65.0K request (65,022 tokens). Its transcript holds one `hook_additional_context` attachment (PostToolUse, hook `tool.call`): "[subagent-limits] Your context has reached 65K tokens. Finish the item you are on, or back it out if it is far from done, then checkpoint: ... At 100K your tools start being refused."
+- Workflow member, session cb2dbdea, wf_ce6ff9d9-5fd/agent-ad39c818019eca8d3, after the 62.8K request (62,754 tokens), with the same text at 63K.
+
+The client accepted this probe in place of the isolated `CLAUDE_CONFIG_DIR` re-probe that ADR-0019 item 15 names. Truss 0.17.0 requires subagent-limits `^0.3.2`.
 
 ### 3. kit is the default when kit is loaded
 
@@ -141,7 +148,7 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 
 ### cm: manifests
 
-- plugin.json: the three dependencies of Decision 1 and `version` `0.16.0`.
+- plugin.json: the three dependencies of Decision 1 (subagent-limits `^0.3.2`) and `version` `0.17.0`.
 - The catalog: `allowCrossMarketplaceDependenciesOn` holds `claude-ops`; no shorthand url.
 - Each README: `marketplace add AbhiramDwivedi/claude-ops` on a line before `marketplace add AbhiramDwivedi/truss`; no README names `truss@claude-ops`.
 - With both marketplaces added (the local claude-ops checkout, no network), the install enables all four plugins; without the allowlist, the dependencies are missing.
@@ -157,5 +164,5 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 ## Left for later
 
 - Have retro propose `kit:revise`.
-- factory-fixes-2 becomes 0.17.0 and starts after this goal merges; it overlaps stage.js.
+- factory-fixes-2 shipped as factory-fixes2 in 0.17.0 ([ADR-0019](0019-factory-fixes2.md)).
 - The PM runs `/tidy` on the stale `wf_*` worktrees and branches left before this change.
