@@ -1135,7 +1135,8 @@ function promptTask(transcript: string): string | undefined {
 // ADR-0024 item 27: a result whose marker isn't DONE (nor CHECKPOINT) counts too, when its branch has commits of its own and the crew branch
 // holds them all (as above). A branch's own commits are those not on `target` and not behind its fork point, the newest commit
 // of the crew branch's first-parent line it contains: a fresh member branch (one that only points at a crew head, old or
-// current) has none, though it is an ancestor.
+// current) has none, though it is an ancestor. When that count is 0, commits the branch's reflog shows were made on it count:
+// a hand `git merge` that fast-forwards puts them on the first-parent line.
 function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): string[] {
   const crewBranch = `truss-${slug}`
   const lines = (args: string[]): string[] | undefined => {
@@ -1149,7 +1150,14 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
     const inBranch = new Set(reach)
     const fork = spine.find((s) => inBranch.has(s))
     if (fork === undefined) return reach.length
-    return lines(['rev-list', branch, '--not', target, fork])?.length ?? 0
+    const behind = lines(['rev-list', branch, '--not', target, fork])?.length ?? 0
+    if (behind > 0) return behind
+    // A fork-point count of 0 can be a hand merge that fast-forwarded the crew branch onto the member's own tip, so the
+    // member's commits sit on the first-parent line. The branch's reflog tells them apart: a commit the member made on it
+    // (commit, cherry-pick, revert) that the branch still reaches and `target` lacks is its own; a creation or a
+    // fast-forward onto a crew head is not.
+    const made = lines(['log', '-g', '--format=%H %gs', `refs/heads/${branch}`]) ?? []
+    return made.filter((l) => /^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l) && inBranch.has(l.split(' ')[0] as string)).length
   }
   const done: string[] = []
   for (const a of runs.flatMap((r) => r.agents)) {
