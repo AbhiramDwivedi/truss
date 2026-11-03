@@ -22,7 +22,7 @@ const READMES = ['README.md', 'plugins/truss/README.md', 'marketplace/README.md'
 const CATALOG = 'marketplace/.claude-plugin/marketplace.json'
 const PLUGIN = 'plugins/truss/.claude-plugin/plugin.json'
 const SHORTHAND = /url("?: ?"| `| )AbhiramDwivedi\/truss/
-const DEPS = { kit: '^0.3.1', worktrees: '^0.8.4', 'subagent-limits': '^0.3.1' }
+const DEPS = { kit: '^0.3.1', worktrees: '^0.8.4', 'subagent-limits': '^0.3.2' }
 
 function depList(): { name: string; marketplace?: string; version?: string }[] {
   const d = rd(PLUGIN).dependencies
@@ -117,9 +117,9 @@ async function install(withAllowlist: boolean): Promise<{ ids: string[]; error: 
 }
 
 describe('compose manifests', () => {
-  it('cm 1: plugin.json depends on kit, worktrees and subagent-limits from claude-ops, at 0.16.0', () => {
+  it('cm 1: plugin.json depends on kit, worktrees and subagent-limits from claude-ops, at 0.17.0', () => {
     const pj = rd(PLUGIN)
-    assert.equal(pj.version, '0.16.0', 'plugin.json version is not 0.16.0')
+    assert.equal(pj.version, '0.17.0', 'plugin.json version is not 0.17.0')
     const got = Object.fromEntries(depList().map((d) => [d.name, `${d.marketplace}:${d.version}`]))
     assert.deepEqual(got, Object.fromEntries(Object.entries(DEPS).map(([n, v]) => [n, `claude-ops:${v}`])), 'plugin.json dependencies differ')
   })
