@@ -1006,6 +1006,9 @@ function uxReviewPrompt(crew, previous) {
     clip(crew.greenOut || 'none'),
   ]
   if (previous) lines.push('', `The previous review (report ${previous.label}) asked for rework:`, previous.text)
+  // an answer to a QUESTION: stop at ux-review reaches the next reviewer, as uxDirectionPrompt passes ux-direction answers
+  const answers = (e.answers || []).filter((a) => a.at === 'ux-review').map((a) => `- ${a.text}`)
+  if (answers.length) lines.push('', 'Answers to your earlier questions:', ...answers)
   lines.push('', REFUSAL, PKILL)
   return lines.join('\n')
 }
