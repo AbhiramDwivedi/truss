@@ -123,7 +123,7 @@
       "title": "The WebKit browser reports that the host is missing dependencies to run browsers, a message the libicudata patterns miss",
       "anchor": "Host system is missing dependencies",
       "patterns": [
-        "Host system is missing dependencies to run browsers(?!.*libicudata)"
+        "(?<!= *\\\\?['\"][^'\"]*)Host system is missing dependencies to run browsers(?!.*libicudata)"
       ],
       "fix": "Do not download debs or retry the WebKit browser on this host. Use the Chromium or Firefox project for browser checks, and list webkit host libraries as a need in the plan so doctor probes them before a crew starts.",
       "fixedBy": {
@@ -151,8 +151,8 @@
       "title": "A builder ran the trailer self-check with an unquoted trailers format and the worktree guard refused it",
       "anchor": "%(trailers",
       "patterns": [
-        "--format=%\\(trailers",
-        "--format=%H%n%\\(trailers"
+        "(?<![\"'])--format=%\\(trailers",
+        "(?<![\"'])--format=%H%n%\\(trailers"
       ],
       "fix": "Do not run the per-commit trailer self-check with a format string that holds parentheses unquoted. Quote the format, or use a plugin script that needs no format string.",
       "fixedBy": {
