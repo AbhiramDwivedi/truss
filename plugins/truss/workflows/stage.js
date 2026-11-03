@@ -404,18 +404,28 @@ function taskPrompt(crew, task, note) {
 const ownTestsOf = (crew) => (Array.isArray(crew.e.ownTests) ? crew.e.ownTests.filter((g) => typeof g === 'string' && g !== '') : [])
 
 // the files of the crew's tester tasks (from split or e.tasks). A merge-ready resume carries no tasks, so there the tester
-// files are the entry's ownTests (ADR-0014 Decision 4 has no merge-ready exception).
+// files are the entry's ownTests (ADR-0014 Decision 4 has no merge-ready exception). Bug 28: they always also cover the
+// entry's guarded files and its ownTests globs, so a rework finding on any test file goes to a tester.
 const testerFiles = (crew) => {
   const fromTasks = (crew.tasks || []).filter((t) => t.role === 'tester').flatMap((t) => t.files || [])
-  const files = fromTasks.length || crew.e.resume !== 'merge-ready' ? fromTasks : ownTestsOf(crew)
-  return [...new Set(files)]
+  const guarded = Array.isArray(crew.e.guarded) ? crew.e.guarded.filter((g) => typeof g === 'string' && g !== '') : []
+  return [...new Set([...fromTasks, ...guarded, ...ownTestsOf(crew)])]
 }
 
 // the file paths a finding names
 const pathsIn = (text) => String(text).match(/[\w@./*-]*[\w*-]\.(?:ts|tsx|js|jsx|mjs|cjs|json|py|go|rs|sh|md|css|html|yml|yaml)\b/g) || []
-const namesFile = (finding, file) => finding.includes(file) || (file.includes('*') && pathsIn(finding).some((p) => globToRegExp(file).test(p)))
-// the paths a finding names that are not a tester file: its code half
-const namesCode = (finding, tf) => pathsIn(finding).some((p) => !tf.some((file) => p === file || (file.includes('*') && globToRegExp(file).test(p))))
+// bug 28: a literal file's basename and its basename without the last extension (a stem under 3 characters is too loose)
+const baseNames = (file) => {
+  if (file.includes('*')) return []
+  const b = file.slice(file.lastIndexOf('/') + 1)
+  const stem = b.includes('.') ? b.slice(0, b.lastIndexOf('.')) : ''
+  return [b, ...(stem.length >= 3 ? [stem] : [])]
+}
+// word as a whole name in text: not inside a longer name or path
+const namesWord = (text, word) => new RegExp(`(^|[^\\w./-])${word.replace(/[.+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w/-])`).test(text)
+const namesFile = (finding, file) => finding.includes(file) || (file.includes('*') && pathsIn(finding).some((p) => globToRegExp(file).test(p))) || baseNames(file).some((b) => namesWord(finding, b))
+// the paths a finding names that are not a tester file (nor a tester file's basename): its code half
+const namesCode = (finding, tf) => pathsIn(finding).some((p) => !tf.some((file) => p === file || (file.includes('*') && globToRegExp(file).test(p)) || file.endsWith(`/${p}`)))
 
 function fixPrompt(crew, what, detail, role = 'builder') {
   const e = crew.e
@@ -425,7 +435,7 @@ function fixPrompt(crew, what, detail, role = 'builder') {
     body.push(`Files you may change: ${tf.join(', ')}`)
   } else {
     body.push(`Files you may change: ${e.owns.filter((o) => !tf.includes(o)).join(', ')}`)
-    if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`)
+    if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`, 'Never edit a file in the tester list above; when a fix needs one changed, name it in your report instead.')
   }
   body.push('', 'Fix this, and only this:', detail)
   const answers = answersFor(crew, null)
@@ -562,11 +572,35 @@ async function fixFindings(crew, what, header, findingsText, wholeDetail) {
   const tf = testerFiles(crew)
   const all = findingsOf(findingsText)
   const mine = tf.length ? all.filter((f) => tf.some((file) => namesFile(f, file))) : []
-  if (!mine.length) return fixBuilder(crew, what, wholeDetail)
+  if (!mine.length) {
+    await fixBuilder(crew, what, wholeDetail)
+    return testsBackstop(crew, what)
+  }
   await fixBuilder(crew, what, `${header}\n${mine.join('\n')}`, 'tester')
   // a finding that names a tester file and a code file also goes to the builder, for its code half
   const rest = all.filter((f) => !mine.includes(f) || namesCode(f, tf))
-  if (rest.length) await fixBuilder(crew, what, `${header}\n${rest.join('\n')}`)
+  if (!rest.length) return
+  await fixBuilder(crew, what, `${header}\n${rest.join('\n')}`)
+  await testsBackstop(crew, what)
+}
+
+// bug 28: after a builder fix, the tests check testsGuard runs. Touched tester files get a tester fix that moves each such
+// change into a tester commit, then one re-check; a check that still fails is left to testsGuard to stop on.
+async function testsBackstop(crew, what) {
+  const n = (crew.backstops = (crew.backstops || 0) + 1)
+  // an extra line per run, so no run shares testsGuard's cache key or another run's (the runtime caches by prompt)
+  const check = (k) => runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, `Backstop: ${n}.${k}`)
+  const r = await check(1)
+  const touched = !r.met && r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
+  if (!touched.length) return
+  const e = crew.e
+  const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
+  await fixBuilder(crew, `${what}, builder commits on tester files`, [
+    'These builder commits on the crew branch touch tester-owned files, so the tests check fails:',
+    ...lines,
+    `Rewrite them on the crew branch itself: run git as git -C ${e.worktree} <command> (branch ${e.branch}), not in your own worktree. Split each listed commit so its changes to the files listed for it sit in their own commit with the trailers Truss-Crew: ${crew.slug} and Truss-Role: ${TRAILER_ROLE.tester}, and the rest stays in a commit with its original trailers. Keep the tree identical: git diff between the old and the new tip must be empty, and no file content changes. Report the branch ${e.branch}.`,
+  ].join('\n'), 'tester')
+  await check(2)
 }
 
 // ---------------------------------------------------------------- split

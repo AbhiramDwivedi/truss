@@ -241,7 +241,8 @@ t('F-27: a QC FAIL whose finding names a tester file runs a-tester-2 (test-write
   assert.ok(had(r, 'a-tester-2'), `no a-tester-2; labels: ${r.labels.join(', ')}`)
   const p = call(r, 'a-tester-2').prompt
   has(p, 'Truss-Role: test-writer')
-  assert.equal(lineOf(p, 'Files you may change:'), `Files you may change: ${TF}`)
+  // bug 28: the entry's ownTests globs are tester files too
+  assert.equal(lineOf(p, 'Files you may change:'), `Files you may change: ${TF}, tests/*.ts`)
   has(p, 'TFIND')
   assert.ok(!had(r, 'a-builder-2'), 'a builder fix ran for a tester-only finding')
 })
@@ -307,5 +308,5 @@ t('F-27: a fix builder\'s Files you may change leaves out the tester file, and t
   assert.ok(files.startsWith('Files you may change:'), 'no Files you may change line')
   hasnt(files, TF)
   has(files, 'src/**')
-  assert.equal(lineAfter(p, 'Files you may change:'), `Files a tester owns, which you must not change: ${TF}`)
+  assert.equal(lineAfter(p, 'Files you may change:'), `Files a tester owns, which you must not change: ${TF}, tests/*.ts`)
 })

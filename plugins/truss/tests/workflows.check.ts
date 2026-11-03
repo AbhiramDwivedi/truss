@@ -1007,7 +1007,8 @@ t('stage tests: tests-check runs with --slug after owns-check and before every q
   const r = await runStage([entry('a')], { labels: { ...base('a', { 'a-qc': FAIL(), 'a-qc-2': PASS }), 'a-builder-2': done('feat/f1') } })
   passedShape(r.res[0], 'a', HEAD, 'a-qc-2')
   has(r.calls.find((c) => c.runner?.cmd === 'tests-check').prompt, 'tests-check --slug a')
-  const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check')
+  // bug 28: the fix builder's own backstop run carries a Backstop: line; the guard runs carry none
+  const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check' && !c.prompt.includes('Backstop:'))
   assert.equal(runs.length, 2, 'once before each qc, so a fix builder\'s commits are checked too')
   assert.ok(idx(r, 'end:runner:a:owns-check') < idx(r, 'start:runner:a:tests-check'))
   assert.ok(idx(r, 'end:runner:a:tests-check') < idx(r, 'start:a-qc'))
@@ -1227,13 +1228,15 @@ t('stage resume answers: skips red and done tasks; the builder prompt carries th
   assert.ok(had(r, 'a-stress'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc', e)
 })
-t('stage entry: guarded and ownTests keys (ADR-0019 item 9, stage 1) change nothing; today\'s stage.js behaves as without them', async () => {
+t('stage entry: guarded and ownTests keys (ADR-0019 item 9, stage 1) change nothing but the tester-file lists', async () => {
   const plain = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }] })
   const extra = { ...plain, guarded: ['tests/a.check.ts'], ownTests: ['tests/*.ts'] }
   const a = await runStage([plain], { labels: base('a', { 'a-stress': RT0 }) })
   const b = await runStage([extra], { labels: base('a', { 'a-stress': RT0 }) })
   assert.deepEqual(b.labels, a.labels, 'the same agents run in the same order')
-  assert.deepEqual(b.calls.map((c) => c.prompt), a.calls.map((c) => c.prompt), 'every prompt is the same')
+  // bug 28: guarded and ownTests join the tester files, so only the read-only test-file line may differ
+  const noTf = (p) => p.split('\n').filter((l) => !l.startsWith('Test files, read-only to you')).join('\n')
+  assert.deepEqual(b.calls.map((c) => noTf(c.prompt)), a.calls.map((c) => noTf(c.prompt)), 'every prompt is the same')
   assert.deepEqual(b.res.map((x) => ({ ...x, e: undefined })), a.res.map((x) => ({ ...x, e: undefined })))
   passedShape(b.res[0], 'a', HEAD, 'a-qc', extra)
 })
