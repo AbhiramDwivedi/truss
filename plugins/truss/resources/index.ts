@@ -8,9 +8,36 @@ import { fileURLToPath } from 'node:url'
 export const DEFAULT_MIN_FREE_MB = 2048
 
 export type Worktree = { path: string; procs: number; rssMB: number }
-export type Sample = { freeMB: number; totalMB: number; cpus?: number; load1?: number; worktrees?: Worktree[] }
+export type Sample = { freeMB: number; totalMB: number; cpus?: number; load1?: number; worktrees?: Worktree[]; memPressure?: number; swapUsedPct?: number }
+export type Pressure = { memPressure?: number; swapUsedPct?: number }
 
 const MB = 2 ** 20
+
+const pct = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100
+
+/** ADR-0026 item 57: the PSI `some` avg10 and the swap used percent; a field is left out when its file is absent or unreadable. */
+export function pressureOf(paths: { pressure?: string; meminfo?: string } = {}): Pressure {
+  const out: Pressure = {}
+  try {
+    const m = /^some\b.*?\bavg10=([\d.]+)/m.exec(readFileSync(paths.pressure ?? '/proc/pressure/memory', 'utf8'))
+    const v = m ? Number(m[1]) : NaN
+    if (pct(v)) out.memPressure = v
+  } catch {
+    // absent or unreadable: leave memPressure out
+  }
+  try {
+    const t = readFileSync(paths.meminfo ?? '/proc/meminfo', 'utf8')
+    const total = /^SwapTotal:\s+(\d+)/m.exec(t)
+    const free = /^SwapFree:\s+(\d+)/m.exec(t)
+    if (total && free && Number(total[1]) > 0) {
+      const v = Math.round(((Number(total[1]) - Number(free[1])) / Number(total[1])) * 100)
+      if (pct(v)) out.swapUsedPct = v
+    }
+  } catch {
+    // absent or unreadable: leave swapUsedPct out
+  }
+  return out
+}
 
 /** TRUSS_MIN_FREE_MB when it is a whole number, else the default. */
 export function minFreeMB(env: Record<string, string | undefined> = process.env): number {
@@ -60,9 +87,12 @@ export function sample(opts: { worktreesRoot?: string } = {}): Sample {
     const o = JSON.parse(readFileSync(seam, 'utf8'))
     const ok = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0
     if (o === null || typeof o !== 'object' || !ok(o.freeMB) || !ok(o.totalMB)) throw new Error('TRUSS_SAMPLE file is not a sample: freeMB and totalMB must be numbers of 0 or more')
+    for (const k of ['memPressure', 'swapUsedPct']) {
+      if (k in o && !pct(o[k])) throw new Error(`TRUSS_SAMPLE file is not a sample: ${k} must be a number from 0 to 100`)
+    }
     return o
   }
-  const s: Sample = { freeMB: Math.round(os.freemem() / MB), totalMB: Math.round(os.totalmem() / MB), cpus: os.availableParallelism() }
+  const s: Sample = { freeMB: Math.round(os.freemem() / MB), totalMB: Math.round(os.totalmem() / MB), cpus: os.availableParallelism(), ...pressureOf() }
   const la = os.loadavg()
   if (!la.every((v) => v === 0)) s.load1 = la[0]
   if (opts.worktreesRoot) s.worktrees = worktreeUsage(opts.worktreesRoot)

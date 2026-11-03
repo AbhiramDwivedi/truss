@@ -105,8 +105,8 @@ agentCase('agent states the down rule: below twice minFreeMB, or load1 above cpu
   assert.match(b, /\b(down|lower|reduce|fewer|decrease|minus)\b/i, 'the rule must say when to go down')
 })
 
-agentCase('agent states the up rule: above four times minFreeMB, load1 below half of cpus', (b) => {
-  assert.match(b, /\b(four times|4 ?[x×*]|four)\b[^\n]{0,40}minFreeMB|minFreeMB[^\n]{0,20}(\*|×|x) ?4\b/i, 'the up rule must name four times minFreeMB')
+agentCase('agent states the up rule: above three times minFreeMB, load1 below half of cpus', (b) => {
+  assert.match(b, /\b(three times|3 ?[x×*]|three)\b[^\n]{0,40}minFreeMB|minFreeMB[^\n]{0,20}(\*|×|x) ?3\b/i, 'the up rule must name three times minFreeMB')
   assert.match(b, /\b(half|0\.5|1\/2|\/ ?2)\b[^\n]{0,20}cpus|cpus[^\n]{0,20}(\/ ?2|\* ?0\.5)/i, 'the up rule must compare load1 against half of cpus')
   assert.match(b, /\b(up|raise|increase|more|plus)\b/i, 'the rule must say when to go up')
 })

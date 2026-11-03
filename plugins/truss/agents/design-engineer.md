@@ -86,6 +86,8 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 
 The design engineer never writes check code; an acceptance test is a test command; a check that needs logic is a contract test written by a crew's Sonnet test-writer.
 
+An acceptance test pins behaviour by a test's title and its ok or not-ok outcome, or by an assertion's result; it never greps the literal text of a source or test file. Such a spelling pin passes a change that keeps the words and breaks the behaviour, and fails a correct rewording.
+
 In the draft:
 
 - `version` is 2, `architecture` is the doc's repo-relative path, and `maxParallelCrews` comes from `.claude/truss.json` or the defaults. `reworkAllowance` is copied from the `reworkAllowance` key of `.claude/truss.json`, or is 2 when the key is absent or was rejected. It is one number for the whole plan; crews get no budget of their own.
