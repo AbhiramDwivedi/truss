@@ -1,0 +1,56 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": { "path": "/work/demo/.git/truss/run-1", "exists": true },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-retro",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": { "name": "truss", "version": "0.17.0", "path": "/work/demo/plugins/truss", "source": null },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    { "n": 1, "role": "user", "text": "Add per-user quotas to the API.", "ts": "2026-11-02T11:00:00.000Z", "id": "msg-1", "intent": "goal" },
+    { "n": 2, "role": "assistant", "text": "All crews have merged. The retro is running.", "ts": "2026-11-02T11:58:00.000Z", "id": null, "intent": null }
+  ],
+  "run": {
+    "goal": "Add per-user quotas to the API.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:05:00.000Z",
+    "crews": [
+      {
+        "slug": "quota-store", "stage": 0, "verdict": "change", "status": "merged", "goal": null, "owns": ["server/quota/**"],
+        "foreman": { "name": "quota-store", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "reported", "detail": "DONE", "ts": "2026-11-02T11:40:00.000Z" },
+        "members": [],
+        "latest": { "ts": "2026-11-02T11:40:00.000Z", "agent": "quota-store", "event": "report", "text": "quota-store reported DONE" },
+        "estAgents": 5, "stuck": null, "qc": { "verdict": "PASS", "file": "reports/quota-store/quota-store-qc-1.md" }
+      }
+    ],
+    "goals": [
+      { "id": "run", "goal": "Add per-user quotas to the API.", "approval": "client", "approvedAt": "2026-11-02T11:05:00.000Z" }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": { "planMd": null, "architecture": null, "images": [] },
+  "notices": [],
+  "retro": {
+    "v": 1,
+    "updatedAt": "2026-11-02T11:59:00.000Z",
+    "steps": {
+      "extract": { "status": "done", "at": "2026-11-02T11:55:00.000Z", "detail": "42 events read" },
+      "judges": { "status": "running", "at": "2026-11-02T11:59:00.000Z", "detail": "2 of 3 judges finished" },
+      "triage": { "status": "pending", "at": null, "detail": null },
+      "fixGoal": { "status": "pending", "at": null, "detail": null },
+      "applied": { "status": "pending", "at": null, "detail": null }
+    }
+  }
+}
