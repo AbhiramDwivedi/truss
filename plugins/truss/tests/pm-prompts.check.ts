@@ -52,14 +52,16 @@ describe('pm-prompts', () => {
       'agents/checking-engineer.md: a sentence saying it never recommends that the PM write code')
   })
 
-  test('3 F-35 run skill: decisions.md Edits anchor on stamped lines', () => {
-    rule(RUN, [/decisions\.md/, /\bEdit/, /anchor/i, /stamped/i],
-      'skills/run/SKILL.md: decisions.md Edits anchor on lines already stamped')
+  // ADR-0027 F-73: factory.ts decide replaces the Edit route, so these two pin it as the successor rule.
+  test('3 F-73 run skill: decisions.md is written only through factory.ts decide', () => {
+    rule(RUN, [/decisions\.md/, /factory\.ts decide/, /\b(only|never)\b/i],
+      'skills/run/SKILL.md: decisions.md is written only through factory.ts decide')
   })
 
-  test('3b F-35 run skill: the PM re-reads decisions.md tail before the Edit', () => {
-    rule(RUN, [/re-?read/i, /\btail\b/i, /decisions\.md/, /\bEdit/],
-      'skills/run/SKILL.md: re-read the decisions.md tail before the Edit')
+  test('3b F-73 run skill: the PM never writes decisions.md with Edit or Write', () => {
+    gone(RUN, /(lines|heading)[^.]*\bwith Edit or Write, never Bash/i, 'the "with Edit or Write, never Bash" route to decisions.md')
+    rule(RUN, [/decisions\.md/, /\b(never|not)\b/i, /\bEdit\b/, /\bdecide\b/],
+      'skills/run/SKILL.md: a sentence that says decisions.md is never edited by hand and goes through decide')
   })
 
   test('4a F-38 run skill: every brief for an Agent started in a worktree carries the shell rules', () => {
