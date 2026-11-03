@@ -280,9 +280,40 @@ export function countedQc(dir: string, slug: string, files: readonly QcFile[]): 
   const k = existsSync(p) ? replannedFrom(readFileSync(p, 'utf8'), slug) : undefined
   return k === undefined ? [...files] : files.filter((f) => qcK(f.name) >= k)
 }
-// The crew's repair spend: its QC FAIL reports only (client ruling: stress-test rounds add nothing).
+// The first non-empty line of a report text, trimmed ('' when none).
+const firstLine = (text: string): string => text.replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '') ?? ''
+// The crew's ux report files `<slug>-ux.md` and `<slug>-ux-<n>.md` (interim `.run<k>.md` files never match), with their label number.
+const uxReports = (slug: string, files: readonly QcFile[]): (QcFile & { n: number })[] =>
+  files.flatMap((f) => {
+    const m = /^(.*)-ux(?:-(\d+))?\.md$/.exec(f.name)
+    return m !== null && m[1] === slug ? [{ ...f, n: m[2] === undefined ? 1 : Number(m[2]) }] : []
+  })
+// ADR-0022: the crew's UX: REWORK reports that count toward its spend. They follow the since rule of qcFails, and a logged
+// re-plan from qc-<k> counts only those modified at or after <slug>-qc-<k>.md (the bare <slug>-qc.md for k 1), as countedQc does.
+export function uxReworks(dir: string, slug: string, files: readonly QcFile[], since = 0): number {
+  const p = `${dir}/decisions.md`
+  const k = existsSync(p) ? replannedFrom(readFileSync(p, 'utf8'), slug) : undefined
+  let from = since
+  if (k !== undefined) {
+    const qc = files.find((f) => f.name === (k <= 1 ? `${slug}-qc.md` : `${slug}-qc-${k}.md`))
+    // a re-plan whose QC file is gone resets the count: no ux report counts
+    if (qc === undefined) return 0
+    from = Math.max(from, qc.mtimeMs)
+  }
+  return uxReports(slug, files).filter((f) => f.mtimeMs >= from && firstLine(f.text).startsWith('UX: REWORK')).length
+}
+// The crew's repair spend: its QC FAIL reports plus its UX: REWORK reports (client ruling: stress-test rounds add nothing).
 export function spentOf(dir: string, slug: string, since = 0): number {
-  return qcFails(slug, countedQc(dir, slug, reportsOf(dir, slug)), since)
+  const files = reportsOf(dir, slug)
+  return qcFails(slug, countedQc(dir, slug, files), since) + uxReworks(dir, slug, files, since)
+}
+// ADR-0022: the crew's newest direction, {label, text} of its highest-numbered ux report whose first non-empty line is
+// UX: DIRECTION, or null when it has none.
+export function directionOf(dir: string, slug: string): { label: string; text: string } | null {
+  const dirs = uxReports(slug, reportsOf(dir, slug)).filter((f) => /^UX: DIRECTION\b/.test(firstLine(f.text)))
+  if (dirs.length === 0) return null
+  const top = dirs.reduce((a, b) => (b.n > a.n ? b : a))
+  return { label: top.name.replace(/\.md$/, ''), text: top.text }
 }
 // {role: next free label number} from the crew's report files: `<slug>-qc.md` and `-qc-2.md` give {"qc": 3}.
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
@@ -311,6 +342,8 @@ function rolesWithTypes(plugin: string, types: string[], cfgRoles?: unknown): Ob
       const v = cfgRoles[key]
       if (typeof v === 'string' && v !== '' && isObj(roles[role]) && roles[role].typeFromProject === true) roles[role].agentType = v
     }
+    // ADR-0022 U2: `roles.ux` lays on the ux row directly; the ux role has no typeFromProject, so --type ux=... stays refused below.
+    if (typeof cfgRoles.ux === 'string' && cfgRoles.ux !== '' && isObj(roles.ux)) roles.ux.agentType = cfgRoles.ux
   }
   for (const t of types) {
     const eq = t.indexOf('=')
@@ -432,6 +465,7 @@ function cmdPlanCheck(f: Flags): Obj {
       if (plan.version === 2) errors.push(`${s}: goal is version 3 only`)
       else if (plan.version === 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
     }
+    if (Object.hasOwn(c, 'ux') && typeof c.ux !== 'boolean') errors.push(`${s}: ux must be a boolean`)
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
   for (let i = 0; i < crews.length; i++) {
@@ -803,6 +837,30 @@ function engineOf(sections: Record<string, string>, merge: string, noWorkflow: b
   return { engine: 'foreman', reason: (m?.[2] ?? '').trim() || 'the goal file says foreman' }
 }
 
+// ADR-0022 U6 (item 23): the goal file's `## Members` lines `<n> <role> on <model> at effort <effort>` (after an optional `- ` or
+// `* ` bullet, role builder(s) or tester(s), any case) as {builder?, tester?: {model, effort}}; any other line is prose. A counted
+// line with a model other than opus or sonnet, an effort other than low or medium (R2: high and xhigh included), or two lines for
+// one role that disagree gives `refuse`, the reason factory start refuses the crew with: it never lowers an effort silently.
+type Members = Partial<Record<'builder' | 'tester', { model: string; effort: string }>>
+export function membersOf(section: string | undefined, goalFile: string): { members: Members; refuse?: string } {
+  const members: Members = {}
+  const tail = `factory start never lowers an effort silently. Set ## Engine to foreman in ${goalFile} to run this crew on the foreman path.`
+  for (const raw of (section ?? '').split(/\r?\n/)) {
+    const m = /^\s*(?:[-*]\s+)?(\d+)\s+(builders?|testers?)\s+on\s+(\S+?)\s+at\s+effort\s+(\S+?)[.,;]?\s*$/i.exec(raw)
+    if (m === null) continue
+    const [, n, word, model, effort] = [m[0], m[1], m[2].toLowerCase(), m[3].toLowerCase(), m[4].toLowerCase()]
+    const role = word.startsWith('builder') ? 'builder' : 'tester'
+    if (effort !== 'low' && effort !== 'medium') return { members, refuse: `## Members asks for ${n} ${word} at effort ${effort}; a workflow crew runs members at effort low or medium only (ADR-0009), and ${tail}` }
+    if (model !== 'opus' && model !== 'sonnet') return { members, refuse: `## Members asks for ${n} ${word} on ${model}; a workflow crew runs members on opus or sonnet only, and ${tail}` }
+    const old = members[role]
+    if (old !== undefined && (old.model !== model || old.effort !== effort)) {
+      return { members, refuse: `## Members gives the ${role} two values, ${old.model} at effort ${old.effort} and ${model} at effort ${effort}; a workflow crew takes one model and effort per role, and ${tail}` }
+    }
+    members[role] = { model, effort }
+  }
+  return { members }
+}
+
 // Creates the crew worktree on branch truss-<slug> from the target head, or reuses it when it is already there.
 function ensureWorktree(repo: string, slug: string, target: string): string {
   const wt = crewWorktree(repo, slug)
@@ -829,6 +887,9 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // elsewhere (such as to the plan's acceptanceTest) leaves the command in the entry, so the prompts still print it
   const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
   const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
+  // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
+  const uxText = sections.UX ?? ''
+  const ux = crew.ux === true || (uxText !== '' && !/^none\b/i.test(uxText))
   return {
     slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
     ...(atInGoal ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
@@ -838,6 +899,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
+    ux, direction: directionOf(c.dir, slug), members: membersOf(sections.Members, goalFile).members,
   }
 }
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
@@ -1013,6 +1075,10 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     const red = redRecord(c.dir, slug)
     if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) throw refuse({ slug, why: 'no red record: the lowest-numbered checks file is missing or has exit 0, so an answer after red has nothing to resume' })
   }
+  // ADR-0022 U6 (R2): the same ## Members check as a fresh start, before the worktree and the entry
+  const goalFile = `${c.dir}/goals/${slug}.md`
+  const membersDeny = membersOf(goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '').Members, goalFile).refuse
+  if (membersDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: membersDeny }], [], [])
   const wt = ensureWorktree(c.repo, slug, c.settings.target)
   // A stale crew whose branch has no commit beyond the base starts from step 1.
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
@@ -1113,6 +1179,12 @@ function cmdStart(f: Flags): Obj {
     const verdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
     if (verdict !== undefined) {
       refused.push({ slug, reason: verdict.deny })
+      continue
+    }
+    // ADR-0022 U6 (R2): a ## Members line the workflow can't run refuses the crew before its worktree; the crew stays planned
+    const membersDeny = membersOf(sections.Members, goalFile).refuse
+    if (membersDeny !== undefined) {
+      refused.push({ slug, reason: membersDeny })
       continue
     }
     const wt = ensureWorktree(repo, slug, settings.target)
@@ -1311,7 +1383,8 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       const meta = { label, waitedMs, exit }
       let parsed: unknown
       try {
-        parsed = JSON.parse(stdout)
+        // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone
+        parsed = JSON.parse(stdout.replace(/\ntruss-status: [^\n]*\n?$/, '\n'))
       } catch {
         parsed = undefined
       }
@@ -1354,7 +1427,13 @@ const textOfResult = (r: unknown): string | undefined => {
 }
 
 // Pure role audit: qc must be truss:qc-engineer and never use Write or Edit; stress must be truss:stress-engineer or truss:qc-engineer. Returns the reason, or undefined when the agent is fine.
-export function roleAudit(role: string, agentType: string | undefined, toolNames: readonly string[]): string | undefined {
+export function roleAudit(role: string, agentType: string | undefined, toolNames: readonly string[], roles?: Obj): string | undefined {
+  // ADR-0022 R4: ux is audited like qc, against the run's ux row agentType (truss:ux-engineer, or what truss.json roles.ux maps)
+  if (role === 'ux') {
+    const want = isObj(roles?.ux) && typeof roles.ux.agentType === 'string' ? roles.ux.agentType : 'truss:ux-engineer'
+    if (agentType !== want) return `ux ran as ${agentType ?? 'an unknown type'}, not ${want}`
+    if (toolNames.some((t) => t === 'Write' || t === 'Edit')) return 'a UX engineer used Write or Edit'
+  }
   if (role === 'qc') {
     if (agentType !== 'truss:qc-engineer') return `qc ran as ${agentType ?? 'an unknown type'}, not truss:qc-engineer`
     if (toolNames.some((t) => t === 'Write' || t === 'Edit')) return 'a QC used Write or Edit'
@@ -1379,7 +1458,7 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     if (facts.effort === 'max') bad('effort max')
     if ((facts.effort === 'high' || facts.effort === 'xhigh') && parsed !== undefined) bad(`effort ${facts.effort} on role ${parsed.role}`)
     if (parsed !== undefined) {
-      const why = roleAudit(parsed.role, agentType, facts.tools.map((t) => t.name))
+      const why = roleAudit(parsed.role, agentType, facts.tools.map((t) => t.name), roles)
       if (why !== undefined) bad(why)
     }
     if (parsed === undefined) {
@@ -1647,7 +1726,8 @@ function cmdFinish(f: Flags): Obj {
     results = v.filter(isObj)
   }
   const plan = loadPlan(dir)
-  const roles = readRoles(PLUGIN)
+  // ADR-0022 R4: the run's roles table, truss.json roles laid on, so the ux audit names the mapped ux agentType
+  const roles = rolesWithTypes(PLUGIN, [], configOf(repo).roles)
   const wfRun = runOf(tdir)
   const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
@@ -1776,9 +1856,26 @@ const isMain = ((): boolean => {
     return false
   }
 })()
+// ADR-0022 U5 (item 22): the `truss-status: <short JSON>` line `--status-line` adds after the result. It holds only the
+// booleans ok, merged and admitted, head as a string, env cut to 200 characters, and ran from heavy.ran.
+export function statusLine(body: Obj): string {
+  const s: Obj = {}
+  for (const k of ['ok', 'merged', 'admitted']) if (typeof body[k] === 'boolean') s[k] = body[k]
+  if (typeof body.head === 'string') s.head = body.head
+  if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
+  if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
+  return `truss-status: ${JSON.stringify(s)}`
+}
+// Takes the boolean --status-line flag out of argv (for heavy, only before its `--`, so the command after it is untouched).
+export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } {
+  const cut = argv.indexOf('--')
+  const head = cut < 0 ? argv : argv.slice(0, cut)
+  const rest = cut < 0 ? [] : argv.slice(cut)
+  return { on: head.includes('--status-line'), argv: [...head.filter((a) => a !== '--status-line'), ...rest] }
+}
 if (isMain) {
-  const argv = process.argv.slice(2)
+  const { on, argv } = takeStatusFlag(process.argv.slice(2))
   const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
-  process.stdout.write(JSON.stringify(body) + '\n')
+  process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
   process.exitCode = code
 }
