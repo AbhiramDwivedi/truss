@@ -1094,6 +1094,84 @@ export function mainEditVerdict(
   return { deny: `${MARK} Refused: the main thread does not edit repo files while a run is active. Delegate this change to a crew or an agent; the PM's own writes are the truss dir, the requirements doc and .claude/settings.json.` }
 }
 
+// A command split at the shell operators &&, ||, ;, | (|& counts as |) and newline, outside quotes and backslash
+// escapes, as the shell reads it. A redirection such as 2>&1 or &> holds no operator. ops[i] joins segments i and i+1.
+export function commandSegments(command: string): { segments: string[]; ops: string[] } {
+  const segments: string[] = []
+  const ops: string[] = []
+  let cur = ''
+  let quote: "'" | '"' | undefined
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (quote === "'") {
+      cur += c
+      if (c === "'") quote = undefined
+      continue
+    }
+    if (c === '\\' && i + 1 < command.length) {
+      // a backslash-newline outside single quotes is a line continuation, not a newline operator
+      if (command[i + 1] !== '\n') cur += c + command[i + 1]
+      i++
+      continue
+    }
+    if (quote === '"') {
+      cur += c
+      if (c === '"') quote = undefined
+      continue
+    }
+    if (c === "'" || c === '"') {
+      quote = c
+      cur += c
+      continue
+    }
+    let op: string | undefined
+    if (c === '&' && command[i + 1] === '&') op = '&&'
+    else if (c === '|' && command[i + 1] === '|') op = '||'
+    else if (c === '|' && command[i + 1] === '&') op = '|&'
+    else if (c === '|') op = '|'
+    else if (c === ';') op = ';'
+    else if (c === '\n') op = '\n'
+    if (op === undefined) {
+      cur += c
+      continue
+    }
+    segments.push(cur)
+    ops.push(op === '|&' ? '|' : op)
+    cur = ''
+    i += op.length - 1
+  }
+  segments.push(cur)
+  return { segments, ops }
+}
+
+// the plugin path may be quoted, as `node "${CLAUDE_PLUGIN_ROOT}/retro/cli.ts" scrub` is, and so may the word scrub
+const SCRUB_RUN = /retro\/cli\.ts["']?\s+(["']?)scrub\1(?:\s|$)/
+// ends at whitespace or the segment's end, never at \b: `git merge-base` is not a merge
+const PUSH_OR_MERGE = /(?:^|[^\w.-])git\s+(?:-C\s+\S+\s+)?(?:push|merge)(?:\s|$)/
+
+export const PUSH_GATE_REFUSAL = `${MARK} Refused: retro scrub gates a git push or git merge only when joined to it by && (ADR-0027 F-74).`
+
+// ADR-0027 F-74 (R-32): a command that runs retro/cli.ts scrub and then a git push or git merge that scrub does not
+// gate is refused. Scrub gates a later push or merge only when every operator from the first scrub segment up to it is
+// &&. One command is judged alone: a scrub in an earlier call is not seen, by design.
+export function pushGateVerdict(command: unknown): { deny: string } | undefined {
+  if (typeof command !== 'string') return undefined
+  const { segments, ops } = commandSegments(command)
+  const scrub = segments.findIndex(s => SCRUB_RUN.test(s))
+  if (scrub < 0) return undefined
+  for (let j = scrub + 1; j < segments.length; j++) {
+    if (!PUSH_OR_MERGE.test(segments[j])) continue
+    const path = ops.slice(scrub, j)
+    if (path.every(op => op === '&&')) continue
+    const bad = path.find(op => op !== '&&') ?? ''
+    const shown = bad === '\n' ? 'a newline' : `\`${bad}\``
+    return {
+      deny: `${PUSH_GATE_REFUSAL} Here ${shown} stands between scrub and \`${segments[j].trim()}\`, so the push or merge runs whether or not scrub passed. Join scrub and the push or merge with &&, as in \`node <plugin>/retro/cli.ts scrub <file> && git push\`, and never pipe scrub's output: a pipe's status is the last command's, not scrub's.`,
+    }
+  }
+  return undefined
+}
+
 async function homeDir($: $): Promise<string | undefined> {
   return (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
 }
@@ -2233,6 +2311,22 @@ export const register: Register = on => {
       const refused = outcome?.deny !== undefined ? outcome : undefined
       if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
       if (outcome !== undefined) return next({ ...e, args: outcome.args } as typeof e)
+    }
+    return next(e)
+  }).catch(failOpen)
+
+  // The push and merge gate (ADR-0027 F-74, R-32): a main-session Bash command that runs retro scrub and then a git
+  // push or git merge that scrub does not gate (not joined by && all the way) is refused. Members are never gated.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const input = e as unknown as { command?: unknown; args?: unknown }
+      const command = typeof input.command === 'string' ? input.command : isRecord(input.args) ? input.args.command : undefined
+      const verdict = await safely($, 'push gate', async () => {
+        const v = pushGateVerdict(command)
+        if (v !== undefined) await logRule($, 'push gate refused a call: scrub is not joined to a push or merge by &&')
+        return v
+      })
+      if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)
     }
     return next(e)
   }).catch(failOpen)
