@@ -569,22 +569,35 @@ export function envFailure(text: string): string | undefined {
 // `not ok N - ...` (a TAP parent that only reports failed subtests is no block of its own). Text before the first header
 // belongs to no block. [] when no header is found. ADR-0025 item 43: a TAP block ends at its YAML diagnostic's closing `...`
 // line, or at a plan or summary line (`1..N`, `# tests`); lines after that, up to the next header, belong to no block.
-// Playwright blocks run to the next header.
+// Playwright blocks run to the next header. ADR-0026 item 58 (b): the closing `...` counts only at the indent of the block's
+// own `---` line, and a plan or summary line ends a block only outside its YAML diagnostic, so an `error: |-` block scalar
+// holding an indented `...` or `1..N` line stays one block.
 function failureBlocks(text: string): string[] {
   const header = /^\s*(\d+\) (\[[^\]]+\] › )?[^\s›][^›]*:\d+:\d+ › |not ok \d+ - )/
   const tapHeader = /^\s*not ok \d+ - /
   const blocks: string[][] = []
   let open = false
   let tap = false
+  // the indent of the open TAP block's `---` line while inside its YAML diagnostic, else undefined
+  let yaml: string | undefined
   for (const line of text.split('\n')) {
     if (header.test(line)) {
       blocks.push([line])
       open = true
       tap = tapHeader.test(line)
-    } else if (open && tap && /^\s*(\d+\.\.\d+|# tests \d+)\b/.test(line)) open = false
+      yaml = undefined
+    } else if (open && tap && yaml === undefined && /^\s*(\d+\.\.\d+|# tests \d+)\b/.test(line)) open = false
     else if (open) {
       blocks[blocks.length - 1]?.push(line)
-      if (tap && /^\s*\.\.\.\s*$/.test(line)) open = false
+      if (!tap) continue
+      if (yaml === undefined) {
+        const start = /^(\s*)---\s*$/.exec(line)
+        if (start !== null) yaml = start[1] as string
+        else if (/^\s*\.\.\.\s*$/.test(line)) open = false
+      } else if (line.startsWith(`${yaml}...`) && line.slice(yaml.length + 3).trim() === '') {
+        yaml = undefined
+        open = false
+      }
     }
   }
   return blocks.map((b) => b.join('\n')).filter((b) => !/failureType: '?subtestsFailed'?/.test(b))
@@ -749,16 +762,34 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
     .filter(([, crew, role, body]) => missed(crew, 'Truss-Crew', body) || missed(role, 'Truss-Role', body)).map(([id]) => String(id))
 }
+// The git operation left unconcluded in a worktree, if any: a rebase (`rebase-merge` or `rebase-apply` in its git dir, checked
+// first since a rebase's own picks and merges can set the heads below), a merge, a cherry-pick or a revert.
+function operationInProgress(wt: string): 'rebase' | 'merge' | 'cherry-pick' | 'revert' | undefined {
+  for (const d of ['rebase-merge', 'rebase-apply']) {
+    const p = run(wt, ['rev-parse', '--path-format=absolute', '--git-path', d])
+    if (p.status === 0 && p.out.trim() !== '' && existsSync(p.out.trim())) return 'rebase'
+  }
+  const has = (ref: string): boolean => run(wt, ['rev-parse', '-q', '--verify', ref]).status === 0
+  if (has('MERGE_HEAD')) return 'merge'
+  if (has('CHERRY_PICK_HEAD')) return 'cherry-pick'
+  if (has('REVERT_HEAD')) return 'revert'
+  return undefined
+}
 function cmdIntegrate(f: Flags): Obj {
   const branch = need(f, 'branch')
   const c = crewCtx(f)
+  // ADR-0026 item 58 (c), (d), overriding ADR-0025 item 44 ("while one is, mergeIn answers"): with a merge, cherry-pick,
+  // revert or rebase unconcluded in the crew worktree, integrate refuses up front, before any git merge or merge-tree, with
+  // no conflicts (the paths git lists belong to that operation, not to this branch) and `inProgress` naming it.
+  const inProgress = operationInProgress(c.wt)
+  if (inProgress !== undefined) {
+    throw refuse({ merged: false, conflicts: [], inProgress, why: `a ${inProgress} is in progress in ${c.wt}; conclude or abort it before integrating ${branch}` })
+  }
   const trailers = unparsedTrailers(c.wt, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   // ADR-0024 item 32: a branch whose merge would leave the crew head's tree unchanged (one the head already holds, even after a
   // rewrite split its commits) isn't merged. A conflict or a merge-tree failure falls back to the --no-ff merge below.
-  // ADR-0025 item 44: only with no merge in progress in the crew worktree; while one is (MERGE_HEAD set), mergeIn answers.
-  const merging = run(c.wt, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).status === 0
-  const mt = merging ? undefined : run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
+  const mt = run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
   const tree = mt !== undefined && mt.status === 0 ? mt.out.split('\n')[0]?.trim() : undefined
   if (tree !== undefined && tree !== '') {
     const now = run(c.wt, ['rev-parse', 'HEAD^{tree}'])
@@ -1289,9 +1320,20 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
     const inBranch = new Set(reach)
     // The branch's reflog tells a member's own commits apart: a commit the member made on it (commit, cherry-pick, revert)
     // that the branch still reaches and `target` lacks is its own; a creation or a fast-forward onto a crew head is not.
-    // A missing reflog counts 0, so the task re-runs.
-    const made = (): number => (lines(['log', '-g', '--format=%H %gs', `refs/heads/${branch}`]) ?? [])
-      .filter((l) => /^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l) && inBranch.has(l.split(' ')[0] as string)).length
+    // A missing reflog counts 0, so the task re-runs. ADR-0026 item 58 (a): a `rebase (finish): refs/heads/<b> onto <onto>`
+    // entry whose sha the branch still reaches counts the commits in `<onto>..<sha>` that the branch reaches and `target`
+    // lacks: the member's rebased own commits, which a fast-forward of the crew branch puts on its first-parent line.
+    const made = (): number => {
+      const own = new Set<string>()
+      for (const l of lines(['log', '-g', '--format=%H %gs', `refs/heads/${branch}`]) ?? []) {
+        const sha = l.split(' ')[0] as string
+        if (!inBranch.has(sha)) continue
+        if (/^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l)) own.add(sha)
+        const reb = /^[0-9a-f]+ rebase(?: -[a-z]+)? \(finish\): \S+ onto ([0-9a-f]+)\s*$/.exec(l)
+        if (reb !== null) for (const s of lines(['rev-list', sha, '--not', reb[1] as string, target]) ?? []) if (inBranch.has(s)) own.add(s)
+      }
+      return own.size
+    }
     const fork = spine.find((s) => inBranch.has(s))
     // ADR-0025 item 42: no first-parent crew commit in the branch means the crew branch was rewritten after the member forked,
     // so `reach` still holds the old crew commits; a fresh branch left on the old crew head would count them. The reflog decides.
