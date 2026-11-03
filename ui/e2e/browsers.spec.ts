@@ -5,7 +5,7 @@
 // firefox or webkit launcher and opens its own page at the width. Status and verdict are asserted as visible text, so color alone
 // cannot pass. Pinned to ADR-0018's roles and names: crew lines are found by role in the Crews region.
 import { test, expect, chromium, firefox, webkit, type Page } from '@playwright/test'
-import { crewLine, rand, spawnEvent, startReal, type Real } from './harness.ts'
+import { crewLine, expectD2Colours, rand, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const WIDTHS = [1024, 1440]
@@ -77,5 +77,22 @@ for (const [browserName, launcher] of BROWSERS) {
         }
       })
     }
+
+    // ADR-0023 checklist item 22: each engine paints the tokens.json colours, in both themes.
+    test(`D2 colours: in ${browserName} the body is tokens.json bg and the move surface is move, light and dark`, async () => {
+      const browser = await launcher.launch()
+      try {
+        real = await startReal()
+        for (const theme of ['light', 'dark'] as const) {
+          const page = await browser.newPage({ colorScheme: theme, viewport: { width: 1440, height: 800 } })
+          await page.goto(real.url)
+          await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible(LOAD)
+          await expectD2Colours(page, theme)
+          await page.close()
+        }
+      } finally {
+        await browser.close()
+      }
+    })
   })
 }

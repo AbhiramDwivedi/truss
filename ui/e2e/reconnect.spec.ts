@@ -2,7 +2,7 @@
 // harness proxy; the proxy cuts the browser's connection while the same server instance keeps emitting deltas.
 // Pinned to ADR-0018: the transcript is a log named Transcript, a card is an article, the status is a role.
 import { test, expect, type Page } from '@playwright/test'
-import { card, rand, runStatus, sessionStatus, startInterface, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
+import { card, expectD2Colours, rand, runStatus, sessionStatus, startInterface, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
 
 async function withIface(fn: (iface: Iface) => Promise<void>): Promise<void> {
   const iface = await startInterface({})
@@ -20,6 +20,14 @@ const entry = (text: string) => ({ n: ++n, role: 'assistant', text, ts: new Date
 const say = (iface: Iface, text: string) => iface.emit(null, [entry(text)])
 // Counted on the whole page, so a copy anywhere else would fail 'exactly once' too.
 const count = (page: Page, text: string) => page.getByText(text, { exact: false }).count()
+
+// ADR-0023 checklist item 22: the page paints the tokens.json colours.
+test('D2 colours: the page paints body with tokens.json bg and the move surface with move', async ({ page }) => {
+  await withIface(async (iface) => {
+    await open(page, iface)
+    await expectD2Colours(page, 'light')
+  })
+})
 
 test.describe('SSE drop and replay', () => {
   test('R-3, R-15: deltas emitted while the connection is dropped show exactly once after reconnect, with no reload', async ({ page }) => {

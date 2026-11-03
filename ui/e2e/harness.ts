@@ -17,6 +17,8 @@ import { dirname, join, resolve } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import { createServer } from '../server/http/index.ts'
 import { createRegistry } from '../server/session/index.ts'
+// The D2 colour check (tokens.json bg on body, move on the move surface) each spec file runs once.
+export { expectD2Colours, d2Colour, type D2Theme } from '../contract/e2e/colours.ts'
 
 const here = import.meta.dirname
 export const uiDir = resolve(here, '..')

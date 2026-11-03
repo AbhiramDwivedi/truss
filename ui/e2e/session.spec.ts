@@ -6,7 +6,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { startInterface, rand, rx, repoRoot, WITHIN, yourMove, goalBox, sendButton, sessionStatus, runStatus, type Iface, type QuestionSpec } from './harness.ts'
+import { expectD2Colours, startInterface, rand, rx, repoRoot, WITHIN, yourMove, goalBox, sendButton, sessionStatus, runStatus, type Iface, type QuestionSpec } from './harness.ts'
 import { questionCard, permissionCard } from '../server/session/index.ts'
 
 // ---- fixture inputs ------------------------------------------------------------------------------------
@@ -81,6 +81,17 @@ const wrapRequest = (card: Record<string, unknown>, over: Record<string, unknown
 })
 
 // ---- question cards ------------------------------------------------------------------------------------
+
+// ADR-0023 checklist item 22: with a question open, the card is the move surface and paints tokens.json move.
+test('D2 colours: with a question card open, body is tokens.json bg and the card is move', async ({ page }) => {
+  await withIface({}, async (iface) => {
+    await open(page, iface)
+    const specs = specOf(questionCard(ASK.input).questions)
+    iface.question(specs)
+    await expect(openCard(page, rx(specs[0]!.header), SUBMIT)).toBeVisible(WITHIN)
+    await expectD2Colours(page, 'light')
+  })
+})
 
 test.describe('R-3 question cards', () => {
   test('R-3: a brief question card shows each header, text and option in sent order, the recommended option first and marked in text', async ({ page }) => {

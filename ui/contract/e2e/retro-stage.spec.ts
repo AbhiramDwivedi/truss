@@ -4,6 +4,7 @@
 // applied, each within 2 s. Elements are found by role and accessible name; the per-run value
 // is the step's detail text, so no fixed string can pass by accident.
 import { test, expect } from '@playwright/test'
+import { expectD2Colours } from './colours.ts'
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -63,6 +64,14 @@ test.beforeAll(async () => {
 test.afterAll(() => {
   server?.kill('SIGTERM')
   if (dir) rmSync(dir, { recursive: true })
+})
+
+// ADR-0023 checklist item 22: the page paints the tokens.json colours.
+test('D2 colours: the page with crew lanes paints body with tokens.json bg and the move surface with move', async ({ page }) => {
+  await page.goto(url)
+  const crews = page.getByRole('region', { name: 'Crews', exact: true })
+  await expect(crews.getByRole('button', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
+  await expectD2Colours(page, 'light')
 })
 
 test('R-23: the retro lane shows running and then fixes applied within 2 s without a reload', async ({ page }) => {

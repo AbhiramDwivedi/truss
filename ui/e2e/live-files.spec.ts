@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PNG, WITHIN, crewLine, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
+import { PNG, WITHIN, crewLine, expectD2Colours, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 let real: Real | undefined
@@ -24,6 +24,14 @@ async function openTab(page: Page, name: string): Promise<void> {
   await expect(tab).toHaveAttribute('aria-selected', 'true')
 }
 const panel = (page: Page, name: string) => page.getByRole('tabpanel', { name, exact: true })
+
+// ADR-0023 checklist item 22: the live page paints the tokens.json colours.
+test('D2 colours: a live run paints body with tokens.json bg and the move surface with move', async ({ page }) => {
+  real = await startReal()
+  await page.goto(real.url)
+  await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
+  await expectD2Colours(page, 'light')
+})
 
 test('R-4: one status line per crew shows stage, status, latest activity and QC verdict as text, and opens into its members', async ({ page }) => {
   const run = rand()
