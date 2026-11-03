@@ -395,7 +395,8 @@ function taskPrompt(crew, task, note) {
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
   if (note) body.push('', ...resumeLines(note))
-  const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
+  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
   return memberPrompt(crew, task.role, { start, body })
 }
 
@@ -440,7 +441,8 @@ function fixPrompt(crew, what, detail, role = 'builder') {
   body.push('', 'Fix this, and only this:', detail)
   const answers = answersFor(crew, null)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
-  const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
+  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
   return memberPrompt(crew, role, { start, body })
 }
 
