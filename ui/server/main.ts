@@ -66,7 +66,14 @@ session.subscribe((view) => {
   }
 });
 
-const server = createServer({ state: store, session, webDir: join(uiDir, 'web') });
+const webDir = join(uiDir, 'web');
+// No client build: start anyway (GET / answers the 503 page) and say once, on stderr, how to build it.
+const webIndex = join(webDir, 'index.html');
+if (!existsSync(webIndex)) {
+  const { BUILD_CMD } = await import('./http/static.ts');
+  process.stderr.write(`truss-ui: no client build at ${webIndex}; run: ${BUILD_CMD}\n`);
+}
+const server = createServer({ state: store, session, webDir });
 const { onShutdownSignals, watchParent, lockPath, writeLock, readLiveLock, removeLock, addrInUseMessage } = await import('./lifecycle.ts');
 let url: string;
 let port: number;
