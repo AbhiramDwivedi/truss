@@ -8,11 +8,25 @@ import type { Held } from './wire.ts'
 export interface SourceLike {
   addEventListener(type: string, listener: (ev: { data: string }) => void): void
   close(): void
+  /** EventSource's readyState: 0 CONNECTING, 1 OPEN, 2 CLOSED. A source without it is never re-opened. */
+  readonly readyState?: number
+}
+
+/** The part of sessionStorage the reload throttle uses. */
+export interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
 }
 
 export interface StoreDeps {
   open: (url: string) => SourceLike
   reload: () => void
+  /** Where the last reload time lives across page loads; defaults to globalThis.sessionStorage. */
+  storage?: StorageLike
+  /** Epoch ms; defaults to Date.now. */
+  now?: () => number
+  /** Schedules the re-open of a CLOSED source; defaults to setTimeout. */
+  setTimer?: (fn: () => void, ms: number) => unknown
 }
 
 export interface Store {
@@ -28,6 +42,19 @@ export interface Store {
 }
 
 const EVENTS_URL = '/api/events'
+/** The sessionStorage key the old client used for its last reload time. */
+const RELOAD_KEY = 'truss-ui-reload'
+const RELOAD_GAP_MS = 5000
+const REOPEN_MS = 1000
+const CLOSED = 2
+
+function defaultStorage(): StorageLike | undefined {
+  try {
+    return (globalThis as { sessionStorage?: StorageLike }).sessionStorage
+  } catch {
+    return undefined
+  }
+}
 
 export function createStore(deps: StoreDeps): Store {
   let held: Held = NOTHING_HELD
@@ -35,12 +62,63 @@ export function createStore(deps: StoreDeps): Store {
   let connection: Connection = 'connecting'
   let lastMessageAt: number | null = null
   const subscribers = new Set<() => void>()
+  const storage = deps.storage ?? defaultStorage()
+  // Date.now is looked up at call time, so mocked timers apply.
+  const now = deps.now ?? (() => Date.now())
+  const usingDefaultTimer = deps.setTimer === undefined
+  const setTimer = deps.setTimer ?? ((fn: () => void, ms: number): unknown => setTimeout(fn, ms))
+  // Falls back to memory when the storage is missing or throws, so one page still throttles itself.
+  let lastReloadInMemory: number | null = null
+  // The pending re-open, cleared when it runs or stop() cancels it.
+  let reopen: { handle: unknown } | null = null
+
+  function readLastReload(): number | null {
+    let stored: number | null = null
+    if (storage !== undefined) {
+      try {
+        const raw = storage.getItem(RELOAD_KEY)
+        if (raw !== null) {
+          const n = Number(raw)
+          if (Number.isFinite(n)) stored = n
+        }
+      } catch {
+        // unusable storage: memory alone throttles
+      }
+    }
+    if (lastReloadInMemory === null) return stored
+    if (stored === null) return lastReloadInMemory
+    return Math.max(stored, lastReloadInMemory)
+  }
+
+  /** Calls deps.reload() at most once per RELOAD_GAP_MS, across page loads when the storage holds. */
+  function throttledReload(): void {
+    const t = now()
+    const last = readLastReload()
+    if (last !== null && t - last >= 0 && t - last < RELOAD_GAP_MS) return
+    lastReloadInMemory = t
+    if (storage !== undefined) {
+      try {
+        storage.setItem(RELOAD_KEY, String(t))
+      } catch {
+        // unusable storage: memory alone throttles
+      }
+    }
+    deps.reload()
+  }
+
+  function cancelReopen(): void {
+    if (reopen === null) return
+    if (usingDefaultTimer) clearTimeout(reopen.handle as ReturnType<typeof setTimeout>)
+    reopen = null
+  }
 
   function notify(): void {
     for (const fn of [...subscribers]) fn()
   }
 
   function connect(): void {
+    // A re-open pending for the previous source is moot once a new source opens.
+    cancelReopen()
     const src = deps.open(EVENTS_URL)
     current = src
     const onMessage = (ev: { data: string }): void => {
@@ -54,7 +132,7 @@ export function createStore(deps: StoreDeps): Store {
       if (msg === null || typeof msg !== 'object') return
       const r = reduce(held, msg)
       if (r.outcome === 'reload') {
-        deps.reload()
+        throttledReload()
       } else if (r.outcome === 'resync') {
         src.close()
         connect()
@@ -66,9 +144,22 @@ export function createStore(deps: StoreDeps): Store {
         if (r.changed.length > 0 || !wasLive) notify()
       }
     }
-    // EventSource retries by itself after an error; the store only reports it until a message arrives.
+    // EventSource retries by itself after an error (readyState CONNECTING); the store only reports it until a
+    // message arrives. A CLOSED source never retries, so the store opens a new one after REOPEN_MS.
     const onError = (): void => {
-      if (current !== src || connection === 'reconnecting') return
+      if (current !== src) return
+      if (src.readyState === CLOSED && reopen === null) {
+        const pending: { handle: unknown } = { handle: undefined }
+        reopen = pending
+        pending.handle = setTimer(() => {
+          if (reopen !== pending) return
+          reopen = null
+          if (current !== src) return
+          src.close()
+          connect()
+        }, REOPEN_MS)
+      }
+      if (connection === 'reconnecting') return
       connection = 'reconnecting'
       notify()
     }
@@ -86,6 +177,7 @@ export function createStore(deps: StoreDeps): Store {
       connect()
     },
     stop() {
+      cancelReopen()
       const src = current
       current = null
       if (src !== null) src.close()
