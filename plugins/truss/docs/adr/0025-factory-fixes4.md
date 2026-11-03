@@ -4,6 +4,8 @@ Status: proposed, 2026-11-03. Written by the design crew `fixes4-design` (stage 
 
 Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 45's up bar of three times `minFreeMB` replaces the four times that items 38 and 39 kept, and item 57 adds two down conditions (`memPressure` above 10, `swapUsedPct` above 70). The item 38 hold and the item 39 step-3 text stay.
 
+Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 44's `factory.ts` behaviour (`doneTasks`, `failureBlocks` and `cmdIntegrate`) is amended by item 58 of `plan-factory-fixes6`, built by crew `factory-fixes6-build` and recorded in ADR-0026's left-out factory items.
+
 VERDICT: change. One module changes: the **factory CLI** `start` (`bin/factory.ts`), only because the crew-entry seam gains `livePage`. Three extend: the **factory CLI** resume and check helpers, the **resource-monitor agent** (`agents/resource-monitor.md`) and the **plugin docs** (this ADR, one line in ADR-0024 and two lines in `architecture.md`). `admit` and `admission` don't change.
 
 This ADR edits no text of ADR-0015, ADR-0019 or ADR-0024. ADR-0024 gains one "Amended by" line that points here. Where an item adds to a contract one of them set, the addition is recorded here, by number.
