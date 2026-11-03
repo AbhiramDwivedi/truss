@@ -18,7 +18,7 @@
 // - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync,realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../../../hooks/register.ts'
 import {
@@ -546,6 +546,8 @@ test('start --resume merge-ready: one entry with resume "merge-ready"; base is t
 
 /** A merge-ready resume of crew `slug` with the session start pinned by TRUSS_SESSION_START. The plugin copy's agents/stress-engineer.md was written when the copy was made (now). */
 function resumeWithSession(env: any, slug: string, sessionStart: number) {
+  // ADR-0024 item 24 checks every truss:* agent a crew runs against the session start: back-date all the copy's agent files but the stress one (epoch 0, older than any session), so only the stress file's mtime is this case's choice
+  for (const n of readdirSync(`${env.plugin}/agents`)) if (n !== 'stress-engineer.md') utimesSync(`${env.plugin}/agents/${n}`, 0, 0)
   return runCli(env.factory, 'start', ['--dir', env.dir, '--repo', env.repo, '--slug', slug, '--resume', 'merge-ready'], env.repo, { TRUSS_SESSION_START: String(sessionStart) })
 }
 
@@ -556,18 +558,15 @@ test('pf resume: a resume of a stress-yes crew whose agent file is newer than th
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
   assert.ok(Array.isArray(j.warnings), `the resume output has warnings: ${res.stdout.slice(0, 300)}`)
-  // ADR-0024 item 24 adds warnings for the crew's other truss:* types (the plugin copy's agent files are all newer than session start 1); this case pins the stress one
-  const ws = j.warnings.filter((w: any) => String(w).includes('truss:stress-engineer'))
-  assert.equal(ws.length, 1, JSON.stringify(j.warnings))
-  assert.ok(String(ws[0]).includes('x'), String(ws[0]))
+  assert.equal(j.warnings.length, 1, JSON.stringify(j.warnings))
+  assert.ok(String(j.warnings[0]).includes('x') && String(j.warnings[0]).includes('truss:stress-engineer'), String(j.warnings[0]))
   assert.equal(j.truss.crews.length, 1, 'a warning never holds the crew')
 })
 
 test('pf resume: a resume of a stress-no crew carries warnings: [] and a session that began after the agent file gives none', () => {
   const no = world([crew('x', { status: 'running' })])
   makeRunning(no, 'x', iso(Date.now() - 5 * MIN))
-  // a session that began after every agent file (ADR-0024 item 24 warns for any truss:* type newer than a session of start 1)
-  const a = assertOneLine(resumeWithSession(no, 'x', Date.now() + 24 * HOUR))
+  const a = assertOneLine(resumeWithSession(no, 'x', 1))
   assert.deepEqual(a.warnings, [])
   const yes = world([crew('x', { status: 'running' })], { goals: { x: { stressTest: 'yes' } } })
   makeRunning(yes, 'x', iso(Date.now() - 5 * MIN))
