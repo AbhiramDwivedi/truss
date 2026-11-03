@@ -3,7 +3,7 @@
 // ({"error": "..."}). Node built-ins and ../hooks/register.ts only.
 import { spawnSync } from 'node:child_process'
 import {
-  appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -926,6 +926,8 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
   const ux = crew.ux === true || (uxText !== '' && !/^none\b/i.test(uxText))
+  // ADR-0025 item 40: the first ## UX line starting with "Live page" after an optional "- " or "* " marker, trimmed, else null
+  const livePage = uxText.split(/\r?\n/).map((l) => l.trim().replace(/^[-*] /, '')).find((l) => l.startsWith('Live page'))?.trim() ?? null
   return {
     slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
     ...(atInGoal ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
@@ -935,7 +937,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
-    ux, direction: directionOf(c.dir, slug), members: membersOf(sections.Members, goalFile).members,
+    ux, livePage, direction: directionOf(c.dir, slug), members: membersOf(sections.Members, goalFile).members,
   }
 }
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
@@ -990,9 +992,29 @@ function stressWarnings(c: StartCtx, slugs: string[]): string[] {
       changed = undefined
     }
     if (changed === undefined || started === undefined) out.push(`crew ${slug} runs ${type}, but I can't tell whether its agent file changed after this session loaded its agents; restart the session if it did`)
-    else if (changed > started) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents; restart the session to load it`)
+    else if (changed > started) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents (${changeDetail(`agents/${type.replace(/^[^:]*:/, '')}.md`, changed, started)}); restart the session to load it`)
   }
   return out
+}
+// ADR-0025 item 41: what changed in the plugin's agent file `file` (relative to PLUGIN) since the session start, for the
+// newer-than-session warnings. In a git work tree with a commit before the session start: the lines added and removed since
+// that commit (working tree included) and the newest commit after it that touched the file, or `uncommitted`. Else the
+// file's mtime and the session start as ISO times. Read-only git only.
+function changeDetail(file: string, mtime: number, started: number): string {
+  const fallback = `mtime ${new Date(mtime).toISOString()}, session start ${new Date(started).toISOString()}`
+  try {
+    if (run(PLUGIN, ['rev-parse', '--is-inside-work-tree']).out !== 'true') return fallback
+    const base = run(PLUGIN, ['rev-list', '-1', `--before=${new Date(started).toISOString()}`, 'HEAD'])
+    if (base.status !== 0 || base.out === '') return fallback
+    const ns = run(PLUGIN, ['diff', '--numstat', base.out, '--', file])
+    const m = /^(\d+)\t(\d+)\t/.exec(ns.out)
+    if (ns.status !== 0 || m === null) return fallback
+    const last = run(PLUGIN, ['log', '-1', '--format=%h %s', `${base.out}..HEAD`, '--', file])
+    const commit = last.status === 0 && last.out !== '' ? `last commit ${last.out}` : 'uncommitted'
+    return `${m[1]} added, ${m[2]} removed since the session start, ${commit}`
+  } catch {
+    return fallback
+  }
 }
 // ADR-0024 item 24: one warning per truss:* agent type the stage workflow spawns for a starting workflow crew, besides stress
 // (stressWarnings keeps its own texts): planner, qc and writer, tester and builder when their type is truss:*, and ux when the
@@ -1022,7 +1044,7 @@ function roleWarnings(c: StartCtx, entries: Obj[]): string[] {
       const fallback = `or resume with roles.${role}.agentType set to general-purpose and an answer telling the agent to read ${file} and follow it`
       if (changed === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but its agent file ${file} is missing; restart the session once it is back, ${fallback}`)
       else if (started === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but I can't tell whether ${file} changed after this session loaded its agents; restart the session if it did, ${fallback}`)
-      else if (changed > started) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents; restart the session to load it, ${fallback}`)
+      else if (changed > started) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents (${changeDetail(file, changed, started)}); restart the session to load it, ${fallback}`)
     }
   }
   return out
@@ -1199,6 +1221,12 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
 }
 
 // start --slug S --resume answers|merge-ready|stale: one crew entry, or a refusal {slug, why}.
+/** The ids of plan.goals rows whose approvedAt is null; the top-level goal `run` is never one. */
+function unapprovedGoals(plan: Obj): Set<string> {
+  const goals: unknown[] = Array.isArray(plan.goals) ? plan.goals : []
+  return new Set(goals.filter((g): g is Obj => isObj(g) && g.approvedAt === null && typeof g.id === 'string' && g.id !== RUN_GOAL).map((g) => String(g.id)))
+}
+
 function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj {
   if (!['answers', 'merge-ready', 'stale'].includes(kind)) throw usage(`--resume needs answers, merge-ready or stale, got ${kind}`)
   const transcript = str(f, 'transcript') ?? ''
@@ -1210,6 +1238,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     answers = a
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
+  // ADR-0025 item 37: a crew of an unapproved goal is never resumed
+  if (crew !== undefined && unapprovedGoals(c.plan).has(goalOf(crew))) throw refuse({ slug, why: `its goal ${goalOf(crew)} is not approved (approvedAt is null)` })
   if (crew === undefined || crew.status !== 'running' || factorySpawned(c.dir, slug) === undefined) throw refuse({ slug, why: kind === 'stale' ? 'not stale' : 'not restartable' })
   // tasks and done are rebuilt from every run of the crew in the runs root (T's parent), T included, not from T alone:
   // a resumed run that took saved tasks has no planner result, and its done list holds tasks no member of it ran.
@@ -1286,8 +1316,10 @@ function cmdStart(f: Flags): Obj {
   }
   const stageArg = need(f, 'stage')
   const noWorkflow = f['no-workflow'] === true
-  const crews: Obj[] = plan.crews.filter(isObj)
-  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
+  // ADR-0025 item 37: a crew whose goal is in plan.goals with approvedAt null is skipped: not started, refused, held or in goalNext
+  const unapproved = unapprovedGoals(plan)
+  const crews: Obj[] = plan.crews.filter(isObj).filter((c: Obj) => !unapproved.has(goalOf(c)))
+  const open =crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
   if (open.length === 0) throw refuse({ error: 'no stage has a planned or running crew' })
   const next = Math.min(...open)
   // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
@@ -1373,6 +1405,24 @@ function cmdStart(f: Flags): Obj {
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
 // so the stage args never fill the PM's Bash output. A Workflow script has no file system and the Workflow gate reads
 // args.truss from the call, so the PM still Reads P and passes that object as the Workflow's args.
+// ADR-0025 item 36: start checks --args-file before cmdStart or cmdStartResume changes any state, in both forms.
+// A relative P, or a P whose nearest existing ancestor isn't a writable directory, is a usage error (exit 2).
+function checkArgsFile(f: Flags): void {
+  const p = str(f, 'args-file')
+  if (p === undefined) return
+  if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
+  let a = path.dirname(p)
+  while (!existsSync(a) && path.dirname(a) !== a) a = path.dirname(a)
+  let ok = false
+  try {
+    ok = statSync(a).isDirectory()
+    if (ok) accessSync(a, fsConstants.W_OK)
+  } catch {
+    ok = false
+  }
+  if (!ok) throw usage(`cannot write ${flat(p)}: its nearest existing ancestor ${flat(a)} is not a writable directory`)
+}
+
 function argsFileOut(f: Flags, out: Obj): Obj {
   const p = str(f, 'args-file')
   if (p === undefined) return out
@@ -2006,7 +2056,7 @@ function cmdFinish(f: Flags): Obj {
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
-  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
+  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap,
   heavy: () => {

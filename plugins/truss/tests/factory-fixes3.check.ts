@@ -10,7 +10,7 @@
 // (harness runCli / mkEnv), so it loads and runs against the base code too.
 
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
@@ -157,16 +157,21 @@ test('i24 4: tester and builder warn only when their agentType is truss:*', () =
 test('i24 5: a stress-yes crew still gets the stress warning word for word, next to the new ones', () => {
   const now = Date.now()
   const w = startWorld([crew('s')], { s: { stressTest: 'yes' } })
-  const ws = warningsOf(startAt(w, pluginAges({ 'stress-engineer': now, writer: now }), { TRUSS_SESSION_START: String(now - HOUR) }))
-  assert.ok(ws.includes("crew s runs truss:stress-engineer, but the role's agent file changed after this session loaded its agents; restart the session to load it"), JSON.stringify(ws))
+  const factory = pluginAges({ 'stress-engineer': now, writer: now })
+  const ws = warningsOf(startAt(w, factory, { TRUSS_SESSION_START: String(now - HOUR) }))
+  // ADR-0025 item 41: the copy sits in a tmp dir outside git, so the detail is the file's mtime and the session start
+  const mtime = iso(statSync(factory.replace(/\/bin\/factory\.ts$/, '/agents/stress-engineer.md')).mtimeMs)
+  assert.ok(ws.includes(`crew s runs truss:stress-engineer, but the role's agent file changed after this session loaded its agents (mtime ${mtime}, session start ${iso(now - HOUR)}); restart the session to load it`), JSON.stringify(ws))
   assert.ok(about(ws, 'truss:writer').length > 0, `and the writer type warns too: ${JSON.stringify(ws)}`)
 })
 
 test('control 1: the stress warning texts are unchanged, newer-than-session and can\'t-tell', () => {
   const now = Date.now()
   const w = startWorld([crew('s')], { s: { stressTest: 'yes' } })
-  const newer = warningsOf(startAt(w, pluginAges({ 'stress-engineer': now }), { TRUSS_SESSION_START: String(now - HOUR) }))
-  assert.deepEqual(about(newer, 'truss:stress-engineer'), ["crew s runs truss:stress-engineer, but the role's agent file changed after this session loaded its agents; restart the session to load it"])
+  const factory = pluginAges({ 'stress-engineer': now })
+  const newer = warningsOf(startAt(w, factory, { TRUSS_SESSION_START: String(now - HOUR) }))
+  const mtime = iso(statSync(factory.replace(/\/bin\/factory\.ts$/, '/agents/stress-engineer.md')).mtimeMs)
+  assert.deepEqual(about(newer, 'truss:stress-engineer'), [`crew s runs truss:stress-engineer, but the role's agent file changed after this session loaded its agents (mtime ${mtime}, session start ${iso(now - HOUR)}); restart the session to load it`])
   const unknown = warningsOf(startAt(startWorld([crew('s')], { s: { stressTest: 'yes' } }), pluginAges(), {}))
   assert.deepEqual(about(unknown, 'truss:stress-engineer'), ["crew s runs truss:stress-engineer, but I can't tell whether its agent file changed after this session loaded its agents; restart the session if it did"])
 })
