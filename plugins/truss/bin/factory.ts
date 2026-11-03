@@ -1004,7 +1004,8 @@ function changeDetail(file: string, mtime: number, started: number): string {
   const fallback = `mtime ${new Date(mtime).toISOString()}, session start ${new Date(started).toISOString()}`
   try {
     if (run(PLUGIN, ['rev-parse', '--is-inside-work-tree']).out !== 'true') return fallback
-    const base = run(PLUGIN, ['rev-list', '-1', `--before=${new Date(started).toISOString()}`, 'HEAD'])
+    // First-parent only: a --no-ff merge after the session start of a crew commit dated before it must not become the base.
+    const base = run(PLUGIN, ['rev-list', '-1', '--first-parent', `--before=${new Date(started).toISOString()}`, 'HEAD'])
     if (base.status !== 0 || base.out === '') return fallback
     const ns = run(PLUGIN, ['diff', '--numstat', base.out, '--', file])
     const m = /^(\d+)\t(\d+)\t/.exec(ns.out)
@@ -1319,9 +1320,7 @@ function cmdStart(f: Flags): Obj {
   // ADR-0025 item 37: a crew whose goal is in plan.goals with approvedAt null is skipped: not started, refused, held or in goalNext
   const unapproved = unapprovedGoals(plan)
   const crews: Obj[] = plan.crews.filter(isObj).filter((c: Obj) => !unapproved.has(goalOf(c)))
-  const open =crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
-  if (open.length === 0) throw refuse({ error: 'no stage has a planned or running crew' })
-  const next = Math.min(...open)
+  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
   // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
   const hasGoals = Array.isArray(plan.goals) && plan.goals.length > 0
   const goalNext = new Map<string, number>()
@@ -1330,10 +1329,14 @@ function cmdStart(f: Flags): Obj {
     const g = goalOf(c)
     goalNext.set(g, Math.min(goalNext.get(g) ?? Infinity, c.stage))
   }
-  if (!hasGoals && stageArg !== 'next' && Number(stageArg) !== next) throw refuse({ error: `stage ${stageArg} is not the next stage: ${next}` })
+  // ADR-0025 item 37: a --stage N that only an unapproved goal has is refused as not the next stage of any goal, even
+  // when no approved crew is open, so the goalNext check runs before the no-open-crew refusal.
   if (hasGoals && stageArg !== 'next' && ![...goalNext.values()].includes(Number(stageArg))) {
-    throw refuse({ error: `stage ${stageArg} is not the next stage of any goal: ${[...goalNext].map(([g, w]) => `${g} ${w}`).join(', ')}` })
+    throw refuse({ error: `stage ${stageArg} is not the next stage of any goal: ${[...goalNext].map(([g, w]) => `${g} ${w}`).join(', ') || 'none'}` })
   }
+  if (open.length === 0) throw refuse({ error: 'no stage has a planned or running crew' })
+  const next = Math.min(...open)
+  if (!hasGoals && stageArg !== 'next' && Number(stageArg) !== next) throw refuse({ error: `stage ${stageArg} is not the next stage: ${next}` })
   const startsNow = (crew: Obj): boolean => (hasGoals ? goalNext.get(goalOf(crew)) === crew.stage && (stageArg === 'next' || Number(stageArg) === crew.stage) : crew.stage === next)
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   let slots = cap - crews.filter((c) => c.status === 'running').length
@@ -1406,11 +1409,19 @@ function cmdStart(f: Flags): Obj {
 // so the stage args never fill the PM's Bash output. A Workflow script has no file system and the Workflow gate reads
 // args.truss from the call, so the PM still Reads P and passes that object as the Workflow's args.
 // ADR-0025 item 36: start checks --args-file before cmdStart or cmdStartResume changes any state, in both forms.
-// A relative P, or a P whose nearest existing ancestor isn't a writable directory, is a usage error (exit 2).
+// A relative P, a P that ends in a separator or is an existing directory, or a P whose nearest existing ancestor isn't a
+// writable directory, is a usage error (exit 2).
 function checkArgsFile(f: Flags): void {
   const p = str(f, 'args-file')
   if (p === undefined) return
   if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
+  let dir = p.endsWith(path.sep)
+  try {
+    dir ||= statSync(p).isDirectory()
+  } catch {
+    // P does not exist yet (or can't be stat'ed): the ancestor check below decides
+  }
+  if (dir) throw usage(`cannot write ${flat(p)}: --args-file names a directory, not a file`)
   let a = path.dirname(p)
   while (!existsSync(a) && path.dirname(a) !== a) a = path.dirname(a)
   let ok = false
