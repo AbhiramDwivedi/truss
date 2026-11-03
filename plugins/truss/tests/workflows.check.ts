@@ -676,14 +676,15 @@ t('stage members: integrations of one crew never overlap', async () => {
 t('stage members: tester prompt carries task name, scope, files, reads, brief, acceptance test, crew-branch merge, rules and trailers', async () => {
   const r = await runStage([entry('a')], { labels: base() })
   const p = call(r, 'a-tester').prompt
-  for (const s of ['write-tests', 'tests/a.check.ts', 'src/a.ts', 'BRIEF-T1: write the tests for a', 'node --test tests/a.check.ts', 'git merge truss/a', 'Truss-Crew: a', 'Truss-Role: test-writer']) has(p, s)
+  for (const s of ['write-tests', 'tests/a.check.ts', 'src/a.ts', 'BRIEF-T1: write the tests for a', 'node --test tests/a.check.ts', 'git merge --no-ff -m "merge truss/a" truss/a', 'Truss-Crew: a', 'Truss-Role: test-writer']) has(p, s)
   assert.match(p, /Approved scope:\s*SCOPE-VERBATIM: build a, nothing else/)
   assert.ok(!p.includes('Truss-Role: builder'))
 })
 t('stage members: the first step of a member prompt is git merge of the crew branch (before the brief)', async () => {
   const r = await runStage([entry('a')], { labels: base() })
   const p = call(r, 'a-builder').prompt
-  assert.ok(p.indexOf('git merge truss/a') < p.indexOf('BRIEF-B1: build a'), 'merge comes before the brief')
+  assert.ok(p.indexOf('git merge') < p.indexOf('BRIEF-B1: build a'), 'merge comes before the brief')
+  assert.ok(p.includes('--no-ff'), 'member briefs merge with --no-ff so the worktree is not reaped (bug 26)')
 })
 t('stage members: builder and writer carry Truss-Role builder and writer', async () => {
   const W = { name: 'write-docs', role: 'writer', effort: 'medium', files: ['src/a.ts'], reads: [], brief: 'BRIEF-W', after: ['build-it'] }

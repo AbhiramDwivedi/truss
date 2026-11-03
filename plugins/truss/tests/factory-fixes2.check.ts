@@ -64,7 +64,7 @@ function memberBranch(wt: string, crewBranch: string, name: string, merge: boole
 
 const member = (task: string, branch: string, marker = 'DONE') => ({ task, marker, branch, commit: 'c0ffee', proof: 'ran it', text: 'ok' })
 /** What a real member transcript holds as its first user record: the stage.js prompt, indented by the harness. */
-const promptFor = (task: string): string => `  Your first step, before anything else: git merge truss-x\n  Work in your own worktree. The crew branch is truss-x.\n\n  Task: ${task}\n  Files you may change: members/${task}.txt\n  Files to read: none\n`
+const promptFor = (task: string): string => `  Your first step, before anything else: git merge --no-ff -m "merge truss-x" truss-x\n  Work in your own worktree. The crew branch is truss-x.\n\n  Task: ${task}\n  Files you may change: members/${task}.txt\n  Files to read: none\n`
 
 /** A well-formed audit-clean agent spec for mkRun (sonnet, medium effort). */
 const mk = (label: string, over: Record<string, unknown> = {}) => ({ label, agentType: 'general-purpose', metaModel: 'sonnet', model: 'claude-sonnet-5-5', effort: 'medium', result: 'built it', ...over })
