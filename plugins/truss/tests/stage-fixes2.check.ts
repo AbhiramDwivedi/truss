@@ -585,3 +585,51 @@ t('tests-attempt 2: two answers at tests give "Attempt: 2", and every other runn
   }
   assert.ok(runnerPrompts(r0, 'owns-check').length > 0, 'the owns guard ran')
 })
+
+// ---------------------------------------------------------------- bug 28: rework findings on tester files, and the backstop
+
+t('bug28 1: a finding that names only a guarded file\'s basename goes to a tester fix, not a builder', async () => {
+  const entry = mergeReady({ guarded: ['tests/support.ts'], ownTests: [] })
+  const r = await runStage([entry], { labels: mrLabels(qcFail('TFIND the support.ts helper misses the empty case')) })
+  assert.ok(had(r, 'a-tester'), `no a-tester; labels: ${r.labels.join(', ')}`)
+  has(lineOf(call(r, 'a-tester').prompt, 'Files you may change:'), 'tests/support.ts')
+  assert.ok(!had(r, 'a-builder'), 'a builder fix ran for a finding on a guarded file')
+})
+t('bug28 2: a finding that names a guarded file\'s basename without its extension goes to a tester fix', async () => {
+  const entry = mergeReady({ guarded: ['tests/support.ts'], ownTests: [] })
+  const r = await runStage([entry], { labels: mrLabels(qcFail('TFIND the support helper misses the empty case')) })
+  assert.ok(had(r, 'a-tester'), `no a-tester; labels: ${r.labels.join(', ')}`)
+  assert.ok(!had(r, 'a-builder'), 'a builder fix ran for a finding on a guarded file')
+})
+t('bug28 3: the builder fix prompt says never to edit a tester file', async () => {
+  const entry = mergeReady({ guarded: ['tests/support.ts'], ownTests: [] })
+  const r = await runStage([entry], { labels: mrLabels(qcFail('BFIND in src/a.ts')) })
+  has(call(r, 'a-builder').prompt, 'Never edit a file in the tester list above')
+})
+t('bug28 4: when tests-check reports touched files after a builder fix, a tester fix rewrites them and the crew passes', async () => {
+  const entry = mergeReady({ guarded: ['tests/a.check.ts'], ownTests: [] })
+  const seen = []
+  const runner = ({ cmd, prompt }) => {
+    if (cmd !== 'tests-check') return undefined
+    const m = prompt.match(/Backstop: (\S+)/)
+    seen.push(m ? m[1] : 'guard')
+    if (m && m[1] === '1.1') return rj({ ok: false, touched: [{ commit: 'b0'.repeat(20), role: 'builder', files: ['tests/a.check.ts'] }], tests: ['tests/a.check.ts'] }, 1)
+    return undefined
+  }
+  const r = await runStage([entry], { labels: mrLabels(qcFail('BFIND in src/a.ts')), runner })
+  passed(r)
+  assert.ok(had(r, 'a-builder'), `labels: ${r.labels.join(', ')}`)
+  assert.ok(had(r, 'a-tester'), `no backstop tester fix; labels: ${r.labels.join(', ')}`)
+  assert.ok(call(r, 'a-builder').i < call(r, 'a-tester').i, 'the tester fix ran before the builder fix')
+  const p = call(r, 'a-tester').prompt
+  has(p, 'b0'.repeat(20))
+  has(p, 'Truss-Role: test-writer')
+  has(p, 'Keep the tree identical')
+  assert.deepEqual(seen.filter((s) => s !== 'guard'), ['1.1', '1.2'])
+})
+t('bug28 5: a clean tests-check after a builder fix sends no tester fix', async () => {
+  const entry = mergeReady({ guarded: ['tests/a.check.ts'], ownTests: [] })
+  const r = await runStage([entry], { labels: mrLabels(qcFail('BFIND in src/a.ts')) })
+  passed(r)
+  assert.ok(!had(r, 'a-tester'), `labels: ${r.labels.join(', ')}`)
+})
