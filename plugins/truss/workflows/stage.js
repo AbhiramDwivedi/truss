@@ -511,7 +511,8 @@ function globToRegExp(glob) {
 
 // ownTests: the entry's test globs, checked on a fresh plan only (ADR-0019 items 6, 16): a builder task that lists a file
 // one of them matches, a file a tester task lists, or a file of guarded (the test files the acceptance test names) is sent
-// back, since test files are read-only to builders. null (a saved plan) skips it; ownTests [] still checks the other two.
+// back, since test files are read-only to builders. null (a saved plan, or an old-form entry with no ownTests key) skips
+// it; ownTests [] still checks the other two.
 function validateTasks(tasks, owns, ownTests = null, guarded = []) {
   const errors = []
   if (!Array.isArray(tasks) || tasks.length === 0) return ['the plan has no tasks']
@@ -609,7 +610,8 @@ async function askPlanner(crew, errors) {
 
 async function split(crew) {
   crew.step = 'split'
-  const ownTests = ownTestsOf(crew)
+  // an old-form entry (no ownTests key, so no guarded either) skips the test-file check; a lean entry runs it even with []
+  const ownTests = Array.isArray(crew.e.ownTests) ? ownTestsOf(crew) : null
   let tasks = await askPlanner(crew, null)
   let errors = validateTasks(tasks, crew.e.owns, ownTests, crew.e.guarded)
   if (errors.length) {
