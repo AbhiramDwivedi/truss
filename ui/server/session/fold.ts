@@ -10,8 +10,23 @@ export interface ModelUsage {
   cacheReadInputTokens: number
   cacheCreationInputTokens: number
 }
-export interface Usage { costUsd: number | null; models: Record<string, ModelUsage>; results: number; at: string }
+// ADR-0023 gap e: a running token estimate; at is when the last message that changed it arrived.
+export interface LiveUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  subagentTokens: number
+  totalTokens: number
+  at: string
+}
+export interface Usage { costUsd: number | null; models: Record<string, ModelUsage>; results: number; at: string; live?: LiveUsage }
 export interface BackgroundTask { taskId: string; description: string; subagentType: string | null }
+export type Intent = 'goal' | 'add' | null
+// ADR-0023 gap b: an accepted message the SDK has not yet taken.
+export interface QueueItem { id: string; text: string; intent: Intent; at: string }
+// The running sums behind usage.live, kept off the wire: it is counted before the first result, when usage is null.
+export interface Tally { seen: Record<string, true>; tasks: Record<string, number>; live: LiveUsage | null }
 export interface SessionState {
   status: 'idle' | 'running' | 'waiting' | 'ended' | 'error'
   sessionId: string | null
@@ -22,9 +37,17 @@ export interface SessionState {
   usage: Usage | null
   backgroundTasks: BackgroundTask[]
   error: string | null
+  queue: QueueItem[]
 }
-export interface TranscriptEntry { n: number; role: 'user' | 'assistant' | 'error'; text: string; ts: string }
-export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[] }
+export interface TranscriptEntry {
+  n: number
+  role: 'user' | 'assistant' | 'error'
+  text: string
+  ts: string
+  id: string | null
+  intent: Intent
+}
+export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[]; tally: Tally }
 
 const KEEP = 500
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
@@ -34,10 +57,11 @@ export function initialView(): SessionView {
   return {
     session: {
       status: 'idle', sessionId: null, model: null, claudeCodeVersion: null, permissionMode: null,
-      plugin: null, usage: null, backgroundTasks: [], error: null,
+      plugin: null, usage: null, backgroundTasks: [], error: null, queue: [],
     },
     requests: [],
     transcript: [],
+    tally: { seen: {}, tasks: {}, live: null },
   }
 }
 
@@ -45,15 +69,22 @@ function withSession(view: SessionView, patch: Partial<SessionState>): SessionVi
   return { ...view, session: { ...view.session, ...patch } }
 }
 
-export function addEntries(view: SessionView, role: TranscriptEntry['role'], texts: string[]): SessionView {
+export function addEntries(
+  view: SessionView,
+  role: TranscriptEntry['role'],
+  texts: string[],
+  meta: { id: string | null; intent: Intent } = { id: null, intent: null },
+): SessionView {
   if (texts.length === 0) return view
   const ts = new Date().toISOString()
   let n = view.transcript.length ? view.transcript[view.transcript.length - 1]!.n : 0
-  const added = texts.map((text) => ({ n: ++n, role, text, ts }))
+  const added = texts.map((text) => ({ n: ++n, role, text, ts, id: meta.id, intent: meta.intent }))
   return { ...view, transcript: [...view.transcript, ...added].slice(-KEEP) }
 }
 
-export const addUserEntry = (view: SessionView, text: string) => addEntries(view, 'user', [text])
+// A user entry carries the id and intent of the message that made it (ADR-0023 gap a).
+export const addUserEntry = (view: SessionView, text: string, id: string, intent: Intent) =>
+  addEntries(view, 'user', [text], { id, intent })
 export const setRunning = (view: SessionView) =>
   view.session.status === 'running' ? view : withSession(view, { status: 'running' })
 export const endView = (view: SessionView) =>
@@ -95,14 +126,67 @@ function foldResult(view: SessionView, msg: Record<string, unknown>): SessionVie
     }
   }
   const cost = msg.total_cost_usd
-  return withSession(view, {
+  const at = new Date().toISOString()
+  // No counted message yet: live is zero as of this result, not a guess.
+  const live = view.tally.live ?? { ...ZERO, at }
+  return withSession({ ...view, tally: { ...view.tally, live } }, {
     status: 'waiting',
     usage: {
       costUsd: typeof cost === 'number' && Number.isFinite(cost) ? cost : null,
       models,
       results: (view.session.usage?.results ?? 0) + 1,
-      at: new Date().toISOString(),
+      at,
+      live,
     },
+  })
+}
+
+const ZERO = {
+  inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, subagentTokens: 0, totalTokens: 0,
+}
+
+// Sets the tally; live (and usage.live once usage exists) moves only when a counter changed.
+function withTally(view: SessionView, seen: Record<string, true>, tasks: Record<string, number>, add: ModelUsage): SessionView {
+  const prev = view.tally.live ?? { ...ZERO, at: '' }
+  const subagentTokens = Object.values(tasks).reduce((a, b) => a + b, 0)
+  const next = {
+    inputTokens: prev.inputTokens + add.inputTokens,
+    outputTokens: prev.outputTokens + add.outputTokens,
+    cacheReadInputTokens: prev.cacheReadInputTokens + add.cacheReadInputTokens,
+    cacheCreationInputTokens: prev.cacheCreationInputTokens + add.cacheCreationInputTokens,
+    subagentTokens,
+  }
+  const totalTokens =
+    next.inputTokens + next.outputTokens + next.cacheReadInputTokens + next.cacheCreationInputTokens + next.subagentTokens
+  const changed = totalTokens !== prev.totalTokens || subagentTokens !== prev.subagentTokens
+  if (!changed) return { ...view, tally: { ...view.tally, seen, tasks } }
+  const live: LiveUsage = { ...next, totalTokens, at: new Date().toISOString() }
+  const usage = view.session.usage
+  const out = { ...view, tally: { seen, tasks, live } }
+  return usage ? withSession(out, { usage: { ...usage, live } }) : out
+}
+
+function foldAssistantUsage(view: SessionView, msg: Record<string, unknown>): SessionView {
+  if (msg.parent_tool_use_id || !isObj(msg.message)) return view
+  const id = msg.message.id
+  const u = msg.message.usage
+  // Counted once per message id: the stream repeats one message's usage on each content block.
+  if (typeof id !== 'string' || !isObj(u) || view.tally.seen[id]) return view
+  return withTally(view, { ...view.tally.seen, [id]: true }, view.tally.tasks, {
+    inputTokens: count(u.input_tokens),
+    outputTokens: count(u.output_tokens),
+    cacheReadInputTokens: count(u.cache_read_input_tokens),
+    cacheCreationInputTokens: count(u.cache_creation_input_tokens),
+  })
+}
+
+function foldTaskProgress(view: SessionView, msg: Record<string, unknown>): SessionView {
+  if (typeof msg.task_id !== 'string' || !isObj(msg.usage) || typeof msg.usage.total_tokens !== 'number') return view
+  const total = count(msg.usage.total_tokens)
+  // The latest total for a task replaces the earlier one.
+  if (view.tally.tasks[msg.task_id] === total) return view
+  return withTally(view, view.tally.seen, { ...view.tally.tasks, [msg.task_id]: total }, {
+    inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0,
   })
 }
 
@@ -119,10 +203,12 @@ export function foldMessage(view: SessionView, msg: unknown): SessionView {
       }
       return withSession(view, { backgroundTasks: tasks })
     }
+    if (msg.subtype === 'task_progress') return foldTaskProgress(view, msg)
     return view
   }
   if (msg.type === 'result') return msg.parent_tool_use_id ? view : foldResult(view, msg)
   if (msg.type === 'assistant') {
+    view = foldAssistantUsage(view, msg)
     if (msg.parent_tool_use_id || msg.agent_id) return view
     const content = isObj(msg.message) && Array.isArray(msg.message.content) ? msg.message.content : []
     const texts = content.flatMap((b) =>
