@@ -1,0 +1,167 @@
+/* The Tailwind entry (ADR-0018 section 2, ADR-0023 sections 2, 3 and 5). Colours live in tokens.css as
+   plain variables; this file maps them to utilities and holds the D2 type scale, radii, fonts and motion. */
+@import "tailwindcss";
+@import "./tokens.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* No stock palette: bg-blue-500, bg-white and the rest don't exist. */
+@theme {
+  --color-*: initial;
+}
+
+/* Utilities read the runtime variables, so .dark switches every class without a dark: variant. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-move: var(--move);
+  --color-move-fg: var(--move-fg);
+  --color-move-muted: var(--move-muted);
+  --color-move-line: var(--move-line);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-signal-text: var(--signal-text);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-fail: var(--fail);
+  --color-fail-soft: var(--fail-soft);
+  --color-fail-text: var(--fail-text);
+  --color-opus: var(--opus);
+  --color-sonnet: var(--sonnet);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --shadow-e1: var(--e1);
+  --shadow-e2: var(--e2);
+  --shadow-hero: var(--e-hero);
+}
+
+/* Literal values, emitted whether or not a class uses them yet. */
+@theme static {
+  --radius-chip: 6px;
+  --radius-ctl: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-hero: 20px;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
+  --text-ui: 13px;
+  --text-ui--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 21px;
+  --text-lead: 16px;
+  --text-lead--line-height: 24px;
+  --text-lead--letter-spacing: -0.01em;
+  --text-title: 18px;
+  --text-title--line-height: 24px;
+  --text-title--letter-spacing: -0.015em;
+  --text-h1: 22px;
+  --text-h1--line-height: 28px;
+  --text-h1--letter-spacing: -0.02em;
+  --text-ask: 24px;
+  --text-ask--line-height: 31px;
+  --text-ask--letter-spacing: -0.022em;
+
+  --font-sans: "Geist Variable", Geist, ui-sans-serif, system-ui;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+
+  --ease-out: cubic-bezier(.2, 0, 0, 1);
+  --duration-quick: 150ms;
+  --duration-base: 200ms;
+
+  --animate-arrive: arrive 360ms cubic-bezier(.2, 0, 0, 1) both;
+  --animate-tick-up: tick-up 420ms cubic-bezier(.2, 0, 0, 1);
+  --animate-ping-dot: ping 1.6s cubic-bezier(0, 0, .2, 1) infinite;
+  --animate-dash: dash 0.9s linear infinite;
+  --animate-scan: scan 1.8s cubic-bezier(.4, 0, .2, 1) infinite;
+  --animate-sheen: sheen 1.6s linear infinite;
+  --animate-stuck-glow: glow 2.4s ease-in-out infinite;
+}
+
+/* D2's keyframes (direction-d2.html:57-64). `ping` replaces Tailwind's own, so animate-ping-dot is D2's halo. */
+@keyframes arrive {
+  from { transform: translateY(-10px); opacity: 0; }
+}
+@keyframes tick-up {
+  from { transform: translateY(35%); opacity: .35; }
+}
+@keyframes ping {
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes dash {
+  to { stroke-dashoffset: -11; }
+}
+@keyframes scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(260%); }
+}
+@keyframes sheen {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes glow {
+  50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--fail) 18%, transparent); }
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--fg);
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--brand-line);
+  }
+  /* One focus ring for every control. No border-radius: it would reshape pills and cards on focus. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0ms !important;
+  }
+}
