@@ -2,6 +2,49 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.17.0
+
+truss fixes the plugin bugs its own runs logged, items 1 to 21 of [ADR-0019](docs/adr/0019-factory-fixes2.md), and pins each fix with a test that fails without it. Item 10 is dropped and item 13d is deferred; neither ships.
+
+### Install and listing
+
+- **subagent-limits `^0.3.2`.** `plugin.json` now asks for subagent-limits `^0.3.2` (was `^0.3.1`); kit `^0.3.1` and worktrees `^0.8.4` are unchanged. subagent-limits 0.3.2 measures a request before the tool calls it streams, so an agent that calls tools only mid-stream is now nudged at `nudgeAtK` (item 15).
+- **`claude plugin validate plugins/truss` is clean.** It reports no `(CODE)` warning. The README's fetch-log example no longer holds a URL with a user name and password, which validate dropped from the listing preview (LISTING_URL_SCHEME), and the plugin has an icon (item 14).
+- **The plugin has an icon.** `.claude-plugin/icon.png` is a 1024 x 1024 PNG: an amber Warren truss on a navy rounded square. It may become the permanent listing icon the first time the plugin is saved or submitted in the developer portal.
+- **`tests/plugin-validate.check.ts` keeps validate clean.** It runs `claude plugin validate` on the plugin root it finds from its own module path, and fails on any `(CODE)` warning or a missing, non-square or out-of-range icon.
+
+### Planning
+
+- **Builder briefs mark test files read-only.** `agents/planning-engineer.md` has a new rule: a builder's brief marks the crew's test files read-only, the builder reports a test it finds wrong, and any edit to a guarded or test file goes to a tester task (item 6).
+
+### Factory
+
+- **owns-check covers dot segments.** An owned `**` now matches paths such as `marketplace/.claude-plugin/marketplace.json` under `marketplace/**` (item 1).
+- **doneTasks reads the prompt.** A task's name comes from the member prompt's `Task: <name>` line, falling back to the result's `task` with a leading `<slug>: ` removed (item 2). A task also counts as done when its branch has a full patch-id match on `truss-<slug>`, not only when it is an ancestor (item 17).
+- **`start --resume answers` needs a red record.** An answer at a step after red is refused when the red record is missing or has exit 0, before any member runs (item 3). Every task an answer's `at` names drops out of `done` and reruns with its answer (item 21).
+- **New command: `factory mark-merged --dir --repo --slug`.** It sets a crew's status to `merged` only when `truss-<slug>` is an ancestor of the target (item 4).
+- **plan-check catches overlaps across goals.** It reports an owns overlap between crews of different goals at any stage, unless either crew is merged or dropped, and names both crews (item 8).
+- **One test-path rule.** `factory start` gives each crew entry `guarded` and `ownTests` from the rule in `bin/factory.ts` (item 9, start side).
+- **`start` resolves `--dir` and `--repo` to absolute paths** (item 18).
+- **Restarts link by task.** `recordRestarts` links a checkpointed member to its successor by the `Task: ` line, not by the next agent of the same role (item 19).
+- **A test pins the ADR-0020 rank rule** for an agentId with no result before a resumed one (item 13a).
+
+### Stage workflow
+
+TODO: the items below come from ADR-0019, which the runtime-stage crew builds in stage 2; none is in `workflows/stage.js` at this commit (it still has its own `isTestPath` at `:273` and `JSON.parse(res.stdout)` at `:191`). Check each against the code once that crew merges, and drop any it didn't build.
+
+- **Members queue their builds and tests.** The member prompt carries the heavy line of ADR-0017, so members run builds and test suites through `factory heavy` (item 5).
+- **Lean crew entries.** The entry drops `goal`, and leaves out `scope` and `acceptanceTest` when the goal file holds `## Approved scope` and `## Acceptance test`; members read them from `goalFile` (item 7).
+- **stage.js reads `ownTests`** in place of its own `isTestPath` (item 9, reader side).
+- **`runFactory` parses the last JSON line** of stdout, not the whole stdout (item 11).
+- **An answer at a step reaches every member**, not only an answer whose `at` is a task name (item 12).
+- **Builder prompts carry the read-only test list**, and `validateTasks` sends back a plan that breaks the rule (item 16).
+
+### Docs
+
+- **ADR-0020** says report lines are deduplicated per crew, label and marker (item 13b). ADR-0019 holds the `.run<N>.md` note for `architecture.md` (item 13c). Item 13e is folded into items 2 and 17.
+- **ADR-0021** says the truss.json `roles` mapping applies whenever configured, not only when kit is loaded (item 20).
+
 ## 0.16.0
 
 truss now installs with kit, worktrees and subagent-limits from the claude-ops marketplace, as plugin dependencies, and uses them by default ([ADR-0021](docs/adr/0021-plugin-dependencies.md)). Nothing from claude-ops is copied into truss.

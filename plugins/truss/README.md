@@ -280,7 +280,7 @@ Each call appends one `fetch` line to `<truss folder>/events.jsonl`, but only wh
 | `url` | `WebFetch` only. The URL with its scheme, host, port and path kept, userinfo removed, each query value emptied (keys kept) and the fragment dropped. A `url` that isn't a string, or doesn't parse, is logged as `""`. |
 | `query` | `WebSearch` only. The first 200 characters of the query. A query that isn't a string is logged as `""`. |
 
-So `https://user:secret@example.com:8443/docs/api?version=2&lang=en#auth` is logged as `https://example.com:8443/docs/api?version=&lang=`. No line holds a fetched page. The `fetch` branch of [docs/events.schema.json](docs/events.schema.json) is the schema, and [docs/architecture.md](docs/architecture.md) ("Fetch gate (0.8.0)") the design.
+So a fetch of `example.com` on port `8443` at path `/docs/api`, with a user name and password before the host, the query values `version=2` and `lang=en`, and the fragment `#auth`, is logged as `https://example.com:8443/docs/api?version=&lang=`. No line holds a fetched page. The `fetch` branch of [docs/events.schema.json](docs/events.schema.json) is the schema, and [docs/architecture.md](docs/architecture.md) ("Fetch gate (0.8.0)") the design.
 
 ## Review a run
 
