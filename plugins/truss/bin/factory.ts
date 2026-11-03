@@ -436,10 +436,13 @@ function cmdPlanCheck(f: Flags): Obj {
   }
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
-      if (crews[i].stage !== crews[j].stage || goalOf(crews[i]) !== goalOf(crews[j])) continue
+      const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
+      if (sameGoal && crews[i].stage !== crews[j].stage) continue
+      // Crews of different goals overlap at any stage, unless either is merged or dropped.
+      if (!sameGoal && [crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
         for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
-          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(`${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}`)
+          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
         }
       }
     }
@@ -663,13 +666,46 @@ function cmdIntegrate(f: Flags): Obj {
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   return mergeIn(c.wt, ['--no-ff', branch])
 }
+// Sets a crew merged when truss-<slug> is an ancestor of the target; refuses and changes nothing otherwise.
+function cmdMarkMerged(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  const repo = repoOf(f)
+  const plan = loadPlan(dir)
+  const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
+  if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+  const target = settingsOf(repo).target
+  const r = run(repo, ['merge-base', '--is-ancestor', `truss-${slug}`, target])
+  if (r.status !== 0) throw refuse({ ok: false, slug, merged: false, why: `truss-${slug} is not an ancestor of ${target}` })
+  crew.status = 'merged'
+  savePlan(dir, plan)
+  appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
+  return { ok: true, slug, status: 'merged' }
+}
 function cmdOwnsCheck(f: Flags): Obj {
   const c = crewCtx(f)
   const crew = loadPlan(c.dir).crews.find((x: Obj) => isObj(x) && x.slug === c.slug)
   if (crew === undefined) throw usage(`no crew ${c.slug} in the plan`)
   const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
   const files = gitOrFail(c.wt, ['diff', '--name-only', `${baseOf(c.wt, c.target)}...HEAD`]).split('\n').filter(Boolean)
-  const outside = files.filter((file) => !owns.some((g) => path.matchesGlob(file, g)))
+  // path.matchesGlob's `**` skips dot segments; an owned `**` covers them.
+  const owned = (file: string, g: string): boolean => {
+    if (path.matchesGlob(file, g)) return true
+    const i = g.indexOf('**')
+    if (i === -1) return false
+    const head = g.slice(0, i)
+    if (!head.endsWith('/') && head !== '') return false
+    const tail = g.slice(i + 2)
+    if (tail === '' || tail === '/') return file.startsWith(head) && file.length > head.length
+    // `**/rest`: any depth under head, then rest matched on the remaining segments
+    const rest = tail.replace(/^\//, '')
+    const under = file.slice(head.length)
+    if (!file.startsWith(head)) return false
+    const segs = under.split('/')
+    for (let k = 0; k < segs.length; k++) if (path.matchesGlob(segs.slice(k).join('/'), rest)) return true
+    return false
+  }
+  const outside = files.filter((file) => !owns.some((g) => owned(file, g)))
   if (outside.length > 0) throw refuse({ ok: false, outside })
   return { ok: true }
 }
@@ -682,7 +718,12 @@ function cmdOwnsCheck(f: Flags): Obj {
 // (`--cc`), so integrating a tester's branch is no touch. History is what QC reads, so a later commit that restores the file
 // doesn't clear it.
 function cmdTestsCheck(f: Flags): Obj {
-  const c = crewCtx(f)
+  const { touched, tests } = guardedOf(crewCtx(f))
+  if (touched.length > 0) throw refuse({ ok: false, touched, tests })
+  return { ok: true, tests }
+}
+// The one guarded-set rule, used by tests-check and by the start entry's `guarded`.
+function guardedOf(c: { dir: string; slug: string; wt: string; target: string }): { touched: Obj[]; tests: string[] } {
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--cc', '--name-status', '-M', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
   // Oldest first; each entry is a status letter (R keeps its score) with the old path and, for a rename, the new one.
   const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
@@ -721,9 +762,7 @@ function cmdTestsCheck(f: Flags): Obj {
     }
     if (role !== undefined && !writer && files.length > 0) touched.push({ commit: x.sha, role, files })
   }
-  const tests = [...guarded].sort()
-  if (touched.length > 0) throw refuse({ ok: false, touched, tests })
-  return { ok: true, tests }
+  return { touched, tests: [...guarded].sort() }
 }
 
 // A test file by name: basename `.test|spec|check.[cm]?[jt]sx?`, `test_*.py`, `*_test.py|go`, `conftest.py`, or a directory segment
@@ -785,6 +824,8 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
   return {
     slug, stage: crew.stage, goalFile, goal: (sections[''] ?? '').replace(/^# .*\n?/, '').trim(), owns: crew.owns ?? [], acceptanceTest: crew.acceptanceTest ?? '',
+    guarded: guardedOf({ dir: c.dir, slug, wt, target: c.settings.target }).tests,
+    ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), scope: sections['Approved scope'] ?? '', worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
@@ -898,14 +939,35 @@ function plannerTasks(runs: WfRun[], slug: string): { tasks: unknown[]; from: nu
   })
   return out
 }
-// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch (git decides, not the report),
-// over the given runs: a task done in an earlier run, and passed in `done` to a later one that never re-ran it, stays done.
+// The task name a member's prompt gives: the `Task: <name>` line directly followed by a `Files you may change:` line, read from
+// the first user record of the agent transcript (a string, or an array of text blocks). undefined when there is none.
+function promptTask(transcript: string): string | undefined {
+  if (!existsSync(transcript)) return undefined
+  const first = jsonLines(transcript).find((rec) => rec.type === 'user')
+  const c = first?.message?.content
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map((b: unknown) => (typeof b === 'string' ? b : isObj(b) && typeof b.text === 'string' ? b.text : '')).join('\n') : ''
+  const lines = text.split('\n')
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const m = /^\s*Task: (.+?)\s*$/.exec(lines[i] as string)
+    if (m?.[1] !== undefined && /^\s*Files you may change:/.test(lines[i + 1] as string)) return m[1]
+  }
+  return undefined
+}
+// Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch or has every commit
+// patch-id-matched on it (git decides, not the report), over the given runs: a task done in an earlier run, and passed in `done`
+// to a later one that never re-ran it, stays done. The name is the prompt's Task line, else result.task minus a leading `<slug>: `.
 function doneTasks(runs: WfRun[], slug: string, wt: string): string[] {
   const done: string[] = []
   for (const a of runs.flatMap((r) => r.agents)) {
     const r = a.result
     if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
-    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 && !done.includes(r.task)) done.push(r.task)
+    const name = promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
+    if (done.includes(name)) continue
+    const picked = (): boolean => {
+      const c = run(wt, ['cherry', `truss-${slug}`, r.branch as string])
+      return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
+    }
+    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 || picked()) done.push(name)
   }
   return done
 }
@@ -938,13 +1000,18 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     const all = runsNextTo(transcript)
     runs = crewRunsOf(all.some((r) => r.id === t.id) ? all : [...all, t], slug)
   }
+  // An answer at a step after red needs the red record, as mergeCrew does; an answer at red itself does not.
+  if (kind === 'answers' && answers.length > 0 && !answers.some((x) => isObj(x) && x.at === 'red')) {
+    const red = redRecord(c.dir, slug)
+    if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) throw refuse({ slug, why: 'no red record: the lowest-numbered checks file is missing or has exit 0, so an answer after red has nothing to resume' })
+  }
   const wt = ensureWorktree(c.repo, slug, c.settings.target)
   // A stale crew whose branch has no commit beyond the base starts from step 1.
   const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
   const rebuild = kind !== 'merge-ready' && !noWork
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt) : [], answers })
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : [], answers })
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
@@ -963,8 +1030,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
 }
 
 function cmdStart(f: Flags): Obj {
-  const dir = dirOf(f)
-  const repo = repoOf(f)
+  const dir = path.resolve(dirOf(f))
+  const repo = path.resolve(repoOf(f))
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
@@ -1355,7 +1422,7 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
 function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, events: Obj[]): void {
   const startedAt = (id: string): number => wfRun.journal.findIndex((l) => l.type === 'started' && l.agentId === id)
   const resultAt = (id: string): number => wfRun.journal.reduce((at, l, i) => (l.type === 'result' && l.agentId === id ? i : at), -1)
-  const info = wfRun.agents.map((a) => ({ a, p: parseLabel(a.label), s: startedAt(a.agentId) }))
+  const info = wfRun.agents.map((a) => ({ a, p: parseLabel(a.label), s: startedAt(a.agentId), t: promptTask(a.transcript) }))
   const linked = new Set<string>()
   const nOf = new Map<string, number>()
   for (const x of info) {
@@ -1364,7 +1431,7 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
     const reason = isObj(r) ? (r.marker === 'CHECKPOINT' ? 'CHECKPOINT' : undefined) : 'no report'
     if (reason === undefined) continue
     const at = resultAt(x.a.agentId)
-    const next = info.find((y) => y !== x && y.p?.slug === x.p?.slug && y.p?.role === x.p?.role && y.s > at && !linked.has(y.a.agentId))
+    const next = info.find((y) => y !== x && y.p?.slug === x.p?.slug && y.p?.role === x.p?.role && (x.t === undefined || y.t === undefined || x.t === y.t) && y.s > at && !linked.has(y.a.agentId))
     if (next === undefined) continue
     linked.add(next.a.agentId)
     const n = (nOf.get(x.a.agentId) ?? 0) + 1
@@ -1671,7 +1738,7 @@ function cmdFinish(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
