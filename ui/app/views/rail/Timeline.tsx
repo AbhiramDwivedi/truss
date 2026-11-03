@@ -23,7 +23,8 @@ function entries(state: RunState): Entry[] {
         kind: 'stuck',
         title: c.slug,
         detail: c.stuck.detail,
-        tag: `Stuck, silent ${c.stuck.minutes}m`,
+        // Worded apart from the crew card's band, which is the one "Stuck, silent <n>m" on the page.
+        tag: `Stuck ${c.stuck.minutes} min`,
         time: hhmm(c.stuck.since),
         at: stamp(c.stuck.since),
       })

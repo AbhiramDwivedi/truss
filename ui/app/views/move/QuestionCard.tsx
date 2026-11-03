@@ -109,7 +109,7 @@ export function QuestionCard({ request, hero, now, busy, error, onAnswer }: Ques
               if (step === 0) return
               e.preventDefault()
               const next = (i + step + opts.length) % opts.length
-              const group = e.currentTarget.parentElement
+              const group = e.currentTarget.closest('[role="radiogroup"]')
               const target = group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]
               target?.focus()
               pick(qi, opts[next]!.label, false)
@@ -135,29 +135,40 @@ export function QuestionCard({ request, hero, now, busy, error, onAnswer }: Ques
                     const rec = isRecommended(o)
                     const label = shown(o)
                     const focusable = q.multiSelect || (checkedAt === -1 ? i === 0 : i === checkedAt)
+                    const descId = `${base}-q${qi}-o${i}`
+                    // The option card is the click target; the radio inside it holds only the label, so its name
+                    // matches its visible text (WCAG 2.5.3). The Recommended chip and the description sit beside
+                    // it, the description tied on by aria-describedby. A keyboard click on the radio bubbles here.
                     return (
-                      <button
+                      <div
                         key={o.label}
-                        ref={(el) => {
-                          if (i === 0) firstRefs.current[qi] = el
-                        }}
-                        type="button"
-                        role={q.multiSelect ? 'checkbox' : 'radio'}
-                        aria-checked={on}
-                        aria-label={rec ? `${label} (Recommended)` : label}
                         data-state={on ? 'checked' : 'unchecked'}
-                        tabIndex={focusable ? 0 : -1}
-                        disabled={busy}
-                        onClick={() => pick(qi, o.label, q.multiSelect)}
-                        onKeyDown={(e) => move(e, i)}
+                        data-busy={busy || undefined}
+                        onClick={() => {
+                          if (!busy) pick(qi, o.label, q.multiSelect)
+                        }}
                         className={cn(
-                          'group flex min-h-11 min-w-0 flex-col items-start gap-1 rounded-card border p-3 text-left transition-colors duration-(--duration-quick) ease-out disabled:cursor-not-allowed disabled:opacity-60',
+                          'group flex min-h-11 min-w-0 cursor-pointer flex-col items-start gap-1 rounded-card border p-3 text-left transition-[border-color] duration-(--duration-quick) ease-out data-busy:cursor-not-allowed data-busy:opacity-60',
                           hero
                             ? 'border-move-line text-move-fg hover:border-move-fg data-[state=checked]:border-move-fg data-[state=checked]:bg-move-fg data-[state=checked]:text-move'
                             : 'border-border bg-surface text-fg hover:border-brand data-[state=checked]:border-brand data-[state=checked]:bg-brand-soft',
                         )}
                       >
                         <span className="flex w-full min-w-0 items-start gap-2">
+                          <button
+                            ref={(el) => {
+                              if (i === 0) firstRefs.current[qi] = el
+                            }}
+                            type="button"
+                            role={q.multiSelect ? 'checkbox' : 'radio'}
+                            aria-checked={on}
+                            aria-label={rec ? `${label} (Recommended)` : label}
+                            aria-describedby={o.description ? descId : undefined}
+                            tabIndex={focusable ? 0 : -1}
+                            disabled={busy}
+                            onKeyDown={(e) => move(e, i)}
+                            className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-ctl text-left disabled:cursor-not-allowed"
+                          >
                           <span
                             aria-hidden="true"
                             className={cn(
@@ -168,10 +179,8 @@ export function QuestionCard({ request, hero, now, busy, error, onAnswer }: Ques
                           >
                             {on && <span className={cn('size-2', q.multiSelect ? 'rounded-xs' : 'rounded-full', hero ? 'bg-move' : 'bg-brand')} />}
                           </span>
-                          <span className="min-w-0 flex-1 text-ui font-semibold break-words">
-                            {label}
-                            {rec && <span className="sr-only"> (Recommended)</span>}
-                          </span>
+                          <span className="min-w-0 flex-1 text-ui font-semibold break-words">{label}</span>
+                          </button>
                           {rec && (
                             <span className="inline-flex h-5 shrink-0 items-center rounded-chip bg-move px-1.5 text-micro font-medium text-move-fg ring-1 ring-move-line">
                               Recommended
@@ -180,6 +189,7 @@ export function QuestionCard({ request, hero, now, busy, error, onAnswer }: Ques
                         </span>
                         {o.description && (
                           <span
+                            id={descId}
                             className={cn(
                               'min-w-0 pl-6 text-meta break-words',
                               hero ? 'text-move-muted group-data-[state=checked]:text-move' : 'text-muted',
@@ -188,7 +198,7 @@ export function QuestionCard({ request, hero, now, busy, error, onAnswer }: Ques
                             {o.description}
                           </span>
                         )}
-                      </button>
+                      </div>
                     )
                   })}
                 </div>

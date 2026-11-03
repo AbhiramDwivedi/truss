@@ -98,8 +98,10 @@ export function Composer({ state, now }: ComposerProps) {
     setBusy(false)
     const tokenDead = noteResult(res.status, res.error)
     if (res.status === 202 || res.status === 200) {
-      setText('')
-      if (box.current) box.current.style.height = ''
+      // Clear only what was sent: anything typed while the send was on its way stays in the box.
+      const sent = text
+      setText((now) => (now.startsWith(sent) ? now.slice(sent.length) : now))
+      if (box.current && box.current.value === sent) box.current.style.height = ''
       return
     }
     if (tokenDead) return

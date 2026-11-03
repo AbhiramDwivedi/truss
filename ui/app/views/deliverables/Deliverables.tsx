@@ -189,7 +189,11 @@ const chip = (on: boolean) =>
   )
 
 export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
-  const [filter, setFilter] = useState<Filter>('all')
+  // The chips are toggles: a click on the pressed chip clears the choice (null), which shows every type.
+  const [chosen, setChosen] = useState<Filter | null>('all')
+  const filter: Filter = chosen ?? 'all'
+  const setFilter = (f: Filter) => setChosen(f)
+  const toggle = (f: Filter) => setChosen((c) => (c === f ? null : f))
   const [by, setBy] = useState<GroupBy>('stage')
   const [selected, setSelected] = useState<string | null>(null)
   const [dialog, setDialog] = useState(false)
@@ -240,9 +244,9 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
           <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
             <div role="group" aria-label="Filter by type" className="no-scrollbar flex max-w-full min-w-0 gap-1.5 overflow-x-auto">
               {FILTERS.map((f) => (
-                <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={chip(filter === f)}>
+                <button key={f} type="button" aria-pressed={chosen === f} onClick={() => toggle(f)} className={chip(chosen === f)}>
                   {f === 'all' ? 'All' : TYPE_LABEL[f]}{' '}
-                  <span className={cn('tabular-nums', filter === f ? 'text-bg' : 'text-muted')}>{count(f)}</span>
+                  <span className={cn('tabular-nums', chosen === f ? 'text-bg' : 'text-muted')}>{count(f)}</span>
                 </button>
               ))}
             </div>

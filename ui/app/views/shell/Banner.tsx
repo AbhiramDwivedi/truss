@@ -133,7 +133,9 @@ export function Banner({ state, onRetry }: BannerProps) {
           {session?.model && <ModelBadge model={session.model} />}
           {usage && typeof usage.costUsd === 'number' && (
             <span className="font-mono tabular-nums text-fg" title="Cost so far">
+              <span className="sr-only">Cost so far: </span>
               {costText(usage.costUsd)}
+              <span className="sr-only">. </span>
             </span>
           )}
           {models.length > 0 && (

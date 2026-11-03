@@ -43,7 +43,7 @@ export function ReplyCard({ request, hero, now, busy, error, onAnswer }: ReplyCa
         {request.isError && (
           <p className={cn('text-ui font-semibold', hero ? 'text-move-fg' : 'text-fail-text')}>Error: the turn ended with an error.</p>
         )}
-        <p className="max-h-80 min-w-0 overflow-y-auto text-body break-words whitespace-pre-wrap">{request.text}</p>
+        <p tabIndex={0} className="max-h-80 min-w-0 overflow-y-auto text-body break-words whitespace-pre-wrap">{request.text}</p>
         {request.backgroundTasks > 0 && (
           <p className={cn('text-meta', muted)}>
             {plural(request.backgroundTasks, 'background task')} running when the turn ended; the session may start a turn on its own.

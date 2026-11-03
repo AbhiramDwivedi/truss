@@ -133,6 +133,20 @@ export function crewName(c: Crew): string {
   return parts.join(', ')
 }
 
+/**
+ * The words of crewName the crew button does not show: they follow its visible text in a screen-reader-only
+ * span, so the accessible name starts with the visible words (WCAG 2.5.3, axe label-content-name-mismatch).
+ */
+export function crewNameExtra(c: Crew): string {
+  const parts = [c.stage === null ? 'no stage' : `stage ${c.stage}`, statusWord(c)]
+  if (!c.verdict) parts.push('no verdict')
+  if (c.latest?.text) parts.push(`latest: ${c.latest.text}`)
+  if (c.stuck) parts.push(stuckWords(c.stuck))
+  const blocked = blockedWords(c)
+  if (blocked) parts.push(blocked)
+  return parts.join(', ')
+}
+
 /** When the crew started: its foreman's spawn, else its earliest member. */
 export function crewStart(c: Crew): number | null {
   const stamps = [c.foreman?.ts, ...c.members.map((m) => m.ts)].map(ms).filter((x): x is number => x !== null)
