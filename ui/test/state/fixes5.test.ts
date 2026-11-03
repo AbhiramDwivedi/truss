@@ -58,7 +58,7 @@ test('i54 2: a later line of successor foreman a-2 clears the idle-foreman stall
     assert.equal(crewBy(w.run(), 'a').stuck, null, 'successor a-2 cleared the idle-foreman stall')
     const s = crewBy(x.run(), 'a').stuck
     assert.ok(s, 'agent stall of m is still stuck after a-2 speaks')
-    assert.equal(s.kind, 'agent')
+    assert.equal(s.kind, 'stalled')
   } finally { w.store.close(); x.store.close() }
 })
 
