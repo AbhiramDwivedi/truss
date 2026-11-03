@@ -2,6 +2,8 @@
 
 Status: proposed, 2026-11-02. Written by the design crew `ux-design` (stage 0 of goal `factory-ux`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-factory-ux.md` in the truss dir). Sources: amend brief items U1 to U7, and the send-back's PO rulings R1 to R6 and findings F1 to F5. Stage 1 crews ux-runtime and ux-agent build from this ADR; it changes no code itself. Line numbers are those of the crew base 032569a.
 
+Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 50's `factory start --model <role>=<model>` sets both `roles.<role>.model` and `members.<role>.model`, over U6's `## Members` precedence. Without `--model`, U6 holds.
+
 ## Context
 
 The client, on 2026-11-02: "The ui needs to be impressive, functional. Ensure there is a ux agent spun by truss that provides direction." Today `workflows/stage.js` runs no design role. `chain()` (`stage.js:883`) goes red, split, members, green, stress test, scope, QC, and no step gives builders a design direction or checks the built screens against one.
