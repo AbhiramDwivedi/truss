@@ -75,6 +75,8 @@ Gap h: ship without. There are no crew control or pause endpoints.
   - `Restart builder`: `Crew <slug> is stuck: <detail>. Restart its builder.`
   - `Re-plan crew`: `Crew <slug> is stuck: <detail>. Re-plan this crew.`
   - `Ask Claude`: `Crew <slug> is stuck: <detail>. What is happening, and what do you suggest?`
+- For a crew whose `stuck.kind` is `idle-foreman`, the primary button is `Start a successor foreman` in place of `Restart builder`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
+  - `Start a successor foreman`: `Crew <slug> is stuck: <detail>. Start a successor foreman for it.`
 - The `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
 
 ### 2. The design system: tokens, type and icons
@@ -125,6 +127,11 @@ Ratios are WCAG relative-luminance contrast, computed from tokens.json:
 | `brand` on `move` | 1.30 | 1.82 | so the `brand` ring can't show inside Your move |
 | `move-fg` on `move` | 6.70 | 6.70 | text and focus inside Your move |
 | `border-strong` on `surface` | 1.48 | 1.72 | an input outline alone is not a 3:1 boundary |
+| `signal-text` on `signal` | 3.30 | 1.16 | fails: never the Your move pill |
+| `signal-text` on `signal-soft` | 6.37 | 10.24 | the Your move pill and the queue note |
+| `move` on `move-fg` | 6.70 | 6.70 | the selected answer option |
+| `move-fg` on `brand` | 5.17 | 3.68 | fails in dark: the send button is never `brand` |
+| `surface` on `fail` | 4.70 | 6.63 | the stuck card's primary button |
 
 The rules:
 
@@ -133,6 +140,14 @@ The rules:
 - Focus is a 2 px `brand` outline, offset 2 px (`direction-d2.html:56`), replacing ADR-0018's `patina` ring. Inside Your move, focus is a `move-fg` outline.
 - State is never carried by colour alone. A stuck crew shows the word "Stuck" and an icon, and a stuck link in the network gets a still marker.
 - Targets are at least 24 by 24 px. The 6 px source dots are decorative and are not targets.
+
+D2 draws four controls with raw hex or with pairs that fail the table above. These rules replace D2's drawing, and no 27th key is added for any of them:
+
+- **The Your move pill** (`direction-d2.html:527`) is a `signal-soft` background with `signal-text` text and a `signal` dot (6.37:1 light, 10.24:1 dark). D2's `bg-signal` and raw `text-[#3B2604]` go: `signal-text` on `signal` is 3.30:1.
+- **The selected answer option** (`:535`, `:539`) is a `move-fg` background with `move` text, for both its label and its description (6.70:1 in both themes). D2's `bg-white`, `dark:bg-white`, `text-fg`, `dark:text-[#0F172A]` and `text-[#475569]` go: dark `fg` and dark `muted` on white fail. Unselected options keep D2's `move-line` border with `move-fg` text and `move-muted` descriptions.
+- **The `Recommended` chip** (`:538`) is a `move` background with `move-fg` text. D2's `bg-brand-soft` and `dark:bg-[#EFF6FF]` go.
+- **The composer send button** (`:627`) is shadcn's `--primary`: a `move` background with `move-fg` text (6.70:1 in both themes). D2's `bg-brand text-white` goes: `move-fg` on dark `brand` is 3.68:1.
+- **The stuck card's primary button** (`:408`) is a `fail` background with `surface` text (4.70:1 light, 6.63:1 dark). D2's `text-white dark:text-[#2A0E17]` goes, and so does the same pair on the stuck band (`:424`) and the stage's `1 stuck` chip (`:656`), which take `surface` on `fail` too.
 
 ### 4. The page, its states and their copy
 
@@ -159,6 +174,8 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 
 **question.**
 - An `article` named `Question from Claude: <header>` on the move surface. In it, a `radiogroup` named by the question text, with the recommended option first and its name ending `(Recommended)`; the textbox `Your own answer`; and the button `Submit answers`.
+- The card's `Your move` pill is `signal-soft` with `signal-text` text (section 3).
+- The checked option is `move-fg` with `move` text for its label and description; the `Recommended` chip is `move` with `move-fg` text (section 3).
 - The page title is `(1) Truss`.
 - The composer shows a `signal-soft` note: "Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it."
 - The question text wraps at 52ch.
@@ -169,10 +186,12 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 - The page title is `(2) Truss`.
 
 **follow-up.**
-- The `Follow-ups` region lists the `user` transcript entries and `session.queue` items, newest first. Each row shows its intent label (`New goal`, `Add to current goal`), the text (truncated, with the full text in `title` and on focus) and a time.
+- The `Follow-ups` region lists the `user` transcript entries and `session.queue` items, newest first. Each row shows its intent label (`New goal`, `Add to current goal`), the text (truncated to one line, with the full text in `title`, in its accessible name and on focus) and a time.
+- The intent label is sentence case, with no `text-transform: uppercase`. D2's `uppercase tracking-wide` (`direction-d2.html:639`) goes: it breaks the copy rules, and a screen reader spells it out.
+- With no entries, the region reads "Nothing sent yet." and holds no list.
 - Each row has one status chip. A row in `session.queue` reads `Queued`. A row in the transcript and not in the queue reads `Sent HH:MM`. There is no "In the plan" or "plan revision" status (gap c).
 - The radiogroup offers `New goal` and `Add to current goal`, and `Answer the question` only while a question is open.
-- The send button's name follows the checked intent: `Add goal`, `Send details` or `Send answer`. With no intent checked it reads `Send`.
+- The send button's name follows the checked intent: `Add goal`, `Send details` or `Send answer`. With no intent checked it reads `Send`. In every state and both themes it is `--primary`: `move` with `move-fg` text (section 3).
 
 **crews-running.**
 - ADR-0018 section 10's stage groups and crew buttons.
@@ -183,13 +202,17 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 **stuck-crew.**
 - One crew has a non-null `stuck` (gap g, kind `stalled`).
 - Its button's name holds `stuck: stalled <minutes> min`, or `stuck: foreman idle <minutes> min` for kind `idle-foreman`. ADR-0018's `blocked` wording for `QC FAIL` and `reported BLOCKED` stays.
-- The crew card has a `fail` header band "Stuck, silent <minutes>m". Under it are a Why / How long / Next definition list and three buttons: `Restart builder` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h).
+- The crew card has a `fail` header band "Stuck, silent <minutes>m". Under it are a Why / How long / Next definition list and three buttons: `Restart builder` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h). For kind `idle-foreman` the primary button is `Start a successor foreman` instead of `Restart builder`, and it sends `Crew <slug> is stuck: <detail>. Start a successor foreman for it.` The fixture `stuck-crew/idle-foreman.json` holds that kind.
+- The primary button is `surface` text on `fail` (section 3).
+- An 80-character slug is cut short in view with `text-overflow: ellipsis` on one line, and its full value stays in the crew button's accessible name.
 - The `Pause build` button is `aria-disabled` and described by the tip "Pausing needs a server endpoint that doesn't exist yet."
 - The metrics chip `1 crew stuck` links to the card.
 - Your move holds no card for it: a stuck crew is the PM's to handle.
 
 **artifacts.**
 - The deliverables list is grouped by stage, with type filter chips and counts.
+- The type filter always offers `All`, `Docs`, `Code`, `Plan` and `Images`, each with its count, 0 included. Images come from `design.images`; an image whose crew is not merged is a pending item.
+- A type filter that matches nothing shows "No <type> yet." (the type in lower case, such as "No images yet.") and a `Show all types` button, which presses `All` again. The fixture `artifacts/no-images.json` is `artifacts/state.json` with `design.images: []`.
 - One item is pending: "Arrives when <crew> merges. Nothing to open yet." It is not a link.
 - At phone and tablet width, activating an item opens the `Deliverable` dialog. Focus moves into it, Escape closes it, and focus returns to the item.
 
@@ -209,7 +232,10 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 - A `Retro stage` region after Crews, holding five items named `Extract: <status>`, `Judges: <status>`, `Triage: <status>`, `Fix goal: <status>` and `Fixes applied: <status>`, drawn as a stepped rail. A running step shows its detail text.
 
 **Error and stuck paths.** These are spec cases, not screenshot states.
+- Loading. Before the first `snapshot` event, the page shows the banner and placeholder blocks at the final heights of Your move, the metrics bar and the Crews panel, with no `article` and no spinner in the page body. The `Session` status reads `connecting`. After 10 s with no snapshot, it reads "Can't reach the Truss session. Is `truss ui` still running?" and a `Retry` button follows it, which opens the stream again.
 - A session error: the status reads `error: <first line>`, and the composer keeps its typed text.
+- A send error. When `POST /api/message` answers anything but 202 (and not the token 401 below), an `alert` under the textbox reads "Not sent: <reason>. Your text is still here." The textbox names the alert in `aria-describedby`, keeps its value, and gets focus back. `<reason>` is the response's `error` string, or its HTTP status when there is none.
+- An expired token. When the server answers 401 `{"error": "token"}` ([ADR-0011](0011-local-web-ui.md)), the `Session` status reads "Session link expired. Open the link `truss ui` printed again." The composer keeps its text and is disabled, so nothing more is sent on the dead link.
 - A lost stream: the reconnect spec asserts a `Status:` notice "Reconnecting…", then recovery.
 - Long content: crew slugs and deliverable titles truncate, with the full value in the accessible name. The fixtures hold one 80-character slug and one 300-character follow-up.
 
@@ -223,6 +249,7 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 - **Below 1024 px.** The order is banner, Your move, composer, metrics, crews, deliverables, transcript, as D2's `max-lg:order-*` classes give it (`direction-d2.html:456`, `:466`, `:522`, `:580`, `:619`, `:817`, `:859`). The preview becomes a sheet (the `Deliverable` dialog).
 - **Metrics.** Six columns at 1280 px and up, three below 1280 px, two below 1024 px. The sticky metrics bar never changes height, so nothing shifts under the pointer.
 - **Overflow.** At each width, `scrollWidth <= clientWidth`. The type filter and the intent group scroll sideways inside themselves, never the page.
+- **200% zoom.** Emulated as a 720 px viewport (200% of 360 px). With the question card and the stuck card shown, the page still has no horizontal scroll.
 - **Hierarchy.** The eye lands first on Your move, then the metrics chips, then stuck crews. Spacing uses a 4 px base. Each view has one primary action: the move card's submit, or the composer's send when there is no card.
 - **Keyboard.** The skip link comes first and jumps to Your move, then the composer. Radios move by arrow keys. Dialogs trap focus and return it. Async updates go through `status` and `log` regions.
 
@@ -234,6 +261,8 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 - Each `state.json` is a whole state snapshot: the `$defs.state` shape of `ui/contract/state.schema.json`, gap fields included.
 - Times are relative to a fixed anchor, which the specs shift to now before they plant the state.
 - `live-counter/` also holds `stale.json`, whose `usage.live.at` is more than 2 minutes before the anchor.
+- `stuck-crew/` also holds `idle-foreman.json`: the same state, with the stuck crew's `stuck.kind` `idle-foreman` and its foreman the stalled agent.
+- `artifacts/` also holds `no-images.json`: the same state, with `design.images: []`, so the `Images` filter matches nothing.
 - The stuck-crew and artifacts fixtures hold an 80-character slug and a 300-character follow-up.
 - The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`, `:264`). Session fields go through `setSession` (`:242`, `:341`). Requests go through the interface's `question()`, `permission()` and `reply()` (`:244-248`), so the page can answer them.
 - The existing root files `ui/contract/fixtures/run/plan.json`, `events.jsonl` and `decisions.md` stay unchanged.
@@ -338,6 +367,6 @@ Every `[ui]` and `[contract]` test title is kept as it is, so the table has no `
 - ADR-0018's "Light and dark follow the OS only" no longer holds: the `Dark theme` toggle overrides the OS for the page's life.
 - ADR-0018's "no modal" holds for primitives: the `Deliverable` dialog is the client's own markup.
 - For floor-shell and floor-views (beyond this crew):
-  - D2's signal pill text uses the raw hex `#3B2604` (`direction-d2.html:527`) and the stuck button uses `dark:text-[#2A0E17]` (`:408`). The views need a token route for these, such as `fg` on `signal` in light only. No 27th key is added.
+  - D2's raw hex goes, by the rules of section 3: the Your move pill is `signal-soft` with `signal-text` text and a `signal` dot, the selected option is `move-fg` with `move` text, the `Recommended` chip is `move` with `move-fg`, the send button is `--primary`, and the stuck primary button is `surface` on `fail`. No 27th key is added.
   - shadcn components that use `bg-muted` (Skeleton, TabsList) are retargeted to `bg-secondary`, because `--muted` is a text colour.
   - The `border-strong` input outline is 1.48:1 on `surface`. Inputs sit inside a bordered card or get a 3:1 focus and boundary treatment.
