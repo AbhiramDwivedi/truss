@@ -23,7 +23,21 @@ const TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
+// The command that writes ui/web, named on the missing-build page and in main.ts's stderr line (ADR-0018 section 3).
+export const BUILD_CMD = 'npm --prefix ui run build';
+const MISSING_BUILD_PAGE = '<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>Truss needs a client build</title></head>\n<body>\n'
+  + '<h1>Truss needs a client build</h1>\n'
+  + `<p>There is no client build to serve. Build it from the repo root with <code>${BUILD_CMD}</code>, then reload this page.</p>\n`
+  + '</body>\n</html>\n';
+
+function missingBuild(res: ServerResponse): void {
+  const body = Buffer.from(MISSING_BUILD_PAGE, 'utf8');
+  res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': body.length, 'Content-Security-Policy': PAGE_CSP });
+  res.end(body);
+}
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 const extOf = (p: string): string => { const i = p.lastIndexOf('.'); return i < 0 ? '' : p.slice(i).toLowerCase(); };
 
@@ -40,11 +54,13 @@ export async function serveStatic(webDir: string, rawPath: string, res: ServerRe
   if (segs.some((s) => s === '..' || s === '.')) return notFound(res);
   if (decoded.endsWith('/') && segs.length > 0) return notFound(res);
   const rel = segs.length === 0 ? ['index.html'] : segs;
+  // The page itself: with no ui/web/index.html (or no ui/web at all) it is a missing build, never a 404.
+  const isIndex = rel.length === 1 && rel[0] === 'index.html';
   try {
     const root = await realpath(webDir);
     const file = await realpath(join(root, ...rel));
-    if (!file.startsWith(root + sep)) return notFound(res);
-    if (!(await stat(file)).isFile()) return notFound(res);
+    if (!file.startsWith(root + sep)) return isIndex ? missingBuild(res) : notFound(res);
+    if (!(await stat(file)).isFile()) return isIndex ? missingBuild(res) : notFound(res);
     const body = await readFile(file);
     const ext = extOf(file);
     const headers: Record<string, string | number> = { 'Content-Type': TYPES[ext] ?? 'application/octet-stream', 'Content-Length': body.length };
@@ -52,7 +68,8 @@ export async function serveStatic(webDir: string, rawPath: string, res: ServerRe
     res.writeHead(200, headers);
     res.end(body);
   } catch {
-    notFound(res);
+    if (isIndex) missingBuild(res);
+    else notFound(res);
   }
 }
 

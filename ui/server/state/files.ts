@@ -5,7 +5,7 @@
 // re-implemented and name their source.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Plan, PlanCrew, Qc } from './reduce.ts'
+import type { Goal, Plan, PlanCrew, Qc } from './reduce.ts'
 
 // a name safe as one path segment. Source: hooks/register.ts:117 (safeName).
 export function safeName(name: string): string {
@@ -102,6 +102,20 @@ function parsePlan(text: string): Plan | undefined {
         status: status === 'planned' || status === 'running' || status === 'merged' || status === 'dropped' ? status : null,
         goal: typeof c.goal === 'string' ? c.goal : null,
         owns: Array.isArray(c.owns) ? c.owns.filter((o): o is string => typeof o === 'string') : [],
+        estAgents: Number.isInteger(c.estAgents) && (c.estAgents as number) >= 1 ? (c.estAgents as number) : null,
+      })
+    }
+  }
+  // plan.json's goals entries in file order, each cut to {id, goal, approval, approvedAt}; an entry with no id is left out
+  const goals: Goal[] = []
+  if (Array.isArray(v.goals)) {
+    for (const g of v.goals) {
+      if (!isObject(g) || typeof g.id !== 'string' || g.id === '') continue
+      goals.push({
+        id: g.id,
+        goal: typeof g.goal === 'string' ? g.goal : null,
+        approval: g.approval === 'auto' || g.approval === 'client' ? g.approval : null,
+        approvedAt: typeof g.approvedAt === 'string' ? g.approvedAt : null,
       })
     }
   }
@@ -111,6 +125,7 @@ function parsePlan(text: string): Plan | undefined {
     approval: v.approval === 'auto' || v.approval === 'client' ? v.approval : null,
     approvedAt: typeof v.approvedAt === 'string' ? v.approvedAt : null,
     crews,
+    goals,
   }
 }
 
