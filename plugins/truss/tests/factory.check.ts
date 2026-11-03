@@ -624,10 +624,11 @@ test('integrate: merges the branch into the crew worktree with --no-ff and print
   assert.notEqual(j.head, start)
   assert.equal(git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').length, 3, 'a merge commit with two parents even though a fast-forward was possible')
   assert.ok(existsSync(`${wt}/src/s/new.ts`))
-  // idempotent: the branch is already in
+  // idempotent: the branch is already in. ADR-0024 item 32 (seam 4): a branch whose merge leaves the tree unchanged is not merged, and the answer says so
   const again = env.run('integrate', { slug: 's', branch: 'member' })
   assert.equal(again.status, 0)
-  assert.equal(again.stdout, res.stdout)
+  assert.deepEqual(assertOneLine(again), { merged: true, contained: true, head: j.head })
+  assert.equal(head(wt), j.head, 'no second merge commit')
 })
 
 test('integrate: a commit whose Truss-Crew or Truss-Role line git does not parse as a trailer is refused before the merge, named by sha', () => {

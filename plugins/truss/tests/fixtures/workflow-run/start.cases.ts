@@ -41,7 +41,7 @@ const norm = (p: string): string => {
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
-const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'members', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'head', 'highImpact', 'labelFrom', 'members', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {
@@ -556,15 +556,18 @@ test('pf resume: a resume of a stress-yes crew whose agent file is newer than th
   const j = assertOneLine(res)
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
   assert.ok(Array.isArray(j.warnings), `the resume output has warnings: ${res.stdout.slice(0, 300)}`)
-  assert.equal(j.warnings.length, 1, JSON.stringify(j.warnings))
-  assert.ok(String(j.warnings[0]).includes('x') && String(j.warnings[0]).includes('truss:stress-engineer'), String(j.warnings[0]))
+  // ADR-0024 item 24 adds warnings for the crew's other truss:* types (the plugin copy's agent files are all newer than session start 1); this case pins the stress one
+  const ws = j.warnings.filter((w: any) => String(w).includes('truss:stress-engineer'))
+  assert.equal(ws.length, 1, JSON.stringify(j.warnings))
+  assert.ok(String(ws[0]).includes('x'), String(ws[0]))
   assert.equal(j.truss.crews.length, 1, 'a warning never holds the crew')
 })
 
 test('pf resume: a resume of a stress-no crew carries warnings: [] and a session that began after the agent file gives none', () => {
   const no = world([crew('x', { status: 'running' })])
   makeRunning(no, 'x', iso(Date.now() - 5 * MIN))
-  const a = assertOneLine(resumeWithSession(no, 'x', 1))
+  // a session that began after every agent file (ADR-0024 item 24 warns for any truss:* type newer than a session of start 1)
+  const a = assertOneLine(resumeWithSession(no, 'x', Date.now() + 24 * HOUR))
   assert.deepEqual(a.warnings, [])
   const yes = world([crew('x', { status: 'running' })], { goals: { x: { stressTest: 'yes' } } })
   makeRunning(yes, 'x', iso(Date.now() - 5 * MIN))
