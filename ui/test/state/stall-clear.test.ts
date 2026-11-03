@@ -57,7 +57,7 @@ test('an idle-foreman stall is stuck with no later event', () => {
 })
 
 test('an idle-foreman stall, then a later spawn by the foreman, clears stuck', () => {
-  const w = idleForeman([spawn(T(25), 'a', 'a-builder', 'a')])
+  const w = idleForeman([{ ...spawn(T(25), 'a', 'a-builder', 'a'), by: 'a' }])
   try {
     assert.equal(crewBy(w.run(), 'a').stuck, null)
   } finally { w.store.close() }
