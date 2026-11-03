@@ -815,6 +815,7 @@ const TABLE = {
   stress: ['truss:stress-engineer', 'opus', 'medium', 'worktree'],
   qc: ['truss:qc-engineer', 'opus', 'medium', 'none'],
   runner: ['general-purpose', 'sonnet', 'low', 'none'],
+  ux: ['truss:ux-engineer', 'opus', 'medium', 'none'],
 }
 
 const tableRoles = () => Object.fromEntries(Object.entries(TABLE).map(([k, [agentType, model, effort, isolation]]) => [k, { agentType, model, effort, isolation }]))

@@ -41,7 +41,7 @@ const norm = (p: string): string => {
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
-const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'members', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {

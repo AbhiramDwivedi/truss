@@ -118,10 +118,10 @@ export function writePlan(dir: string, plan: unknown): void {
 /** Reads `<dir>/plan.json` parsed. */
 export const readPlan = (dir: string): any => JSON.parse(readFileSync(`${dir}/plan.json`, 'utf8'))
 
-/** Writes `<dir>/goals/<slug>.md` with `## Approved scope`, `## High-impact paths`, `## Stress test` and `## Engine` sections (defaults: scope text, no paths, "no", "workflow"). */
-export function writeGoal(dir: string, slug: string, s: { goal?: string; scope?: string; highImpact?: string; stressTest?: string; engine?: string } = {}): string {
+/** Writes `<dir>/goals/<slug>.md` with `## Approved scope`, `## High-impact paths`, `## Stress test` and `## Engine` sections (defaults: scope text, no paths, "no", "workflow"), plus a `## UX` or `## Members` section after them when `ux` or `members` is given. */
+export function writeGoal(dir: string, slug: string, s: { goal?: string; scope?: string; highImpact?: string; stressTest?: string; engine?: string; ux?: string; members?: string } = {}): string {
   mkdirSync(`${dir}/goals`, { recursive: true })
-  const text = `# Goal: ${slug}\n\n${s.goal ?? `Build ${slug}.`}\n\n## Approved scope\n\n${s.scope ?? `Build ${slug} only.`}\n\n## High-impact paths\n\n${s.highImpact ?? 'None.'}\n\n## Stress test\n\n${s.stressTest ?? 'no'}\n\n## Engine\n\n${s.engine ?? 'workflow'}\n`
+  const text = `# Goal: ${slug}\n\n${s.goal ?? `Build ${slug}.`}\n\n## Approved scope\n\n${s.scope ?? `Build ${slug} only.`}\n\n## High-impact paths\n\n${s.highImpact ?? 'None.'}\n\n## Stress test\n\n${s.stressTest ?? 'no'}\n\n## Engine\n\n${s.engine ?? 'workflow'}\n${s.ux !== undefined ? `\n## UX\n\n${s.ux}\n` : ''}${s.members !== undefined ? `\n## Members\n\n${s.members}\n` : ''}`
   writeFileSync(`${dir}/goals/${slug}.md`, text)
   return `${dir}/goals/${slug}.md`
 }
