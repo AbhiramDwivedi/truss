@@ -7,7 +7,17 @@ export const meta = {
 // agent type, model, effort and isolation from the roles table and throws before the call when the table is bad.
 
 // ADR-0024 item 29: the Workflow gate expands args.trussFile into args.truss; without an object there, stop before any agent call
-const F = args && args.truss
+// ADR-0026 item 51e: args may also be a JSON string holding that object; both give the same args.truss
+const ARGS = (() => {
+  if (typeof args !== 'string') return args
+  try {
+    const v = JSON.parse(args)
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+  } catch {
+    return null
+  }
+})()
+const F = ARGS && ARGS.truss
 if (!F || typeof F !== 'object' || Array.isArray(F)) throw new Error('args.truss is missing: the Workflow gate expands args.trussFile into args.truss; pass args.truss inline when the gate did not run')
 const ROLE_EFFORTS = ['low', 'medium']
 const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
@@ -324,6 +334,7 @@ const acceptanceOf = (e) => (typeof e.acceptanceTest === 'string' ? e.acceptance
 
 // ADR-0019 item 12: the answers a member gets. An answer at a task name goes to that task only; one at any other name
 // (a step such as red, split, green or qc, or a task the plan no longer has) goes to every member. name: null for a fix member.
+// ADR-0026 item 48: an answer at a done task's name re-runs that task (runMembers), and still reaches that task only.
 // ADR-0024 item 25: an answer at a UX step reaches that step, the planner and QC, never a member.
 const UX_STEPS = ['ux-direction', 'ux-review']
 const answersFor = (crew, name) => {
@@ -537,8 +548,10 @@ async function runTask(crew, task) {
 }
 
 // a task starts only when every task in its after list is integrated; after a stop no new task starts
+// ADR-0026 item 48: a done task an answer's at names runs again with that answer; its done dependants stay done
 async function runMembers(crew, tasks) {
-  const doneNames = new Set(crew.e.done || [])
+  const answered = new Set((crew.e.answers || []).map((a) => a.at))
+  const doneNames = new Set((crew.e.done || []).filter((n) => !answered.has(n)))
   const byName = {}
   for (const t of tasks) byName[t.name] = t
   const started = {}
