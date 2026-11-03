@@ -35,7 +35,21 @@ export interface Crew {
   foreman: Member | null
   members: Member[]
   latest: Activity | null
+  estAgents: number | null // ADR-0023 gap f
+  stuck: Stuck | null // ADR-0023 gap g
   qc: Qc | null
+}
+export interface Stuck {
+  kind: 'stalled' | 'idle-foreman'
+  since: string
+  minutes: number
+  detail: string
+}
+export interface Goal {
+  id: string
+  goal: string | null
+  approval: 'auto' | 'client' | null
+  approvedAt: string | null
 }
 export interface Skipped {
   file: string
@@ -48,6 +62,7 @@ export interface Run {
   approval: 'auto' | 'client' | null
   approvedAt: string | null
   crews: Crew[]
+  goals: Goal[] // ADR-0023 gap d
   skipped: Skipped[]
 }
 export interface PlanCrew {
@@ -57,6 +72,7 @@ export interface PlanCrew {
   status: Crew['status']
   goal: string | null
   owns: string[]
+  estAgents: number | null
 }
 export interface Plan {
   goal: string | null
@@ -64,6 +80,7 @@ export interface Plan {
   approval: Run['approval']
   approvedAt: string | null
   crews: PlanCrew[]
+  goals: Goal[] // plan.json's goals entries, in file order (the run goal is not among them)
 }
 
 const SKIPPED_MAX = 100
@@ -77,6 +94,13 @@ interface CrewAcc {
   foreman: Member | null
   members: Map<string, Member>
   latest: Stamped | null
+  lastOf: Map<string, Stamped> // each agent's newest event line in this crew
+  stall: StallAcc | null // the crew's newest stall event of a known kind
+}
+interface StallAcc {
+  act: Stamped // the stall line's own stamp, compared against lastOf to see if the agent spoke since
+  kind: Stuck['kind']
+  minutes: number
 }
 interface Pair {
   ts: string
@@ -119,7 +143,7 @@ export function createReducer(): Reducer {
   function crewOf(slug: string): CrewAcc {
     let c = crews.get(slug)
     if (c === undefined) {
-      c = { slug, foreman: null, members: new Map(), latest: null }
+      c = { slug, foreman: null, members: new Map(), latest: null, lastOf: new Map(), stall: null }
       crews.set(slug, c)
     }
     return c
@@ -190,6 +214,11 @@ export function createReducer(): Reducer {
     }
     const act: Stamped = { ts, agent, event: ev, text, seq: ++seq }
     if (newerOrEqual(act, acc.latest)) acc.latest = act
+    if (newerOrEqual(act, acc.lastOf.get(agent) ?? null)) acc.lastOf.set(agent, act)
+    if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-foreman') && timeOf(ts) !== -Infinity) {
+      const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-foreman', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
+      if (acc.stall === null || newerOrEqual(act, acc.stall.act)) acc.stall = s
+    }
     return undefined
   }
 
@@ -211,6 +240,19 @@ export function createReducer(): Reducer {
 
   function skip(file: string, line: number, reason: 'json' | 'version'): void {
     if (skipped.length < SKIPPED_MAX) skipped.push({ file, line, reason })
+  }
+
+  // The crew's newest stall, while the crew is running and the stalled agent has no later event line.
+  function stuckOf(acc: CrewAcc | undefined, status: Crew['status']): Stuck | null {
+    if (acc === undefined || acc.stall === null || status !== 'running') return null
+    const s = acc.stall
+    if (acc.lastOf.get(s.act.agent) !== s.act) return null
+    return {
+      kind: s.kind,
+      since: new Date(timeOf(s.act.ts) - s.minutes * 60_000).toISOString(),
+      minutes: s.minutes,
+      detail: `${s.act.agent} stalled ${s.minutes} min`,
+    }
   }
 
   function build(plan: Plan | null, qcFor: (slug: string) => Qc | null): Run {
@@ -246,6 +288,8 @@ export function createReducer(): Reducer {
         foreman: acc?.foreman === null || acc === undefined ? null : { ...acc.foreman },
         members: acc === undefined ? [] : [...acc.members.values()].map((m) => ({ ...m })),
         latest: latest === null ? null : { ts: latest.ts, agent: latest.agent, event: latest.event, text: latest.text },
+        estAgents: pc?.estAgents ?? null,
+        stuck: stuckOf(acc, pc?.status ?? null),
         qc: qcFor(slug),
       }
     })
@@ -255,6 +299,10 @@ export function createReducer(): Reducer {
       approval: plan?.approval ?? null,
       approvedAt: plan?.approvedAt ?? null,
       crews: out,
+      // the run's first goal as id run, then plan.json's goals entries in file order; [] with no readable plan.json
+      goals: plan === null
+        ? []
+        : [{ id: 'run', goal: plan.goal, approval: plan.approval, approvedAt: plan.approvedAt }, ...plan.goals.map((g) => ({ ...g }))],
       skipped: skipped.map((s) => ({ ...s })),
     }
   }

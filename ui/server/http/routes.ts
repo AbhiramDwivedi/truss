@@ -71,8 +71,8 @@ export async function route(
     if (method !== 'POST') return sendJson(res, 405, { error: 'method' });
     const body = await readJson(req, res);
     if (!body) return;
-    const r = opts.session.send(body.value?.text);
-    if (r.ok) return sendJson(res, 202, { ok: true });
+    const r = opts.session.send(body.value?.text, body.value?.intent);
+    if (r.ok) return sendJson(res, 202, { ok: true, id: r.id });
     return sendJson(res, r.error === 'ended' ? 409 : 400, { error: r.error });
   }
   const m = /^\/api\/requests\/([^/]+)\/answer$/.exec(path);
