@@ -154,6 +154,17 @@ export function YourMove({ state, now }: YourMoveProps) {
     return <ReplyCard key={r.id} request={r} {...props} onAnswer={(b) => void answer(r, b)} />
   }
 
+  const waitingCard = (r: Extract<Request, { kind: 'reply' }>) => (
+    <Card key={r.id} variant="default" density="compact" asChild>
+      <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
+        <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>
+        <p className="min-w-0 text-meta text-muted break-words">
+          {plural(r.backgroundTasks, 'background task')} still running; nothing needed from you yet.
+        </p>
+      </article>
+    </Card>
+  )
+
   const [hero, ...rest] = open
 
   return (
@@ -162,8 +173,21 @@ export function YourMove({ state, now }: YourMoveProps) {
 
       {flags.ended && <Notice tone="fail">{SESSION_ENDED}</Notice>}
 
+      {/* Every open card, the waiting replies and the "more waiting" label sit in one keyed list under this section,
+          so when the hero is settled the next card moves up in place and keeps what was typed in it. */}
       {hero ? (
-        renderOpen(hero, true)
+        [
+          renderOpen(hero, true),
+          ...waitingReplies.map(waitingCard),
+          ...(rest.length > 0
+            ? [
+                <p key="more-waiting" className="text-meta font-medium text-muted">
+                  {rest.length} more waiting on you
+                </p>,
+              ]
+            : []),
+          ...rest.map((r) => renderOpen(r, false)),
+        ]
       ) : (
         <Card variant="sunken" className="flex min-w-0 flex-col gap-1.5 p-5">
           {state.run === null && state.transcript.length === 0 && !waitingOnAgents ? (
@@ -183,23 +207,7 @@ export function YourMove({ state, now }: YourMoveProps) {
         </Card>
       )}
 
-      {waitingReplies.map((r) => (
-        <Card key={r.id} variant="default" density="compact" asChild>
-          <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
-            <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>
-            <p className="min-w-0 text-meta text-muted break-words">
-              {plural(r.backgroundTasks, 'background task')} still running; nothing needed from you yet.
-            </p>
-          </article>
-        </Card>
-      ))}
-
-      {rest.length > 0 && (
-        <div className="flex min-w-0 flex-col gap-3">
-          <p className="text-meta font-medium text-muted">{rest.length} more waiting on you</p>
-          {rest.map((r) => renderOpen(r, false))}
-        </div>
-      )}
+      {!hero && waitingReplies.map(waitingCard)}
 
       {settled.length > 0 && (
         <div className="flex min-w-0 flex-col gap-2">
