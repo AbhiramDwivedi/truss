@@ -238,7 +238,9 @@ function lastJsonObject(stdout) {
   return null
 }
 
-async function runFactory(crew, command, key, line = null) {
+// extra: one more line after the command, so a resumed call gets its own cache key (the runtime caches by prompt); null
+// leaves the prompt exactly as it was
+async function runFactory(crew, command, key, line = null, extra = null) {
   const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
@@ -247,6 +249,7 @@ async function runFactory(crew, command, key, line = null) {
     `Return as status the last line of standard output that starts with \`${STATUS_PREFIX}\`: copy that line character for character, or "" when there is none.`,
     '',
     full,
+    ...(extra ? [extra] : []),
   ].join('\n')
   const res = await ask(crew, 'runner', prompt, { schema: RUNNER_SCHEMA })
   if (!res || typeof res.stdout !== 'string') return { met: false, parsed: null, out: 'the runner returned no result' }
@@ -816,7 +819,9 @@ async function scope(crew) {
 // builder can clear it, since QC reads the history: stop BLOCKED before a QC engineer is paid for it
 async function testsGuard(crew) {
   crew.step = 'tests'
-  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok')
+  // a resume that answers at tests (the PM rewrote the crew branch) must re-run the check, not replay the cached BLOCKED
+  const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
+  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, attempt ? `Attempt: ${attempt}` : null)
   if (r.met) return
   const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)

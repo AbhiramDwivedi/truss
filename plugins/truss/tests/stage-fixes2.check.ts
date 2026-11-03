@@ -553,3 +553,35 @@ t('control 12: an old-form entry without ownTests does not send a plan back for 
   passed(r)
   assert.ok(!had(r, 'a-planner-2'))
 })
+
+// ---------------------------------------------------------------- the tests guard gets a new cache key per resume that answers at tests
+
+const runnerPrompts = (r, cmd) => r.calls.filter((c) => c.runner?.cmd === cmd).map((c) => c.prompt)
+
+t('tests-attempt 1: with no answer at tests the tests-check prompt has no Attempt line, and one at tests adds "Attempt: 1"', async () => {
+  const r0 = await runStage([answersEntry([{ at: 'green', text: 'ANSWER-AT-GREEN' }])], { labels: base('a') })
+  const r1 = await runStage([answersEntry([{ at: 'green', text: 'ANSWER-AT-GREEN' }, { at: 'tests', text: 'BRANCH-REWRITTEN' }])], { labels: base('a') })
+  passed(r0)
+  passed(r1)
+  const [p0] = runnerPrompts(r0, 'tests-check')
+  const [p1] = runnerPrompts(r1, 'tests-check')
+  assert.ok(p0 && p1, 'the tests guard ran in both runs')
+  assert.ok(!/^Attempt:/m.test(p0), `unexpected Attempt line in:\n${p0}`)
+  assert.ok(p0.endsWith('--status-line'), 'with no answer at tests the prompt still ends at the command line')
+  assert.notEqual(p1, p0)
+  assert.equal(p1, `${p0}\nAttempt: 1`)
+})
+t('tests-attempt 2: two answers at tests give "Attempt: 2", and every other runner prompt is unchanged', async () => {
+  const r0 = await runStage([answersEntry([])], { labels: base('a') })
+  const r2 = await runStage([answersEntry([{ at: 'tests', text: 'FIX-1' }, { at: 'tests', text: 'FIX-2' }])], { labels: base('a') })
+  passed(r0)
+  passed(r2)
+  assert.ok(runnerPrompts(r2, 'tests-check')[0].endsWith('\nAttempt: 2'))
+  for (const cmd of ['admit', 'reap', 'check', 'owns-check', 'sync', 'integrate']) {
+    const a = runnerPrompts(r0, cmd)
+    const b = runnerPrompts(r2, cmd)
+    assert.deepEqual(b, a, `${cmd} prompts changed`)
+    for (const p of b) assert.ok(!/^Attempt:/m.test(p), `${cmd} prompt carries an Attempt line`)
+  }
+  assert.ok(runnerPrompts(r0, 'owns-check').length > 0, 'the owns guard ran')
+})
