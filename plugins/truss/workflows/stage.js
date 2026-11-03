@@ -1074,6 +1074,36 @@ async function uxDirection(crew) {
   throw new Stop('BLOCKED', `no direction from two UX engineers:\n${text || 'no result'}`, 'ux-direction')
 }
 
+// i30: a page, component or style is a literal suffix match on an owns entry; a glob such as ui/e2e/** is not one
+const UI_SUFFIXES = ['.tsx', '.jsx', '.vue', '.svelte', '.css', '.html']
+const ownsUiFile = (owns) => (owns || []).some((f) => UI_SUFFIXES.some((s) => String(f).endsWith(s)))
+
+// i30/i33: the review mode and how the reviewer takes its own screenshots
+function reviewModeLines(e) {
+  const livePage = typeof e.livePage === 'string' && e.livePage.trim() ? e.livePage : null
+  const mode = livePage || ownsUiFile(e.owns) ? 'live' : 'files'
+  const out = [`Review mode: ${mode}`]
+  if (mode === 'files') {
+    out.push("This crew owns no page, component or style: judge the direction's checklist from the files and diff alone.")
+  } else {
+    out.push('Take your own screenshots of each screen the direction names.')
+    if (livePage) out.push("The goal file's ## UX Live page line, quoted:", livePage)
+    else if ((e.owns || []).includes('ui/**')) {
+      out.push(
+        'No Live page line was given, so use the default for a crew that owns ui/**:',
+        '1. Run `npm --prefix ui run build`.',
+        '2. Start `node ui/server/main.ts` in the background on a port the OS picks, and note its pid.',
+        '3. Wait for its listening line, which names the port.',
+        '4. Capture each screen with @playwright/test chromium, loaded from ui/node_modules.',
+        '5. Kill the server by its pid.',
+      )
+    }
+  }
+  if (!livePage) out.push("Read the goal file's ## UX section: if it has a Live page line, follow it to take your screenshots and review live.")
+  out.push('Never stop BLOCKED for missing screenshots: after two failed starts, review from the files and say so in your report.')
+  return out
+}
+
 function uxReviewPrompt(crew, previous) {
   const e = crew.e
   const lines = [
@@ -1084,6 +1114,8 @@ function uxReviewPrompt(crew, previous) {
     `Crew branch: ${e.branch}`,
     '',
     ...directionLines(crew),
+    '',
+    ...reviewModeLines(e),
     '',
     "The last green check's output tail:",
     clip(crew.greenOut || 'none'),
