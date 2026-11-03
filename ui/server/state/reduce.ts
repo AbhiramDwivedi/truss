@@ -215,6 +215,12 @@ export function createReducer(): Reducer {
     const act: Stamped = { ts, agent, event: ev, text, seq: ++seq }
     if (newerOrEqual(act, acc.latest)) acc.latest = act
     if (newerOrEqual(act, acc.lastOf.get(agent) ?? null)) acc.lastOf.set(agent, act)
+    // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its foreman or a
+    // member), so a stall clears once the stalled agent spawns someone. main, factory and workflow:* credit no one.
+    const by = kind === 'spawn' ? str(obj.by) : null
+    if (by !== null && by !== agent && by !== 'main' && by !== 'factory' && !by.startsWith('workflow:') && (by === slug || acc.members.has(by))) {
+      if (newerOrEqual(act, acc.lastOf.get(by) ?? null)) acc.lastOf.set(by, act)
+    }
     if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-foreman') && timeOf(ts) !== -Infinity) {
       const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-foreman', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
       if (acc.stall === null || newerOrEqual(act, acc.stall.act)) acc.stall = s
