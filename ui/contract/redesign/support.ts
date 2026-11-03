@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
-import { startFixture, rand, type Iface } from '../../e2e/harness.ts'
+import { startFixture, rand, FIXTURE_ANCHOR, type Iface } from '../../e2e/harness.ts'
 
 const here = import.meta.dirname
 export const fixtureDir = resolve(here, '..', 'fixtures', 'run')
@@ -51,6 +51,8 @@ export interface Scenario {
   /** The planted snapshot, times unshifted (the text the page shows). */
   fixture: any
   iface: Iface
+  /** A fixture stamp as the server serves it: startFixture moves every time so the anchor is the start time. */
+  shown(iso: string): string
   /** Changes one thing the server holds, pushed as a delta. */
   change(): void
   stop(): Promise<void>
@@ -61,7 +63,8 @@ export interface Scenario {
  * mkdtemp dir with a per-run value planted into the crew slug, the goal and the first transcript line; the fixture
  * itself is only read.
  */
-export async function scenario(name: string, opts: { now?: number } = {}): Promise<Scenario> {
+// `edit` changes the planted copy (after the per-run value is in), never the fixture file.
+export async function scenario(name: string, opts: { now?: number; edit?: (fixture: any, apiSlug: string) => void } = {}): Promise<Scenario> {
   const [state, file = 'state'] = name.split('/')
   const run = `${rand()}${randomBytes(2).toString('hex')}`
   const apiSlug = `quota-api-${run}`
@@ -74,10 +77,13 @@ export async function scenario(name: string, opts: { now?: number } = {}): Promi
   }
   const first = (fixture.transcript ?? []).find((e: any) => e.role === 'user')
   if (first) first.text = `${first.text} ${tag}-${run}`
+  opts.edit?.(fixture, apiSlug)
   const dir = mkdtempSync(join(tmpdir(), 'truss-redesign-'))
   mkdirSync(join(dir, state!), { recursive: true })
   writeFileSync(join(dir, state!, `${file}.json`), JSON.stringify(fixture, null, 2))
-  const iface = await startFixture(relative(fixtureDir, join(dir, state!, file)), { now: opts.now })
+  const now = opts.now ?? Date.now()
+  const iface = await startFixture(relative(fixtureDir, join(dir, state!, file)), { now })
+  const shift = now - Date.parse(FIXTURE_ANCHOR)
   const change = () => {
     if (state === 'crews-running') {
       iface.emit({ run: { ...fixture.run, crews: fixture.run.crews.map((c: any) => (c.slug === apiSlug ? { ...c, status: 'merged' } : c)) } })
@@ -93,8 +99,33 @@ export async function scenario(name: string, opts: { now?: number } = {}): Promi
   }
   return {
     url: iface.url, run, apiSlug, fixture, iface, change,
+    shown: (iso: string) => new Date(Date.parse(iso) + shift).toISOString(),
     stop: async () => { await iface.stop(); rmSync(dir, { recursive: true, force: true }) },
   }
+}
+
+/** The deliverable count per type filter chip, as ADR-0023 section 4 (artifacts) derives it from the state. */
+export function typeCounts(f: any): Record<'All' | 'Docs' | 'Code' | 'Plan' | 'Images', number> {
+  const Plan = f.design?.planMd != null ? 1 : 0
+  const Docs = (f.design?.architecture != null ? 1 : 0) + (f.adrs ?? []).length
+  const Code = (f.run?.crews ?? []).filter((c: any) => c.status === 'merged').length
+  const Images = (f.design?.images ?? []).length
+  return { All: Plan + Docs + Code + Images, Docs, Code, Plan, Images }
+}
+
+/** Every context runs in this time zone, so a clock time the page shows can be built from the fixture. */
+export const TZ = 'UTC'
+
+/** `<day HH:MM>` for an RFC 3339 stamp in TZ: the short English weekday and the 24-hour time (ADR-0023, live-counter). */
+export function dayTime(iso: string): string {
+  const d = new Date(iso)
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: TZ }).format(d)
+  return `${day} ${hhmm(iso)}`
+}
+/** `HH:MM` for an RFC 3339 stamp in TZ. */
+export function hhmm(iso: string): string {
+  const d = new Date(iso)
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
 }
 
 // ---- opening a page --------------------------------------------------------------------------------------
@@ -104,7 +135,7 @@ export interface Opened { page: Page; context: BrowserContext; problems: () => P
 /** Opens the scenario's page in a context of its own: the colour scheme is the theme, the width is CSS px at scale 1. */
 // `before` runs on the new page before it loads, to route a request (a held stream, a failed POST).
 export async function openState(browser: Browser, s: Scenario, theme: Theme, width: number, opts: { before?: (page: Page) => Promise<void> } = {}): Promise<Opened> {
-  const context = await browser.newContext({ colorScheme: theme, viewport: { width, height: HEIGHT }, deviceScaleFactor: 1 })
+  const context = await browser.newContext({ colorScheme: theme, viewport: { width, height: HEIGHT }, deviceScaleFactor: 1, timezoneId: TZ, locale: 'en-US' })
   const page = await context.newPage()
   const problems = await watch(page)
   if (opts.before) await opts.before(page)

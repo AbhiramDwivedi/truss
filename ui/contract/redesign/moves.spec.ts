@@ -65,6 +65,11 @@ test.describe('moves', () => {
         await expect(pill, 'the Your move pill is on the card').toBeVisible(T)
         await expect(pill, 'the pill is tokens.json signal-soft').toHaveCSS('background-color', token('signal-soft', theme), T)
         await expect(pill, 'the pill text is tokens.json signal-text').toHaveCSS('color', token('signal-text', theme), T)
+        // the Recommended chip is move with move-fg text (ADR-0023 section 3)
+        const rec = card.getByText('Recommended', { exact: true })
+        await expect(rec, 'the Recommended chip is on the card').toBeVisible(T)
+        await expect(rec, 'the Recommended chip is tokens.json move').toHaveCSS('background-color', token('move', theme), T)
+        await expect(rec, 'the Recommended chip text is tokens.json move-fg').toHaveCSS('color', token('move-fg', theme), T)
         // the checked option is move-fg with move text for its label and description, never D2's bg-white and #475569
         const opt = q.options[0]
         await card.getByText(opt.description, { exact: true }).click()
@@ -140,6 +145,7 @@ test.describe('moves', () => {
       expect(iNew, 'newest first').toBeLessThan(iOld)
       const group = page.getByRole('form', { name: 'Message' }).getByRole('radiogroup', { name: 'What this message is' })
       await expect(group.getByRole('radio', { name: 'Answer the question' })).toHaveCount(0, T)
+      await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default once a goal exists').toBeChecked(T)
       await group.getByRole('radio', { name: 'New goal' }).check()
       await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Add goal' })).toBeVisible(T)
       await group.getByRole('radio', { name: 'Add to current goal' }).check()
@@ -148,23 +154,33 @@ test.describe('moves', () => {
     } finally { await o.close(); await s.stop() }
   })
 
-  test('follow-up (dark): the send button is --primary, move with move-fg text, for every intent', async ({ browser }) => {
-    const s = await scenario('follow-up')
-    const o = await openState(browser, s, 'dark', DESKTOP)
-    try {
-      const { page } = o
-      await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true', LOAD)
-      const form = page.getByRole('form', { name: 'Message' })
-      const group = form.getByRole('radiogroup', { name: 'What this message is' })
-      for (const [intent, name] of [['New goal', 'Add goal'], ['Add to current goal', 'Send details']] as const) {
-        await group.getByRole('radio', { name: intent }).check()
-        const send = form.getByRole('button', { name, exact: true })
-        await expect(send, `${name} is tokens.json move in dark, not D2's brand`).toHaveCSS('background-color', token('move', 'dark'), T)
-        await expect(send, `${name} text is tokens.json move-fg in dark (6.70:1), not white on brand (3.68:1)`).toHaveCSS('color', token('move-fg', 'dark'), T)
-      }
-      expect(await o.problems()).toEqual([])
-    } finally { await o.close(); await s.stop() }
-  })
+  for (const theme of THEMES) {
+    // follow-up gives Add goal and Send details; question gives Send answer (Answer the question is offered there only)
+    for (const [state, intents] of [
+      ['follow-up', [['New goal', 'Add goal'], ['Add to current goal', 'Send details']]],
+      ['question', [['Answer the question', 'Send answer']]],
+    ] as const) {
+      test(`${state} (${theme}): the send button is --primary, move with move-fg text, for every intent`, async ({ browser }) => {
+        const s = await scenario(state)
+        const o = await openState(browser, s, theme, DESKTOP)
+        try {
+          const { page } = o
+          await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', LOAD)
+          const form = page.getByRole('form', { name: 'Message' })
+          const group = form.getByRole('radiogroup', { name: 'What this message is' })
+          await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default').toBeChecked(T)
+          for (const [intent, name] of intents) {
+            await group.getByRole('radio', { name: intent }).check()
+            await expect(group.getByRole('radio', { name: intent })).toBeChecked(T)
+            const send = form.getByRole('button', { name, exact: true })
+            await expect(send, `${name} is tokens.json move in ${theme}, not D2's brand`).toHaveCSS('background-color', token('move', theme), T)
+            await expect(send, `${name} text is tokens.json move-fg in ${theme}`).toHaveCSS('color', token('move-fg', theme), T)
+          }
+          expect(await o.problems()).toEqual([])
+        } finally { await o.close(); await s.stop() }
+      })
+    }
+  }
 
   test('follow-up: a 300-character row keeps its whole text in the accessible name or title', async ({ browser }) => {
     const s = await scenario('follow-up')
@@ -181,14 +197,17 @@ test.describe('moves', () => {
       await full.focus()
       await expect(full, 'the row text takes focus').toBeFocused(T)
       await expect(full, 'the focused row names the whole 300-character text').toHaveAccessibleName(long, T)
-      // and it stays one line high: its box is at most 2 x its computed line-height
+      // and it is one line with an ellipsis: no wrap, cut short, its box at most one line-height high (+1 px rounding)
+      await expect(full, 'the row text is cut short with an ellipsis').toHaveCSS('text-overflow', 'ellipsis', T)
+      await expect(full, 'the row text never wraps').toHaveCSS('white-space', 'nowrap', T)
       const box = await full.evaluate((el) => {
         const s = getComputedStyle(el)
         const lh = s.lineHeight === 'normal' ? 1.2 * parseFloat(s.fontSize) : parseFloat(s.lineHeight)
-        return { height: el.getBoundingClientRect().height, lineHeight: lh }
+        return { height: el.getBoundingClientRect().height, lineHeight: lh, scroll: el.scrollWidth, client: el.clientWidth }
       })
       expect(box.lineHeight, 'the row text has a line-height').toBeGreaterThan(0)
-      expect(box.height, `the 300-character row is ${box.height}px high, more than 2 x its ${box.lineHeight}px line-height`).toBeLessThanOrEqual(2 * box.lineHeight)
+      expect(box.height, `the 300-character row is ${box.height}px high, more than one ${box.lineHeight}px line`).toBeLessThanOrEqual(box.lineHeight + 1)
+      expect(box.scroll, `the row text is cut short in view: scrollWidth ${box.scroll} > clientWidth ${box.client}`).toBeGreaterThan(box.client)
       const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
       expect(w[0], 'the long row never widens the phone page').toBeLessThanOrEqual(w[1]!)
     } finally { await o.close(); await s.stop() }

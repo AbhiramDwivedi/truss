@@ -8,7 +8,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { STATES, WIDTHS, THEMES, HEIGHT, T, LOAD, scenario, openState, screensDir, token, tokens, type Scenario, type Theme } from './support.ts'
+import { STATES, WIDTHS, THEMES, HEIGHT, T, LOAD, scenario, openState, screensDir, token, tokens, dayTime, typeCounts, type Scenario, type Theme } from './support.ts'
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const SEND = /^(Send|Add goal|Send details|Send answer)$/
@@ -94,6 +94,9 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(crews.getByRole('button')).toHaveCount(0, T)
     await expect(page.getByText('Nothing built yet. Plans, ADRs and screenshots appear here as crews finish.')).toBeVisible(T)
     await expect(page.getByRole('group', { name: 'Filter by type' })).toHaveCount(0, T)
+    const followUps = page.getByRole('region', { name: 'Follow-ups' })
+    await expect(followUps, 'an empty Follow-ups region reads Nothing sent yet.').toContainText('Nothing sent yet.', T)
+    await expect(followUps.getByRole('list'), 'an empty Follow-ups region holds no list').toHaveCount(0, T)
     await expect(retro).toHaveCount(0, T)
   } else if (state === 'question') {
     const q = f.requests[0].questions[0]
@@ -108,6 +111,8 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(form.getByText("Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it.")).toBeVisible(T)
     const answer = form.getByRole('radio', { name: 'Answer the question' })
     await expect(answer).toBeVisible(T)
+    await expect(form.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal stays checked while a question is open: answering belongs to Your move').toBeChecked(T)
+    await expect(answer).not.toBeChecked(T)
     await answer.check()
     await expect(answer).toBeChecked(T)
     await expect(form.getByRole('button', { name: 'Send answer' }), 'the send button follows the checked intent').toBeVisible(T)
@@ -137,6 +142,8 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(group.getByRole('radio', { name: 'New goal' })).toBeVisible(T)
     await expect(group.getByRole('radio', { name: 'Add to current goal' })).toBeVisible(T)
     await expect(group.getByRole('radio', { name: 'Answer the question' })).toHaveCount(0, T)
+    await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default once a goal exists').toBeChecked(T)
+    await expect(form.getByRole('button', { name: 'Send details' }), 'the default intent names the send button').toBeVisible(T)
     await group.getByRole('radio', { name: 'New goal' }).check()
     await expect(form.getByRole('button', { name: 'Add goal' })).toBeVisible(T)
     await group.getByRole('radio', { name: 'Add to current goal' }).check()
@@ -166,14 +173,25 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(line).toHaveCount(1, T)
     await expect(line).toHaveAccessibleName(new RegExp(`stuck: stalled ${stuck.stuck.minutes} min`), T)
     for (const name of ['Restart builder', 'Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
+    const band = crews.getByText(`Stuck, silent ${stuck.stuck.minutes}m`, { exact: true })
+    await expect(band, 'the stuck band carries the word').toBeVisible(T)
+    await expect(crews.getByRole('img', { name: 'Alert' }), 'the stuck band carries an alert icon by role, so stuck is not colour alone').toHaveCount(1, T)
+    await expect(crews.getByRole('img', { name: 'Alert' })).toBeVisible(T)
     const pause = page.getByRole('button', { name: 'Pause build' })
     await expect(pause).toHaveAttribute('aria-disabled', 'true', T)
     await expect(pause).toHaveAccessibleDescription("Pausing needs a server endpoint that doesn't exist yet.", T)
+    await expect(page.getByRole('tooltip'), 'the Pause tip is a description, not a tooltip').toHaveCount(0, T)
     await expect(metrics.getByRole('link', { name: '1 crew stuck' })).toBeVisible(T)
     await expect(move.getByRole('article')).toHaveCount(0, T)
   } else if (state === 'artifacts') {
     const filter = page.getByRole('group', { name: 'Filter by type' })
     await expect(filter.getByRole('button').first()).toHaveAttribute('aria-pressed', /^(true|false)$/, T)
+    for (const [name, n] of Object.entries(typeCounts(f))) {
+      const chip = filter.getByRole('button', { name: new RegExp(`^${name}\\b`) })
+      await expect(chip).toHaveCount(1, T)
+      await expect(chip, `the ${name} chip counts ${n}`).toHaveAccessibleName(new RegExp(`^${name}\\b.*\\b${n}\\b`), T)
+      await expect(chip).toHaveAttribute('aria-pressed', /^(true|false)$/, T)
+    }
     const list = page.getByRole('list', { name: 'Deliverables' })
     await expect(list).toBeVisible(T)
     await expect(list.getByRole('listitem').first()).toBeVisible(T)
@@ -183,7 +201,9 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(metrics).toBeVisible(T)
     await expect(metrics.getByRole('term')).toHaveText(['Elapsed', 'Tokens', 'Spend', 'Agents', 'Crews merged', 'Tasks done'], T)
     await expect(metrics.getByRole('definition')).toHaveCount(6, T)
-    await expect(metrics.getByText(/since you approved, /)).toBeVisible(T)
+    const goal = f.run.goals[0]
+    expect(goal.id, 'Elapsed counts from the run goal').toBe('run')
+    await expect(metrics.getByText(`since you approved, ${dayTime(s.shown(goal.approvedAt))}`, { exact: true }), 'the whole Elapsed sub-line, from run.goals[0].approvedAt').toBeVisible(T)
     await expect(metrics.getByText(/as of \d\d:\d\d(?!, not updating)/).first()).toBeVisible(T)
     await expect(metrics.getByText(/as of turn end \d\d:\d\d/)).toBeVisible(T)
     await expect(metrics.getByText('needs a server change')).toHaveCount(0, T)

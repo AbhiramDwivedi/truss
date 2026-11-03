@@ -3,7 +3,7 @@
 // 80-character slug cut short in view. Role and name queries only; every colour comes from tokens.json.
 // Written before the client exists: each test opens on the `Dark theme` toggle, which only D2 has.
 import { test, expect, type Page, type Route } from '@playwright/test'
-import { T, LOAD, scenario, openState, token, tokens, WIDTHS, type Theme } from './support.ts'
+import { T, LOAD, scenario, openState, token, tokens, typeCounts, WIDTHS, type Theme } from './support.ts'
 
 const PHONE = WIDTHS[0]![1]
 const DESKTOP = WIDTHS[2]![1]
@@ -38,6 +38,15 @@ test.describe('paths', () => {
       const status = page.getByRole('status', { name: 'Session' })
       await expect(status, 'before the first snapshot the session is connecting').toHaveText('connecting', T)
       await expect(page.getByRole('article'), 'no card before the first snapshot').toHaveCount(0, T)
+      // placeholder blocks, not a spinner: Your move and Crews hold their final heights, busy, before any data
+      await expect(page.getByRole('progressbar'), 'no spinner before the first snapshot').toHaveCount(0, T)
+      for (const name of ['Your move', 'Crews']) {
+        const region = page.getByRole('region', { name })
+        await expect(region, `${name} is a placeholder before the first snapshot`).toBeVisible(T)
+        await expect(region, `${name} is aria-busy until the snapshot lands`).toHaveAttribute('aria-busy', 'true', T)
+        const h = (await region.boundingBox())?.height ?? 0
+        expect(h, `${name} holds a non-zero height before the snapshot`).toBeGreaterThan(0)
+      }
       // after 10 s with no snapshot
       await expect(status).toHaveText("Can't reach the Truss session. Is truss ui still running?", { timeout: 15000 })
       const retry = page.getByRole('button', { name: 'Retry' })
@@ -126,6 +135,62 @@ test.describe('paths', () => {
     })
   }
 
+  test('stuck-crew, a stalled tester: the primary reads Restart tester, from the stalled agent\'s role, and sends its message', async ({ browser }) => {
+    const s = await scenario('stuck-crew', {
+      edit: (f, apiSlug) => {
+        const crew = f.run.crews.find((c: any) => c.stuck)
+        crew.stuck.detail = `${apiSlug}-tester stalled 15 min`
+        for (const m of crew.members) if (m.state === 'stalled') m.name = `${apiSlug}-tester`
+      },
+    })
+    const o = await openState(browser, s, 'light', DESKTOP)
+    try {
+      const { page } = o
+      await d2(page, 'light')
+      const stuck = s.fixture.run.crews.find((c: any) => c.stuck)
+      expect(stuck.stuck.detail, 'the planted detail is quota-api-tester stalled 15 min').toBe(`${s.apiSlug}-tester stalled 15 min`)
+      const crews = page.getByRole('region', { name: 'Crews' })
+      const line = crews.getByRole('button', { name: new RegExp(`stuck: stalled ${stuck.stuck.minutes} min`) })
+      await expect(line).toHaveCount(1, LOAD)
+      if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
+      const primary = crews.getByRole('button', { name: 'Restart tester', exact: true })
+      await expect(primary, 'the label follows the last hyphen segment of the stalled agent').toBeVisible(T)
+      await expect(primary).toHaveCSS('background-color', token('fail', 'light'), T)
+      await expect(crews.getByRole('button', { name: 'Restart builder' }), 'no hard-coded Restart builder').toHaveCount(0, T)
+      const sends = () => s.iface.calls.filter((c) => c.kind === 'send') as any[]
+      const before = sends().length
+      await primary.click()
+      await expect.poll(() => sends().length, T).toBe(before + 1)
+      expect(sends()[before].text).toBe(`Crew ${s.apiSlug} is stuck: ${stuck.stuck.detail}. Restart its tester.`)
+      expect(await o.problems()).toEqual([])
+    } finally { await o.close(); await s.stop() }
+  })
+
+  test('live-counter: no rate until a second live stamp arrives, then Tokens shows <n>/min', async ({ browser }) => {
+    const s = await scenario('live-counter')
+    const o = await openState(browser, s, 'light', DESKTOP)
+    try {
+      const { page } = o
+      await d2(page, 'light')
+      const metrics = page.getByRole('region', { name: 'Live metrics' })
+      await expect(metrics.getByRole('term')).toHaveText(['Elapsed', 'Tokens', 'Spend', 'Agents', 'Crews merged', 'Tasks done'], LOAD)
+      const tokensDef = metrics.getByRole('definition').nth(1)
+      await expect(tokensDef.getByText(/as of \d\d:\d\d/), 'the first stamp is shown').toBeVisible(T)
+      await expect(tokensDef, 'one live stamp seen: no rate, never a made-up one').not.toContainText('/min', T)
+      const usage = s.fixture.session.usage
+      const live = usage.live
+      s.iface.setSession({
+        usage: {
+          ...usage,
+          at: s.shown(usage.at),
+          live: { ...live, outputTokens: live.outputTokens + 12000, totalTokens: live.totalTokens + 12000, at: new Date().toISOString() },
+        },
+      })
+      await expect(tokensDef, 'a second live stamp gives the rate, <n>/min').toContainText(/\d[\d.,]*k?\/min/, LOAD)
+      expect(await o.problems()).toEqual([])
+    } finally { await o.close(); await s.stop() }
+  })
+
   test('artifacts, zero results: a type filter with no items reads No images yet., and Show all types resets it', async ({ browser }) => {
     const s = await scenario('artifacts/no-images')
     const o = await openState(browser, s, 'light', DESKTOP)
@@ -135,6 +200,11 @@ test.describe('paths', () => {
       const filter = page.getByRole('group', { name: 'Filter by type' })
       await expect(filter).toBeVisible(LOAD)
       for (const name of ['All', 'Docs', 'Code', 'Plan', 'Images']) await expect(filter.getByRole('button', { name: new RegExp(`^${name}\\b`) })).toHaveCount(1, T)
+      const counts = typeCounts(s.fixture)
+      expect(counts.Images, 'no-images.json has no images').toBe(0)
+      for (const [name, n] of Object.entries(counts)) {
+        await expect(filter.getByRole('button', { name: new RegExp(`^${name}\\b`) }), `the ${name} chip counts ${n}`).toHaveAccessibleName(new RegExp(`^${name}\\b.*\\b${n}\\b`), T)
+      }
       const images = filter.getByRole('button', { name: /^Images\b/ })
       await expect(images, 'the Images chip counts 0').toHaveAccessibleName(/\b0\b/, T)
       const list = page.getByRole('list', { name: 'Deliverables' })
