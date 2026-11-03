@@ -3,7 +3,9 @@
 // always visible, every control has an accessible name, html has lang="en" (R-19).
 // Servers bind port 0 (harness). Written before ui/web exists: every test fails now on the missing page.
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { WITHIN, card as cardOf, goalBox, sendButton, rand, rx, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { WITHIN, card as cardOf, goalBox, yourMove as yourMoveOf, sendButton, rand, rx, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const MAX_TABS = 150
@@ -246,6 +248,15 @@ test('R-18: every Tab stop of the card page has a visible focus style and an acc
   // ADR-0018: the skip link is the first Tab stop.
   await page.keyboard.press('Tab')
   await expect(page.getByRole('link', { name: 'Skip to Your move', exact: true })).toBeFocused()
+  // D2 focus inside Your move (ADR-0023 section 3): Tab from the skip link reaches the first option radio,
+  // and its outline is the move-fg hex, not brand (brand on move is 1.3:1 in light).
+  const tokens = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'contract', 'redesign', 'tokens.json'), 'utf8'))
+  const rgb = (hex: string) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})` }
+  const firstRadio = yourMoveOf(page).getByRole('radio').first()
+  await reach(page, firstRadio)
+  await expect(firstRadio).toBeFocused()
+  await expect(firstRadio).toHaveCSS('outline-color', rgb(tokens.colors['move-fg'].light))
+  expect(rgb(tokens.colors['move-fg'].light)).not.toBe(rgb(tokens.colors.brand.light))
   await walk(page)
 })
 
@@ -257,17 +268,20 @@ test('R-18: every control on the page has an accessible name', async ({ page }) 
   iface.permission({ toolName: 'Bash', title: `Run ${run}`, summary: `echo ${run}` })
   iface.reply({ text: `Approve ${run}?` })
   await expect(page.getByText(rx(`Approve ${run}?`)).first()).toBeVisible(LOAD)
-  const unnamed = await page.evaluate(() => {
-    const sel = 'button,a[href],input:not([type=hidden]),select,textarea,summary,[role=button],[role=tab],[role=link],[role=checkbox],[role=radio],[role=switch],[role=textbox],[role=option],[tabindex]:not([tabindex="-1"])'
-    const out: string[] = []
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
-      if (el.getClientRects().length === 0) continue
-      const ids = el.getAttribute('aria-labelledby')?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' ') ?? ''
-      const labels = Array.from((el as HTMLInputElement).labels ?? []).map((l) => l.textContent ?? '').join(' ')
-      const name = [el.getAttribute('aria-label'), ids, labels, el.getAttribute('title'), el.querySelector('img[alt]')?.getAttribute('alt'), el instanceof HTMLInputElement && /submit|button/.test(el.type) ? el.value : '', el.textContent].join(' ').trim()
-      if (!name) out.push(el.outerHTML.slice(0, 100))
+  // Every control role, by role query; each one must carry a non-empty accessible name.
+  const roles = ['button', 'link', 'textbox', 'radio', 'checkbox', 'tab', 'switch', 'combobox', 'option'] as const
+  const unnamed: string[] = []
+  let controls = 0
+  for (const role of roles) {
+    for (const el of await page.getByRole(role).all()) {
+      controls++
+      try {
+        await expect(el).toHaveAccessibleName(/\S/, { timeout: 1000 })
+      } catch {
+        unnamed.push(`${role} with no accessible name`)
+      }
     }
-    return out
-  })
+  }
+  expect(controls, 'controls found by role').toBeGreaterThan(0)
   expect(unnamed).toEqual([])
 })
