@@ -616,12 +616,15 @@ t('bug28 4: when tests-check reports touched files after a builder fix, a tester
     if (m && m[1] === '1.1') return rj({ ok: false, touched: [{ commit: 'b0'.repeat(20), role: 'builder', files: ['tests/a.check.ts'] }], tests: ['tests/a.check.ts'] }, 1)
     return undefined
   }
-  const r = await runStage([entry], { labels: mrLabels(qcFail('BFIND in src/a.ts')), runner })
+  // ADR-0024 i28 moves the backstop from a tester fix member to the resolver role (pinned in stage-fixes3.check.ts); this case
+  // keeps its title and its split, identical-tree and two-check assertions, and accepts the backstop member under either label
+  const r = await runStage([entry], { labels: { ...mrLabels(qcFail('BFIND in src/a.ts')), 'a-resolver': done('truss/a') }, runner })
   passed(r)
   assert.ok(had(r, 'a-builder'), `labels: ${r.labels.join(', ')}`)
-  assert.ok(had(r, 'a-tester'), `no backstop tester fix; labels: ${r.labels.join(', ')}`)
-  assert.ok(call(r, 'a-builder').i < call(r, 'a-tester').i, 'the tester fix ran before the builder fix')
-  const p = call(r, 'a-tester').prompt
+  const member = had(r, 'a-resolver') ? 'a-resolver' : 'a-tester'
+  assert.ok(had(r, member), `no backstop member; labels: ${r.labels.join(', ')}`)
+  assert.ok(call(r, 'a-builder').i < call(r, member).i, 'the backstop member ran before the builder fix')
+  const p = call(r, member).prompt
   has(p, 'b0'.repeat(20))
   has(p, 'Truss-Role: test-writer')
   has(p, 'Keep the tree identical')
