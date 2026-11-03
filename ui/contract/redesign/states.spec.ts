@@ -82,7 +82,11 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(card.getByRole('button', { name: 'Submit answers' })).toBeVisible(T)
     await expect(page).toHaveTitle('(1) Truss', T)
     await expect(form.getByText("Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it.")).toBeVisible(T)
-    await expect(form.getByRole('radio', { name: 'Answer the question' })).toBeVisible(T)
+    const answer = form.getByRole('radio', { name: 'Answer the question' })
+    await expect(answer).toBeVisible(T)
+    await answer.check()
+    await expect(answer).toBeChecked(T)
+    await expect(form.getByRole('button', { name: 'Send answer' }), 'the send button follows the checked intent').toBeVisible(T)
   } else if (state === 'approval') {
     const [reply, perm] = f.requests
     const replyCard = move.getByRole('article', { name: 'Reply needed' })
@@ -230,6 +234,10 @@ for (const state of STATES) {
           await colours(page, state, theme)
           const fit = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
           expect(fit.scroll, `${state} ${name} ${theme}: scrollWidth ${fit.scroll} > clientWidth ${fit.client}`).toBeLessThanOrEqual(fit.client)
+          // axe at every width (ADR-0023 checklist 23): the stacked order below 1024 px and the sheet get a run too.
+          const res = await new AxeBuilder({ page }).withTags(TAGS).analyze()
+          const lines = res.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n    ${v.nodes.map((n) => n.target.join(' ')).slice(0, 5).join('\n    ')}`)
+          expect(res.violations, `axe violations in ${state}, ${name} ${width} px, ${theme}:\n${lines.join('\n')}`).toEqual([])
           await page.screenshot({ path: join(screensDir, `${state}-${name}-${theme}.png`), fullPage: true })
         }
         expect(await problems(), 'console errors, page errors and CSP violations').toEqual([])

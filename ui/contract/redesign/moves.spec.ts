@@ -16,7 +16,16 @@ test.describe('moves', () => {
       const o = await openState(browser, s, theme, DESKTOP)
       try {
         const { page } = o
-        await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', LOAD)
+        const toggle = page.getByRole('button', { name: 'Dark theme' })
+        const other: Theme = theme === 'dark' ? 'light' : 'dark'
+        await expect(toggle).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', LOAD)
+        // the toggle works: pressing it flips aria-pressed and the page's bg token, pressing again puts both back
+        await toggle.click()
+        await expect(toggle, 'pressing Dark theme flips aria-pressed').toHaveAttribute('aria-pressed', other === 'dark' ? 'true' : 'false', T)
+        await expect(page.locator('body'), 'pressing Dark theme repaints body with the other theme bg').toHaveCSS('background-color', token('bg', other), T)
+        await toggle.click()
+        await expect(toggle, 'pressing Dark theme again restores aria-pressed').toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', T)
+        await expect(page.locator('body'), 'pressing Dark theme again restores the bg').toHaveCSS('background-color', token('bg', theme), T)
         const move = page.getByRole('region', { name: 'Your move' })
         await expect(move.getByRole('article')).toHaveCount(0, T)
         await expect(move.getByRole('heading', { level: 3, name: 'Start a run' })).toBeVisible(T)
@@ -125,7 +134,12 @@ test.describe('moves', () => {
       expect(long.length).toBeGreaterThanOrEqual(300)
       const row = page.getByRole('region', { name: 'Follow-ups' }).getByRole('listitem').filter({ hasText: 'Please also make the follow-up list' })
       await expect(row).toBeVisible(LOAD)
-      await expect(row.getByTitle(long)).toHaveCount(1, T)
+      const full = row.getByTitle(long)
+      await expect(full).toHaveCount(1, T)
+      // not only a hover tooltip: keyboard and touch users reach the whole text by focus and by name
+      await full.focus()
+      await expect(full, 'the row text takes focus').toBeFocused(T)
+      await expect(full, 'the focused row names the whole 300-character text').toHaveAccessibleName(long, T)
       const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
       expect(w[0], 'the long row never widens the phone page').toBeLessThanOrEqual(w[1]!)
     } finally { await o.close(); await s.stop() }

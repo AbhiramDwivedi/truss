@@ -8,7 +8,7 @@ import path from 'node:path'
 
 const here = import.meta.dirname
 const storeFile = path.resolve(here, '..', '..', 'app', 'store', 'store.ts')
-const fixtureRoot = path.resolve(here, '..', 'fixtures', 'run') // ui/contract/fixtures/run
+const fixtureRoot = path.resolve(here, '../fixtures/run') // ui/contract/fixtures/run
 
 interface Listener { (ev: { data: string }): void }
 

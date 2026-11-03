@@ -10,7 +10,7 @@ import { startFixture, rand, type Iface } from '../../e2e/harness.ts'
 
 const here = import.meta.dirname
 export const fixtureDir = resolve(here, '..', 'fixtures', 'run')
-export const screensDir = resolve(here, '..', '..', 'screens')
+export const screensDir = resolve(here, '../../screens/')
 const adrFile = resolve(here, '..', '..', '..', 'plugins', 'truss', 'docs', 'adr', '0023-factory-floor-ui.md')
 
 // The states and widths come from ADR-0023's two lines, so the specs and the ADR cannot drift apart.
