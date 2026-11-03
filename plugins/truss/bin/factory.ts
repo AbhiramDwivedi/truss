@@ -546,6 +546,27 @@ export function envFailure(text: string): string | undefined {
   }
   return undefined
 }
+// ADR-0024 item 34: the failure blocks of a check's output, each from its header to the next header: Playwright's
+// `N) [project] › ...` and node:test TAP's `not ok N - ...` (a TAP parent that only reports failed subtests is no block of its
+// own). Text before the first header belongs to no block. [] when no header is found.
+function failureBlocks(text: string): string[] {
+  const header = /^\s*(\d+\) \[[^\]]+\] › |not ok \d+ - )/
+  const blocks: string[][] = []
+  for (const line of text.split('\n')) {
+    if (header.test(line)) blocks.push([line])
+    else blocks[blocks.length - 1]?.push(line)
+  }
+  return blocks.map((b) => b.join('\n')).filter((b) => !/failureType: '?subtestsFailed'?/.test(b))
+}
+// `env` only when env lines explain every failure: every failure block holds one, or no block is found and an env line is.
+// Otherwise the first env line, if any, is `envSeen` and the run is a code failure.
+export function envVerdict(text: string): { env?: string; envSeen?: string } {
+  const first = envFailure(text)
+  if (first === undefined) return {}
+  const blocks = failureBlocks(text)
+  const explained = blocks.length === 0 || blocks.every((b) => envFailure(b) !== undefined)
+  return explained ? { env: first } : { envSeen: first }
+}
 
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
@@ -576,12 +597,14 @@ function cmdCheck(f: Flags): Obj {
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
-  // a failing run whose output names an environment failure carries it as `env`: never a red, and no fix builder for a green
-  const env = exit === 0 ? undefined : envFailure(text)
+  // a failing run whose env lines explain every failure carries `env`: never a red, and no fix builder for a green. One whose
+  // env lines leave a code failure unexplained carries `envSeen` instead and counts as red (ADR-0024 item 34).
+  const { env, envSeen } = exit === 0 ? {} : envVerdict(text)
+  const envKeys = { ...(env === undefined ? {} : { env }), ...(envSeen === undefined ? {} : { envSeen }) }
   const known = exit === 0 ? [] : catalogHits(text)
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...(env === undefined ? {} : { env }), ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
+  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const body = { ok, exit, head, tail, ...(env === undefined ? {} : { env }), ...(known.length === 0 ? {} : { catalog: known }) }
+  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }
   if (!ok) throw refuse(body)
   return body
 }
@@ -700,6 +723,14 @@ function cmdIntegrate(f: Flags): Obj {
   const c = crewCtx(f)
   const trailers = unparsedTrailers(c.wt, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
+  // ADR-0024 item 32: a branch whose merge would leave the crew head's tree unchanged (one the head already holds, even after a
+  // rewrite split its commits) isn't merged. A conflict or a merge-tree failure falls back to the --no-ff merge below.
+  const mt = run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
+  const tree = mt.status === 0 ? mt.out.split('\n')[0]?.trim() : undefined
+  if (tree !== undefined && tree !== '') {
+    const now = run(c.wt, ['rev-parse', 'HEAD^{tree}'])
+    if (now.status === 0 && now.out === tree) return { merged: true, contained: true, head: gitOrFail(c.wt, ['rev-parse', 'HEAD']) }
+  }
   return mergeIn(c.wt, ['--no-ff', branch])
 }
 // Sets a crew merged when truss-<slug> is an ancestor of the target; refuses and changes nothing otherwise.
@@ -1101,18 +1132,38 @@ function promptTask(transcript: string): string | undefined {
 // Names of the tasks whose member result is DONE and whose branch is an ancestor of the crew branch or has every commit
 // patch-id-matched on it (git decides, not the report), over the given runs: a task done in an earlier run, and passed in `done`
 // to a later one that never re-ran it, stays done. The name is the prompt's Task line, else result.task minus a leading `<slug>: `.
-function doneTasks(runs: WfRun[], slug: string, wt: string): string[] {
+// ADR-0024 item 27: a result whose marker isn't DONE (nor CHECKPOINT) counts too, when its branch has commits of its own and the crew branch
+// holds them all (as above). A branch's own commits are those not on `target` and not behind its fork point, the newest commit
+// of the crew branch's first-parent line it contains: a fresh member branch (one that only points at a crew head, old or
+// current) has none, though it is an ancestor.
+function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): string[] {
+  const crewBranch = `truss-${slug}`
+  const lines = (args: string[]): string[] | undefined => {
+    const x = run(wt, args)
+    return x.status === 0 ? x.out.split('\n').filter((l) => l.trim() !== '') : undefined
+  }
+  const ownCommits = (branch: string): number => {
+    const reach = lines(['rev-list', branch, '--not', target])
+    const spine = lines(['rev-list', '--first-parent', crewBranch, '--not', target])
+    if (reach === undefined || spine === undefined) return 0
+    const inBranch = new Set(reach)
+    const fork = spine.find((s) => inBranch.has(s))
+    if (fork === undefined) return reach.length
+    return lines(['rev-list', branch, '--not', target, fork])?.length ?? 0
+  }
   const done: string[] = []
   for (const a of runs.flatMap((r) => r.agents)) {
     const r = a.result
-    if (parseLabel(a.label)?.slug !== slug || !isObj(r) || r.marker !== 'DONE' || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
+    if (parseLabel(a.label)?.slug !== slug || !isObj(r) || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
     const name = promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
     if (done.includes(name)) continue
     const picked = (): boolean => {
-      const c = run(wt, ['cherry', `truss-${slug}`, r.branch as string])
+      const c = run(wt, ['cherry', crewBranch, r.branch as string])
       return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
     }
-    if (run(wt, ['merge-base', '--is-ancestor', r.branch, `truss-${slug}`]).status === 0 || picked()) done.push(name)
+    // A CHECKPOINT says the member stopped with work left, so its merged commits are partial and never make the task done.
+    if (r.marker === 'CHECKPOINT' || (r.marker !== 'DONE' && ownCommits(r.branch) === 0)) continue
+    if (run(wt, ['merge-base', '--is-ancestor', r.branch, crewBranch]).status === 0 || picked()) done.push(name)
   }
   return done
 }
@@ -1161,7 +1212,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const rebuild = kind !== 'merge-ready' && !noWork
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
+  const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
   // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by
   const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after } : t))
   const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
