@@ -182,12 +182,15 @@
       "patterns": [
         "Truss-Role: builder.{0,80}edits? (?:this|an acceptance-test) file",
         "A builder must not (?:write or )?(?:touch|change) (?:the )?acceptance tests?",
-        "a builder edited the acceptance test"
+        "a builder edited the acceptance test",
+        "fix green check",
+        "That file is owned by the tester",
+        "role.{0,6}builder.{0,12}files.{0,8}\\[.{0,8}[^,\\]]*\\.(test|check)\\.ts"
       ],
-      "fix": "Send any QC finding that needs a change to an acceptance-test file to a tester fix member, and leave tester-owned files out of the builder files-you-may-change list.",
+      "fix": "Send any QC finding that needs a change to an acceptance-test file to a tester fix member, and leave tester-owned files out of the builder files-you-may-change list. Green re-routes a fix builder's BLOCKED or QUESTION naming a tester file to a tester fix member and runs testsBackstop after each green fix (ADR-0027 F-70).",
       "fixedBy": {
-        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-27",
-        "date": "2026-10-31"
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-70",
+        "date": "2026-11-03"
       }
     },
     {
@@ -225,12 +228,15 @@
       "anchor": "decisions.md",
       "patterns": [
         "\"file_path\":\"[^\"]*/decisions\\.md\"[^}]*\"old_string\"",
-        "tail -1 \\S*/decisions\\.md"
+        "tail -1 \\S*/decisions\\.md",
+        "decisions\\.md\",\"old_string\":\"- HH:MM \\|",
+        "decisions\\.md\",\"old_string\":\"[^\"]*the cap leaves \\d+ slot\\(s\\)",
+        "tail (-n )?-?\\d* \\S*decisions\\.md"
       ],
-      "fix": "Log to decisions.md only through the one append command that stamps the time itself, never through Edit, so no edit has to match text that the stamping changes.",
+      "fix": "The PM logs only through `factory.ts decide --dir <D> --line \"...\"`, which stamps the time and appends, never through Edit, so no edit has to match text that the stamping changes (ADR-0027 F-73).",
       "fixedBy": {
-        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-35",
-        "date": "2026-10-31"
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-73",
+        "date": "2026-11-03"
       }
     },
     {
@@ -315,6 +321,52 @@
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/P-8",
         "date": "2026-10-31"
+      }
+    },
+    {
+      "id": "qc-background-poll",
+      "kind": "misleading prompt",
+      "title": "The QC brief lacked the foreground-only shell rule, so QC engineers backgrounded the acceptance test and sleep-polled it",
+      "anchor": "run_in_background",
+      "patterns": [
+        "Blocked: sleep \\d+ followed by",
+        "qc-at\\.sh > .{0,200}run_in_background\\\\?\":true",
+        "for i in \\$\\(seq 1 \\d+\\); do grep -q [^;]*; sleep \\d+; done"
+      ],
+      "fix": "qcPrompt carries the member foreground line and agents/qc-engineer.md says the same (ADR-0027 F-72).",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-72",
+        "date": "2026-11-03"
+      }
+    },
+    {
+      "id": "stage-relative-dir-admit",
+      "kind": "mechanical bug",
+      "title": "stage.js runFactory passed a relative --dir, so every admit call failed, and admit failed open",
+      "anchor": "admit --slug",
+      "patterns": [
+        "cannot read \\.git/truss/[^ ]+/plan\\.json: EN(OENT|OTDIR)",
+        "admit --slug \\S+ --dir \\.git/truss/"
+      ],
+      "fix": "runFactory resolves F.dir against F.repo, admit fails closed with 'admission check failed:', and factory.ts refuses a relative --dir outside start (ADR-0027 F-67).",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-67",
+        "date": "2026-11-03"
+      }
+    },
+    {
+      "id": "scrub-not-gating-push",
+      "kind": "missing hook or gate",
+      "title": "The PM chained the privacy scrub with ';' or a pipe before git push or merge, so a scrub HIT did not stop the push",
+      "anchor": "scrub",
+      "patterns": [
+        "HIT: \\S+ \\| home-path\\\\n\\s+[0-9a-f]+\\.\\.[0-9a-f]+\\s+\\S+ -> \\S+",
+        "retro/cli\\.ts scrub [^\"]*; git (push|-C \\S+ merge)"
+      ],
+      "fix": "A PreToolUse hook refuses a main-session git push or merge whose command does not gate on scrub with && (ADR-0027 F-74).",
+      "fixedBy": {
+        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-74",
+        "date": "2026-11-03"
       }
     }
   ]
