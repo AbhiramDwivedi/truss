@@ -319,19 +319,20 @@ sequenceDiagram
 
 ## Rename table
 
-The redesign states renamed by this ADR:
+The redesign titles renamed by this ADR (the axe row covers all 10 states in both themes):
 
 | Old title | New title |
 |---|---|
 | [redesign] pending-question | question |
 | [redesign] pending-approval | approval |
 | [redesign] blocked-crew | stuck-crew |
+| [redesign] axe: <state> in <theme> has the ADR-0018 roles and no WCAG 2.2 AA violations | axe: <state> in <theme> has the D2 roles, tokens and no WCAG 2.2 AA violations |
 
 Every `[ui]` and `[contract]` test title is kept as it is, so the table has no `[ui]` or `[contract]` row. A later re-pin that must change one hands it back to the foreman, who adds its row here in the form `| [ui] <old title> | <new title> |`.
 
 ## Consequences
 
-- `ui/contract/redesign/support.ts` reads the `Screenshot states:` and `Screenshot widths:` lines from this ADR, not ADR-0018 (today `support.ts:13` and `:20` name ADR-0018). The screenshot set is 10 states, 3 widths and 2 themes: 60 files at `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, at `deviceScaleFactor: 1`.
+- `ui/contract/redesign/support.ts` reads the `Screenshot states:` and `Screenshot widths:` lines from this ADR, not ADR-0018 (`support.ts:14` reads this file). The screenshot set is 10 states, 3 widths and 2 themes: 60 files at `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, at `deviceScaleFactor: 1`.
 - The schema gains optional fields only. A client that ignores them still works, and the existing contract checks stay green.
 - The live counter shows nothing live during the first turn of a session, because `session.usage` is null until the first `result` (gap e).
 - ADR-0018's "Light and dark follow the OS only" no longer holds: the `Dark theme` toggle overrides the OS for the page's life.
