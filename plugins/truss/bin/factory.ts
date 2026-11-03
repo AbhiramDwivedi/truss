@@ -2179,10 +2179,14 @@ function agentFileWarnings(repo: string, before: string, target: string): string
   if (pluginTop === undefined || pluginTop !== repoTop) return []
   const rel = path.posix.relative(pluginTop, flat(realpathSync(PLUGIN)))
   const agents = rel === '' ? 'agents' : `${rel}/agents`
-  const d = run(repo, ['diff', '--name-only', before, `refs/heads/${target}`, '--', `${agents}/`])
+  const workflows = rel === '' ? 'workflows' : `${rel}/workflows`
+  const d = run(repo, ['diff', '--name-only', before, `refs/heads/${target}`, '--', `${agents}/`, `${workflows}/stage.js`, `${workflows}/plan.js`])
   if (d.status !== 0) return []
   const out: string[] = []
   for (const p of d.out.split('\n')) {
+    for (const name of ['stage.js', 'plan.js']) {
+      if (p === `${workflows}/${name}`) out.push(`the merge changed workflows/${name}; the Workflow gate still matches the ${name} this session loaded, so the repo path is refused until a restart; restart the session, or run a scratchpad copy of the loaded plugin's ${name} for crews already under way (ADR-0024 item 24)`)
+    }
     if (!p.startsWith(`${agents}/`) || !/^[^/]+\.md$/.test(p.slice(agents.length + 1))) continue
     const file = `agents/${p.slice(agents.length + 1)}`
     const type = `truss:${file.slice('agents/'.length, -'.md'.length)}`
