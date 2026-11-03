@@ -97,7 +97,14 @@ function repoOf(f: Flags): string {
   if (r.status !== 0) throw usage('no --repo and the cwd is not in a git repository')
   return flat(r.out)
 }
-const dirOf = (f: Flags): string => flat(need(f, 'dir'))
+// ADR-0027 F-67 item 2: every command but start refuses a relative --dir, since a relative one resolves against
+// whatever cwd ran it. start (and start --resume) resolve it themselves through startDirOf, as ADR-0019 item 18 left them.
+const startDirOf = (f: Flags): string => flat(need(f, 'dir'))
+const dirOf = (f: Flags): string => {
+  const d = need(f, 'dir')
+  if (!path.isAbsolute(d)) throw usage(`--dir must be an absolute path, got ${d}`)
+  return flat(d)
+}
 
 const readText = (p: string): string => {
   try {
@@ -180,9 +187,13 @@ export function appendEvent(dir: string, obj: Obj): void {
 }
 // Appends `- HH:MM | <what | why> | none | followed` (local time, localTime from the hooks) to D/decisions.md; text is "what | why".
 export function appendDecision(dir: string, text: string): void {
+  appendDecisionLine(dir, `- ${localTime(Date.now())} | ${text} | none | followed`)
+}
+// The one append step appendDecision and `decide` share (ADR-0027 F-73): a newline guard, then the line and its newline.
+function appendDecisionLine(dir: string, line: string): void {
   const p = `${dir}/decisions.md`
   const old = existsSync(p) ? readFileSync(p, 'utf8') : ''
-  appendFileSync(p, `${old === '' || old.endsWith('\n') ? '' : '\n'}- ${localTime(Date.now())} | ${text} | none | followed\n`)
+  appendFileSync(p, `${old === '' || old.endsWith('\n') ? '' : '\n'}${line}\n`)
 }
 // The roles table from <plugin>/workflows/roles.json.
 export function readRoles(plugin: string): Obj {
@@ -1454,7 +1465,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
 }
 
 function cmdStart(f: Flags): Obj {
-  const dir = path.resolve(dirOf(f))
+  const dir = path.resolve(startDirOf(f))
   const repo = path.resolve(repoOf(f))
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
   const settings = settingsOf(repo)
@@ -1634,7 +1645,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
       return flat(path.resolve(q))
     }
   }
-  const trussDir = real(path.resolve(dirOf(f)))
+  const trussDir = real(path.resolve(startDirOf(f)))
   const inside = `${real(path.dirname(p))}/${path.basename(p)}`.startsWith(`${trussDir}/`)
   const short: Obj = {
     argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
@@ -2299,12 +2310,54 @@ function cmdFinish(f: Flags): Obj {
   return finishWith()
 }
 
+// ==== decide ====
+
+// ADR-0027 F-73: the PM's one route to D/decisions.md. Three forms, exactly one per call:
+//   --line '<decision> | <reason> | <checker> | <outcome>'          -> `- HH:MM | <decision> | <reason> | <checker> | <outcome>`
+//   --checker <n> --recommend <answer|defer|pass> --text T --outcome O -> `- HH:MM | checker-<n> RECOMMEND <answer>: T | O`
+//   --run '<goal>'                                                   -> `## Run <UTC start> | <goal>`
+// The clock stamps every line. Each refusal exits 2 and writes nothing; no form writes a continuation line.
+const RECOMMENDS = ['answer', 'defer', 'pass']
+function cmdDecide(f: Flags): Obj {
+  const dir = dirOf(f)
+  const forms = (['line', 'checker', 'run'] as const).filter((k) => f[k] !== undefined)
+  if (forms.length !== 1) throw usage('decide takes exactly one of --line, --checker (with --recommend, --text, --outcome) or --run')
+  const form = forms[0]
+  const keys = form === 'checker' ? ['checker', 'recommend', 'text', 'outcome'] : [form]
+  const vals: Record<string, string> = {}
+  for (const k of keys) {
+    const v = str(f, k)
+    if (v === undefined) throw usage(`decide --checker needs --${k}`)
+    if (/[\r\n]/.test(v)) throw usage(`--${k} holds a newline; a decision is one line`)
+    vals[k] = v
+  }
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
+  let line: string
+  if (form === 'line') {
+    const fields = vals.line.split('|').map((s) => s.trim())
+    if (fields.length !== 4) throw usage(`--line needs four fields split by |, decision | reason | checker | outcome; got ${fields.length}`)
+    line = `- ${localTime(Date.now())} | ${fields.join(' | ')}`
+  } else if (form === 'checker') {
+    if (!/^[1-9]\d*$/.test(vals.checker)) throw usage(`--checker must be a positive integer, got ${vals.checker}`)
+    if (!RECOMMENDS.includes(vals.recommend)) throw usage(`--recommend must be one of ${RECOMMENDS.join(', ')}, got ${vals.recommend}`)
+    if (vals.text.trim() === '') throw usage('--text is empty')
+    if (vals.outcome.trim() === '') throw usage('--outcome is empty')
+    line = `- ${localTime(Date.now())} | checker-${vals.checker} RECOMMEND ${vals.recommend}: ${vals.text.trim()} | ${vals.outcome.trim()}`
+  } else {
+    const goal = vals.run.trim()
+    if (goal === '') throw usage('--run needs a goal')
+    line = `## Run ${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')} | ${goal}`
+  }
+  appendDecisionLine(dir, line)
+  return { ok: true, form, line }
+}
+
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
