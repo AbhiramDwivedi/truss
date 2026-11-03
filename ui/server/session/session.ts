@@ -4,14 +4,26 @@ import { isObj, permissionCard, questionCard } from './cards.ts'
 import { createRegistry } from './registry.ts'
 import type { AnswerResult, Registry } from './registry.ts'
 import { addUserEntry, endView, errorView, foldMessage, initialView, setRunning } from './fold.ts'
-import type { SessionView } from './fold.ts'
+import type { Intent, QueueItem, SessionView } from './fold.ts'
 import { replyStep } from './reply.ts'
 import type { ReplyState } from './reply.ts'
 
 export interface SessionControl {
-  send(text: string): { ok: true } | { ok: false; error: 'text' | 'ended' }
+  // intent: 'goal', 'add', null or absent (ADR-0023 gap a); any other value is { error: 'intent' }.
+  send(text: string, intent?: unknown): { ok: true; id: string } | { ok: false; error: 'text' | 'ended' | 'intent' }
   answer(id: string, body: unknown): AnswerResult
 }
+
+// ADR-0023 gap a: the fixed line an intent prepends to the session's input, never to the transcript.
+export const INTENT_LINES: Record<'goal' | 'add', string> = {
+  goal: '[Truss UI: new goal] Plan this as a new goal for the run.',
+  add: '[Truss UI: detail] Add this to the current goal.',
+}
+const toSdk = (m: QueueItem) => (m.intent ? `${INTENT_LINES[m.intent]}\n\n${m.text}` : m.text)
+
+// Message ids are unique within one server process; clients compare them and never parse them.
+let lastId = 0
+const nextId = () => `m${++lastId}`
 export interface Session extends SessionControl {
   view(): SessionView
   subscribe(fn: (v: SessionView) => void): () => void
@@ -23,7 +35,14 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
   const subs = new Set<(v: SessionView) => void>()
   const registry: Registry = createRegistry(() => notify())
 
-  const view = (): SessionView => ({ ...base, requests: registry.list() })
+  const outbox: QueueItem[] = []
+  const queue: QueueItem[] = []
+  // session.queue: every accepted message the SDK has not yet taken, oldest first (ADR-0023 gap b).
+  const view = (): SessionView => ({
+    ...base,
+    session: { ...base.session, queue: [...outbox, ...queue] },
+    requests: registry.list(),
+  })
   function notify() {
     if (subs.size === 0) return
     const v = view()
@@ -43,8 +62,6 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
   let started = false
   let closed = false
   let reply: ReplyState = { turnRunning: false, held: null }
-  const outbox: string[] = []
-  const queue: string[] = []
   let wake: (() => void) | undefined
   let query: { interrupt(): Promise<unknown> } | undefined
   let loop: Promise<void> = Promise.resolve()
@@ -55,28 +72,31 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
         if (closed) return
         await new Promise<void>((r) => (wake = r))
       }
-      const text = outbox.shift()!
-      yield { type: 'user' as const, message: { role: 'user' as const, content: text }, parent_tool_use_id: null }
+      const m = outbox.shift()!
+      notify() // the message leaves session.queue as the SDK takes it
+      yield { type: 'user' as const, message: { role: 'user' as const, content: toSdk(m) }, parent_tool_use_id: null }
     }
   }
 
-  function dispatch(text: string) {
+  function dispatch(m: QueueItem) {
     reply = { ...reply, turnRunning: true }
-    outbox.push(text)
+    outbox.push(m)
     wake?.()
     update(setRunning(base))
   }
 
-  function enqueue(text: string) {
-    base = addUserEntry(base, text)
+  function enqueue(text: string, intent: Intent): string {
+    const m: QueueItem = { id: nextId(), text, intent, at: new Date().toISOString() }
+    base = addUserEntry(base, text, m.id, intent)
     if (!started) {
       started = true
       loop = run()
     }
     if (reply.turnRunning) {
-      queue.push(text)
+      queue.push(m)
       notify()
-    } else dispatch(text)
+    } else dispatch(m)
+    return m.id
   }
 
   const openReplies = () => registry.list().filter((r) => r.kind === 'reply' && r.status === 'open')
@@ -107,7 +127,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
     if (isObj(msg) && msg.type === 'result' && !msg.parent_tool_use_id) {
       const queued = queue.shift()
       if (queued !== undefined) {
-        if (id !== undefined) registry.answer(id, { decision: 'message', message: queued })
+        if (id !== undefined) registry.answer(id, { decision: 'message', message: queued.text })
         dispatch(queued)
         return
       }
@@ -150,16 +170,22 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
     view,
     subscribe(fn) {
       subs.add(fn)
+      // The subscriber starts from the current view, so an idle session's fields (queue: []) reach it too.
+      try {
+        fn(view())
+      } catch {
+        // a bad subscriber must not break the session
+      }
       return () => {
         subs.delete(fn)
       }
     },
-    send(text) {
+    send(text, intent) {
+      if (intent !== undefined && intent !== null && intent !== 'goal' && intent !== 'add') return { ok: false, error: 'intent' }
       if (typeof text !== 'string' || text.trim() === '') return { ok: false, error: 'text' }
       if (finished()) return { ok: false, error: 'ended' }
       for (const r of openReplies()) registry.answer(r.id, { decision: 'message', message: text })
-      enqueue(text)
-      return { ok: true }
+      return { ok: true, id: enqueue(text, (intent ?? null) as Intent) }
     },
     answer(id, body) {
       const kind = registry.list().find((r) => r.id === id)?.kind
@@ -167,7 +193,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
       if (kind === 'reply' && finished()) registry.cancel(id, 'ended')
       const res = registry.answer(id, body)
       if (res.ok && kind === 'reply' && res.request.kind === 'reply' && res.request.message && !finished()) {
-        enqueue(res.request.message)
+        enqueue(res.request.message, null) // a reply card answered with a message: intent null (ADR-0023 gap a)
       }
       return res
     },

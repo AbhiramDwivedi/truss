@@ -17,7 +17,7 @@ export type AnswerResult =
   | { ok: true; request: any }
   | { ok: false; error: 'unknown' | 'answered' | 'cancelled' | 'answer'; request?: any };
 export interface SessionControl {
-  send(text: string): { ok: true } | { ok: false; error: 'text' | 'ended' };
+  send(text: string, intent?: unknown): { ok: true; id: string } | { ok: false; error: 'text' | 'ended' | 'intent' };
   answer(id: string, body: unknown): AnswerResult;
 }
 
