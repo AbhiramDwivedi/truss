@@ -29,7 +29,11 @@ const PROOF = [
 const REFUSAL = 'A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
 const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
 
-const RUNNER_SCHEMA = { type: 'object', properties: { exit: { type: 'number' }, stdout: { type: 'string' } }, required: ['exit', 'stdout'] }
+// ADR-0022 U5 (item 22): status is the runner's copy of the short `truss-status: ` line, so met never needs the long stdout.
+// It stays out of required because the base case "the runner schema is {exit:number, stdout:string}, both required" pins
+// that list; the runner prompt asks for it every time, and an absent status falls back to the stdout rule.
+const RUNNER_SCHEMA = { type: 'object', properties: { exit: { type: 'number' }, stdout: { type: 'string' }, status: { type: 'string' } }, required: ['exit', 'stdout'] }
+const STATUS_PREFIX = 'truss-status: '
 const MEMBER_SCHEMA = {
   type: 'object',
   properties: {
@@ -84,7 +88,16 @@ function spawn(role, label, prompt, opts = {}) {
     if (role !== 'builder' || !ROLE_EFFORTS.includes(opts.effort)) throw new Error(`role ${role} may not take effort ${opts.effort}`)
     effort = opts.effort
   }
-  const o = { label, agentType: r.agentType, model: r.model, effort }
+  // ADR-0022 U6 (item 23): the goal file's ## Members line (the entry's members) wins over the roles row and the task effort
+  let model = r.model
+  if (opts.member) {
+    const m = opts.member
+    if (m.model !== 'opus' && m.model !== 'sonnet') throw new Error(`role ${role} has a ## Members model ${m.model}; only opus or sonnet`)
+    if (!ROLE_EFFORTS.includes(m.effort)) throw new Error(`role ${role} has a ## Members effort ${m.effort}; only low or medium`)
+    model = m.model
+    effort = m.effort
+  }
+  const o = { label, agentType: r.agentType, model, effort }
   if (opts.schema) o.schema = opts.schema
   if (r.isolation === 'worktree') o.isolation = 'worktree'
   return agent(prompt, o)
@@ -100,14 +113,29 @@ class Stop {
   }
 }
 
+// ADR-0022 U4: an entry's direction is {label, text}, or null; a missing or malformed one is null
+const directionOf = (entry) => (entry.direction && typeof entry.direction === 'object' && typeof entry.direction.label === 'string' && typeof entry.direction.text === 'string' ? { label: entry.direction.label, text: entry.direction.text } : null)
+
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '' }
 }
 
+// ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
+const uxOn = (crew) => crew.e.ux === true
+
+// the crew result's ux field (ADR-0022 U4), present only on a ux crew
+const uxResult = (crew) => ({
+  direction: crew.direction ? crew.direction.label : null,
+  review: crew.uxReview ? crew.uxReview.label : null,
+  verdict: crew.uxReview ? crew.uxReview.verdict : null,
+  findings: crew.uxReview ? crew.uxReview.findings : [],
+})
+
 function stopResult(crew, err) {
-  if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at }
+  const ux = uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}
+  if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
-  return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step }
+  return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
 }
 
 // the label of the crew's next agent of a role: <slug>-<role>, then -2, -3 ... (numbering starts at labelFrom[role])
@@ -115,6 +143,17 @@ function nextLabel(crew, role) {
   const n = crew.counters[role] ?? (crew.e.labelFrom && crew.e.labelFrom[role]) ?? 1
   crew.counters[role] = n + 1
   return n === 1 ? `${crew.slug}-${role}` : `${crew.slug}-${role}-${n}`
+}
+
+// ADR-0022 U6: the entry's ## Members value for a role ({model, effort}), or null. Builder and tester take their own line;
+// a resolver follows the builder line, and a fix member takes the line of its role. A missing members is {}.
+function memberFor(crew, role) {
+  const m = crew.e.members
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null
+  const key = role === 'resolver' ? 'builder' : role
+  if (key !== 'builder' && key !== 'tester') return null
+  const v = m[key]
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : null
 }
 
 // ADR-0015 Decision 6: every spawn of a role other than runner is preceded by admit and followed by reap.
@@ -126,7 +165,8 @@ async function ask(crew, role, prompt, opts = {}) {
   try {
     const label = nextLabel(crew, role)
     if (labelOut) labelOut.label = label
-    return await spawn(role, label, prompt, rest)
+    const member = memberFor(crew, role)
+    return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
   } finally {
     await reap(crew)
   }
@@ -199,19 +239,41 @@ function lastJsonObject(stdout) {
 }
 
 async function runFactory(crew, command, key, line = null) {
-  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)}`
+  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
     "Return the command's exit code as exit and its full standard output as stdout.",
+    `Return as status the last line of standard output that starts with \`${STATUS_PREFIX}\`: copy that line character for character, or "" when there is none.`,
     '',
     full,
   ].join('\n')
   const res = await ask(crew, 'runner', prompt, { schema: RUNNER_SCHEMA })
   if (!res || typeof res.stdout !== 'string') return { met: false, parsed: null, out: 'the runner returned no result' }
-  const parsed = lastJsonObject(res.stdout)
-  const met = parsed !== null && typeof parsed === 'object' && parsed[key] === true
-  return { met, parsed, out: `exit ${res.exit}\n${res.stdout}` }
+  const fromStdout = lastJsonObject(res.stdout)
+  const status = statusOf(res.status)
+  // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or
+  // unparseable status falls back to the stdout rule
+  if (status) {
+    const parsed = { ...(fromStdout || {}), ...status }
+    if (typeof status.ran === 'boolean') parsed.heavy = { ...(isPlainObject(fromStdout && fromStdout.heavy) ? fromStdout.heavy : {}), ran: status.ran }
+    return { met: status[key] === true, parsed, out: `exit ${res.exit}\n${res.stdout}` }
+  }
+  const met = fromStdout !== null && typeof fromStdout === 'object' && fromStdout[key] === true
+  return { met, parsed: fromStdout, out: `exit ${res.exit}\n${res.stdout}` }
+}
+
+// the object of a `truss-status: {...}` line, or null when the runner gave none or it does not parse
+function statusOf(s) {
+  if (typeof s !== 'string') return null
+  const t = s.trim()
+  if (!t.startsWith(STATUS_PREFIX)) return null
+  try {
+    const v = JSON.parse(t.slice(STATUS_PREFIX.length))
+    return isPlainObject(v) ? v : null
+  } catch {
+    return null
+  }
 }
 
 // the environment failure factory.ts check names in its output (ADR-0009 "check, environment failures"), or null
@@ -233,7 +295,8 @@ function heavyParts(crew) {
   const dr = `--dir ${sh(dir)} --repo ${sh(F.repo)}`
   const slug = sh(crew.slug)
   const cwd = sh(crew.e.worktree)
-  return { bin, dr, slug, cwd, prefix: `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} --` }
+  // ADR-0022 U5: --status-line goes on the heavy side of the --, so heavy prints the one status line
+  return { bin, dr, slug, cwd, prefix: `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} --status-line --` }
 }
 
 function heavyLine(crew, expect) {
@@ -270,11 +333,23 @@ async function check(crew, expect) {
 
 // ---------------------------------------------------------------- prompts
 
+// ADR-0022 U4: the crew's UX direction as one heading line and every line quoted with "> "; [] on a crew without ux or
+// without a direction, so those briefs are unchanged. No brief gets a path in its place.
+function directionLines(crew) {
+  const d = uxOn(crew) ? crew.direction : null
+  if (!d) return []
+  const text = d.text.replace(/\r/g, '').replace(/\s+$/, '')
+  return [`The crew's UX direction (report ${d.label}), quoted:`, ...text.split('\n').map((l) => `> ${l}`)]
+}
+
 function memberPrompt(crew, role, parts) {
   const e = crew.e
   const lines = [`You are the ${role} for crew ${crew.slug}. ${BRAVE}`, '']
   lines.push(...parts.start)
-  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '', `Acceptance test: ${acceptanceOf(e)}`, '')
+  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '')
+  const dl = directionLines(crew)
+  if (dl.length) lines.push(...dl, '')
+  lines.push(`Acceptance test: ${acceptanceOf(e)}`, '')
   lines.push(...parts.body)
   lines.push(
     '',
@@ -594,6 +669,8 @@ function plannerPrompt(crew, errors) {
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
   ]
+  const dl = directionLines(crew)
+  if (dl.length) lines.push('', ...dl)
   const answers = e.answers || []
   if (answers.length) lines.push('', 'Answers to earlier stops of this crew:', ...answers.map((a) => `- at ${a.at}: ${a.text}`))
   lines.push('', 'Load the `subagent-limits:split-work` skill before splitting work.')
@@ -628,6 +705,7 @@ async function green(crew) {
   for (let attempt = 1; ; attempt++) {
     crew.step = 'green'
     const g = await check(crew, 'green')
+    crew.greenOut = g.out
     if (g.met) {
       if (typeof g.parsed.head !== 'string' || !g.parsed.head) throw new Stop('BLOCKED', `the green check gave no head:\n${g.out}`, 'green')
       crew.head = g.parsed.head
@@ -783,6 +861,17 @@ function earlierReports(crew) {
   return { paths, last }
 }
 
+// ADR-0022 U4: a ux crew's QC gets the direction and the last review's label, verdict and findings; [] on other crews
+function uxQcLines(crew) {
+  if (!uxOn(crew)) return []
+  const rv = crew.uxReview
+  const review = rv
+    ? [`Last UX review: report ${rv.label}, verdict ${rv.verdict}.`, ...(rv.findings.length ? ['Its findings:', ...rv.findings] : [])]
+    : ['Last UX review: none in this run.']
+  const dl = directionLines(crew)
+  return [...(dl.length ? [...dl, ''] : []), ...review, 'Check the UI work against the UX direction yourself.', '']
+}
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -806,6 +895,7 @@ function qcPrompt(crew) {
     'Last stress-test report:',
     crew.stressTest || 'none',
     '',
+    ...uxQcLines(crew),
     `Approved scope: ${scopeOf(e)}`,
     '',
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
@@ -848,7 +938,7 @@ async function qc(crew) {
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
@@ -857,6 +947,110 @@ async function qc(crew) {
     if (unscoped.length) await fixBuilder(crew, 'QC findings', detail)
     else await fixFindings(crew, 'QC findings', 'The QC ruled FAIL, with these findings:', /^## Findings\s*$/m.test(j.text) ? sectionOf(j.text, '## Findings').join('\n') : j.text, detail)
     await green(crew)
+  }
+}
+
+// ---------------------------------------------------------------- UX direction and review (ADR-0022 U4)
+
+// the first non-empty line of a reply, past a harness banner
+const firstLineOf = (text) => (unbannered(text).split('\n').find((l) => l.trim() !== '') || '').trim()
+const stopTagOf = (first) => ['QUESTION', 'BLOCKED', 'PROPOSAL'].find((t) => first.startsWith(`${t}:`))
+const replyOf = (v) => unbannered(typeof v === 'string' ? v : '').replace(/\r/g, '').trim()
+
+function uxDirectionPrompt(crew) {
+  const e = crew.e
+  const answers = (e.answers || []).filter((a) => a.at === 'ux-direction').map((a) => `- ${a.text}`)
+  const lines = [
+    `UX direction: crew ${crew.slug}`,
+    `Goal file: ${e.goalFile}`,
+    `Crew worktree: ${e.worktree}`,
+    `Approved scope: ${scopeOf(e)}`,
+    `Architecture doc: ${e.architecture}`,
+    `ADRs: ${(e.adrs || []).join(', ') || 'none'}`,
+  ]
+  if (answers.length) lines.push('', 'Answers to your earlier questions:', ...answers)
+  lines.push('', REFUSAL, PKILL)
+  return lines.join('\n')
+}
+
+// UX: DIRECTION keeps the reply as the direction; a stop tag stops the crew; anything else gets one fresh ux agent
+async function uxDirection(crew) {
+  crew.step = 'ux-direction'
+  let text = ''
+  for (let n = 0; n < 2; n++) {
+    const got = {}
+    text = replyOf(await ask(crew, 'ux', uxDirectionPrompt(crew), { at: 'ux-direction', labelOut: got }))
+    const first = firstLineOf(text)
+    if (first.startsWith('UX: DIRECTION')) {
+      crew.direction = { label: got.label, text }
+      return
+    }
+    const tag = stopTagOf(first)
+    if (tag) throw new Stop(tag, text, 'ux-direction')
+  }
+  throw new Stop('BLOCKED', `no direction from two UX engineers:\n${text || 'no result'}`, 'ux-direction')
+}
+
+function uxReviewPrompt(crew, previous) {
+  const e = crew.e
+  const lines = [
+    `UX review: crew ${crew.slug}`,
+    `Goal file: ${e.goalFile}`,
+    `Checkout: ${e.worktree}`,
+    `Head: ${crew.head}`,
+    `Crew branch: ${e.branch}`,
+    '',
+    ...directionLines(crew),
+    '',
+    "The last green check's output tail:",
+    clip(crew.greenOut || 'none'),
+  ]
+  if (previous) lines.push('', `The previous review (report ${previous.label}) asked for rework:`, previous.text)
+  lines.push('', REFUSAL, PKILL)
+  return lines.join('\n')
+}
+
+// a review's numbered findings (`<n>. <screen>: ...`), each with its indented continuation lines
+function uxFindingsOf(text) {
+  const out = []
+  for (const line of String(text || '').replace(/\r/g, '').split('\n')) {
+    if (/^\s*\d+\.\s/.test(line)) out.push(line.trim())
+    else if (/^\s+\S/.test(line) && out.length) out[out.length - 1] += `\n${line.trim()}`
+  }
+  return out
+}
+
+// one review: UX: PASS or UX: REWORK; a stop tag stops the crew; no verdict gets one fresh reviewer, then BLOCKED
+async function runUxReview(crew, previous) {
+  let text = ''
+  for (let n = 0; n < 2; n++) {
+    const got = {}
+    text = replyOf(await ask(crew, 'ux', uxReviewPrompt(crew, previous), { at: 'ux-review', labelOut: got }))
+    const first = firstLineOf(text)
+    const verdict = first.startsWith('UX: PASS') ? 'PASS' : first.startsWith('UX: REWORK') ? 'REWORK' : null
+    if (verdict) return { label: got.label, text, verdict, findings: verdict === 'REWORK' ? uxFindingsOf(text) : [] }
+    const tag = stopTagOf(first)
+    if (tag) throw new Stop(tag, text, 'ux-review')
+  }
+  throw new Stop('BLOCKED', `no verdict from two UX reviews:\n${text || 'no result'}`, 'ux-review')
+}
+
+// after green, before the stress test, scope and QC: a REWORK costs one rework unit, as a QC FAIL does
+async function uxReview(crew) {
+  let previous = null
+  for (;;) {
+    crew.step = 'ux-review'
+    guardAllowance(crew, 'ux-review')
+    const rv = await runUxReview(crew, previous)
+    crew.uxReview = rv
+    if (rv.verdict === 'PASS') return
+    crew.fails++
+    if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'ux-review', rv.text)
+    const header = 'The UX review asked for rework, with these findings:'
+    const findings = rv.findings.length ? rv.findings.map((f) => `- ${f}`).join('\n') : rv.text
+    await fixFindings(crew, 'UX findings', header, findings, `${header}\n${findings}`)
+    await green(crew)
+    previous = rv
   }
 }
 
@@ -893,6 +1087,8 @@ async function chain(crew) {
   // an answers resume skips the red check, unless the stop it answers was at red (an environment failure the client fixed)
   const redAnswered = (e.answers || []).some((a) => a.at === 'red')
   if ((e.resume !== 'answers' || redAnswered) && !(e.resume === 'stale' && tasks.length)) await redStep(crew)
+  // ADR-0022 U4: a ux crew with no direction (a first run, or a resume with saved tasks but none) gets one before the split
+  if (uxOn(crew) && !crew.direction) await uxDirection(crew)
   if (tasks.length) {
     crew.step = 'split'
     const errors = validateTasks(tasks, e.owns)
@@ -903,6 +1099,7 @@ async function chain(crew) {
   }
   await runMembers(crew, tasks)
   await green(crew)
+  if (uxOn(crew)) await uxReview(crew)
   if (e.stressTest) await stressTest(crew)
   await scope(crew)
   return qc(crew)
