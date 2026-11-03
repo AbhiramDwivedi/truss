@@ -16,11 +16,12 @@
 // Cases titled `i29 M:` fail on the base code; `control N:` cases pass on it.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { codeOnly } from './hooks-load.check.ts'
+import { symlinkSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const REGISTER = new URL('../hooks/register.ts', import.meta.url)
 const SKILL = new URL('../skills/run/SKILL.md', import.meta.url)
@@ -233,20 +234,113 @@ test('i29 12: without trussFile it returns the args unchanged and never reads', 
   assert.equal(reads, 0)
 })
 
-test('i29 13: the Workflow handler calls expandTrussFile before workflowCallVerdict, passes rewritten args to next, and fails open', () => {
-  const raw = readFileSync(REGISTER, 'utf8')
-  const code = codeOnly(raw)
-  const start = raw.indexOf("on('tool.call', { tool: 'Workflow' }")
-  assert.ok(start > 0, 'Workflow handler not found')
-  const end = code.indexOf('}).catch(failOpen)', start)
-  assert.ok(end > start, 'handler does not end with .catch(failOpen)')
-  const h = code.slice(start, end + '}).catch(failOpen)'.length)
-  const exp = h.indexOf('expandTrussFile(')
-  const ver = h.indexOf('workflowCallVerdict(')
-  assert.ok(exp >= 0, 'the handler never calls expandTrussFile')
-  assert.ok(ver > exp, 'expandTrussFile must be called before workflowCallVerdict')
-  assert.match(h, /next\(\s*\{\s*\.\.\.e\s*,\s*args\b/, 'next is not called with { ...e, args: <expanded> }')
-  assert.ok(h.endsWith('.catch(failOpen)'))
+// ---- the real Workflow handler, driven through register() with a fake engine over a real temp truss dir ----
+
+const REAL_STAGE = fileURLToPath(new URL('../workflows/stage.js', import.meta.url))
+
+async function drive(
+  fn: (h: { call: (e: Record<string, unknown>) => Promise<any>; truss: string; outside: string; reads: string[]; nexts: any[] }) => Promise<void>,
+) {
+  const mod = await import('../hooks/register.ts')
+  await withDirs(async ({ root, outside }) => {
+    const common = join(root, 'git')
+    const sessionId = 's1'
+    const truss = mod.trussDir(common, undefined, sessionId)
+    mkdirSync(truss, { recursive: true })
+    writeFileSync(mod.planPath(truss), JSON.stringify(runningPlan()))
+    const reads: string[] = []
+    const $: any = {
+      process: { run: async () => ({ exitCode: 0, stdout: `${common}\n`, stderr: '' }) },
+      session: { cwd: async () => root, id: async () => sessionId },
+      env: { get: async () => undefined },
+      clock: { after: () => ({ cancel() {} }) },
+      ui: { log: () => {} },
+      fs: {
+        exists: async (p: string) => existsSync(p),
+        read: async (p: string) => {
+          reads.push(p)
+          return readFileSync(p, 'utf8')
+        },
+        stat: async (p: string) => ({ realPath: realpathSync(p) }),
+        write: async () => {},
+      },
+      state: { get: async () => ({ value: undefined, version: 0 }), set: async () => ({ isSet: true, version: 1 }) },
+    }
+    let handler: any
+    const on: any = (...a: any[]) => {
+      if (a[1] && typeof a[1] === 'object' && a[1].tool === 'Workflow') handler = a[a.length - 1]
+      const chain: any = { catch: () => chain }
+      return chain
+    }
+    mod.register(on)
+    assert.ok(handler, 'the Workflow handler was not registered')
+    const nexts: any[] = []
+    const next = async (ev: any) => {
+      nexts.push(ev)
+      return { passed: ev }
+    }
+    const call = (e: Record<string, unknown>) => handler($, { tool: 'Workflow', scriptPath: REAL_STAGE, ...e }, next)
+    await fn({ call, truss, outside, reads, nexts })
+  })
+}
+
+test('control 4: a trussFile on a non-plugin script is never read or expanded', async () => {
+  await drive(async ({ call, truss, reads, nexts }) => {
+    const file = join(truss, 'stage-args.json')
+    writeFileSync(file, JSON.stringify({ truss: stageTruss() }))
+    await call({ scriptPath: undefined, script: 'export default async function () { return 1 }', args: { trussFile: file } })
+    assert.ok(!reads.includes(file), 'the trussFile of a non-plugin script was read')
+    for (const ev of nexts) assert.ok(!('truss' in (asObj(ev.args) ?? {})), 'a non-plugin script got args.truss')
+  })
+})
+
+test('i29 13: the handler expands a plugin script trussFile before the gate judges it, and passes the object args on to next', async () => {
+  await drive(async ({ call, truss, nexts }) => {
+    const file = join(truss, 'stage-args.json')
+    writeFileSync(file, JSON.stringify({ truss: stageTruss() }))
+    const r = await call({ args: { trussFile: file, other: 1 } })
+    assert.equal(r.deny, undefined, r.deny)
+    assert.equal(nexts.length, 1)
+    assert.deepEqual(nexts[0].args, { other: 1, truss: stageTruss() })
+    assert.equal(nexts[0].scriptPath, REAL_STAGE)
+  })
+})
+
+test('i29 14: the handler passes string args on to next as a string', async () => {
+  await drive(async ({ call, truss, nexts }) => {
+    const file = join(truss, 'stage-args.json')
+    writeFileSync(file, JSON.stringify({ truss: stageTruss() }))
+    const r = await call({ args: JSON.stringify({ trussFile: file }) })
+    assert.equal(r.deny, undefined, r.deny)
+    assert.equal(nexts.length, 1)
+    assert.equal(typeof nexts[0].args, 'string')
+    assert.deepEqual(JSON.parse(nexts[0].args), { truss: stageTruss() })
+  })
+})
+
+test('i29 15: the handler refuses a trussFile whose real path leaves the truss dir through a symlink', async () => {
+  await drive(async ({ call, truss, outside, reads, nexts }) => {
+    const target = join(outside, 'a.json')
+    writeFileSync(target, JSON.stringify({ truss: stageTruss() }))
+    const link = join(truss, 'link.json')
+    symlinkSync(target, link)
+    const r = await call({ args: { trussFile: link } })
+    denied(r)
+    assert.match(r.deny, /outside the truss dir/, r.deny)
+    assert.equal(nexts.length, 0)
+    assert.ok(!reads.includes(link), 'the symlinked file was read')
+  })
+})
+
+test('i29 16: the handler refuses a trussFile under a symlinked sub-directory that leaves the truss dir', async () => {
+  await drive(async ({ call, truss, outside, nexts }) => {
+    writeFileSync(join(outside, 'a.json'), JSON.stringify({ truss: stageTruss() }))
+    symlinkSync(outside, join(truss, 'sub'))
+    const r = await call({ args: { trussFile: join(truss, 'sub', 'a.json') } })
+    denied(r)
+    assert.match(r.deny, /outside the truss dir/, r.deny)
+    assert.equal(nexts.length, 0)
+  })
 })
 
 // ---- skill ----
