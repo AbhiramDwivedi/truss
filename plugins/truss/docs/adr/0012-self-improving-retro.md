@@ -4,6 +4,8 @@ Status: accepted, 2026-10-31: the design crew `retro-design` merged at 05:09 (`9
 
 Amended 2026-10-31 by the end-of-run design-engineer extend pass, to match the merged code at `f01caf4` and the PM's rulings of decisions.md 06:32 (checker-14): the `stop` kind and the quiet rule in Decision 2, line references in Decisions 3 and 10, the `command` probe in Decision 9, the `scrub` command in Decision 6, and `scrub` in the Seams.
 
+Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): a main-session `tool.call` hook on `Bash` in `hooks/register.ts` enforces R-32 before each merge, refusing a `git push` or `git merge` that `retro/cli.ts scrub` doesn't gate with `&&`. Decision 6's scrub step is unchanged.
+
 VERDICT: change. The interfaces that can't take the work are the retro skill's source rule, P24 (`skills/retro/SKILL.md:8`, "You never read the raw logs (P24)", and `:74`, "It never reads message, prompt or report bodies (P24)."), and `factory.ts check`'s one failure label, `env` (`bin/factory.ts:459-494`, `ENV_PATTERNS` and `envFailure`).
 
 ## Context
