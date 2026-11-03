@@ -146,7 +146,7 @@ const entry = (slug = 'a', o = {}) => ({
   slug, stage: 1, goalFile: `/proj/.truss/goals/${slug}.md`, goal: 'GOAL-TEXT', owns: ['src/**', 'tests/*.ts'],
   acceptanceTest: 'node --test tests/a.check.ts', highImpact: ['src/core/**'], stressTest: false, scope: 'SCOPE-VERBATIM: build a, nothing else',
   worktree: `/wt/${slug}`, branch: `truss/${slug}`, base: BASE, architecture: '/proj/docs/ARCH.md', adrs: ['/proj/docs/adr/0001-x.md'],
-  resume: null, tasks: [], done: [], answers: [], spent: 0, labelFrom: {}, ...o,
+  ownTests: ['tests/*.ts'], resume: null, tasks: [], done: [], answers: [], spent: 0, labelFrom: {}, ...o,
 })
 const base = (slug = 'a', over = {}) => ({
   [`${slug}-planner`]: PLAN(), [`${slug}-tester`]: done('feat/t', 'PROOF-T'), [`${slug}-builder`]: done('feat/b', 'PROOF-B'), [`${slug}-qc`]: PASS, ...over,

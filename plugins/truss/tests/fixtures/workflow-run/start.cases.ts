@@ -10,8 +10,9 @@
 //   to every start call that needs the runs (--stage next with running crews, --resume stale), and the runs root is
 //   that dir's parent;
 // - a refusal of `--resume ...` is exit 1 with `why` at the top level of the one-line JSON object;
-// - the `goal` entry field is only checked to be a string; `stressTest` is `true` or a string that says "yes"; `scope`
-//   and `highImpact` contain the goal file's section text;
+// - ADR-0019 item 7: a lean entry has no `goal`, and no `scope` when the goal file has `## Approved scope` (the fixture goal files
+//   have no `## Acceptance test`, so `acceptanceTest` stays from the plan); `stressTest` is `true` or a string that says "yes";
+//   `highImpact` contains the goal file's section text;
 // - the stage.js copy made by --scripts-dir is `<S>/truss-stage.js` (plan-args writes `truss-plan.js` the same way);
 // - a task in `done` is a task name (string) or a task object with a `name`; `tasks` are the planner's task objects;
 // - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
@@ -40,7 +41,7 @@ const norm = (p: string): string => {
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
-const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goal', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'ownTests', 'owns', 'resume', 'scope', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
+const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'done', 'goalFile', 'guarded', 'highImpact', 'labelFrom', 'ownTests', 'owns', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
 function world(crews: any[], o: { config?: unknown; plan?: Record<string, unknown>; goals?: Record<string, any> } = {}) {
@@ -97,6 +98,13 @@ function memberBranch(wt: string, crewBranch: string, name: string, merge: boole
 }
 
 const task = (name: string) => ({ name, role: 'builder', effort: 'medium', files: [`src/x/${name}.ts`], reads: [], brief: `do ${name}`, after: [] })
+
+/** A resumed entry's tasks are the plan's tasks by name; a task in `done` may be a stub (ADR-0019 item 7), the others are whole. */
+function assertTasks(e: any, expected: any[], msg?: string): void {
+  const done = e.done.map((d: any) => (typeof d === 'string' ? d : d.name))
+  assert.deepEqual(e.tasks.map((x: any) => x.name), expected.map((x) => x.name), msg)
+  for (const want of expected) if (!done.includes(want.name)) assert.deepEqual(e.tasks.find((x: any) => x.name === want.name), want, msg)
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // engine split
@@ -310,14 +318,15 @@ test('start output: top-level keys, truss keys and crew entry keys are exactly t
   assert.equal(e.slug, 'x')
   assert.equal(e.stage, 1)
   assert.equal(norm(e.goalFile), norm(`${env.dir}/goals/x.md`))
-  assert.equal(typeof e.goal, 'string')
+  assert.ok(!('goal' in e), 'lean entry (ADR-0019 item 7): no goal key; the goal file holds the goal')
   assert.deepEqual(e.owns, ['src/x/**', 'docs/x.md', 'tests/x.check.ts'])
   assert.deepEqual(e.ownTests, ['tests/x.check.ts'], 'ownTests: the owns entries the one test-path rule accepts (ADR-0019 item 9)')
   assert.deepEqual(e.guarded, [], 'guarded: t.ts does not exist and no test-writer commit exists')
   assert.equal(e.acceptanceTest, 'node --test t.ts')
   assert.ok(JSON.stringify(e.highImpact).includes('src/x/core.ts'), 'high-impact section read from the goal file')
   assert.ok(e.stressTest === true || /yes/i.test(String(e.stressTest)), `stressTest from the goal file: ${JSON.stringify(e.stressTest)}`)
-  assert.ok(JSON.stringify(e.scope).includes('Build only the x thing.'), 'approved scope read from the goal file')
+  assert.ok(!('scope' in e), 'lean entry (ADR-0019 item 7): no scope key when the goal file has ## Approved scope')
+  assert.ok(readFileSync(e.goalFile, 'utf8').includes('Build only the x thing.'), 'approved scope stays in the goal file the entry points to')
   assert.equal(norm(e.worktree), norm(wtPath(env, 'x')))
   assert.equal(e.branch, 'truss-x')
   assert.equal(e.base, git(wtPath(env, 'x'), ['merge-base', 'main', 'HEAD']))
@@ -459,7 +468,7 @@ test('start --resume answers: tasks come from the highest-numbered planner resul
   assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
   assert.equal(e.slug, 'x')
   assert.equal(e.resume, 'answers')
-  assert.deepEqual(e.tasks, plannerTasks, 'planner-10 beats planner-2 numerically, not by journal order')
+  assertTasks(e, plannerTasks, 'planner-10 beats planner-2 numerically, not by journal order')
   const done = e.done.map((d: any) => (typeof d === 'string' ? d : d.name))
   assert.deepEqual(done, ['t1'], 't2 is DONE but unmerged, t3 merged but CHECKPOINT, t4 has no branch')
   assert.deepEqual(e.answers, ans)
@@ -501,13 +510,13 @@ test('start --resume answers: tasks and done combine every run of the crew next 
   deadRun(env, 'wf_first', [{ label: 'x-planner', result: { tasks, stop: null } }, { label: 'x-builder', result: member('t1', 'member-t1') }], { agoMs: 30 * MIN })
   const second = deadRun(env, 'wf_second', [{ label: 'x-builder-2', result: member('t2', 'member-t2') }], { agoMs: 20 * MIN })
   const e = assertOneLine(resume(env, 'x', 'answers', { transcript: second.dir, answers: answersFile([]) })).truss.crews[0]
-  assert.deepEqual(e.tasks, tasks, 'the plan comes from run 1: run 2 has no planner result')
+  assertTasks(e, tasks, 'the plan comes from run 1: run 2 has no planner result')
   assert.deepEqual(e.done.map((d: any) => (typeof d === 'string' ? d : d.name)), ['t1', 't2'], 't1 was merged in run 1, t2 in run 2')
   // run 3 re-split (planner-2): only its own members count, so run 1's t1 never matches a task of the new plan by name
   const resplit = [task('t1'), task('t4')]
   const third = deadRun(env, 'wf_third', [{ label: 'x-planner-2', result: { tasks: resplit, stop: null } }], { agoMs: 10 * MIN })
   const r = assertOneLine(resume(env, 'x', 'answers', { transcript: third.dir, answers: answersFile([]) })).truss.crews[0]
-  assert.deepEqual(r.tasks, resplit)
+  assertTasks(r, resplit)
   assert.deepEqual(r.done, [])
 })
 
@@ -648,7 +657,7 @@ test('start --resume stale: a dead run recorded with `incomplete` -> tasks and d
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
   const e = j.truss.crews[0]
   assert.equal(e.resume, 'stale')
-  assert.deepEqual(e.tasks, tasks)
+  assertTasks(e, tasks)
   assert.deepEqual(e.done.map((d: any) => (typeof d === 'string' ? d : d.name)), ['t1'])
   assert.equal(e.spent, 1, 'the dead run\'s qc FAIL is counted')
   assert.equal(e.labelFrom.qc, 2, 'the dead run\'s qc label is skipped')
