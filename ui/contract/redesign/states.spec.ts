@@ -47,6 +47,30 @@ async function colours(page: Page, state: string, theme: Theme): Promise<void> {
   await expect(surface).toHaveCSS('background-color', token('move', theme), T)
 }
 
+// The contrast pairs ADR-0023 section 4 rules, as the app's own styles render them (checklist item 25): a
+// Live metrics term is muted text on a sunken tile (never subtle), and an ok status chip's text is fg (ok is
+// for dots, bars and icons only). The tile is the term's nearest ancestor that paints a background.
+async function pairs(page: Page, state: string, theme: Theme): Promise<void> {
+  if (state === 'live-counter') {
+    const term = page.getByRole('region', { name: 'Live metrics' }).getByRole('term').first()
+    await expect(term, 'a Live metrics term is muted text').toHaveCSS('color', token('muted', theme), T)
+    expect(token('muted', theme)).not.toBe(token('subtle', theme))
+    const tile = await term.evaluate((el) => {
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        const bg = getComputedStyle(n).backgroundColor
+        if (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg
+      }
+      return null
+    })
+    expect(tile, `the Live metrics tile behind a term is tokens.json sunken (${theme})`).toBe(token('sunken', theme))
+  } else if (state === 'crews-running') {
+    const chip = page.getByRole('region', { name: 'Crews' }).getByText('Merged', { exact: true }).first()
+    await expect(chip, 'the merged crew carries an ok status chip that reads Merged').toBeVisible(T)
+    await expect(chip, 'ok status chip text is fg').toHaveCSS('color', token('fg', theme), T)
+    expect(await chip.evaluate((el) => getComputedStyle(el).color), 'ok is never a text colour').not.toBe(token('ok', theme))
+  }
+}
+
 // What ADR-0023 section 4 gives the state beyond the shell.
 async function content(page: Page, state: string, s: Scenario): Promise<void> {
   const move = page.getByRole('region', { name: 'Your move' })
@@ -211,6 +235,7 @@ for (const state of STATES) {
         await shell(page, theme)
         await content(page, state, s)
         await colours(page, state, theme)
+        await pairs(page, state, theme)
         const res = await new AxeBuilder({ page }).withTags(TAGS).analyze()
         const lines = res.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n    ${v.nodes.map((n) => n.target.join(' ')).slice(0, 5).join('\n    ')}`)
         expect(res.violations, `axe violations in ${state}, ${theme}:\n${lines.join('\n')}`).toEqual([])

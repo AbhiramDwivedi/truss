@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { WITHIN, card, crewLine, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { WITHIN, card, crewLine, expectD2Colours, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -84,6 +84,17 @@ test('a11y: empty run, with the no-Truss-dir notice', async ({ page }) => {
   for (const [fg, bg] of bad) {
     const hit = await contrastViolations(page, [[fg, bg]], sample)
     expect(hit, `${fg} text on ${bg} must fail color-contrast`).toContain('color-contrast')
+  }
+})
+
+// ADR-0023 checklist item 22: the app's own styles, not a planted sample, paint the tokens.json colours.
+test('a11y: D2 colours, body is tokens.json bg and the move surface is move, light and dark', async ({ page }) => {
+  iface = await startInterface()
+  await page.goto(iface.url)
+  await expect(sessionStatus(page)).toContainText('idle', LOAD)
+  for (const colorScheme of SCHEMES) {
+    await page.emulateMedia({ colorScheme })
+    await expectD2Colours(page, colorScheme)
   }
 })
 
