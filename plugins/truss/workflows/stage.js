@@ -6,7 +6,9 @@ export const meta = {
 // stage.js plays the foreman's orchestration role as code. Every agent call goes through spawn(), which takes the
 // agent type, model, effort and isolation from the roles table and throws before the call when the table is bad.
 
-const F = args.truss
+// ADR-0024 item 29: the Workflow gate expands args.trussFile into args.truss; without an object there, stop before any agent call
+const F = args && args.truss
+if (!F || typeof F !== 'object' || Array.isArray(F)) throw new Error('args.truss is missing: the Workflow gate expands args.trussFile into args.truss; pass args.truss inline when the gate did not run')
 const ROLE_EFFORTS = ['low', 'medium']
 const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
 const TRAILER_ROLE = { tester: 'test-writer', builder: 'builder', writer: 'writer', resolver: 'resolver' }
@@ -322,9 +324,18 @@ const acceptanceOf = (e) => (typeof e.acceptanceTest === 'string' ? e.acceptance
 
 // ADR-0019 item 12: the answers a member gets. An answer at a task name goes to that task only; one at any other name
 // (a step such as red, split, green or qc, or a task the plan no longer has) goes to every member. name: null for a fix member.
+// ADR-0024 item 25: an answer at a UX step reaches that step, the planner and QC, never a member.
+const UX_STEPS = ['ux-direction', 'ux-review']
 const answersFor = (crew, name) => {
   const names = new Set((crew.tasks || []).map((t) => t.name))
-  return (crew.e.answers || []).filter((a) => (name !== null && a.at === name) || !names.has(a.at)).map((a) => `- ${a.text}`)
+  return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) && ((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
+}
+
+// the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1)
+const testsCheckExtra = (crew, ...lines) => {
+  const head = typeof crew.e.head === 'string' && crew.e.head ? [`Head: ${crew.e.head}`] : []
+  const all = [...lines.filter(Boolean), ...head]
+  return all.length ? all.join('\n') : null
 }
 
 async function check(crew, expect) {
@@ -371,9 +382,7 @@ function memberPrompt(crew, role, parts) {
     REFUSAL,
     PKILL,
     '',
-    'Every commit you make ends with these trailers:',
-    `Truss-Crew: ${crew.slug}`,
-    `Truss-Role: ${TRAILER_ROLE[role]}`,
+    ...(parts.trailers || ['Every commit you make ends with these trailers:', `Truss-Crew: ${crew.slug}`, `Truss-Role: ${TRAILER_ROLE[role]}`]),
     "They go in the message's last block, with no blank line between them or before any Co-Authored-By line, or git does not read them. After each commit, run `git log -1 --format=%B` and check that its last block holds the Truss-Crew and Truss-Role lines; if it does not, fix the message with git commit --amend. A merge refuses a commit whose Truss-Crew or Truss-Role git cannot read.",
     '',
     'You have no Agent tool; do the work yourself.',
@@ -586,22 +595,46 @@ async function fixFindings(crew, what, header, findingsText, wholeDetail) {
   await testsBackstop(crew, what)
 }
 
-// bug 28: after a builder fix, the tests check testsGuard runs. Touched tester files get a tester fix that moves each such
-// change into a tester commit, then one re-check; a check that still fails is left to testsGuard to stop on.
+// ADR-0024 item 28: the backstop's own prompt, for the resolver role in the crew worktree (isolation none, as resolveConflicts):
+// no merge first step and no own-worktree line, since the rewrite is on the crew branch itself
+function backstopPrompt(crew, what, lines) {
+  const e = crew.e
+  const body = [
+    `Task: tests backstop, ${what}`,
+    `Work in the crew worktree ${e.worktree} (branch ${e.branch}). Do not make a new worktree.`,
+    `Run git as git -C ${e.worktree} <command> so it acts on the crew worktree whatever your working directory is.`,
+    '',
+    'These builder commits on the crew branch touch tester-owned files, so the tests check fails:',
+    ...lines,
+    '',
+    `Rewrite them on the crew branch ${e.branch} itself. Split each listed commit so its changes to the files listed for it sit in their own commit with the trailers Truss-Crew: ${crew.slug} and Truss-Role: ${TRAILER_ROLE.tester}, and the rest stays in a commit with its original trailers.`,
+    'Keep the tree identical: git diff between the old and the new tip must be empty, and no file content changes.',
+    `Report the branch ${e.branch} and its new tip as the commit.`,
+  ]
+  const trailers = [
+    'Every commit you make keeps the trailers named above: a split-out tester-file commit ends with',
+    `Truss-Crew: ${crew.slug}`,
+    `Truss-Role: ${TRAILER_ROLE.tester}`,
+    'and the rest keep their original Truss-Crew and Truss-Role lines; never give them Truss-Role: resolver.',
+  ]
+  return memberPrompt(crew, 'resolver', { start: [], body, trailers })
+}
+
+// bug 28: after a builder fix, the tests check testsGuard runs. Touched tester files get a resolver that moves each such
+// change into a tester commit on the crew branch, then one re-check; a check that still fails is left to testsGuard to stop on.
 async function testsBackstop(crew, what) {
   const n = (crew.backstops = (crew.backstops || 0) + 1)
   // an extra line per run, so no run shares testsGuard's cache key or another run's (the runtime caches by prompt)
-  const check = (k) => runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, `Backstop: ${n}.${k}`)
+  const check = (k) => runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, `Backstop: ${n}.${k}`))
   const r = await check(1)
   const touched = !r.met && r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   if (!touched.length) return
-  const e = crew.e
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
-  await fixBuilder(crew, `${what}, builder commits on tester files`, [
-    'These builder commits on the crew branch touch tester-owned files, so the tests check fails:',
-    ...lines,
-    `Rewrite them on the crew branch itself: run git as git -C ${e.worktree} <command> (branch ${e.branch}), not in your own worktree. Split each listed commit so its changes to the files listed for it sit in their own commit with the trailers Truss-Crew: ${crew.slug} and Truss-Role: ${TRAILER_ROLE.tester}, and the rest stays in a commit with its original trailers. Keep the tree identical: git diff between the old and the new tip must be empty, and no file content changes. Report the branch ${e.branch}.`,
-  ].join('\n'), 'tester')
+  const at = crew.step
+  const label = `${what}, builder commits on tester files`
+  const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at })
+  if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish the tests backstop (${label}): ${report ? report.text : 'no report'}`, at)
+  crew.proofs.push(`tests backstop (${what}): ${report.proof}`)
   await check(2)
 }
 
@@ -751,13 +784,15 @@ async function green(crew) {
       return
     }
     const env = envOf(g)
+    // ADR-0024 seam 2: an env line that does not explain every failure is named to the fix builder, never stopped on
+    const seen = !env && g.parsed && typeof g.parsed.envSeen === 'string' && g.parsed.envSeen ? `\nThe output shows an environment line, but it does not explain every failure: ${g.parsed.envSeen}\nThe cases it hits belong to the host, not the fix: leave them alone and fix the other failures.` : ''
     if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(g)}\n${clip(g.out)}`, 'green')
     if (attempt === 4) throw new Stop('BLOCKED', `the green check still fails after the escalation ladder:\n${clip(g.out)}`, 'green')
     if (attempt < 3) {
-      await fixBuilder(crew, 'green check', `The green check failed.${knownOf(g)}\nIts output tail:\n${clip(g.out)}`)
+      await fixBuilder(crew, 'green check', `The green check failed.${knownOf(g)}${seen}\nIts output tail:\n${clip(g.out)}`)
     } else {
       const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${acceptanceOf(crew.e)}`, 'Failing output:', clip(g.out)].join('\n'))
-      await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
+      await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}${seen}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
     }
   }
 }
@@ -857,7 +892,7 @@ async function testsGuard(crew) {
   crew.step = 'tests'
   // a resume that answers at tests (the PM rewrote the crew branch) must re-run the check, not replay the cached BLOCKED
   const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
-  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, attempt ? `Attempt: ${attempt}` : null)
+  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null))
   if (r.met) return
   const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
@@ -913,6 +948,12 @@ function uxQcLines(crew) {
   return [...(dl.length ? [...dl, ''] : []), ...review, 'Check the UI work against the UX direction yourself.', '']
 }
 
+// ADR-0024 item 25: QC gets the answers at the UX steps, which no member gets; [] when there are none
+function uxAnswerLines(crew) {
+  const answers = (crew.e.answers || []).filter((a) => a && UX_STEPS.includes(a.at))
+  return answers.length ? ['Answers to earlier stops of this crew:', ...answers.map((a) => `- at ${a.at}: ${a.text}`), ''] : []
+}
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -937,6 +978,7 @@ function qcPrompt(crew) {
     crew.stressTest || 'none',
     '',
     ...uxQcLines(crew),
+    ...uxAnswerLines(crew),
     `Approved scope: ${scopeOf(e)}`,
     '',
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
@@ -1032,6 +1074,36 @@ async function uxDirection(crew) {
   throw new Stop('BLOCKED', `no direction from two UX engineers:\n${text || 'no result'}`, 'ux-direction')
 }
 
+// i30: a page, component or style is a literal suffix match on an owns entry; a glob such as ui/e2e/** is not one
+const UI_SUFFIXES = ['.tsx', '.jsx', '.vue', '.svelte', '.css', '.html']
+const ownsUiFile = (owns) => (owns || []).some((f) => UI_SUFFIXES.some((s) => String(f).endsWith(s)))
+
+// i30/i33: the review mode and how the reviewer takes its own screenshots
+function reviewModeLines(e) {
+  const livePage = typeof e.livePage === 'string' && e.livePage.trim() ? e.livePage : null
+  const mode = livePage || ownsUiFile(e.owns) ? 'live' : 'files'
+  const out = [`Review mode: ${mode}`]
+  if (mode === 'files') {
+    out.push("This crew owns no page, component or style: judge the direction's checklist from the files and diff alone.")
+  } else {
+    out.push('Take your own screenshots of each screen the direction names.')
+    if (livePage) out.push("The goal file's ## UX Live page line, quoted:", livePage)
+    else if ((e.owns || []).includes('ui/**')) {
+      out.push(
+        'No Live page line was given, so use the default for a crew that owns ui/**:',
+        '1. Run `npm --prefix ui run build`.',
+        '2. Start `node ui/server/main.ts` in the background on a port the OS picks, and note its pid.',
+        '3. Wait for its listening line, which names the port.',
+        '4. Capture each screen with @playwright/test chromium, loaded from ui/node_modules.',
+        '5. Kill the server by its pid.',
+      )
+    }
+  }
+  if (!livePage) out.push("Read the goal file's ## UX section: if it has a Live page line, follow it to take your screenshots and review live.")
+  out.push('Never stop BLOCKED for missing screenshots: after two failed starts, review from the files and say so in your report.')
+  return out
+}
+
 function uxReviewPrompt(crew, previous) {
   const e = crew.e
   const lines = [
@@ -1042,6 +1114,8 @@ function uxReviewPrompt(crew, previous) {
     `Crew branch: ${e.branch}`,
     '',
     ...directionLines(crew),
+    '',
+    ...reviewModeLines(e),
     '',
     "The last green check's output tail:",
     clip(crew.greenOut || 'none'),
