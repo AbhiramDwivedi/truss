@@ -2,6 +2,23 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.18.0
+
+truss adds a UX engineer that gives a UI crew a design direction and reviews the built screens against it, and fixes plugin bugs item 22 and item 23 ([ADR-0022](docs/adr/0022-ux-engineer.md)). Install or update as before; `claude plugin install truss@truss` still brings kit, worktrees and subagent-limits.
+
+### The UX engineer
+
+- **New agent: `truss:ux-engineer`.** A senior product and UX designer with read-only tools: no Write, Edit, MultiEdit or NotebookEdit. The first line of its brief picks the mode. `UX direction:` returns a direction: screens and states (empty, loading, error, stuck and long content), layout and hierarchy, tokens and components, motion, accessibility, responsive rules, and a checklist the reviewer can verify. `UX review:` checks the screenshots, and the live page when the goal file says how to start a dev server, against that checklist and the design reference. On any other first line it stops `BLOCKED:`. When an input is missing, such as a `## UX` section, screenshots or a dev server that starts, it ends `QUESTION:` or `BLOCKED:` rather than invent a direction (U1).
+- **New role: `ux`.** `workflows/roles.json` runs `truss:ux-engineer` on Opus at effort `medium`, with no isolation. truss.json's `roles.ux` maps the role to another agent type. The role takes no `--type ux=...`. `finish` audits a UX engineer that ran as another agent type or used Write or Edit (U2, R4).
+- **Which crews get one.** A crew gets a UX engineer when its plan.json crew has `ux: true`, or its goal file has a `## UX` section that is not empty and does not start with `none`. Either is enough. plan-check reports `<slug>: ux must be a boolean` for any other `ux` value. A crew with neither runs as before (U3).
+- **Two new stage steps.** After the red check, the `ux-direction` step briefs the UX engineer with `UX direction: crew <slug>`; a report starting `UX: DIRECTION` becomes the crew's direction, which the planner, member and QC briefs quote. After green, the `ux-review` step briefs it with `UX review: crew <slug>`, before the stress test, scope check and QC. `UX: PASS` goes on. `UX: REWORK` costs one unit of `reworkAllowance`, as a QC FAIL does, and sends its numbered findings to a fix builder; then green runs again and a fresh review follows. A resumed crew reuses its newest `UX: DIRECTION` report, and its `UX: REWORK` reports count toward the spend (U4).
+
+### Factory
+
+- **Item 22: `met` no longer depends on a retyped stdout.** stage.js runs factory commands with `--status-line`, and factory.ts then ends its stdout with one short line, `truss-status: {...}`, holding `ok`, `merged`, `admitted`, `head`, `env` and `ran` where the result has them. The runner copies that line, and the workflow decides on it. A missing or broken status line falls back to the old rule (U5).
+- **Item 23: `## Members` sets the model and effort.** `factory start` reads goal-file lines such as `2 builders on opus at effort medium` for builders and testers, and the crew's members run on that model and effort; fix members and resolvers follow the builder value (U6).
+- **The `## Members` refusal.** A `## Members` line at effort `high` or `xhigh` makes `factory start` refuse the crew, which stays `planned`, with a reason that names `## Engine` foreman: a workflow crew runs members at effort `low` or `medium` only (ADR-0009), and `start` never lowers an effort silently. A line with another model or effort, or two lines for one role that disagree, refuses the crew the same way (U6).
+
 ## 0.17.0
 
 truss fixes the plugin bugs its own runs logged, items 1 to 21 of [ADR-0019](docs/adr/0019-factory-fixes2.md), and pins each fix with a test that fails without it. Item 10 is dropped and item 13d is deferred; neither ships.
@@ -31,14 +48,14 @@ truss fixes the plugin bugs its own runs logged, items 1 to 21 of [ADR-0019](doc
 
 ### Stage workflow
 
-TODO: the items below come from ADR-0019, which the runtime-stage crew builds in stage 2; none is in `workflows/stage.js` at this commit (it still has its own `isTestPath` at `:273` and `JSON.parse(res.stdout)` at `:191`). Check each against the code once that crew merges, and drop any it didn't build.
+The runtime-stage crew built these ADR-0019 items in `workflows/stage.js` and `factory start`.
 
-- **Members queue their builds and tests.** The member prompt carries the heavy line of ADR-0017, so members run builds and test suites through `factory heavy` (item 5).
-- **Lean crew entries.** The entry drops `goal`, and leaves out `scope` and `acceptanceTest` when the goal file holds `## Approved scope` and `## Acceptance test`; members read them from `goalFile` (item 7).
-- **stage.js reads `ownTests`** in place of its own `isTestPath` (item 9, reader side).
-- **`runFactory` parses the last JSON line** of stdout, not the whole stdout (item 11).
-- **An answer at a step reaches every member**, not only an answer whose `at` is a task name (item 12).
-- **Builder prompts carry the read-only test list**, and `validateTasks` sends back a plan that breaks the rule (item 16).
+- **Members queue their builds and tests.** Every member prompt carries the heavy line of ADR-0017: run a build, a browser test or a whole test suite through `factory heavy`, with label `<slug>-check`, in the crew worktree. The prompt says a `"ran": false` result means the slot was busy, and that a green result from the slot says nothing about the member's own worktree (item 5).
+- **Lean crew entries.** `factory start` writes no `goal` key. It leaves out `scope` when the goal file has an `## Approved scope` section, and `acceptanceTest` when the goal file's `## Acceptance test` section quotes the plan's command. Without those keys, the prompts tell members to read the section in `goalFile` (item 7).
+- **stage.js reads `ownTests`.** It has no test-path rule of its own any more; the test globs come from the entry's `ownTests`, which `factory start` fills from its one rule (item 9, reader side).
+- **`runFactory` reads the last JSON object.** It takes the whole stdout when that is one JSON object, else the last line that is one, so warnings and chatter around the result line no longer break it (item 11).
+- **An answer at a step reaches every member.** An answer whose `at` names a task goes to that task only. An answer at any other name, such as `red`, `split`, `green` or `qc`, or a task the plan no longer has, goes to every member (item 12).
+- **Builders get a read-only test list, and split enforces it.** A builder's prompt lists the crew's test files as read-only: the tester tasks' files, or the entry's `ownTests` when no tester task has any. `validateTasks` rejects a builder task that lists a file matching `ownTests`, a file a tester task lists, or a file the acceptance test guards. The planner gets one retry with the errors; a second failure stops the crew `BLOCKED` at `split`. An old-form entry without `ownTests` skips this check (item 16).
 
 ### Docs
 
@@ -75,13 +92,13 @@ truss now installs with kit, worktrees and subagent-limits from the claude-ops m
 
 ### Restarts and worktree clean-up
 
-TODO: the items below come from ADR-0021 Decisions 3 to 7, which the compose-runtime crew builds; none of them is in `workflows/stage.js` or `bin/factory.ts` at this commit. Check each against the code once that crew merges, and drop any it didn't build.
+The compose-runtime crew built ADR-0021 Decisions 3 to 7 in `workflows/stage.js` and `bin/factory.ts`.
 
 - **The planning engineer loads split-work too.** stage.js's planner prompt holds `Load the \`subagent-limits:split-work\` skill before splitting work.`
-- **The factory maps `truss.json` roles.** `roles.build` sets the builder and resolver, `roles.test` the tester, only when kit is loaded; a `--type` wins over `roles`, and without kit the `roles.json` defaults stand.
-- **A CHECKPOINT or a missing report restarts a fresh member.** A member that returns `CHECKPOINT`, or no report, is replaced by a fresh member of the same role from the same task, which gets the previous note and reads the branch's commits. A chain restarts at most `max(1, reworkAllowance)` times; restarts add no rework spend. Running out of restarts stops the crew `BLOCKED`, with text starting `restarts spent:`.
-- **`finish` records restarts.** It appends one `restart` event to `events.jsonl` per restarted member, with `crew`, `label`, `n` and `reason` (`CHECKPOINT` or `no report`), once per crew and label.
-- **`finish` removes its own run's merged `wf_*` worktrees.** After a crew merges, `finish --transcript T` also removes the Workflow worktrees whose branch is exactly `worktree-<basename of T>-<digits>` and whose path ends `<basename of T>-<digits>`. It never forces, never touches a locked worktree, and deletes a branch only once it is merged. Each matching worktree it leaves goes in a new output field, `leftWorktrees`, as `{path, branch, why}` with `why` one of `dirty`, `locked` or `unmerged`; `finish` never refuses because of it. Another run's worktrees stay.
+- **The factory maps `truss.json` roles.** `factory plan-args` and `start` read `roles` from `.claude/truss.json`: `roles.build` sets the builder, and the resolver follows it; `roles.test` sets the tester. The mapping applies whenever `roles` sets them, not only when kit is loaded (ADR-0021 item 20). A `--type` wins over `roles`. With neither, the `roles.json` defaults stand.
+- **A CHECKPOINT or a missing report restarts a fresh member.** A member that returns `CHECKPOINT`, or no report, is replaced by a fresh member of the same role with the same prompt. After a `CHECKPOINT`, the successor gets the previous member's note and branch; after no report, it is told so. Either way it reads the branch's commits before it starts. A chain restarts at most `max(1, reworkAllowance)` times, and restarts add no rework spend. Running out of restarts stops the crew `BLOCKED`, with text starting `restarts spent:`.
+- **`finish` records restarts.** For tester, builder and writer members, it appends one `restart` event to `events.jsonl` per restarted member, with `crew`, `agent`, `label`, `n` and `reason` (`CHECKPOINT` or `no report`), once per crew and label.
+- **`finish` removes its own run's merged `wf_*` worktrees.** After a crew merges, `finish --transcript T` also removes the Workflow worktrees whose branch is exactly `worktree-<basename of T>-<digits>` and whose path ends `<basename of T>-<digits>`. It never forces, never touches a locked worktree, and removes only a worktree whose branch is merged into the crew branch or the target; it then deletes that branch. Each matching worktree it leaves goes in a new output field, `leftWorktrees`, as `{path, branch, why}` with `why` one of `dirty`, `locked` or `unmerged`, listed once and only while it still exists; `finish` never refuses because of it. Another run's worktrees stay.
 
 ### claude-ops
 
