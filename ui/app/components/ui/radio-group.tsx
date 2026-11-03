@@ -36,9 +36,10 @@ export interface RadioGroupItemProps extends React.ComponentProps<typeof RadioGr
   labelClassName?: string
 }
 
+// The unchecked ring is border-subtle: border-strong on surface is under the 3:1 WCAG 1.4.11 boundary.
 // Inside data-surface="move" the ring is move-muted, and checked is move on a move-fg option card.
 const dotRing =
-  'flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-border-strong bg-surface transition-colors duration-(--duration-quick) ease-out data-[state=checked]:border-brand disabled:cursor-not-allowed disabled:opacity-50 [[data-surface=move]_&]:border-move-muted [[data-surface=move]_&]:data-[state=checked]:border-move'
+  'flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-subtle bg-surface transition-colors duration-(--duration-quick) ease-out data-[state=checked]:border-brand disabled:cursor-not-allowed disabled:opacity-50 [[data-surface=move]_&]:border-move-muted [[data-surface=move]_&]:data-[state=checked]:border-move'
 const dotMark = 'size-2 rounded-full bg-brand [[data-surface=move]_&]:bg-move'
 
 export function RadioGroupItem({ className, labelClassName, look, children, ...props }: RadioGroupItemProps) {

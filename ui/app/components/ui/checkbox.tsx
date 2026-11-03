@@ -14,7 +14,7 @@ export function Checkbox({ className, labelClassName, children, ...props }: Chec
     <label className={cn('flex min-h-6 min-w-0 cursor-pointer items-center gap-2 text-ui text-fg', labelClassName)}>
       <CheckboxPrimitive.Root
         className={cn(
-          'flex size-4 shrink-0 items-center justify-center rounded-chip border border-border-strong bg-surface text-move-fg transition-colors duration-(--duration-quick) ease-out data-[state=checked]:border-primary data-[state=checked]:bg-primary disabled:cursor-not-allowed disabled:opacity-50',
+          'flex size-4 shrink-0 items-center justify-center rounded-chip border border-subtle bg-surface text-move-fg transition-colors duration-(--duration-quick) ease-out data-[state=checked]:border-primary data-[state=checked]:bg-primary disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}
