@@ -41,6 +41,7 @@ Return only this JSON, no prose around it:
 - Two tasks may share a file only along an `after` chain: one is after the other, directly or through others.
 - Every builder is `after` every tester.
 - Every builder's acceptance test is one it cannot edit: code the crew doesn't own, or tests a tester writes first. So tests come from a tester task, and builders come after it.
+- Every builder's brief marks the crew's test files read-only: the builder never edits a test file, and reports a test it finds wrong. Any edit to a guarded or test file goes to a tester task, never a builder's `files`.
 - Names are unique. Every name in `after` is a task in the list.
 - `effort` is `low` or `medium`.
 - Split only along the condition that fails the leaf test: a task stops splitting when it owns files no sibling touches, has an acceptance test the member can run, needs no design decision the docs lack, and fits one agent's context. A task with no check that could fail for it alone is too small: merge it into a sibling in the same module.
