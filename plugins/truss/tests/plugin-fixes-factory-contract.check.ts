@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crew, flat, git, highSampleFile, mkRepo, mkTrussDir, planObj, putFile, readPlan, tmp, writeGoal, writePlan, addCrewWorktree, head } from './fixtures/workflow-run/harness.ts'
@@ -72,6 +72,8 @@ function pluginCopy(): string {
 function factoryWithAgentMtime(ms: number): string {
   const d = pluginCopy()
   assert.ok(existsSync(`${d}/agents/stress-engineer.md`), 'the producer root has agents/stress-engineer.md')
+  // ADR-0024 item 24: every truss:* agent a starting crew runs is checked against the session start, so the other agent files are back-dated
+  for (const n of readdirSync(`${d}/agents`)) utimesSync(`${d}/agents/${n}`, LONG_AGO / 1000, LONG_AGO / 1000)
   utimesSync(`${d}/agents/stress-engineer.md`, ms / 1000, ms / 1000)
   assert.ok(Math.abs(statSync(`${d}/agents/stress-engineer.md`).mtimeMs - ms) < 5, 'the agent file mtime was set')
   return `${d}/bin/factory.ts`
@@ -111,8 +113,10 @@ test('pf 2: TRUSS_SESSION_START=1 with a stress-yes crew gives one warning namin
   const r = start(w, factory, { TRUSS_SESSION_START: '1' })
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
-  assert.equal(r.json.warnings.length, 1, `one warning, for the one stress crew; ${JSON.stringify(r.json.warnings)}`)
-  const text = String(r.json.warnings[0])
+  // ADR-0024 item 24 adds warnings for the other truss:* types a crew runs; this case pins the stress role's
+  const ws = r.json.warnings.filter((x: any) => String(x).includes('truss:stress-engineer'))
+  assert.equal(ws.length, 1, `one warning, for the one stress crew; ${JSON.stringify(r.json.warnings)}`)
+  const text = String(ws[0])
   assert.ok(text.includes('str'), `the warning names the crew: ${text}`)
   assert.ok(!text.includes('plain'), `the warning does not name the crew with no stress test: ${text}`)
   assert.ok(text.includes('truss:stress-engineer'), `the warning names the role: ${text}`)
@@ -149,8 +153,9 @@ test('pf 5: neither TRUSS_SESSION_START nor CLAUDE_PID gives a "can\'t tell" war
   const r = start(w, factory, {})
   assert.equal(r.status, 0, say(r))
   assert.ok(Array.isArray(r.json?.warnings), `start prints a warnings array; ${say(r)}`)
-  assert.equal(r.json.warnings.length, 1, JSON.stringify(r.json.warnings))
-  const text = String(r.json.warnings[0])
+  const ws = r.json.warnings.filter((x: any) => String(x).includes('truss:stress-engineer'))
+  assert.equal(ws.length, 1, JSON.stringify(r.json.warnings))
+  const text = String(ws[0])
   assert.ok(text.includes("can't tell"), text)
   assert.ok(text.includes('str'), `names the crew: ${text}`)
   assert.equal(r.json.truss.crews.length, 2, 'a warning never holds a crew')
@@ -166,7 +171,7 @@ test('pf 6: the --args-file pointer carries warnings after unfinished', () => {
   assert.ok(keys.includes('unfinished'), `the pointer keeps unfinished: ${keys.join(',')}`)
   assert.ok(keys.includes('warnings'), `the pointer carries warnings: ${keys.join(',')}`)
   assert.equal(keys.indexOf('warnings'), keys.indexOf('unfinished') + 1, `warnings comes right after unfinished: ${keys.join(',')}`)
-  assert.equal(r.json.warnings.length, 1, JSON.stringify(r.json.warnings))
+  assert.equal(r.json.warnings.filter((x: any) => String(x).includes('truss:stress-engineer')).length, 1, JSON.stringify(r.json.warnings))
   assert.ok(Array.isArray(JSON.parse(readFileSync(file, 'utf8')).warnings), 'the file holds warnings too')
 })
 
