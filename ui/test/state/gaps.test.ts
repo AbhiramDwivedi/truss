@@ -59,7 +59,7 @@ test('gap d: each goal item has exactly {id, goal, approval, approvedAt}; addedA
     const goals = w.run().goals;
     assert.ok(Array.isArray(goals), 'run.goals is an array');
     assert.equal(goals.length, 2);
-    for (const g of goals) assert.deepEqual(Object.keys(g).sort(), ['approvedAt', 'approval', 'goal', 'id']);
+    for (const g of goals) assert.deepEqual(Object.keys(g).sort(), ['approval', 'approvedAt', 'goal', 'id']);
     assert.deepEqual(goals[0], { id: 'run', goal: 'First goal', approval: 'auto', approvedAt: null });
     assert.equal(goals[1].id, 'g2');
   } finally { w.store.close(); }
