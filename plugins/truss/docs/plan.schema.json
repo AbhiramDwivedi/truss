@@ -244,6 +244,7 @@
           "description": "Set by the PM as crews start and merge. The hooks only read it.",
           "enum": ["planned", "running", "merged", "dropped"]
         },
+        "ux": { "type": "boolean", "default": false },
         "needs": {
           "description": "Optional, any version. What the crew needs from the host before it starts: a browser that launches, npm ci, gh auth, a system library. The plan design engineer lists them; a crew with none leaves the key out, and every reader treats a missing needs as an empty list. factory.ts doctor runs each probe after plan-check and before any crew starts. See adr/0012-self-improving-retro.md, Decision 9.",
           "type": "array",
