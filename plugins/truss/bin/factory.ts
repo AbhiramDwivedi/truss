@@ -547,10 +547,11 @@ export function envFailure(text: string): string | undefined {
   return undefined
 }
 // ADR-0024 item 34: the failure blocks of a check's output, each from its header to the next header: Playwright's
-// `N) [project] › ...` and node:test TAP's `not ok N - ...` (a TAP parent that only reports failed subtests is no block of its
-// own). Text before the first header belongs to no block. [] when no header is found.
+// `N) [project] › file:line:col › ...` (the `[project] › ` part left out when the project has no name) and node:test TAP's
+// `not ok N - ...` (a TAP parent that only reports failed subtests is no block of its own). Text before the first header
+// belongs to no block. [] when no header is found.
 function failureBlocks(text: string): string[] {
-  const header = /^\s*(\d+\) \[[^\]]+\] › |not ok \d+ - )/
+  const header = /^\s*(\d+\) (\[[^\]]+\] › )?[^\s›][^›]*:\d+:\d+ › |not ok \d+ - )/
   const blocks: string[][] = []
   for (const line of text.split('\n')) {
     if (header.test(line)) blocks.push([line])
@@ -1028,9 +1029,15 @@ function roleWarnings(c: StartCtx, entries: Obj[]): string[] {
 }
 
 // ADR-0024 item 26: the crew's member worktrees, found by their branch names worktree-<run id>-<n> for the crew's runs,
-// whose directory is gone. When any is, a decision line names them and `git worktree prune` drops their registrations.
+// whose directory is gone (with no runs, any worktree-*-<n> branch forked from the crew branch). When any is, a decision line names them and `git worktree prune` drops their registrations.
 function missingWorktrees(c: StartCtx, slug: string, runs: WfRun[]): { branch: string; worktree: string }[] {
   const ids = new Set(runs.map((r) => r.id))
+  // With no runs (merge-ready without --transcript) a member branch is the crew's when it shares a commit with truss-<slug>
+  // that the target lacks: a member branch forks from the crew head, and another crew's forks from its own branch.
+  const crews = (branch: string): boolean => {
+    const mb = run(c.repo, ['merge-base', branch, `truss-${slug}`])
+    return mb.status === 0 && run(c.repo, ['merge-base', '--is-ancestor', mb.out.trim(), c.settings.target]).status === 1
+  }
   const out: { branch: string; worktree: string }[] = []
   const list = run(c.repo, ['worktree', 'list', '--porcelain'])
   if (list.status !== 0) return out
@@ -1040,7 +1047,7 @@ function missingWorktrees(c: StartCtx, slug: string, runs: WfRun[]): { branch: s
     else if (line.startsWith('branch refs/heads/') && wtPath !== undefined) {
       const branch = line.slice('branch refs/heads/'.length)
       const m = /^worktree-(.+)-(\d+)$/.exec(branch)
-      if (m !== null && ids.has(m[1]) && !existsSync(wtPath)) out.push({ branch, worktree: flat(wtPath) })
+      if (m !== null && !existsSync(wtPath) && (runs.length === 0 ? crews(branch) : ids.has(m[1] as string))) out.push({ branch, worktree: flat(wtPath) })
     }
   }
   if (out.length > 0) {
@@ -1160,11 +1167,26 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
     return made.filter((l) => /^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l) && inBranch.has(l.split(' ')[0] as string)).length
   }
   const done: string[] = []
-  for (const a of runs.flatMap((r) => r.agents)) {
+  const taskOf = (a: RunAgent): string | undefined => {
     const r = a.result
-    if (parseLabel(a.label)?.slug !== slug || !isObj(r) || typeof r.branch !== 'string' || typeof r.task !== 'string') continue
-    const name = promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
+    if (parseLabel(a.label)?.slug !== slug || !isObj(r) || typeof r.task !== 'string') return undefined
+    return promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
+  }
+  // runs come oldest first and a run's agents in start order, so the last result of a task is its newest
+  const agents = runs.flatMap((r) => r.agents)
+  const names = agents.map(taskOf)
+  const newest = new Map<string, number>()
+  names.forEach((n, i) => {
+    if (n !== undefined) newest.set(n, i)
+  })
+  for (const [i, a] of agents.entries()) {
+    const r = a.result
+    const name = names[i]
+    if (name === undefined || !isObj(r) || typeof r.branch !== 'string') continue
     if (done.includes(name)) continue
+    // ADR-0024 item 27 counts a result that isn't DONE only when it is the task's newest: an older hand-merged BLOCKED branch
+    // never makes done a task whose newer result stopped again on an unmerged branch.
+    if (r.marker !== 'DONE' && newest.get(name) !== i) continue
     const picked = (): boolean => {
       const c = run(wt, ['cherry', crewBranch, r.branch as string])
       return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
