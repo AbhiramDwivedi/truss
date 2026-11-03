@@ -273,6 +273,34 @@ for (const state of STATES) {
     })
   }
 
+  if (state === 'question' || state === 'stuck-crew') {
+    // 200% zoom on a phone, emulated as a viewport twice the phone width (ADR-0023 section 5).
+    const ZOOM = 2 * WIDTHS[0]![1]
+    test(`zoom: ${state} at ${ZOOM} px (200% of the phone width) shows its card with no horizontal scroll`, async ({ browser }) => {
+      expect(ZOOM, 'the zoom viewport is 720 px').toBe(720)
+      const s = await scenario(state)
+      const { page, problems, close } = await openState(browser, s, 'light', ZOOM)
+      try {
+        await shell(page, 'light')
+        await content(page, state, s)
+        await colours(page, state, 'light')
+        if (state === 'question') {
+          await expect(page.getByRole('region', { name: 'Your move' }).getByRole('article', { name: /^Question from Claude: / })).toBeInViewport(T)
+        } else {
+          const line = page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: /stuck: stalled \d+ min/ })
+          if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
+          await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: 'Restart builder' })).toBeVisible(T)
+        }
+        const fit = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
+        expect(fit.scroll, `${state} at ${ZOOM} px: scrollWidth ${fit.scroll} > clientWidth ${fit.client}`).toBeLessThanOrEqual(fit.client)
+        expect(await problems(), 'console errors, page errors and CSP violations').toEqual([])
+      } finally {
+        await close()
+        await s.stop()
+      }
+    })
+  }
+
   test(`live: ${state} shows a changed file after load`, async ({ browser }) => {
     const s = await scenario(state)
     const { page, problems, close } = await openState(browser, s, 'light', WIDTHS[2]![1])

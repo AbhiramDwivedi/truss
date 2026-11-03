@@ -101,7 +101,7 @@ test('there is one state.json per state, and the live-counter has stale.json', (
   assert.ok(fs.existsSync(path.join(runDir, 'live-counter', 'stale.json')))
 })
 
-for (const name of ['empty', 'question', 'approval', 'follow-up', 'crews-running', 'stuck-crew', 'artifacts', 'live-counter', 'decisions', 'retro', 'live-counter/stale']) {
+for (const name of ['empty', 'question', 'approval', 'follow-up', 'crews-running', 'stuck-crew', 'artifacts', 'live-counter', 'decisions', 'retro', 'live-counter/stale', 'stuck-crew/idle-foreman', 'artifacts/no-images']) {
   const rel = name.includes('/') ? `${name}.json` : path.join(name, 'state.json')
   test(`${name}: a whole state valid against state.schema.json, times at or before the anchor`, () => {
     const s = load(rel)
@@ -194,6 +194,27 @@ test('live-counter: usage.live with its stamp, run.goals[0] is run with approved
   const stale = load(path.join('live-counter', 'stale.json'))
   assert.ok(ANCHOR - Date.parse(stale.session.usage.live.at) > 2 * 60000, 'stale stamp')
   assert.deepEqual({ ...stale, session: null }, { ...s, session: null }, 'stale.json differs from state.json in the session only')
+})
+
+test('stuck-crew/idle-foreman.json: the same state, its one stuck crew of kind idle-foreman with the foreman stalled', () => {
+  const s = state('stuck-crew')
+  const v = load(path.join('stuck-crew', 'idle-foreman.json'))
+  const stuck = crews(v).filter((c) => c.stuck !== null)
+  assert.equal(stuck.length, 1)
+  assert.equal(stuck[0].status, 'running')
+  assert.equal(stuck[0].stuck.kind, 'idle-foreman')
+  assert.equal(stuck[0].foreman.state, 'stalled')
+  assert.equal(stuck[0].stuck.since, new Date(ANCHOR - stuck[0].stuck.minutes * 60000).toISOString())
+  assert.equal(stuck[0].stuck.detail, `${stuck[0].foreman.name} stalled ${stuck[0].stuck.minutes} min`)
+  assert.ok(crews(v).some((c) => c.slug === LONG_SLUG))
+  assert.deepEqual({ ...v, run: null }, { ...s, run: null }, 'idle-foreman.json differs from state.json in the run only')
+})
+
+test('artifacts/no-images.json: the same state with design.images empty', () => {
+  const s = state('artifacts')
+  const v = load(path.join('artifacts', 'no-images.json'))
+  assert.deepEqual(v.design.images, [])
+  assert.deepEqual({ ...v, design: { ...v.design, images: s.design.images } }, s, 'no-images.json differs from state.json in design.images only')
 })
 
 test('decisions: decisions and ADRs, and no plan revision text', () => {
