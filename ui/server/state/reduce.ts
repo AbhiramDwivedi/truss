@@ -104,6 +104,11 @@ function successorBase(name: string): string | null {
   const m = /^(.+)-([1-9][0-9]*)$/.exec(name)
   return m !== null && Number(m[2]) >= 2 ? m[1] : null
 }
+// `name` is a successor foreman of crew `slug` when it is <slug>-<n> and not itself a plan crew: a plan crew
+// phase-2 next to phase is a crew in its own right, so its lines never clear phase's stall.
+function follows(name: string, slug: string, planned: { has(slug: string): boolean }): boolean {
+  return !planned.has(name) && successorBase(name) === slug
+}
 interface StallAcc {
   act: Stamped // the stall line's own stamp, compared against lastOf to see if the agent spoke since
   kind: Stuck['kind']
@@ -145,9 +150,9 @@ export function createReducer(): Reducer {
   const agentCrew = new Map<string, string>() // agent name -> the first crew whose event lines name it
   const pairs = new Map<string, Pair>() // the newest message of each (from, to) pair
   const skipped: Skipped[] = []
-  // crew slug -> the newest event line of one of its successor foremen <slug>-<n>. The hook logs a successor
-  // foreman's lines under its own crew <slug>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept
-  // outside the crew accumulators and read by the original crew's stall.
+  // successor-shaped name <b>-<n> -> its newest event line (under crew <b>-<n> or crew b). The hook logs a successor
+  // foreman's lines under its own crew <b>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept outside
+  // the crew accumulators; a crew's stall reads the names that follow it (see follows) once the plan is known.
   const successorLatest = new Map<string, Stamped>()
   let seq = 0
 
@@ -232,7 +237,7 @@ export function createReducer(): Reducer {
     for (const name of by !== null && by !== agent ? [agent, by] : [agent]) {
       const base = successorBase(name)
       if (base === null || (slug !== name && slug !== base)) continue
-      if (newerOrEqual(act, successorLatest.get(base) ?? null)) successorLatest.set(base, act)
+      if (newerOrEqual(act, successorLatest.get(name) ?? null)) successorLatest.set(name, act)
     }
     // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its foreman or a
     // member), so a stall clears once the stalled agent spawns someone. main, factory and workflow:* credit no one.
@@ -267,13 +272,16 @@ export function createReducer(): Reducer {
   }
 
   // The crew's newest stall, while the crew is running and the stalled agent has no later event line.
-  function stuckOf(acc: CrewAcc | undefined, status: Crew['status']): Stuck | null {
+  function stuckOf(acc: CrewAcc | undefined, status: Crew['status'], planned: { has(slug: string): boolean }): Stuck | null {
     if (acc === undefined || acc.stall === null || status !== 'running') return null
     const s = acc.stall
     if (acc.lastOf.get(s.act.agent) !== s.act) return null
     // An idle-foreman stall also clears on a later line of a successor foreman; a kind agent stall does not.
-    const succ = successorLatest.get(acc.slug) ?? null
-    if (s.kind === 'idle-foreman' && succ !== null && succ !== s.act && newerOrEqual(succ, s.act)) return null
+    if (s.kind === 'idle-foreman') {
+      for (const [name, succ] of successorLatest) {
+        if (succ !== s.act && follows(name, acc.slug, planned) && newerOrEqual(succ, s.act)) return null
+      }
+    }
     return {
       kind: s.kind,
       since: new Date(timeOf(s.act.ts) - s.minutes * 60_000).toISOString(),
@@ -316,7 +324,7 @@ export function createReducer(): Reducer {
         members: acc === undefined ? [] : [...acc.members.values()].map((m) => ({ ...m })),
         latest: latest === null ? null : { ts: latest.ts, agent: latest.agent, event: latest.event, text: latest.text },
         estAgents: pc?.estAgents ?? null,
-        stuck: stuckOf(acc, pc?.status ?? null),
+        stuck: stuckOf(acc, pc?.status ?? null, planned),
         qc: qcFor(slug),
       }
     })
