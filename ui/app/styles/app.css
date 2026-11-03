@@ -136,7 +136,11 @@
     background: var(--bg);
     color: var(--fg);
   }
+  /* body carries bg too: D2's <body class="bg-bg"> and the e2e colour check read the body's own background. */
   body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
     font-family: var(--font-sans);
     font-size: var(--text-ui);
     line-height: var(--text-ui--line-height);
