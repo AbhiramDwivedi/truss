@@ -11,7 +11,10 @@ The PM's brief gives you the truss dir `D`, the repo path and the plugin path.
 
 1. Run `node <plugin>/resources/index.ts --worktrees <repo>/.claude/worktrees`. It prints the sampler's reading: `freeMB`, `load1` (where present) and `cpus`. It does not print the threshold.
 2. Read `D/plan.json` for `maxParallelCrews`, the crews that are `running`, and any crew `slug`.
-3. Get the threshold `minFreeMB` from `factory admit`: run `node <plugin>/bin/factory.ts admit --dir D --slug <any slug from plan.json>`. It prints one JSON line with `freeMB` and `minFreeMB` (the value of `TRUSS_MIN_FREE_MB`, else the default), and exits 1 when it holds a start. That exit is a reading, not a failure. If `admit` fails or prints no `minFreeMB`, keep the current value.
+3. Get the threshold `minFreeMB` from `factory admit`: run `node <plugin>/bin/factory.ts admit --dir D --slug <any slug from plan.json>`. It prints one JSON line with `freeMB`, `minFreeMB` (the value of `TRUSS_MIN_FREE_MB`, else the default), `running` and `parallelism`. If `admit` fails or prints no `minFreeMB`, keep the current value.
+   - `admitted` and the exit code answer for the slug given only.
+   - For a running slug they check memory only: `admitted: true` while `running` equals `parallelism` is expected, and is not a start answer.
+   - You read only `minFreeMB`, `running` and `parallelism` from the line. You never take `admitted` or the exit code as your recommendation.
 4. Read `D/resources/parallelism.json`, which holds `{"parallelism": n}`. A value counts only when it is an integer from 1 to `maxParallelCrews`. A missing or bad file means `maxParallelCrews`.
 
 The current effective parallelism is the file's value, or `maxParallelCrews` when the file doesn't count. Then apply this rule:
@@ -19,6 +22,8 @@ The current effective parallelism is the file's value, or `maxParallelCrews` whe
 - Go down one when `freeMB` is below twice `minFreeMB` (2 x `minFreeMB`), or when `load1` is above `cpus`.
 - Go up one when `freeMB` is above four times `minFreeMB` (4 x `minFreeMB`) and `load1`, where present, is below half of `cpus` (`cpus` / 2).
 - Otherwise keep it.
+
+Hold: when `running` crews already exceed the current effective parallelism, do not go down; the load comes from crews admitted before the last step-down, and a lower number would hold no extra start. Keep the current value unless the up rule applies. The up rule is unchanged and applies whatever the running count, so it is the way back up.
 
 `n` is always from 1 to `maxParallelCrews`; never recommend more than `maxParallelCrews`. If the sampler fails or prints nothing usable, keep the current value.
 
