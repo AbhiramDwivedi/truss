@@ -381,7 +381,9 @@ test.describe('goal and message box', () => {
       const typed = `Build the thing ${rand()}`
       const box = goalBox(page)
       await expect(box).toBeVisible()
-      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
+      // D2 (ADR-0023): the box lives in the Composer, the form named Message, not in Your move.
+      await expect(page.getByRole('form', { name: 'Message', exact: true }).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
+      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toHaveCount(0)
       const posted = page.waitForRequest((r) => r.url().endsWith('/api/message') && r.method() === 'POST')
       const t0 = Date.now()
       await box.fill(typed)
@@ -499,8 +501,12 @@ test.describe('header', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const line = `claude exited with code 1 ${rand()}`
+      // D2 (ADR-0023): a session error leaves the composer's typed text in place.
+      const typed = `unsent draft ${rand()}`
+      await goalBox(page).fill(typed)
       iface.setSession({ status: 'error', error: line })
       await expect(banner(page)).toContainText(/error/i, WITHIN)
+      await expect(goalBox(page)).toHaveValue(typed)
       await expect(sessionStatus(page)).toHaveText(`error: ${line}`, WITHIN)
       await expect(page.getByText(line).first()).toBeVisible(WITHIN)
     })

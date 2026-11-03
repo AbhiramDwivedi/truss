@@ -1061,13 +1061,13 @@ The resource checks ([ADR-0015](adr/0015-resource-aware.md), proposed) fail open
 
 ## Local web UI
 
-`ui/` is an optional local web UI for one Truss run ([ADR-0011](adr/0011-local-web-ui.md), proposed 2026-10-30 by the `ui-design` crew). The client starts one Node process with `node ui/server/main.ts` (or `npm --prefix ui start`), opens the printed URL, and runs Truss from the browser. The process hosts a Claude Code session through `@anthropic-ai/claude-agent-sdk`, with the Truss plugin loaded, and shows the run live from Truss's own files. It never changes the plugin (R-9), and it never writes to the Truss dir or the repo. This section is a design: the four modules don't exist yet, and stage 1 and 2 of the UI run build them.
+`ui/` is an optional local web UI for one Truss run ([ADR-0011](adr/0011-local-web-ui.md), proposed 2026-10-30 by the `ui-design` crew). The client starts one Node process with `node ui/server/main.ts` (or `npm --prefix ui start`), opens the printed URL, and runs Truss from the browser. The process hosts a Claude Code session through `@anthropic-ai/claude-agent-sdk`, with the Truss plugin loaded, and shows the run live from Truss's own files. It never changes the plugin (R-9), and it never writes to the Truss dir or the repo. ui-state, ui-session and ui-server exist under `ui/server/`; the web client is being rebuilt, as below.
 
-The web client is redesigned by [ADR-0018](adr/0018-ui-redesign.md) (proposed 2026-11-02, goal `ui-redesign`), which supersedes ADR-0011's no-bundler web client only. The client is React 19, TypeScript, Vite, Tailwind CSS v4 and shadcn/ui, with its source in `ui/app/`. `npm --prefix ui run build` writes `ui/web/index.html` and its assets; `ui/web/` is untracked build output, and `main.ts` still serves it (`ui/server/main.ts:69`). When the build is missing, the server still starts, prints one stderr line naming the build command, and answers `GET /` with an error page that names it (ADR-0018, section 3). The server contract, the routes and the SSE wire don't change.
+The web client is redesigned by [ADR-0018](adr/0018-ui-redesign.md) (proposed 2026-11-02, goal `ui-redesign`), which supersedes ADR-0011's no-bundler web client only, and amended by [ADR-0023](adr/0023-factory-floor-ui.md) (proposed 2026-11-03, revision 5b). ADR-0023 replaces ADR-0018's visual direction with direction D and D2, and keeps ADR-0018's behaviour contract. The client is React 19, TypeScript, Vite, Tailwind CSS v4 and shadcn/ui restyled to D2's tokens (`ui/contract/redesign/tokens.json`), with lucide icons and Geist, and its source in `ui/app/`. Crew floor-shell builds the shell and store, and crew floor-views the views. `npm --prefix ui run build` writes `ui/web/index.html` and its assets, and `main.ts` serves `ui/web/` (`ui/server/main.ts:69`). Today `ui/web/` still holds the tracked vanilla client; floor-shell replaces it with untracked build output. When the build is missing, the server still starts, prints one stderr line naming the build command, and answers `GET /` with an error page that names it (ADR-0018, section 3). The routes and the SSE wire keep their shape; ADR-0023 adds optional state fields and an optional message `intent`, listed under "Gap fields" below.
 
 ```mermaid
 flowchart LR
-  browser["Browser tab<br/>[ui-web: source ui/app/, build output ui/web/]<br/>Your move, crew bays, panels"]
+  browser["Browser tab<br/>[ui-web: source ui/app/, build output ui/web/]<br/>Your move, metrics, composer, crews, deliverables"]
   http["ui-server<br/>[ui/server/http, ui/server/main.ts]<br/>127.0.0.1, token, SSE"]
   state["ui-state<br/>[ui/server/state]<br/>Files to one state"]
   session["ui-session<br/>[ui/server/session]<br/>The only SDK importer"]
@@ -1089,7 +1089,7 @@ flowchart LR
 ```
 
 *The UI's modules and what each reads. Solid arrows are calls or reads inside the UI process, or the SDK link. The UI writes no file.*
-Traces to: ADR-0011, Decisions 1 to 9.
+Traces to: ADR-0011, Decisions 1 to 9; ADR-0023, section 8.
 
 ### Module map
 
@@ -1098,7 +1098,7 @@ Traces to: ADR-0011, Decisions 1 to 9.
 | ui-state | `ui/server/state/**` | Reads the Truss dir, `.claude/truss.json`, the architecture doc, the ADR dir and git. Reduces them, with the session view, into one in-memory state. Emits a snapshot and numbered deltas, and keeps a replay ring of 1024. | crew `ui-state`, stage 1 |
 | ui-session | `ui/server/session/**` | Hosts the session with `query()`. Turns `canUseTool` calls and turn ends into question, approval and reply-needed requests, and answers each at most once. The only module that imports the SDK (ai rule 7). | crew `ui-session`, stage 1 |
 | ui-server | `ui/server/http/**`, `ui/server/main.ts`, `ui/server/node-version.ts`, `ui/server/lifecycle.ts` | Serves `ui/web/`, the SSE stream and the POST routes on `127.0.0.1`, behind the Host, Origin and token checks. `main.ts` parses flags, wires the modules and prints the URL. | crew `ui-server`, stage 1 |
-| ui-web | `ui/app/**` (source), `ui/web/` (untracked build output), `ui/e2e/**`, `ui/README.md` | A React and Vite client ([ADR-0018](adr/0018-ui-redesign.md)), built by `npm --prefix ui run build`. Applies the snapshot and deltas, and renders request cards, crew lines in stage bays, the retro stage, decisions, ADRs and the design panel. Before ADR-0018: static HTML, CSS and plain ES modules, no bundler. | crew `ui-web`, stage 2; redesign by goal `ui-redesign` |
+| ui-web | `ui/app/**` (source), `ui/web/` (build output), `ui/e2e/**`, `ui/README.md` | A React and Vite client ([ADR-0018](adr/0018-ui-redesign.md), styled to direction D and D2 by [ADR-0023](adr/0023-factory-floor-ui.md)), built by `npm --prefix ui run build`. Applies the snapshot and deltas, and renders Your move, the live metrics, the composer with its follow-ups, the crews in stage groups, the retro stage, deliverables, decisions, ADRs and the design panel. Before ADR-0018: static HTML, CSS and plain ES modules, no bundler. | crew `ui-web`, stage 2; redesign by goal `ui-redesign`, crews floor-shell and floor-views |
 
 ui-server's two startup files came after its crew, outside any crew. `node-version.ts` is the startup check: `readEnginesRange(dir)` reads `engines.node` from `<dir>/package.json`, or null, and `nodeVersionWarning(running, range)` returns one warning line when the running Node is older than a `>=X[.Y[.Z]]` or `^X[.Y[.Z]]` range, and null otherwise; it never throws or exits (`ui/server/node-version.ts:1-36`, `ui/server/main.ts:37-38`; commits `de8abc9` and `d133450`). `lifecycle.ts` is the process lifecycle for `main.ts`: shutdown on `SIGINT`, `SIGTERM`, `SIGHUP` and `SIGBREAK`; a parent-death watch on an unref'd timer, skipped under ppid 1; a per-port lockfile `truss-ui-<port>.json` in the OS temp dir, created exclusively with mode 0600 and holding no token; and the "port in use" message, naming a live lock's pid when there is one. It uses Node built-ins only, and no function throws (`ui/server/lifecycle.ts:1-110`, `ui/server/main.ts:70-103`; commits `8489b53` and `668c05b`). The watch checks only the direct parent today (`ui/server/lifecycle.ts:32-45`), so on Windows a server started by `npm --prefix ui start` outlives the task, its parent being `cmd.exe`. [ADR-0014](adr/0014-retro-fixes.md) (proposed, Decision 5) makes `watchParent` read the ancestor chain once at start, through an injected `ancestors()`, and check each ancestor's liveness every 1 s; when the chain can't be read, it falls back to the parent-only check.
 
@@ -1118,6 +1118,9 @@ ui-server's two startup files came after its crew, outside any crew. `node-versi
 | SDK messages and `canUseTool` | Claude Code | ui-session | the recorded stream `ui/contract/fixtures/sdk-stream.jsonl`; ADR-0011 Spike | `ui/contract/session.check.ts` (replay), `ui/contract/live.check.ts` (live) |
 | Truss files the UI reads | Truss hooks and the PM | ui-state | `docs/events.schema.json`, `docs/plan.schema.json`, "On disk" above | `ui/contract/state.check.ts` on `tests/fixtures/retro-040` and `docs/plan.example.json` |
 | The retro stage: `<truss dir>/retro/state.json`, the state's `retro` key, and the region `Retro stage` with one list item per step, `<label>: <status>` | `retro/cli.ts state`; ui-state; ui-web | the client | `docs/retro-state.schema.json`, `ui/contract/state.schema.json` `$defs.retro`; ADR-0012 Decision 8 | `ui/contract/state.check.ts`, `ui/contract/e2e/retro-stage.spec.ts`, `ui/test/state/retro.test.ts` |
+| The gap fields and `POST /api/message` with `intent`, returning `{ok, id}` | ui-session, ui-state, ui-server | ui-web | [ADR-0023](adr/0023-factory-floor-ui.md), section 1; `ui/contract/state.schema.json` | `ui/contract/gaps.check.ts`, one case per filled gap titled `gap <x>: ...` (written by crew floor-design) |
+| D2's tokens in the built CSS | ui-web (`ui/app/styles/`) | the page | `ui/contract/redesign/tokens.json`; ADR-0023, section 2 | `ui/contract/redesign/tokens.check.ts` |
+| `createStore(StoreDeps {open, reload})` and `getState()` over the ten state fixtures | ui-web (`ui/app/store/store.ts`) | the views | ADR-0018 section 9; ADR-0023, sections 6 and 7 | `ui/contract/redesign/store.check.ts` (written by crew floor-design) |
 
 Each contract check imports its producer and, when the import fails, fails with `producer missing: ui/server/<module>`.
 
@@ -1145,6 +1148,23 @@ sequenceDiagram
 ```
 
 *A question card, answered once. A permission card is the same with `{decision}`. A reply-needed card opens on each top-level `result`, and its answer goes into the streaming input as text (ADR-0011 Decision 3). From [ADR-0014](adr/0014-retro-fixes.md) (proposed), `replyStep` holds a result that ends while background tasks run, and opens its card when they drop to 0.*
+
+### Gap fields
+
+[ADR-0023](adr/0023-factory-floor-ui.md), section 1, rules on the eight server gaps that D2's screens showed. Each filled gap is additive: the fields are optional in `ui/contract/state.schema.json`, no `required` list grows, and the guard and CSP don't change. Crew floor-server builds them.
+
+| Gap | Ruling | Field and source |
+| --- | --- | --- |
+| a | fill | `transcriptEntry.id` and `intent` (`goal`, `add` or null). `POST /api/message` takes an optional `intent` and answers `202 {ok, id}`; with an intent the session prepends one fixed line. Answers still use the answer route. |
+| b | fill | `session.queue`: `{id, text, intent, at}` for each message the SDK has not yet taken, from the session's queue and outbox. |
+| c | ship without | `run.version` keeps its meaning; the UI shows no plan revision. |
+| d | fill | `run.goals`: `{id, goal, approval, approvedAt}`, the run's first goal first as id `run`, then plan.json `goals` in order. |
+| e | fill | `usage.live`: running token counters from assistant `usage` and task_progress `usage.total_tokens`, with an `at` stamp. Result usage is unchanged. |
+| f | fill | `crew.estAgents` from plan.json. There is no task total, so the tasks tile shows no denominator. |
+| g | fill | `crew.stuck`: `{kind, since, minutes, detail}` from the crew's latest `stall` event, or null. |
+| h | ship without | No control endpoints. The stuck-crew buttons send ordinary messages; Pause is disabled with D2's tip. |
+
+The page's ten screenshot states, their copy and the fixtures under `ui/contract/fixtures/run/<state>/` are in ADR-0023, sections 4 to 6.
 
 ### On disk
 
