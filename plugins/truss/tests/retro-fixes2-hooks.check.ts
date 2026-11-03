@@ -16,9 +16,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-const PLUGIN = '/home/abd/Projects/truss/plugins/truss'
-const F = '/home/abd/.claude/projects/truss/retro/scrub-in-3.jsonl'
-const WT = '/home/abd/Projects/truss/.claude/worktrees/truss-push-gate'
+const PLUGIN = '/repo/truss/plugins/truss'
+const F = '/sessions/truss/retro/scrub-in-3.jsonl'
+const WT = '/repo/truss/.claude/worktrees/truss-push-gate'
 const SCRUB = `node ${PLUGIN}/retro/cli.ts scrub ${F}`
 
 const ALLOWED = Symbol('allowed')
