@@ -809,11 +809,14 @@ export function hasTrussFile(args: unknown): boolean {
 
 // ADR-0024 Item 29. args.trussFile names a file in the session's truss dir holding the `start` output; its `.truss`
 // becomes args.truss, so a stage launch need not paste the object inline. Pure but for `read`, which may be sync or
-// async. Without trussFile the args come back as given and nothing is read.
+// async. Without trussFile the args come back as given and nothing is read. `realPathOf`, when given, resolves a path's
+// symlinks: a path not inside the truss dir as written is still taken when its real path is inside the truss dir's real
+// path, as factory.ts argsFileOut decides `inside` on real paths and prints workflowArgs for such a spelling.
 export async function expandTrussFile(
   args: unknown,
   trussDir: string | undefined,
   read: (path: string) => string | Promise<string>,
+  realPathOf?: (path: string) => string | undefined | Promise<string | undefined>,
 ): Promise<{ args: unknown; deny?: undefined } | { deny: string; args?: undefined }> {
   if (!hasTrussFile(args)) return { args }
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
@@ -827,7 +830,19 @@ export async function expandTrussFile(
   if (trussDir === undefined || trussDir === '') return refuse(`this session has no truss dir, so args.trussFile cannot be read`)
   const normal = normalPath(flat)
   const dir = normalPath(slashed(trussDir))
-  if (!normal.startsWith(`${dir}/`)) return refuse(`args.trussFile must be inside the session's truss dir ${dir}, not ${JSON.stringify(file)}`)
+  const realInside = async (): Promise<boolean> => {
+    if (realPathOf === undefined) return false
+    try {
+      const [realFile, realDir] = await Promise.all([realPathOf(normal), realPathOf(dir)])
+      if (typeof realFile !== 'string' || typeof realDir !== 'string') return false
+      return normalPath(slashed(realFile)).startsWith(`${normalPath(slashed(realDir))}/`)
+    } catch {
+      return false
+    }
+  }
+  if (!normal.startsWith(`${dir}/`) && !(await realInside())) {
+    return refuse(`args.trussFile must be inside the session's truss dir ${dir}, not ${JSON.stringify(file)}`)
+  }
   let text: string
   try {
     text = String(await read(normal))
@@ -2183,10 +2198,11 @@ export const register: Register = on => {
           if (match.byPath || match.byText) {
             const root = await rootOf($, state)
             // the file's real path must stay inside the truss dir too, so a symlink cannot lead out of it
+            const realPathOf = async (path: string): Promise<string | undefined> => (await $.fs.stat(path, { resolve: true })).realPath
             const readReal = async (path: string): Promise<string> => {
               if (root !== undefined) {
-                const realFile = (await $.fs.stat(path, { resolve: true })).realPath
-                const realDir = (await $.fs.stat(root, { resolve: true })).realPath
+                const realFile = await realPathOf(path)
+                const realDir = await realPathOf(root)
                 if (realFile === undefined || realDir === undefined) throw new Error('its real path could not be resolved')
                 const real = normalPath(slashed(realFile))
                 const dir = normalPath(slashed(realDir))
@@ -2194,7 +2210,7 @@ export const register: Register = on => {
               }
               return String(await $.fs.read(path))
             }
-            const expanded = await expandTrussFile(e.args, root, readReal)
+            const expanded = await expandTrussFile(e.args, root, readReal, realPathOf)
             if (expanded.deny !== undefined) {
               await logRule($, `Workflow gate refused a call: ${expanded.deny}`)
               return expanded
