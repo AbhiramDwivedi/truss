@@ -52,7 +52,8 @@
         "review": { "$ref": "#/$defs/agentType" },
         "search": { "$ref": "#/$defs/agentType" },
         "docs": { "$ref": "#/$defs/agentType" },
-        "deploy": { "$ref": "#/$defs/agentType" }
+        "deploy": { "$ref": "#/$defs/agentType" },
+        "ux": { "$ref": "#/$defs/agentType" }
       }
     },
     "deploy": {
