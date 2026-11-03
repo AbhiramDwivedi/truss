@@ -1,5 +1,7 @@
 # ADR-0018: the Truss web UI, redesigned
 
+Amended by [ADR-0023](0023-factory-floor-ui.md) (proposed 2026-11-03, goal `ui-redesign` revision 5b): direction D and D2 replace this ADR's visual direction (the idea, the layouts by width, the tokens, the motion, the focus colour, the screenshot widths and states). Its behaviour contract, section 10's shell and per-state role assertions, stays.
+
 Status: proposed, 2026-11-02. Written by the design crew `redesign-design` (stage 0 of goal `ui-redesign`, plan revision 4, approved auto at 2026-11-01T01:41:19Z with checker-36). It becomes accepted when the PM merges this crew.
 
 Decided by: the client ("The ui of truss is horrible ... I need a vastly modern ui. Completely rethink ui."; "Give UI / UX expert complete freedom to think it fresh and design it"; "You can use front end design plugin, or preferably vercel plugin"); the PO calls of 20:49 (amend brief, PM decisions 1 to 6: the stack, the fixed server contract, the design crew's freedom, the quality bar, behaviours re-pinned by behaviour, the screenshot verifier); the plan's layout (`plan-ui-redesign.md`, "Layout fixed by the plan"); and this crew for everything the plan leaves free.
@@ -93,6 +95,8 @@ There are no modals, drawers or routes. One document, so the Tab order and the s
 ### 6. Layouts by width
 
 Screenshot widths: phone 390 px, tablet 834 px, desktop 1440 px
+
+Superseded: the `Screenshot widths:` line of [ADR-0023](0023-factory-floor-ui.md), section 5, replaces the line above. The line stays here as the record of revision 4.
 
 R-17 adds 1024 px, which the tablet layout covers.
 
@@ -194,6 +198,8 @@ The one orchestrated moment: a new request card slides 8 px down into Your move 
 ### 10. Screens
 
 Screenshot states: empty, pending-question, pending-approval, crews-running, blocked-crew, retro, decisions
+
+Superseded: the `Screenshot states:` line of [ADR-0023](0023-factory-floor-ui.md), section 4, replaces the line above, with ten D2 states. Its rename table maps `pending-question` to `question`, `pending-approval` to `approval` and `blocked-crew` to `stuck-crew`. The shell and the per-state assertions below stay in force.
 
 Each screenshot is `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, taken `fullPage: true` at deviceScaleFactor 1 from a fixture made from `ui/contract/fixtures/run/`, copied to an `mkdtemp` dir with a per-run value planted (the states `empty`, `pending-question` and `pending-approval` have no truss dir: see section 11).
 

@@ -4,6 +4,8 @@ Status: proposed, 2026-10-30. Written by the design crew `ui-design` (stage 0 of
 
 Superseded in part by [ADR-0018](0018-ui-redesign.md) (proposed 2026-11-02): its web-client parts only, that is Decision 1's ui-web row (no bundler, no build step) and Decision 7's no-bundler import of `marked`. The client source moves to `ui/app/`, and `ui/web/` becomes the untracked output of `npm --prefix ui run build`. The server contract in Decisions 5 and 6 is unchanged.
 
+Extended by [ADR-0023](0023-factory-floor-ui.md) (proposed 2026-11-03): direction D and D2 for the client, and additive server fields for gaps a, b, d, e, f and g. `POST /api/message` takes an optional `intent` and returns the message `id`; the state gains `transcriptEntry.id` and `intent`, `session.queue`, `run.goals`, `usage.live`, `crew.estAgents` and `crew.stuck`. No existing field changes meaning, and the guard and CSP don't change.
+
 VERDICT: change. Four new modules under `ui/`: ui-state, ui-session, ui-server and ui-web. Nothing in the repo hosts a Claude Code session or serves a browser; the plugin always runs inside a session. R-9 forbids changing the plugin, so the UI is a separate package that reads Truss's files and hosts the session through `@anthropic-ai/claude-agent-sdk`.
 
 ## Context
