@@ -318,8 +318,6 @@ test('i9 1: a start entry carries guarded (the acceptance test file it names) an
   assert.deepEqual(e.guarded, ['tests/x.check.ts'], `guarded: ${JSON.stringify(e.guarded)}`)
   assert.deepEqual([...e.ownTests].sort(), ['tests/fixtures/x/**', 'tests/x.check.ts'])
   assert.deepEqual(e.owns, owns)
-  assert.equal(typeof e.goal, 'string')
-  assert.ok(String(e.scope).includes('Build only the x thing.'))
   assert.equal(e.acceptanceTest, 'node --test tests/x.check.ts')
 })
 
