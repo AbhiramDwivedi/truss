@@ -60,6 +60,26 @@ test.describe('moves', () => {
         await expect(group.getByRole('radio').first()).toHaveAccessibleName(/\(Recommended\)$/, T)
         await expect(card.getByRole('textbox', { name: 'Your own answer' })).toBeVisible(T)
         await expect(card.getByRole('button', { name: 'Submit answers' })).toBeVisible(T)
+        // the Your move pill is signal-soft with signal-text text (ADR-0023 section 3), never D2's raw #3B2604 on signal
+        const pill = card.getByText('Your move', { exact: true })
+        await expect(pill, 'the Your move pill is on the card').toBeVisible(T)
+        await expect(pill, 'the pill is tokens.json signal-soft').toHaveCSS('background-color', token('signal-soft', theme), T)
+        await expect(pill, 'the pill text is tokens.json signal-text').toHaveCSS('color', token('signal-text', theme), T)
+        // the checked option is move-fg with move text for its label and description, never D2's bg-white and #475569
+        const opt = q.options[0]
+        await card.getByText(opt.description, { exact: true }).click()
+        await expect(group.getByRole('radio').first(), 'clicking the option checks its radio').toBeChecked(T)
+        const desc = card.getByText(opt.description, { exact: true })
+        await expect(desc, 'the selected description is tokens.json move').toHaveCSS('color', token('move', theme), T)
+        const option = await desc.evaluate((el) => {
+          for (let n = el.parentElement; n; n = n.parentElement) {
+            const s = getComputedStyle(n)
+            if (s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent') return { bg: s.backgroundColor, color: s.color }
+          }
+          return null
+        })
+        expect(option?.bg, `the selected option is tokens.json move-fg (${theme})`).toBe(token('move-fg', theme))
+        expect(option?.color, `the selected option's label text is tokens.json move (${theme})`).toBe(token('move', theme))
         await expect(page).toHaveTitle('(1) Truss', T)
         const form = page.getByRole('form', { name: 'Message' })
         await expect(form.getByText("Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it.")).toBeVisible(T)
@@ -108,6 +128,9 @@ test.describe('moves', () => {
       await expect(region.getByText(/^Sent \d\d:\d\d$/).first()).toBeVisible(T)
       await expect(region.getByText('New goal').first()).toBeVisible(T)
       await expect(region.getByText('Add to current goal').first()).toBeVisible(T)
+      // the intent label is sentence case: no text-transform uppercase (D2's `uppercase tracking-wide` goes)
+      await expect(region.getByText('New goal', { exact: true }).first(), 'the New goal label is not uppercased').toHaveCSS('text-transform', 'none', T)
+      await expect(region.getByText('Add to current goal', { exact: true }).first(), 'the Add to current goal label is not uppercased').toHaveCSS('text-transform', 'none', T)
       await expect(page.getByText(/In the plan|plan revision/i)).toHaveCount(0, T)
       // newest first: the queued row (msg-4) comes before the long one (msg-2)
       const rows = await region.getByRole('listitem').allInnerTexts()
@@ -121,6 +144,24 @@ test.describe('moves', () => {
       await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Add goal' })).toBeVisible(T)
       await group.getByRole('radio', { name: 'Add to current goal' }).check()
       await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Send details' })).toBeVisible(T)
+      expect(await o.problems()).toEqual([])
+    } finally { await o.close(); await s.stop() }
+  })
+
+  test('follow-up (dark): the send button is --primary, move with move-fg text, for every intent', async ({ browser }) => {
+    const s = await scenario('follow-up')
+    const o = await openState(browser, s, 'dark', DESKTOP)
+    try {
+      const { page } = o
+      await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true', LOAD)
+      const form = page.getByRole('form', { name: 'Message' })
+      const group = form.getByRole('radiogroup', { name: 'What this message is' })
+      for (const [intent, name] of [['New goal', 'Add goal'], ['Add to current goal', 'Send details']] as const) {
+        await group.getByRole('radio', { name: intent }).check()
+        const send = form.getByRole('button', { name, exact: true })
+        await expect(send, `${name} is tokens.json move in dark, not D2's brand`).toHaveCSS('background-color', token('move', 'dark'), T)
+        await expect(send, `${name} text is tokens.json move-fg in dark (6.70:1), not white on brand (3.68:1)`).toHaveCSS('color', token('move-fg', 'dark'), T)
+      }
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
@@ -140,6 +181,14 @@ test.describe('moves', () => {
       await full.focus()
       await expect(full, 'the row text takes focus').toBeFocused(T)
       await expect(full, 'the focused row names the whole 300-character text').toHaveAccessibleName(long, T)
+      // and it stays one line high: its box is at most 2 x its computed line-height
+      const box = await full.evaluate((el) => {
+        const s = getComputedStyle(el)
+        const lh = s.lineHeight === 'normal' ? 1.2 * parseFloat(s.fontSize) : parseFloat(s.lineHeight)
+        return { height: el.getBoundingClientRect().height, lineHeight: lh }
+      })
+      expect(box.lineHeight, 'the row text has a line-height').toBeGreaterThan(0)
+      expect(box.height, `the 300-character row is ${box.height}px high, more than 2 x its ${box.lineHeight}px line-height`).toBeLessThanOrEqual(2 * box.lineHeight)
       const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
       expect(w[0], 'the long row never widens the phone page').toBeLessThanOrEqual(w[1]!)
     } finally { await o.close(); await s.stop() }

@@ -102,10 +102,12 @@ export async function scenario(name: string, opts: { now?: number } = {}): Promi
 export interface Opened { page: Page; context: BrowserContext; problems: () => Promise<string[]>; close(): Promise<void> }
 
 /** Opens the scenario's page in a context of its own: the colour scheme is the theme, the width is CSS px at scale 1. */
-export async function openState(browser: Browser, s: Scenario, theme: Theme, width: number): Promise<Opened> {
+// `before` runs on the new page before it loads, to route a request (a held stream, a failed POST).
+export async function openState(browser: Browser, s: Scenario, theme: Theme, width: number, opts: { before?: (page: Page) => Promise<void> } = {}): Promise<Opened> {
   const context = await browser.newContext({ colorScheme: theme, viewport: { width, height: HEIGHT }, deviceScaleFactor: 1 })
   const page = await context.newPage()
   const problems = await watch(page)
+  if (opts.before) await opts.before(page)
   await page.goto(s.url)
   return { page, context, problems, close: () => context.close() }
 }
