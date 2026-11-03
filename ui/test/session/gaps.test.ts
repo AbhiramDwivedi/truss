@@ -251,7 +251,7 @@ test('gap e: live is cumulative across turns and keeps the result fields', async
   assert.equal(v.session.usage.live.totalTokens, 12, 'the second turn adds to the first');
   assert.equal(v.session.usage.live.inputTokens, 3);
   assert.equal(v.session.usage.results, 2);
-  assert.equal(v.session.usage.costUsd, 0.75);
+  assert.equal(v.session.usage.costUsd, 0.5, 'the latest result replaces the cost; nothing is summed');
 });
 
 test('gap e: a missing usage counter counts as 0, and a subagent assistant message adds nothing to the main counters', async () => {
