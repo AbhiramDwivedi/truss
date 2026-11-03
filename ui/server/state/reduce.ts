@@ -97,6 +97,13 @@ interface CrewAcc {
   lastOf: Map<string, Stamped> // each agent's newest event line in this crew
   stall: StallAcc | null // the crew's newest stall event of a known kind
 }
+
+// A successor foreman of crew <slug> is <slug>-<n> with n an integer >= 2 (architecture.md); <slug>-1 is not one.
+// Returns the slug a name succeeds, or null when the name is no successor foreman.
+function successorBase(name: string): string | null {
+  const m = /^(.+)-([1-9][0-9]*)$/.exec(name)
+  return m !== null && Number(m[2]) >= 2 ? m[1] : null
+}
 interface StallAcc {
   act: Stamped // the stall line's own stamp, compared against lastOf to see if the agent spoke since
   kind: Stuck['kind']
@@ -138,6 +145,10 @@ export function createReducer(): Reducer {
   const agentCrew = new Map<string, string>() // agent name -> the first crew whose event lines name it
   const pairs = new Map<string, Pair>() // the newest message of each (from, to) pair
   const skipped: Skipped[] = []
+  // crew slug -> the newest event line of one of its successor foremen <slug>-<n>. The hook logs a successor
+  // foreman's lines under its own crew <slug>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept
+  // outside the crew accumulators and read by the original crew's stall.
+  const successorLatest = new Map<string, Stamped>()
   let seq = 0
 
   function crewOf(slug: string): CrewAcc {
@@ -215,9 +226,16 @@ export function createReducer(): Reducer {
     const act: Stamped = { ts, agent, event: ev, text, seq: ++seq }
     if (newerOrEqual(act, acc.latest)) acc.latest = act
     if (newerOrEqual(act, acc.lastOf.get(agent) ?? null)) acc.lastOf.set(agent, act)
+    // A line of successor foreman <b>-<n> counts for crew b: its own line (agent <b>-<n>) or a spawn by it, logged
+    // under crew <b>-<n> (the hook's shape) or under crew b.
+    const by = kind === 'spawn' ? str(obj.by) : null
+    for (const name of by !== null && by !== agent ? [agent, by] : [agent]) {
+      const base = successorBase(name)
+      if (base === null || (slug !== name && slug !== base)) continue
+      if (newerOrEqual(act, successorLatest.get(base) ?? null)) successorLatest.set(base, act)
+    }
     // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its foreman or a
     // member), so a stall clears once the stalled agent spawns someone. main, factory and workflow:* credit no one.
-    const by = kind === 'spawn' ? str(obj.by) : null
     if (by !== null && by !== agent && by !== 'main' && by !== 'factory' && !by.startsWith('workflow:') && (by === slug || acc.members.has(by))) {
       if (newerOrEqual(act, acc.lastOf.get(by) ?? null)) acc.lastOf.set(by, act)
     }
@@ -253,6 +271,9 @@ export function createReducer(): Reducer {
     if (acc === undefined || acc.stall === null || status !== 'running') return null
     const s = acc.stall
     if (acc.lastOf.get(s.act.agent) !== s.act) return null
+    // An idle-foreman stall also clears on a later line of a successor foreman; a kind agent stall does not.
+    const succ = successorLatest.get(acc.slug) ?? null
+    if (s.kind === 'idle-foreman' && succ !== null && succ !== s.act && newerOrEqual(succ, s.act)) return null
     return {
       kind: s.kind,
       since: new Date(timeOf(s.act.ts) - s.minutes * 60_000).toISOString(),
