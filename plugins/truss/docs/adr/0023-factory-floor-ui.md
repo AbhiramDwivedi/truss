@@ -71,11 +71,12 @@ Gap g: fill. `crew` gains `stuck`: null, or `{kind, since, minutes, detail}`, de
 
 Gap h: ship without. There are no crew control or pause endpoints.
 
-- The stuck-crew buttons `Restart builder`, `Re-plan crew` and `Ask Claude` each send an ordinary message through `POST /api/message`, with no intent. The PM acts on it. The texts are:
-  - `Restart builder`: `Crew <slug> is stuck: <detail>. Restart its builder.`
+- The stuck-crew buttons `Restart <role>`, `Re-plan crew` and `Ask Claude` each send an ordinary message through `POST /api/message`, with no intent. The PM acts on it. The texts are:
+  - `Restart <role>`: `Crew <slug> is stuck: <detail>. Restart its <role>.`
+- The primary label is `Restart <role>`, where `<role>` is the last hyphen segment of the stalled agent's name in `stuck.detail` (`quota-api-builder` gives `builder`), and it sends `Crew <slug> is stuck: <detail>. Restart its <role>.`. It is built from the detail, never hard-coded: the fixtures' stalled agent is a builder, so they show `Restart builder`, and a stalled `quota-api-tester` shows `Restart tester`.
   - `Re-plan crew`: `Crew <slug> is stuck: <detail>. Re-plan this crew.`
   - `Ask Claude`: `Crew <slug> is stuck: <detail>. What is happening, and what do you suggest?`
-- For a crew whose `stuck.kind` is `idle-foreman`, the primary button is `Start a successor foreman` in place of `Restart builder`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
+- For a crew whose `stuck.kind` is `idle-foreman`, the primary button is `Start a successor foreman` in place of `Restart <role>`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
   - `Start a successor foreman`: `Crew <slug> is stuck: <detail>. Start a successor foreman for it.`
 - The `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
 
@@ -202,7 +203,7 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 **stuck-crew.**
 - One crew has a non-null `stuck` (gap g, kind `stalled`).
 - Its button's name holds `stuck: stalled <minutes> min`, or `stuck: foreman idle <minutes> min` for kind `idle-foreman`. ADR-0018's `blocked` wording for `QC FAIL` and `reported BLOCKED` stays.
-- The crew card has a `fail` header band "Stuck, silent <minutes>m". Under it are a Why / How long / Next definition list and three buttons: `Restart builder` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h). For kind `idle-foreman` the primary button is `Start a successor foreman` instead of `Restart builder`, and it sends `Crew <slug> is stuck: <detail>. Start a successor foreman for it.` The fixture `stuck-crew/idle-foreman.json` holds that kind.
+- The crew card has a `fail` header band "Stuck, silent <minutes>m". The band's alert icon sits next to the word, exposed as `role="img"` with the accessible name `Alert`, so stuck is never shown by colour alone. Under the band are a Why / How long / Next definition list and three buttons: `Restart <role>` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h). The primary label is `Restart <role>`, where `<role>` is the last hyphen segment of the stalled agent's name in `stuck.detail` (`quota-api-builder` gives `builder`), and it sends `Crew <slug> is stuck: <detail>. Restart its <role>.`; the fixture's agent is a builder, so it reads `Restart builder`. For kind `idle-foreman` the primary button is `Start a successor foreman` instead of `Restart <role>`, and it sends `Crew <slug> is stuck: <detail>. Start a successor foreman for it.` The fixture `stuck-crew/idle-foreman.json` holds that kind.
 - The primary button is `surface` text on `fail` (section 3).
 - An 80-character slug is cut short in view with `text-overflow: ellipsis` on one line, and its full value stays in the crew button's accessible name.
 - The `Pause build` button is `aria-disabled` and described by the tip "Pausing needs a server endpoint that doesn't exist yet."
@@ -212,13 +213,14 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 **artifacts.**
 - The deliverables list is grouped by stage, with type filter chips and counts.
 - The type filter always offers `All`, `Docs`, `Code`, `Plan` and `Images`, each with its count, 0 included. Images come from `design.images`; an image whose crew is not merged is a pending item.
+- The items, and so the counts, come from the state alone. `Plan` is one item when `design.planMd` is not null. `Docs` is `design.architecture` when it is not null, plus one item per `adrs` entry. `Code` is one item per crew whose `status` is `merged` (its merged branch). `Images` is one item per `design.images` entry, pending ones included. `All` is the sum. Each chip's accessible name starts with its label and holds its count as a whole number (`Images 4`).
 - A type filter that matches nothing shows "No <type> yet." (the type in lower case, such as "No images yet.") and a `Show all types` button, which presses `All` again. The fixture `artifacts/no-images.json` is `artifacts/state.json` with `design.images: []`.
 - One item is pending: "Arrives when <crew> merges. Nothing to open yet." It is not a link.
 - At phone and tablet width, activating an item opens the `Deliverable` dialog. Focus moves into it, Escape closes it, and focus returns to the item.
 
 **live-counter.**
-- Elapsed reads "since you approved, <day HH:MM>", from `run.goals[0].approvedAt` (goal id `run`, gap d).
-- Tokens shows the total and the rate, and "as of HH:MM" from `usage.live.at` (gap e). When that stamp is more than 2 minutes old, the sub-line reads "as of HH:MM, not updating" in `signal-text`.
+- Elapsed reads "since you approved, <day HH:MM>", from `run.goals[0].approvedAt` (goal id `run`, gap d). `<day>` is the short English weekday (D2's `Thu 22:37`, `direction-d2.html:591`) and `HH:MM` the 24-hour time, both in the viewer's time zone. The sub-line holds that text and nothing more.
+- Tokens shows the total and the rate, and "as of HH:MM" from `usage.live.at` (gap e). The rate reads `<n>/min` (D2's `2.1k/min`, `direction-d2.html:592`). It shows only once the client has seen two `live` stamps; until then the sub-line holds no `/min` text and never a made-up rate. When that stamp is more than 2 minutes old, the sub-line reads "as of HH:MM, not updating" in `signal-text`.
 - Spend reads "as of turn end HH:MM", from `usage.at`.
 - Tasks done shows a count with no denominator (gap f).
 - D2's "from events today / needs a server change" legend and its hollow dots are not product copy; the page has neither.
@@ -232,7 +234,7 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 - A `Retro stage` region after Crews, holding five items named `Extract: <status>`, `Judges: <status>`, `Triage: <status>`, `Fix goal: <status>` and `Fixes applied: <status>`, drawn as a stepped rail. A running step shows its detail text.
 
 **Error and stuck paths.** These are spec cases, not screenshot states.
-- Loading. Before the first `snapshot` event, the page shows the banner and placeholder blocks at the final heights of Your move, the metrics bar and the Crews panel, with no `article` and no spinner in the page body. The `Session` status reads `connecting`. After 10 s with no snapshot, it reads "Can't reach the Truss session. Is `truss ui` still running?" and a `Retry` button follows it, which opens the stream again.
+- Loading. Before the first `snapshot` event, the page shows the banner and placeholder blocks at the final heights of Your move, the metrics bar and the Crews panel, with no `article` and no spinner in the page body (no `progressbar`). The `Your move` and `Crews` regions are already present, visible with a non-zero height and `aria-busy="true"` until the snapshot lands. The `Session` status reads `connecting`. After 10 s with no snapshot, it reads "Can't reach the Truss session. Is `truss ui` still running?" and a `Retry` button follows it, which opens the stream again.
 - A session error: the status reads `error: <first line>`, and the composer keeps its typed text.
 - A send error. When `POST /api/message` answers anything but 202 (and not the token 401 below), an `alert` under the textbox reads "Not sent: <reason>. Your text is still here." The textbox names the alert in `aria-describedby`, keeps its value, and gets focus back. `<reason>` is the response's `error` string, or its HTTP status when there is none.
 - An expired token. When the server answers 401 `{"error": "token"}` ([ADR-0011](0011-local-web-ui.md)), the `Session` status reads "Session link expired. Open the link `truss ui` printed again." The composer keeps its text and is disabled, so nothing more is sent on the dead link.
