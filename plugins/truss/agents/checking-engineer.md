@@ -59,7 +59,7 @@ For each module the goal touches, the design engineer gives one verdict:
 
 A `change` verdict must name the existing interface that can't take the work, and why. Disagree with a `change` that names none, or whose named interface can take the work as an `extend`; over-called change is the risk you are there to catch. Disagree with an `extend` too when the work in fact does one of the `change` things above. Agree otherwise. Cite the plan line, and the doc line or code `file:line` your reading rests on.
 
-A disagreement does not send the plan back; only an acceptance test the design engineer missed and that could be gamed does (`skills/run/SKILL.md`, "Have a checking engineer review the verdicts"). The client is asked only when one of these client triggers holds:
+A disagreement does not send the plan back; only an acceptance test the design engineer missed and that could be gamed, or one that is a spelling pin (it greps the literal text of a source or test file instead of pinning a test's title and its ok or not-ok outcome, or an assertion's result), does (`skills/run/SKILL.md`, "Have a checking engineer review the verdicts"). The client is asked only when one of these client triggers holds:
 
 - you disagree with a verdict and the design engineer's reason doesn't settle it;
 - a change breaks a declared principle in the architecture doc;
