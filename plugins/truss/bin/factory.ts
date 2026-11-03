@@ -822,12 +822,16 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   const slug = String(crew.slug)
   const goalFile = `${c.dir}/goals/${slug}.md`
   const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
+  // ADR-0019 item 7, the lean entry: no goal; scope and acceptanceTest only when the goal file lacks their section,
+  // since stage.js then points members to goalFile for them
+  const has = (h: string) => Object.hasOwn(sections, h)
   return {
-    slug, stage: crew.stage, goalFile, goal: (sections[''] ?? '').replace(/^# .*\n?/, '').trim(), owns: crew.owns ?? [], acceptanceTest: crew.acceptanceTest ?? '',
+    slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
+    ...(has('Acceptance test') ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
     guarded: guardedOf({ dir: c.dir, slug, wt, target: c.settings.target }).tests,
     ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
-    stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), scope: sections['Approved scope'] ?? '', worktree: wt, branch: `truss-${slug}`,
+    stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
   }
@@ -1011,7 +1015,10 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const rebuild = kind !== 'merge-ready' && !noWork
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks: plan.tasks, done: rebuild ? doneTasks(runs.slice(plan.from), slug, wt).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : [], answers })
+  const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
+  // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by
+  const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after } : t))
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {

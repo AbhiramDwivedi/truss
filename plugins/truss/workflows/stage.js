@@ -175,6 +175,29 @@ const sh = (v) => {
   return /^[A-Za-z0-9_./:@=+,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`
 }
 
+// ADR-0019 item 11: the whole stdout when it is one JSON object, else its last line that is a JSON object (npm warnings,
+// git chatter or a runner's own lines around the result line are skipped); null when there is none
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+function lastJsonObject(stdout) {
+  const tryParse = (s) => {
+    try {
+      return JSON.parse(s)
+    } catch {
+      return undefined
+    }
+  }
+  const whole = tryParse(stdout)
+  if (isPlainObject(whole)) return whole
+  const lines = stdout.replace(/\r/g, '').split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i].trim()
+    if (!l.startsWith('{')) continue
+    const v = tryParse(l)
+    if (isPlainObject(v)) return v
+  }
+  return null
+}
+
 async function runFactory(crew, command, key, line = null) {
   const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)}`
   const prompt = [
@@ -186,12 +209,7 @@ async function runFactory(crew, command, key, line = null) {
   ].join('\n')
   const res = await ask(crew, 'runner', prompt, { schema: RUNNER_SCHEMA })
   if (!res || typeof res.stdout !== 'string') return { met: false, parsed: null, out: 'the runner returned no result' }
-  let parsed = null
-  try {
-    parsed = JSON.parse(res.stdout)
-  } catch {
-    parsed = null
-  }
+  const parsed = lastJsonObject(res.stdout)
   const met = parsed !== null && typeof parsed === 'object' && parsed[key] === true
   return { met, parsed, out: `exit ${res.exit}\n${res.stdout}` }
 }
@@ -208,14 +226,38 @@ const knownOf = (r) => {
 
 // ADR-0015 Decision 6: the check runs through factory heavy. runFactory appends --dir and --repo after the whole command,
 // which would land after the --, so this line carries both flags on each side.
-function heavyLine(crew, expect) {
+function heavyParts(crew) {
   const bin = sh(`${F.plugin}/bin/factory.ts`)
   // the inner command runs with cwd = the crew worktree, where a relative truss dir (.git/truss/<id>) does not resolve
   const dir = F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/, '')}/${F.dir}`
   const dr = `--dir ${sh(dir)} --repo ${sh(F.repo)}`
   const slug = sh(crew.slug)
   const cwd = sh(crew.e.worktree)
-  return `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} -- node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)} ${dr}`
+  return { bin, dr, slug, cwd, prefix: `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} --` }
+}
+
+function heavyLine(crew, expect) {
+  const { bin, dr, slug, cwd, prefix } = heavyParts(crew)
+  return `${prefix} node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)} ${dr}`
+}
+
+// ADR-0017 Decisions 1-2 (ADR-0019 item 5): the member side of the one heavy slot, from the same values as heavyLine. Its
+// label is <slug>-check, so the reap after each member also clears a member run's orphans.
+const memberHeavyLines = (crew) => [
+  'Run a build, a browser test or a whole test suite through the one heavy slot: the program and its arguments go after the `--` of the line below, with no shell, and the Bash timeout is 600000 because the slot wait counts against it.',
+  `${heavyParts(crew).prefix} <program> <arguments>`,
+  'A result with "ran": false means the slot was busy: report it, never retry it another way.',
+]
+
+// ADR-0019 item 7: a lean entry carries no scope or acceptanceTest, because the goal file holds them under these headings
+const scopeOf = (e) => (typeof e.scope === 'string' ? e.scope : `the "## Approved scope" section of the goal file ${e.goalFile}; read it first`)
+const acceptanceOf = (e) => (typeof e.acceptanceTest === 'string' ? e.acceptanceTest : `the "## Acceptance test" section of the goal file ${e.goalFile}`)
+
+// ADR-0019 item 12: the answers a member gets. An answer at a task name goes to that task only; one at any other name
+// (a step such as red, split, green or qc, or a task the plan no longer has) goes to every member. name: null for a fix member.
+const answersFor = (crew, name) => {
+  const names = new Set((crew.tasks || []).map((t) => t.name))
+  return (crew.e.answers || []).filter((a) => (name !== null && a.at === name) || !names.has(a.at)).map((a) => `- ${a.text}`)
 }
 
 async function check(crew, expect) {
@@ -231,7 +273,7 @@ function memberPrompt(crew, role, parts) {
   const e = crew.e
   const lines = [`You are the ${role} for crew ${crew.slug}. ${BRAVE}`, '']
   lines.push(...parts.start)
-  lines.push(`Approved scope: ${e.scope}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '', `Acceptance test: ${e.acceptanceTest}`, '')
+  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '', `Acceptance test: ${acceptanceOf(e)}`, '')
   lines.push(...parts.body)
   lines.push(
     '',
@@ -242,6 +284,8 @@ function memberPrompt(crew, role, parts) {
     SHELL,
     '',
     'Members run plain single `node --test <files>` commands; the stage green step runs the acceptance test.',
+    '',
+    ...memberHeavyLines(crew),
     '',
     'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
     '',
@@ -261,22 +305,30 @@ function memberPrompt(crew, role, parts) {
 
 function taskPrompt(crew, task, note) {
   const e = crew.e
-  const answers = (e.answers || []).filter((a) => a.at === task.name).map((a) => `- ${a.text}`)
-  const body = [`Task: ${task.name}`, `Files you may change: ${task.files.join(', ')}`, `Files to read: ${task.reads.join(', ') || 'none'}`, '', 'Brief:', task.brief]
+  const answers = answersFor(crew, task.name)
+  const body = [`Task: ${task.name}`, `Files you may change: ${task.files.join(', ')}`, `Files to read: ${(task.reads || []).join(', ') || 'none'}`]
+  // ADR-0019 item 16: a builder's read-only list, the tester task files (or the entry's ownTests when no tester task has any)
+  if (task.role === 'builder') {
+    const tf = testerFiles(crew)
+    const ro = tf.length ? tf : ownTestsOf(crew)
+    if (ro.length) body.push(`Test files, read-only to you (a tester task owns them; never edit them): ${ro.join(', ')}`)
+  }
+  body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
   if (note) body.push('', ...resumeLines(note))
   const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
   return memberPrompt(crew, task.role, { start, body })
 }
 
-// a path that holds acceptance tests by its name
-const isTestPath = (p) => /(^|\/)(tests?|__tests__)\//.test(p) || /\.(check|test|spec)\./.test(p)
+// ADR-0019 item 9: the owned globs that are test paths, from the factory's one test-path rule (the start entry's ownTests).
+// stage.js keeps no rule of its own; an entry without ownTests has none.
+const ownTestsOf = (crew) => (Array.isArray(crew.e.ownTests) ? crew.e.ownTests.filter((g) => typeof g === 'string' && g !== '') : [])
 
 // the files of the crew's tester tasks (from split or e.tasks). A merge-ready resume carries no tasks, so there the tester
-// files are the owned paths that look like tests (ADR-0014 Decision 4 has no merge-ready exception).
+// files are the entry's ownTests (ADR-0014 Decision 4 has no merge-ready exception).
 const testerFiles = (crew) => {
   const fromTasks = (crew.tasks || []).filter((t) => t.role === 'tester').flatMap((t) => t.files || [])
-  const files = fromTasks.length || crew.e.resume !== 'merge-ready' ? fromTasks : (crew.e.owns || []).filter(isTestPath)
+  const files = fromTasks.length || crew.e.resume !== 'merge-ready' ? fromTasks : ownTestsOf(crew)
   return [...new Set(files)]
 }
 
@@ -297,6 +349,8 @@ function fixPrompt(crew, what, detail, role = 'builder') {
     if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`)
   }
   body.push('', 'Fix this, and only this:', detail)
+  const answers = answersFor(crew, null)
+  if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
   const start = [`Your first step, before anything else: git merge ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
   return memberPrompt(crew, role, { start, body })
 }
@@ -454,10 +508,19 @@ function globToRegExp(glob) {
   return new RegExp(`^${s}$`)
 }
 
-function validateTasks(tasks, owns) {
+// ownTests: the entry's test globs, checked on a fresh plan only (ADR-0019 item 16): a builder task that lists a file one
+// of them matches is sent back, since test files are read-only to builders. null (a saved plan, or no ownTests) skips it.
+function validateTasks(tasks, owns, ownTests = null) {
   const errors = []
   if (!Array.isArray(tasks) || tasks.length === 0) return ['the plan has no tasks']
   const owned = owns.map(globToRegExp)
+  const testGlobs = (Array.isArray(ownTests) ? ownTests : []).map((g) => ({ g, re: globToRegExp(g) }))
+  for (const t of tasks.filter((x) => x && x.role === 'builder')) {
+    for (const f of t.files || []) {
+      const hit = typeof f === 'string' ? testGlobs.find(({ re }) => re.test(f)) : undefined
+      if (hit) errors.push(`builder task ${t.name} lists file ${f}, a test file (it matches ownTests ${hit.g}); test files are read-only to builders, so give that change to a tester task`)
+    }
+  }
   const byName = {}
   for (const t of tasks) {
     if (byName[t.name]) errors.push(`duplicate task name: ${t.name}`)
@@ -517,7 +580,7 @@ function plannerPrompt(crew, errors) {
     `Crew worktree: ${e.worktree}`,
     `Owns: ${e.owns.join(', ')}`,
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
-    `Approved scope: ${e.scope}`,
+    `Approved scope: ${scopeOf(e)}`,
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
   ]
@@ -537,11 +600,12 @@ async function askPlanner(crew, errors) {
 
 async function split(crew) {
   crew.step = 'split'
+  const ownTests = ownTestsOf(crew)
   let tasks = await askPlanner(crew, null)
-  let errors = validateTasks(tasks, crew.e.owns)
+  let errors = validateTasks(tasks, crew.e.owns, ownTests)
   if (errors.length) {
     tasks = await askPlanner(crew, errors)
-    errors = validateTasks(tasks, crew.e.owns)
+    errors = validateTasks(tasks, crew.e.owns, ownTests)
     if (errors.length) throw new Stop('BLOCKED', `the plan failed these checks twice:\n${errors.map((x) => `- ${x}`).join('\n')}`, 'split')
   }
   return tasks
@@ -564,7 +628,7 @@ async function green(crew) {
     if (attempt < 3) {
       await fixBuilder(crew, 'green check', `The green check failed.${knownOf(g)}\nIts output tail:\n${clip(g.out)}`)
     } else {
-      const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${crew.e.acceptanceTest}`, 'Failing output:', clip(g.out)].join('\n'))
+      const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${acceptanceOf(crew.e)}`, 'Failing output:', clip(g.out)].join('\n'))
       await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
     }
   }
@@ -723,7 +787,7 @@ function qcPrompt(crew) {
     `High-impact paths: ${e.highImpact.join(', ') || 'none'}`,
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
-    `Acceptance test: ${e.acceptanceTest}`,
+    `Acceptance test: ${acceptanceOf(e)}`,
     '',
     'Member proofs:',
     ...(crew.proofs.length ? crew.proofs : ['none']),
@@ -731,7 +795,7 @@ function qcPrompt(crew) {
     'Last stress-test report:',
     crew.stressTest || 'none',
     '',
-    `Approved scope: ${e.scope}`,
+    `Approved scope: ${scopeOf(e)}`,
     '',
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
     "Check the goal file's Non-goals heading against the diff. Work that lands in a non-goal is a finding.",
