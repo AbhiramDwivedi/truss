@@ -2,6 +2,7 @@
 // prints one JSON object on one line; exit 0 = done, 1 = a gate or expectation refused, 2 = usage or I/O error
 // ({"error": "..."}). Node built-ins and ../hooks/register.ts only.
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
@@ -357,6 +358,23 @@ function rolesWithTypes(plugin: string, types: string[], cfgRoles?: unknown): Ob
   }
   for (const r of Object.values(roles)) if (isObj(r) && typeof r.typeFromProject === 'string' && isObj(roles[r.typeFromProject])) r.agentType = roles[r.typeFromProject].agentType
   return roles
+}
+// ADR-0026 item 50: start --model <role>=<opus|sonnet>, repeatable, sets roles.<role>.model in `roles` and returns the map,
+// which crewEntry lays on members.<role>.model where ## Members gives that role. It is the one way to change a model.
+const MODEL_USAGE = 'start --model needs <role>=<opus|sonnet> for a role of the roles table; it sets roles.<role>.model and the ## Members entry, so never edit the args file'
+function modelsOf(f: Flags, roles: Obj): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const t of listOf(f, 'model')) {
+    const eq = t.indexOf('=')
+    const role = eq > 0 ? t.slice(0, eq) : ''
+    const model = eq > 0 ? t.slice(eq + 1).toLowerCase() : ''
+    if (role === '' || !isObj(roles[role])) throw usage(`${MODEL_USAGE}; got ${t}${role === '' ? '' : ` (unknown role ${role})`}`)
+    if (model !== 'opus' && model !== 'sonnet') throw usage(`${MODEL_USAGE}; got ${t}`)
+    if (out[role] !== undefined && out[role] !== model) throw usage(`${MODEL_USAGE}; --model gives ${role} both ${out[role]} and ${model}`)
+    out[role] = model
+    roles[role].model = model
+  }
+  return out
 }
 // Copies <plugin>/workflows/<script> byte for byte to <scriptsDir>/truss-<script> and returns that path; without scriptsDir returns the plugin path.
 function scriptPathFor(plugin: string, script: string, scriptsDir: string | undefined): string {
@@ -922,7 +940,7 @@ function ensureWorktree(repo: string, slug: string, target: string): string {
   return wt
 }
 
-type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[] }
+type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
 // A crew entry for stage.js; `resume`, `tasks`, `done` and `answers` are the restart facts (fresh start: null and empty).
@@ -940,8 +958,15 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
   const ux = crew.ux === true || (uxText !== '' && !/^none\b/i.test(uxText))
-  // ADR-0025 item 40: the first ## UX line starting with "Live page" after an optional "- " or "* " marker, trimmed, else null
-  const livePage = uxText.split(/\r?\n/).map((l) => l.trim().replace(/^[-*] /, '')).find((l) => l.startsWith('Live page'))?.trim() ?? null
+  // ADR-0025 item 40, ADR-0026 item 53: the first ## UX line that reads "Live page" as a whole word after an optional list
+  // marker ("-", "*", "+" or "1." / "1)", then any run of spaces), trimmed, else null. "Live pages are not built" is no Live page line.
+  const livePage = uxText.split(/\r?\n/).map((l) => l.trim().replace(/^(?:[-*+]|\d+[.)])\s+/, '')).find((l) => /^Live page(?![\w-])/.test(l))?.trim() ?? null
+  // ADR-0026 item 50: start --model <role>=<model> reaches the ## Members entry of that role too, so stage.js needs no change
+  const members = membersOf(sections.Members, goalFile).members
+  for (const role of ['builder', 'tester'] as const) {
+    const m = members[role]
+    if (m !== undefined && c.models[role] !== undefined) members[role] = { ...m, model: c.models[role] }
+  }
   return {
     slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
     ...(atInGoal ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
@@ -951,14 +976,73 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
-    ux, livePage, direction: directionOf(c.dir, slug), members: membersOf(sections.Members, goalFile).members,
+    ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
+  const w = loadWarned(c.dir)
+  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries)]
+  saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    held, foremen, refused, stale, unfinished, warnings: [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug))), ...roleWarnings(c, entries)],
+    held, foremen, refused, stale, unfinished, warnings,
   }
+}
+
+// ADR-0026 item 49 (b): <truss dir>/agent-warnings.json maps each agent file a newer-than-session warning named (absolute
+// path) to the sha256 of its content then. A file whose content still has that hash warns no more; a new hash warns again.
+// `seen` is the record as this call found it, `now` what this call warned; every crew of one call still gets its warning.
+// The file is per session and cheap to drop: a missing or bad one is an empty record, and a failed write only repeats warnings.
+type Warned = { seen: Record<string, string>; now: Record<string, string> }
+const WARNED_FILE = (dir: string): string => `${dir}/agent-warnings.json`
+function loadWarned(dir: string): Warned {
+  const seen: Record<string, string> = {}
+  try {
+    const v = JSON.parse(readFileSync(WARNED_FILE(dir), 'utf8'))
+    if (isObj(v)) for (const [k, h] of Object.entries(v)) if (typeof h === 'string') seen[k] = h
+  } catch {
+    // missing or bad: nothing warned yet
+  }
+  return { seen, now: {} }
+}
+function saveWarned(dir: string, w: Warned): void {
+  if (Object.keys(w.now).length === 0) return
+  try {
+    writeFileSync(WARNED_FILE(dir), JSON.stringify({ ...w.seen, ...w.now }, null, 2) + '\n')
+  } catch {
+    // the warnings repeat next start; nothing else depends on the record
+  }
+}
+// The detail text for a newer-than-session warning about the plugin's agent file `file`, or null for no warning: the
+// file is not newer than the session start, git shows it unchanged since then (item 49 (a)), or this content was warned before.
+function newerDetail(file: string, changed: number, started: number, w: Warned): string | null {
+  if (!(changed > started)) return null
+  const detail = changeDetail(file, changed, started)
+  if (detail === null) return null
+  const key = `${PLUGIN}/${file}`
+  let hash: string
+  try {
+    hash = createHash('sha256').update(readFileSync(key)).digest('hex')
+  } catch {
+    return detail
+  }
+  w.now[key] = hash
+  return w.seen[key] === hash ? null : detail
+}
+// ADR-0026 item 50: without --model the ## Members model stands (ADR-0022 U6). One warning per crew whose ## Members model
+// differs from its roles row, so the PM changes models the one supported way.
+function memberWarnings(c: StartCtx, entries: Obj[]): string[] {
+  const out: string[] = []
+  for (const e of entries) {
+    const diff: string[] = []
+    for (const role of ['tester', 'builder']) {
+      const m = isObj(e.members) && isObj(e.members[role]) ? String(e.members[role].model) : undefined
+      const r = isObj(c.roles[role]) && typeof c.roles[role].model === 'string' ? c.roles[role].model : undefined
+      if (m !== undefined && r !== undefined && m !== r) diff.push(`${role} on ${m} (roles.${role}.model is ${r})`)
+    }
+    if (diff.length > 0) out.push(`crew ${String(e.slug)}'s ## Members runs the ${diff.join(' and the ')}; the ## Members model stands (ADR-0022 U6). To run another model, pass start --model <role>=<model> (repeatable, also on --resume), which sets both the roles row and the ## Members entry; never edit the args file`)
+  }
+  return out
 }
 
 // The start time of the session, in ms since the epoch, or undefined when it can't be read: TRUSS_SESSION_START (a test
@@ -987,7 +1071,7 @@ function sessionStart(): number | undefined {
 }
 // One warning per crew starting now whose goal file says `## Stress test` yes, when the stress role's agent file changed after
 // the session loaded its agents. Warnings never hold or refuse a crew.
-function stressWarnings(c: StartCtx, slugs: string[]): string[] {
+function stressWarnings(c: StartCtx, slugs: string[], w: Warned): string[] {
   const out: string[] = []
   let started: number | undefined
   let read = false
@@ -1005,8 +1089,12 @@ function stressWarnings(c: StartCtx, slugs: string[]): string[] {
     } catch {
       changed = undefined
     }
-    if (changed === undefined || started === undefined) out.push(`crew ${slug} runs ${type}, but I can't tell whether its agent file changed after this session loaded its agents; restart the session if it did`)
-    else if (changed > started) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents (${changeDetail(`agents/${type.replace(/^[^:]*:/, '')}.md`, changed, started)}); restart the session to load it`)
+    if (changed === undefined || started === undefined) {
+      out.push(`crew ${slug} runs ${type}, but I can't tell whether its agent file changed after this session loaded its agents; restart the session if it did`)
+      continue
+    }
+    const detail = newerDetail(`agents/${type.replace(/^[^:]*:/, '')}.md`, changed, started, w)
+    if (detail !== null) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents (${detail}); restart the session to load it`)
   }
   return out
 }
@@ -1014,7 +1102,9 @@ function stressWarnings(c: StartCtx, slugs: string[]): string[] {
 // newer-than-session warnings. In a git work tree with a commit before the session start: the lines added and removed since
 // that commit (working tree included) and the newest commit after it that touched the file, or `uncommitted`. Else the
 // file's mtime and the session start as ISO times. Read-only git only.
-function changeDetail(file: string, mtime: number, started: number): string {
+// ADR-0026 item 49 (a): an empty numstat (the file holds its session-start content again, reverted or restored) is null,
+// no change and so no warning.
+function changeDetail(file: string, mtime: number, started: number): string | null {
   const fallback = `mtime ${new Date(mtime).toISOString()}, session start ${new Date(started).toISOString()}`
   try {
     if (run(PLUGIN, ['rev-parse', '--is-inside-work-tree']).out !== 'true') return fallback
@@ -1022,6 +1112,7 @@ function changeDetail(file: string, mtime: number, started: number): string {
     const base = run(PLUGIN, ['rev-list', '-1', '--first-parent', `--before=${new Date(started).toISOString()}`, 'HEAD'])
     if (base.status !== 0 || base.out === '') return fallback
     const ns = run(PLUGIN, ['diff', '--numstat', base.out, '--', file])
+    if (ns.status === 0 && ns.out === '') return null
     const m = /^(\d+)\t(\d+)\t/.exec(ns.out)
     if (ns.status !== 0 || m === null) return fallback
     const last = run(PLUGIN, ['log', '-1', '--format=%h %s', `${base.out}..HEAD`, '--', file])
@@ -1035,7 +1126,7 @@ function changeDetail(file: string, mtime: number, started: number): string {
 // (stressWarnings keeps its own texts): planner, qc and writer, tester and builder when their type is truss:*, and ux when the
 // entry is ux. Never designer or checker, which the stage workflow does not spawn. A type warns when its agent file is missing,
 // is newer than the session start, or the session start can't be read; each warning names both fallbacks.
-function roleWarnings(c: StartCtx, entries: Obj[]): string[] {
+function roleWarnings(c: StartCtx, entries: Obj[], w: Warned): string[] {
   const out: string[] = []
   let started: number | undefined
   let read = false
@@ -1059,7 +1150,10 @@ function roleWarnings(c: StartCtx, entries: Obj[]): string[] {
       const fallback = `or resume with roles.${role}.agentType set to general-purpose and an answer telling the agent to read ${file} and follow it`
       if (changed === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but its agent file ${file} is missing; restart the session once it is back, ${fallback}`)
       else if (started === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but I can't tell whether ${file} changed after this session loaded its agents; restart the session if it did, ${fallback}`)
-      else if (changed > started) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents (${changeDetail(file, changed, started)}); restart the session to load it, ${fallback}`)
+      else {
+        const detail = newerDetail(file, changed, started, w)
+        if (detail !== null) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents (${detail}); restart the session to load it, ${fallback}`)
+      }
     }
   }
   return out
@@ -1327,19 +1421,29 @@ function cmdStart(f: Flags): Obj {
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
-  const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs }
+  const models = modelsOf(f, roles)
+  const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
-  if (slugFlag !== undefined || resumeFlag !== undefined) {
-    if (!slugFlag || !resumeFlag) throw usage('start --slug and --resume go together')
+  if (resumeFlag !== undefined) {
+    if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
   }
-  const stageArg = need(f, 'stage')
+  if (slugFlag === '') throw usage('start --slug needs a crew slug')
+  // ADR-0026 item 46: --slug S without --resume considers crew S only, with --stage optional (default next)
+  const only = slugFlag
+  const stageArg = only !== undefined ? (str(f, 'stage') ?? 'next') : need(f, 'stage')
   const noWorkflow = f['no-workflow'] === true
   // ADR-0025 item 37: a crew whose goal is in plan.goals with approvedAt null is skipped: not started, refused, held or in goalNext
   const unapproved = unapprovedGoals(plan)
   const crews: Obj[] = plan.crews.filter(isObj).filter((c: Obj) => !unapproved.has(goalOf(c)))
-  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
+  const picked = only === undefined ? undefined : plan.crews.find((c: Obj) => isObj(c) && c.slug === only)
+  if (only !== undefined) {
+    if (picked === undefined) throw refuse({ error: `start --slug ${only}: no crew ${only} in the plan` })
+    if (unapproved.has(goalOf(picked))) throw refuse({ error: `start --slug ${only}: its goal ${goalOf(picked)} is not approved (approvedAt is null)` })
+    if (picked.status !== 'planned') throw refuse({ error: `start --slug ${only}: the crew is ${String(picked.status)}, not planned; a running crew restarts with --resume` })
+  }
+  const open =crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
   // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
   const hasGoals = Array.isArray(plan.goals) && plan.goals.length > 0
   const goalNext = new Map<string, number>()
@@ -1357,6 +1461,10 @@ function cmdStart(f: Flags): Obj {
   const next = Math.min(...open)
   if (!hasGoals && stageArg !== 'next' && Number(stageArg) !== next) throw refuse({ error: `stage ${stageArg} is not the next stage: ${next}` })
   const startsNow = (crew: Obj): boolean => (hasGoals ? goalNext.get(goalOf(crew)) === crew.stage && (stageArg === 'next' || Number(stageArg) === crew.stage) : crew.stage === next)
+  if (picked !== undefined && !startsNow(picked)) {
+    const at = hasGoals ? `its goal ${goalOf(picked)}'s next stage is ${goalNext.get(goalOf(picked)) ?? 'none'}` : `the next stage is ${next}`
+    throw refuse({ error: `start --slug ${only}: the crew is in stage ${String(picked.stage)}, but ${at}${stageArg === 'next' ? '' : ` (--stage ${stageArg})`}` })
+  }
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   let slots = cap - crews.filter((c) => c.status === 'running').length
   const wasRunning = crews.filter((c) => c.status === 'running')
@@ -1364,9 +1472,11 @@ function cmdStart(f: Flags): Obj {
   const refused: Obj[] = []
   const entries: Obj[] = []
   const held: Obj[] = []
-  for (const crew of crews) {
+  for (const crew of picked === undefined ? crews : [picked]) {
     if (!startsNow(crew) || crew.status !== 'planned') continue
-    if (slots <= 0) break
+    // a picked crew is held with admission's reason rather than dropped: admission's parallelism is never above the cap,
+    // so a full cap holds it there
+    if (slots <= 0 && picked === undefined) break
     const missingGoal = `${dir}/goals/${String(crew.slug)}.md`
     if (!existsSync(missingGoal)) {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
@@ -1435,12 +1545,22 @@ function checkArgsFile(f: Flags): void {
   if (p === undefined) return
   if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
   let dir = p.endsWith(path.sep)
+  let exists = false
   try {
     dir ||= statSync(p).isDirectory()
+    exists = true
   } catch {
     // P does not exist yet (or can't be stat'ed): the ancestor check below decides
   }
   if (dir) throw usage(`cannot write ${flat(p)}: --args-file names a directory, not a file`)
+  // ADR-0026 item 53: an existing P this user can't write is refused here, so argsFileOut never fails after start changed state
+  if (exists) {
+    try {
+      accessSync(p, fsConstants.W_OK)
+    } catch {
+      throw usage(`cannot write ${flat(p)}: --args-file names an existing file that is not writable`)
+    }
+  }
   let a = path.dirname(p)
   while (!existsSync(a) && path.dirname(a) !== a) a = path.dirname(a)
   let ok = false
@@ -1516,21 +1636,34 @@ function effectiveParallelism(dir: string, cap: number): number {
   return cap
 }
 
-type Admission = { admitted: boolean; parallelism: number; running: number; freeMB: number | null; minFreeMB: number; why?: string }
-// Memory first, then (for a planned crew) the effective parallelism. A sampler error admits and logs a sampler-error event.
+type Admission = { admitted: boolean; parallelism: number; running: number; freeMB: number | null; minFreeMB: number; memPressure?: number; swapUsedPct?: number; why?: string }
+const MAX_MEM_PRESSURE = 10
+const MAX_SWAP_USED_PCT = 70
+// Memory first (free MB, then memory pressure and swap use, ADR-0026 item 57), then (for a planned crew) the effective parallelism. A sampler error admits and logs a sampler-error event.
 function admission(dir: string, plan: Obj, crew: Obj, command: string, running: number): Admission {
   const slug = String(crew.slug)
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   const parallelism = effectiveParallelism(dir, cap)
   const min = minFreeMB()
   let freeMB: number | null = null
+  // ADR-0026 item 57: the sampler's memory pressure (PSI some avg10, %) and swap use (%), read as optional numbers here
+  // until resources/index.ts types them; an absent or non-numeric field skips its rule
+  let pressure: { memPressure?: unknown; swapUsedPct?: unknown } = {}
   try {
-    freeMB = sample().freeMB
+    const s = sample()
+    freeMB = s.freeMB
+    pressure = s as unknown as typeof pressure
   } catch (e) {
     appendEvent(dir, { event: 'sampler-error', crew: slug, agent: slug, command, error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
   }
-  const base = { parallelism, running, freeMB, minFreeMB: min }
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+  const memPressure = num(pressure.memPressure)
+  const swapUsedPct = num(pressure.swapUsedPct)
+  const base = { parallelism, running, freeMB, minFreeMB: min, ...(memPressure === undefined ? {} : { memPressure }), ...(swapUsedPct === undefined ? {} : { swapUsedPct }) }
   if (freeMB !== null && !admits({ freeMB, totalMB: 0 }, min)) return { admitted: false, ...base, why: `free memory ${freeMB} MB is below ${min} MB` }
+  // strict limits: exactly 10% and 70% admit; well before systemd-oomd's 50% pressure and 90% swap kill switch
+  if (memPressure !== undefined && memPressure > MAX_MEM_PRESSURE) return { admitted: false, ...base, why: `memory pressure ${memPressure}% (PSI some avg10) is above ${MAX_MEM_PRESSURE}%` }
+  if (swapUsedPct !== undefined && swapUsedPct > MAX_SWAP_USED_PCT) return { admitted: false, ...base, why: `swap use ${swapUsedPct}% is above ${MAX_SWAP_USED_PCT}%` }
   if (crew.status === 'planned' && running >= parallelism) return { admitted: false, ...base, why: `${running} crew(s) running already fill the parallelism ${parallelism}` }
   return { admitted: true, ...base }
 }
@@ -1969,6 +2102,42 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   return { merged: true, ...(left.length > 0 ? { left } : {}) }
 }
 
+// ADR-0026 item 56: when the repo finish merged into is the plugin's own repo, one warning per plugin agents/*.md the merges
+// changed (target head before..after): this session keeps the agent definition it loaded until a restart, silently.
+// Each names the item-24 fallback. Read-only git; any git failure gives no warning.
+function agentFileWarnings(repo: string, before: string, target: string): string[] {
+  const top = (cwd: string): string | undefined => {
+    const r = run(cwd, ['rev-parse', '--show-toplevel'])
+    if (r.status !== 0 || r.out === '') return undefined
+    try {
+      return flat(realpathSync(r.out))
+    } catch {
+      return flat(r.out)
+    }
+  }
+  let pluginTop: string | undefined
+  let repoTop: string | undefined
+  try {
+    pluginTop = top(PLUGIN)
+    repoTop = top(repo)
+  } catch {
+    return []
+  }
+  if (pluginTop === undefined || pluginTop !== repoTop) return []
+  const rel = path.posix.relative(pluginTop, flat(realpathSync(PLUGIN)))
+  const agents = rel === '' ? 'agents' : `${rel}/agents`
+  const d = run(repo, ['diff', '--name-only', before, `refs/heads/${target}`, '--', `${agents}/`])
+  if (d.status !== 0) return []
+  const out: string[] = []
+  for (const p of d.out.split('\n')) {
+    if (!p.startsWith(`${agents}/`) || !/^[^/]+\.md$/.test(p.slice(agents.length + 1))) continue
+    const file = `agents/${p.slice(agents.length + 1)}`
+    const type = `truss:${file.slice('agents/'.length, -'.md'.length)}`
+    out.push(`the merge changed ${file}; this session keeps the ${type} definition it loaded until a restart, so restart the session, or spawn the role as general-purpose with ${file} inlined in its prompt (ADR-0024 item 24)`)
+  }
+  return out
+}
+
 function cmdFinish(f: Flags): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
@@ -1990,9 +2159,12 @@ function cmdFinish(f: Flags): Obj {
   const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
   const inRun = factoryCrews.filter((c) => wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug))
-  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[], leftWorktrees: [] as Obj[] }
+  const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[], leftWorktrees: [] as Obj[], warnings: [] as string[] }
   const finishWith = (): Obj => {
-    const body = { merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped, ...(out.leftWorktrees.length > 0 ? { leftWorktrees: out.leftWorktrees } : {}) }
+    const body = {
+      merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped,
+      ...(out.leftWorktrees.length > 0 ? { leftWorktrees: out.leftWorktrees } : {}), ...(out.warnings.length > 0 ? { warnings: out.warnings } : {}),
+    }
     if (out.refused.length > 0 || out.rework.length > 0 || out.blocked.length > 0 || out.audit.length > 0) throw refuse(body)
     return body
   }
@@ -2055,6 +2227,7 @@ function cmdFinish(f: Flags): Obj {
   }
 
   const since = runStart(plan) ?? 0
+  const targetBefore = run(repo, ['rev-parse', '-q', '--verify', `refs/heads/${settings.target}`])
   for (const c of inRun) {
     const res = results.find((r) => r.slug === c.slug)
     if (res === undefined || res.state !== 'passed') continue
@@ -2071,6 +2244,7 @@ function cmdFinish(f: Flags): Obj {
     else if (r.blocked !== undefined) out.blocked.push({ slug: c.slug, why: r.blocked })
     else out.refused.push({ slug: c.slug, why: r.refused ?? 'refused' })
   }
+  if (out.merged.length > 0 && targetBefore.status === 0) out.warnings.push(...agentFileWarnings(repo, targetBefore.out, settings.target))
   // each merged crew's sweep reports what it left; a later crew's sweep may have removed it, and the same one is listed per pass.
   // Report each still-present worktree once.
   const present = new Set(worktreesOf(repo).map((w) => w.path))
