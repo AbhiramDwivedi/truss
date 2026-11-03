@@ -549,13 +549,25 @@ export function envFailure(text: string): string | undefined {
 // ADR-0024 item 34: the failure blocks of a check's output, each from its header to the next header: Playwright's
 // `N) [project] › file:line:col › ...` (the `[project] › ` part left out when the project has no name) and node:test TAP's
 // `not ok N - ...` (a TAP parent that only reports failed subtests is no block of its own). Text before the first header
-// belongs to no block. [] when no header is found.
+// belongs to no block. [] when no header is found. ADR-0025 item 43: a TAP block ends at its YAML diagnostic's closing `...`
+// line, or at a plan or summary line (`1..N`, `# tests`); lines after that, up to the next header, belong to no block.
+// Playwright blocks run to the next header.
 function failureBlocks(text: string): string[] {
   const header = /^\s*(\d+\) (\[[^\]]+\] › )?[^\s›][^›]*:\d+:\d+ › |not ok \d+ - )/
+  const tapHeader = /^\s*not ok \d+ - /
   const blocks: string[][] = []
+  let open = false
+  let tap = false
   for (const line of text.split('\n')) {
-    if (header.test(line)) blocks.push([line])
-    else blocks[blocks.length - 1]?.push(line)
+    if (header.test(line)) {
+      blocks.push([line])
+      open = true
+      tap = tapHeader.test(line)
+    } else if (open && tap && /^\s*(\d+\.\.\d+|# tests \d+)\b/.test(line)) open = false
+    else if (open) {
+      blocks[blocks.length - 1]?.push(line)
+      if (tap && /^\s*\.\.\.\s*$/.test(line)) open = false
+    }
   }
   return blocks.map((b) => b.join('\n')).filter((b) => !/failureType: '?subtestsFailed'?/.test(b))
 }
@@ -726,8 +738,10 @@ function cmdIntegrate(f: Flags): Obj {
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   // ADR-0024 item 32: a branch whose merge would leave the crew head's tree unchanged (one the head already holds, even after a
   // rewrite split its commits) isn't merged. A conflict or a merge-tree failure falls back to the --no-ff merge below.
-  const mt = run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
-  const tree = mt.status === 0 ? mt.out.split('\n')[0]?.trim() : undefined
+  // ADR-0025 item 44: only with no merge in progress in the crew worktree; while one is (MERGE_HEAD set), mergeIn answers.
+  const merging = run(c.wt, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).status === 0
+  const mt = merging ? undefined : run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
+  const tree = mt !== undefined && mt.status === 0 ? mt.out.split('\n')[0]?.trim() : undefined
   if (tree !== undefined && tree !== '') {
     const now = run(c.wt, ['rev-parse', 'HEAD^{tree}'])
     if (now.status === 0 && now.out === tree) return { merged: true, contained: true, head: gitOrFail(c.wt, ['rev-parse', 'HEAD']) }
@@ -1166,7 +1180,8 @@ function promptTask(transcript: string): string | undefined {
 // holds them all (as above). A branch's own commits are those not on `target` and not behind its fork point, the newest commit
 // of the crew branch's first-parent line it contains: a fresh member branch (one that only points at a crew head, old or
 // current) has none, though it is an ancestor. When that count is 0, commits the branch's reflog shows were made on it count:
-// a hand `git merge` that fast-forwards puts them on the first-parent line.
+// a hand `git merge` that fast-forwards puts them on the first-parent line. ADR-0025 item 42: when the branch holds no commit of
+// that line (the crew branch was rewritten after the member forked), the reflog count is the only count.
 function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): string[] {
   const crewBranch = `truss-${slug}`
   const lines = (args: string[]): string[] | undefined => {
@@ -1178,16 +1193,20 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
     const spine = lines(['rev-list', '--first-parent', crewBranch, '--not', target])
     if (reach === undefined || spine === undefined) return 0
     const inBranch = new Set(reach)
+    // The branch's reflog tells a member's own commits apart: a commit the member made on it (commit, cherry-pick, revert)
+    // that the branch still reaches and `target` lacks is its own; a creation or a fast-forward onto a crew head is not.
+    // A missing reflog counts 0, so the task re-runs.
+    const made = (): number => (lines(['log', '-g', '--format=%H %gs', `refs/heads/${branch}`]) ?? [])
+      .filter((l) => /^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l) && inBranch.has(l.split(' ')[0] as string)).length
     const fork = spine.find((s) => inBranch.has(s))
-    if (fork === undefined) return reach.length
+    // ADR-0025 item 42: no first-parent crew commit in the branch means the crew branch was rewritten after the member forked,
+    // so `reach` still holds the old crew commits; a fresh branch left on the old crew head would count them. The reflog decides.
+    if (fork === undefined) return made()
     const behind = lines(['rev-list', branch, '--not', target, fork])?.length ?? 0
     if (behind > 0) return behind
     // A fork-point count of 0 can be a hand merge that fast-forwarded the crew branch onto the member's own tip, so the
-    // member's commits sit on the first-parent line. The branch's reflog tells them apart: a commit the member made on it
-    // (commit, cherry-pick, revert) that the branch still reaches and `target` lacks is its own; a creation or a
-    // fast-forward onto a crew head is not.
-    const made = lines(['log', '-g', '--format=%H %gs', `refs/heads/${branch}`]) ?? []
-    return made.filter((l) => /^[0-9a-f]+ (commit|cherry-pick|revert)\b/.test(l) && inBranch.has(l.split(' ')[0] as string)).length
+    // member's commits sit on the first-parent line; the reflog decides here too.
+    return made()
   }
   const done: string[] = []
   const taskOf = (a: RunAgent): string | undefined => {
