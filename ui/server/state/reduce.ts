@@ -96,6 +96,14 @@ interface CrewAcc {
   latest: Stamped | null
   lastOf: Map<string, Stamped> // each agent's newest event line in this crew
   stall: StallAcc | null // the crew's newest stall event of a known kind
+  successor: Stamped | null // the newest event line of a successor foreman <slug>-<n>, n >= 2
+}
+
+// A successor foreman of crew slug is <slug>-<n> with n an integer >= 2 (architecture.md); <slug>-1 is not one.
+function isSuccessor(agent: string, slug: string): boolean {
+  if (!agent.startsWith(slug + '-')) return false
+  const n = agent.slice(slug.length + 1)
+  return /^[1-9][0-9]*$/.test(n) && Number(n) >= 2
 }
 interface StallAcc {
   act: Stamped // the stall line's own stamp, compared against lastOf to see if the agent spoke since
@@ -143,7 +151,7 @@ export function createReducer(): Reducer {
   function crewOf(slug: string): CrewAcc {
     let c = crews.get(slug)
     if (c === undefined) {
-      c = { slug, foreman: null, members: new Map(), latest: null, lastOf: new Map(), stall: null }
+      c = { slug, foreman: null, members: new Map(), latest: null, lastOf: new Map(), stall: null, successor: null }
       crews.set(slug, c)
     }
     return c
@@ -215,6 +223,7 @@ export function createReducer(): Reducer {
     const act: Stamped = { ts, agent, event: ev, text, seq: ++seq }
     if (newerOrEqual(act, acc.latest)) acc.latest = act
     if (newerOrEqual(act, acc.lastOf.get(agent) ?? null)) acc.lastOf.set(agent, act)
+    if (isSuccessor(agent, slug) && newerOrEqual(act, acc.successor)) acc.successor = act
     // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its foreman or a
     // member), so a stall clears once the stalled agent spawns someone. main, factory and workflow:* credit no one.
     const by = kind === 'spawn' ? str(obj.by) : null
@@ -253,6 +262,8 @@ export function createReducer(): Reducer {
     if (acc === undefined || acc.stall === null || status !== 'running') return null
     const s = acc.stall
     if (acc.lastOf.get(s.act.agent) !== s.act) return null
+    // An idle-foreman stall also clears on a later line of a successor foreman; a kind agent stall does not.
+    if (s.kind === 'idle-foreman' && acc.successor !== null && acc.successor !== s.act && newerOrEqual(acc.successor, s.act)) return null
     return {
       kind: s.kind,
       since: new Date(timeOf(s.act.ts) - s.minutes * 60_000).toISOString(),
