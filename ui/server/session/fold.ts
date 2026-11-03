@@ -26,7 +26,7 @@ export type Intent = 'goal' | 'add' | null
 // ADR-0023 gap b: an accepted message the SDK has not yet taken.
 export interface QueueItem { id: string; text: string; intent: Intent; at: string }
 // The running sums behind usage.live, kept off the wire: it is counted before the first result, when usage is null.
-export interface Tally { seen: Record<string, true>; tasks: Record<string, number>; live: LiveUsage | null }
+export interface Tally { seen: readonly string[]; tasks: Record<string, number>; live: LiveUsage | null }
 export interface SessionState {
   status: 'idle' | 'running' | 'waiting' | 'ended' | 'error'
   sessionId: string | null
@@ -61,7 +61,7 @@ export function initialView(): SessionView {
     },
     requests: [],
     transcript: [],
-    tally: { seen: {}, tasks: {}, live: null },
+    tally: { seen: [], tasks: {}, live: null },
   }
 }
 
@@ -146,7 +146,7 @@ const ZERO = {
 }
 
 // Sets the tally; live (and usage.live once usage exists) moves only when a counter changed.
-function withTally(view: SessionView, seen: Record<string, true>, tasks: Record<string, number>, add: ModelUsage): SessionView {
+function withTally(view: SessionView, seen: readonly string[], tasks: Record<string, number>, add: ModelUsage): SessionView {
   const prev = view.tally.live ?? { ...ZERO, at: '' }
   const subagentTokens = Object.values(tasks).reduce((a, b) => a + b, 0)
   const next = {
@@ -175,12 +175,11 @@ function foldAssistantUsage(view: SessionView, msg: Record<string, unknown>): Se
   const id = msg.message.id
   const u = msg.message.usage
   // Counted once per message id: the stream repeats one message's usage on each content block.
-  if (typeof id !== 'string' || !isObj(u) || view.tally.seen[id]) return view
-  // A new seen with id added last; a Record keeps string-key insertion order, so the first keys are the oldest.
-  const keys = Object.keys(view.tally.seen)
-  const seen: Record<string, true> = {}
-  for (const k of keys.slice(Math.max(0, keys.length - SEEN_KEEP + 1))) seen[k] = true
-  seen[id] = true
+  if (typeof id !== 'string' || !isObj(u) || view.tally.seen.includes(id)) return view
+  // A new seen with id added last, in arrival order, so the first ids are the oldest. An array, not a Record:
+  // a Record lists integer-like keys in numeric order, not insertion order.
+  const old = view.tally.seen
+  const seen = [...old.slice(Math.max(0, old.length - SEEN_KEEP + 1)), id]
   return withTally(view, seen, view.tally.tasks, {
     inputTokens: count(u.input_tokens),
     outputTokens: count(u.output_tokens),

@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server/main.ts",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
-    "pretest": "npm run build",
+    "pretest": "node scripts/check-deps.mjs && npm run build",
     "test": "node --test contract/state.check.ts contract/session.check.ts contract/http.check.ts test/*/*.test.ts 'app/**/*.test.ts'",
     "e2e": "playwright test",
     "check:live": "node --test contract/live.check.ts"
