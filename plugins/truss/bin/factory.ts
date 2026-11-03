@@ -825,9 +825,13 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0019 item 7, the lean entry: no goal; scope and acceptanceTest only when the goal file lacks their section,
   // since stage.js then points members to goalFile for them
   const has = (h: string) => Object.hasOwn(sections, h)
+  // the goal file holds the acceptance test only when its section quotes the plan's command; a section that only points
+  // elsewhere (such as to the plan's acceptanceTest) leaves the command in the entry, so the prompts still print it
+  const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
+  const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
   return {
     slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
-    ...(has('Acceptance test') ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
+    ...(atInGoal ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
     guarded: guardedOf({ dir: c.dir, slug, wt, target: c.settings.target }).tests,
     ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),

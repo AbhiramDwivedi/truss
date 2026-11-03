@@ -247,6 +247,7 @@ const memberHeavyLines = (crew) => [
   'Run a build, a browser test or a whole test suite through the one heavy slot: the program and its arguments go after the `--` of the line below, with no shell, and the Bash timeout is 600000 because the slot wait counts against it.',
   `${heavyParts(crew).prefix} <program> <arguments>`,
   'A result with "ran": false means the slot was busy: report it, never retry it another way.',
+  `That slot runs in the crew worktree ${crew.e.worktree}, on the crew branch, so it never sees your own worktree's changes: a green result from it proves nothing about them. Prove your own change with a plain node --test in your own worktree.`,
 ]
 
 // ADR-0019 item 7: a lean entry carries no scope or acceptanceTest, because the goal file holds them under these headings
@@ -508,17 +509,26 @@ function globToRegExp(glob) {
   return new RegExp(`^${s}$`)
 }
 
-// ownTests: the entry's test globs, checked on a fresh plan only (ADR-0019 item 16): a builder task that lists a file one
-// of them matches is sent back, since test files are read-only to builders. null (a saved plan, or no ownTests) skips it.
-function validateTasks(tasks, owns, ownTests = null) {
+// ownTests: the entry's test globs, checked on a fresh plan only (ADR-0019 items 6, 16): a builder task that lists a file
+// one of them matches, a file a tester task lists, or a file of guarded (the test files the acceptance test names) is sent
+// back, since test files are read-only to builders. null (a saved plan, or an old-form entry with no ownTests key) skips
+// it; ownTests [] still checks the other two.
+function validateTasks(tasks, owns, ownTests = null, guarded = []) {
   const errors = []
   if (!Array.isArray(tasks) || tasks.length === 0) return ['the plan has no tasks']
   const owned = owns.map(globToRegExp)
-  const testGlobs = (Array.isArray(ownTests) ? ownTests : []).map((g) => ({ g, re: globToRegExp(g) }))
-  for (const t of tasks.filter((x) => x && x.role === 'builder')) {
-    for (const f of t.files || []) {
-      const hit = typeof f === 'string' ? testGlobs.find(({ re }) => re.test(f)) : undefined
-      if (hit) errors.push(`builder task ${t.name} lists file ${f}, a test file (it matches ownTests ${hit.g}); test files are read-only to builders, so give that change to a tester task`)
+  if (Array.isArray(ownTests)) {
+    const testGlobs = ownTests.map((g) => ({ g, re: globToRegExp(g) }))
+    const testerOf = new Map()
+    for (const t of tasks.filter((x) => x && x.role === 'tester')) for (const f of t.files || []) if (!testerOf.has(f)) testerOf.set(f, t.name)
+    const guard = new Set((Array.isArray(guarded) ? guarded : []).filter((g) => typeof g === 'string'))
+    for (const t of tasks.filter((x) => x && x.role === 'builder')) {
+      for (const f of t.files || []) {
+        if (typeof f !== 'string') continue
+        const hit = testGlobs.find(({ re }) => re.test(f))
+        const why = hit ? `it matches ownTests ${hit.g}` : testerOf.has(f) ? `tester task ${testerOf.get(f)} lists it` : guard.has(f) ? 'the acceptance test names it, so it is guarded' : ''
+        if (why) errors.push(`builder task ${t.name} lists file ${f}, a test file (${why}); test files are read-only to builders, so give that change to a tester task`)
+      }
     }
   }
   const byName = {}
@@ -600,12 +610,13 @@ async function askPlanner(crew, errors) {
 
 async function split(crew) {
   crew.step = 'split'
-  const ownTests = ownTestsOf(crew)
+  // an old-form entry (no ownTests key, so no guarded either) skips the test-file check; a lean entry runs it even with []
+  const ownTests = Array.isArray(crew.e.ownTests) ? ownTestsOf(crew) : null
   let tasks = await askPlanner(crew, null)
-  let errors = validateTasks(tasks, crew.e.owns, ownTests)
+  let errors = validateTasks(tasks, crew.e.owns, ownTests, crew.e.guarded)
   if (errors.length) {
     tasks = await askPlanner(crew, errors)
-    errors = validateTasks(tasks, crew.e.owns, ownTests)
+    errors = validateTasks(tasks, crew.e.owns, ownTests, crew.e.guarded)
     if (errors.length) throw new Stop('BLOCKED', `the plan failed these checks twice:\n${errors.map((x) => `- ${x}`).join('\n')}`, 'split')
   }
   return tasks
