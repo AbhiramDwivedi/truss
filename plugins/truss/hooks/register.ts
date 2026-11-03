@@ -2182,12 +2182,14 @@ export const register: Register = on => {
           const match = pluginScriptMatch({ scriptPath, scriptText, pluginDir: pluginDir ?? '\0', pluginScriptTexts: texts })
           if (match.byPath || match.byText) {
             const root = await rootOf($, state)
-            // the file's real path must stay inside the truss dir too, when $.fs can resolve symlinks
-            const realpath = ($.fs as unknown as { realpath?: (p: string) => Promise<string> | string }).realpath
+            // the file's real path must stay inside the truss dir too, so a symlink cannot lead out of it
             const readReal = async (path: string): Promise<string> => {
-              if (typeof realpath === 'function' && root !== undefined) {
-                const real = normalPath(slashed(String(await realpath.call($.fs, path))))
-                const dir = normalPath(slashed(String(await realpath.call($.fs, root))))
+              if (root !== undefined) {
+                const realFile = (await $.fs.stat(path, { resolve: true })).realPath
+                const realDir = (await $.fs.stat(root, { resolve: true })).realPath
+                if (realFile === undefined || realDir === undefined) throw new Error('its real path could not be resolved')
+                const real = normalPath(slashed(realFile))
+                const dir = normalPath(slashed(realDir))
                 if (!real.startsWith(`${dir}/`)) throw new Error(`it resolves to ${real}, outside the truss dir`)
               }
               return String(await $.fs.read(path))
