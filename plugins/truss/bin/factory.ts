@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
-import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict } from '../hooks/register.ts'
+import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict, unbannered } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
 import type { Catalog } from '../retro/catalog.ts'
 
@@ -280,8 +280,9 @@ export function countedQc(dir: string, slug: string, files: readonly QcFile[]): 
   const k = existsSync(p) ? replannedFrom(readFileSync(p, 'utf8'), slug) : undefined
   return k === undefined ? [...files] : files.filter((f) => qcK(f.name) >= k)
 }
-// The first non-empty line of a report text, trimmed ('' when none).
-const firstLine = (text: string): string => text.replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '') ?? ''
+// The first non-empty line of a report text, trimmed ('' when none), past a BOM and one leading
+// "[harness:" paragraph, as stage.js's unbannered and the QC count read the same reply.
+const firstLine = (text: string): string => unbannered(text.replace(/^﻿/, '').replace(/\r/g, '')).split('\n').map((l) => l.trim()).find((l) => l !== '') ?? ''
 // The crew's ux report files `<slug>-ux.md` and `<slug>-ux-<n>.md` (interim `.run<k>.md` files never match), with their label number.
 const uxReports = (slug: string, files: readonly QcFile[]): (QcFile & { n: number })[] =>
   files.flatMap((f) => {
@@ -313,7 +314,8 @@ export function directionOf(dir: string, slug: string): { label: string; text: s
   const dirs = uxReports(slug, reportsOf(dir, slug)).filter((f) => /^UX: DIRECTION\b/.test(firstLine(f.text)))
   if (dirs.length === 0) return null
   const top = dirs.reduce((a, b) => (b.n > a.n ? b : a))
-  return { label: top.name.replace(/\.md$/, ''), text: top.text }
+  // the reply as stage.js keeps it (replyOf): no BOM, no harness banner, no CR, trimmed
+  return { label: top.name.replace(/\.md$/, ''), text: unbannered(top.text.replace(/^﻿/, '').replace(/\r/g, '')).trim() }
 }
 // {role: next free label number} from the crew's report files: `<slug>-qc.md` and `-qc-2.md` give {"qc": 3}.
 export function labelFromOf(dir: string, slug: string): Record<string, number> {
@@ -837,17 +839,19 @@ function engineOf(sections: Record<string, string>, merge: string, noWorkflow: b
   return { engine: 'foreman', reason: (m?.[2] ?? '').trim() || 'the goal file says foreman' }
 }
 
-// ADR-0022 U6 (item 23): the goal file's `## Members` lines `<n> <role> on <model> at effort <effort>` (after an optional `- ` or
-// `* ` bullet, role builder(s) or tester(s), any case) as {builder?, tester?: {model, effort}}; any other line is prose. A counted
-// line with a model other than opus or sonnet, an effort other than low or medium (R2: high and xhigh included), or two lines for
+// ADR-0022 U6 (item 23): each `<n> <role> on <model> at effort <effort>` phrase in the goal file's `## Members` (a line, a bullet
+// or part of a sentence; role builder(s) or tester(s), any case) as {builder?, tester?: {model, effort}}; any other text is prose.
+// A counted phrase with a model other than opus or sonnet, an effort other than low or medium (R2: high and xhigh included), or two lines for
 // one role that disagree gives `refuse`, the reason factory start refuses the crew with: it never lowers an effort silently.
 type Members = Partial<Record<'builder' | 'tester', { model: string; effort: string }>>
 export function membersOf(section: string | undefined, goalFile: string): { members: Members; refuse?: string } {
   const members: Members = {}
   const tail = `factory start never lowers an effort silently. Set ## Engine to foreman in ${goalFile} to run this crew on the foreman path.`
-  for (const raw of (section ?? '').split(/\r?\n/)) {
-    const m = /^\s*(?:[-*]\s+)?(\d+)\s+(builders?|testers?)\s+on\s+(\S+?)\s+at\s+effort\s+(\S+?)[.,;]?\s*$/i.exec(raw)
-    if (m === null) continue
+  // A goal file writes ## Members as sentences ("1 tester on Sonnet at effort medium writes the tests. Then 2 builders on Opus at
+  // effort medium, split by file: ..."), so the phrase counts wherever it stands, not only as a whole line: a phrase the parser
+  // skipped would run a high-effort ask at the default effort, the silent lowering R2 forbids.
+  const phrase = /(?<![\w.])(\d+)\s+(builders?|testers?)\s+on\s+([A-Za-z][\w.-]*?)\s+at\s+effort\s+([A-Za-z]+)\b/gi
+  for (const m of (section ?? '').matchAll(phrase)) {
     const [, n, word, model, effort] = [m[0], m[1], m[2].toLowerCase(), m[3].toLowerCase(), m[4].toLowerCase()]
     const role = word.startsWith('builder') ? 'builder' : 'tester'
     if (effort !== 'low' && effort !== 'medium') return { members, refuse: `## Members asks for ${n} ${word} at effort ${effort}; a workflow crew runs members at effort low or medium only (ADR-0009), and ${tail}` }
