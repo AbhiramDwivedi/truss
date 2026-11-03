@@ -40,6 +40,8 @@ const PROOF = [
 
 const REFUSAL = 'A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
 const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
+// the foreground rule every member prompt and the QC prompt carry, word for word (ADR-0027 F-72)
+const FOREGROUND = 'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.'
 
 // ADR-0022 U5 (item 22): status is the runner's copy of the short `truss-status: ` line, so met never needs the long stdout.
 // It stays out of required because the base case "the runner schema is {exit:number, stdout:string}, both required" pins
@@ -184,10 +186,13 @@ async function ask(crew, role, prompt, opts = {}) {
   }
 }
 
-// admit --slug: a held answer stops the crew, with no retry; a result that is not JSON admits (fail open)
+// admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
+// object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
+// "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 async function admit(crew, at) {
   const r = await runFactory(crew, `admit --slug ${sh(crew.slug)}`, 'admitted')
-  if (r.parsed && typeof r.parsed === 'object' && r.parsed.admitted === false) {
+  if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
+  if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
@@ -250,10 +255,14 @@ function lastJsonObject(stdout) {
   return null
 }
 
+// ADR-0027 F-67: the truss dir every factory.ts line carries, absolute: an absolute F.dir as is, else resolved against
+// F.repo. A runner or heavy inner command runs with its own cwd, where a relative dir (.git/truss/<id>) does not resolve.
+const trussDir = () => (F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/, '')}/${F.dir}`)
+
 // extra: one more line after the command, so a resumed call gets its own cache key (the runtime caches by prompt); null
 // leaves the prompt exactly as it was
 async function runFactory(crew, command, key, line = null, extra = null) {
-  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(F.dir)} --repo ${sh(F.repo)} --status-line`
+  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
@@ -306,8 +315,7 @@ const knownOf = (r) => {
 function heavyParts(crew) {
   const bin = sh(`${F.plugin}/bin/factory.ts`)
   // the inner command runs with cwd = the crew worktree, where a relative truss dir (.git/truss/<id>) does not resolve
-  const dir = F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/, '')}/${F.dir}`
-  const dr = `--dir ${sh(dir)} --repo ${sh(F.repo)}`
+  const dr = `--dir ${sh(trussDir())} --repo ${sh(F.repo)}`
   const slug = sh(crew.slug)
   const cwd = sh(crew.e.worktree)
   // ADR-0022 U5: --status-line goes on the heavy side of the --, so heavy prints the one status line
@@ -389,7 +397,7 @@ function memberPrompt(crew, role, parts) {
     '',
     ...(parts.inCrewWorktree ? memberHeavyLines(crew).slice(0, -1) : memberHeavyLines(crew)),
     '',
-    'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
+    FOREGROUND,
     '',
     REFUSAL,
     PKILL,
@@ -508,7 +516,8 @@ async function runMember(crew, role, makePrompt, opts, at) {
   }
   if (report.marker !== 'DONE') {
     const tag = ['QUESTION', 'BLOCKED', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker) ? report.marker : 'BLOCKED'
-    throw new Stop(tag, report.text, at)
+    // member: the stop is the member's own report, which green may re-route (ADR-0027 F-70)
+    throw Object.assign(new Stop(tag, report.text, at), { member: true })
   }
   return report
 }
@@ -806,12 +815,32 @@ async function green(crew) {
     if (env) throw new Stop('BLOCKED', `the green check fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(g)}\n${clip(g.out)}`, 'green')
     if (attempt === 4) throw new Stop('BLOCKED', `the green check still fails after the escalation ladder:\n${clip(g.out)}`, 'green')
     if (attempt < 3) {
-      await fixBuilder(crew, 'green check', `The green check failed.${knownOf(g)}${seen}\nIts output tail:\n${clip(g.out)}`)
+      await greenFix(crew, 'green check', `The green check failed.${knownOf(g)}${seen}\nIts output tail:\n${clip(g.out)}`)
     } else {
       const rca = await ask(crew, 'rca', [`Find the root cause of the failing green check for crew ${crew.slug}. Write no code and change no file; diagnose only.`, `Crew worktree: ${crew.e.worktree}`, `Acceptance test: ${acceptanceOf(crew.e)}`, 'Failing output:', clip(g.out)].join('\n'))
-      await fixBuilder(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}${seen}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
+      await greenFix(crew, 'green check, after the root-cause analysis', `The green check keeps failing.${knownOf(g)}${seen}\nRoot-cause analysis:\n${rca || 'none returned'}\n\nFailing output:\n${clip(g.out)}`)
     }
   }
+}
+
+// ADR-0027 F-70: the builder goes first on every green failure. When it ends BLOCKED or QUESTION and its stop text names a
+// tester file, that text goes to a tester fix member instead of stopping the crew; when the text also names a code file, a
+// builder fix for the code half follows, in fixFindings' order. Any other stop still stops the crew. testsBackstop runs
+// after each fix.
+async function greenFix(crew, what, detail) {
+  try {
+    await fixBuilder(crew, what, detail)
+  } catch (err) {
+    const tf = testerFiles(crew)
+    const reroute = err instanceof Stop && err.member && (err.tag === 'BLOCKED' || err.tag === 'QUESTION') && tf.some((file) => namesFile(String(err.text || ''), file))
+    if (!reroute) throw err
+    const said = `The ${what} fix builder ended ${err.tag}, naming a tester file. Its report:\n${err.text}`
+    await fixBuilder(crew, `${what}, tester file named by the fix builder`, said, 'tester')
+    await testsBackstop(crew, what)
+    if (!namesCode(String(err.text), tf)) return
+    await fixBuilder(crew, `${what}, the code half of the fix builder's report`, said)
+  }
+  await testsBackstop(crew, what)
 }
 
 // drops one leading "[harness:" paragraph (up to the next blank line) before the first non-empty line; mirrors register.ts unbannered
@@ -1011,6 +1040,7 @@ function qcPrompt(crew) {
         ]
       : []),
     'A commit with Truss-Role: resolver that touches an acceptance-test file is a FAIL, the same as one with Truss-Role: builder.',
+    FOREGROUND,
     'State the head SHA and the patch id of the diff under ## Proof checked, as the lines "Head: <sha>" and "Patch: <patch id>".',
   ].join('\n')
 }

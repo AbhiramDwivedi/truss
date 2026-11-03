@@ -297,12 +297,15 @@ st('case: admit before each member', async () => {
   assert.ok(held.res[0].text.includes('held by admission: WHY-HELD-123'), held.res[0].text)
   assert.deepEqual(held.calls.filter((c) => !c.runner).map((c) => c.label), [], 'a held crew spawns no member')
 
-  // fail open: an admit result that is not JSON admits
+  // fail closed (ADR-0027 F-67): an admit result that is not JSON stops the crew BLOCKED, "admission check failed:" with the output
   const open = await runStage([entry('a')], {
     labels: base('a'),
     runner: (p) => (p.cmd === 'admit' ? { exit: 0, stdout: 'not json at all' } : undefined),
   })
-  assert.equal(open.res[0].state, 'passed', JSON.stringify(open.res[0]))
+  assert.equal(open.res[0].state, 'stopped', JSON.stringify(open.res[0]))
+  assert.equal(open.res[0].tag, 'BLOCKED')
+  assert.ok(open.res[0].text.startsWith('admission check failed:'), open.res[0].text)
+  assert.ok(open.res[0].text.includes('not json at all'), open.res[0].text)
 })
 
 st('case: reap after each member', async () => {
