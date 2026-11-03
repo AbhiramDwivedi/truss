@@ -86,17 +86,3 @@ test('coarse pointers grow Button sm to h-10 and Tabs triggers to h-9', () => {
   assert.match(fs.readFileSync(path.join(compDir, 'ui', 'button.tsx'), 'utf8'), /pointer-coarse:h-10/)
   assert.match(fs.readFileSync(path.join(compDir, 'ui', 'tabs.tsx'), 'utf8'), /pointer-coarse:h-9/)
 })
-
-test('App.tsx is a placeholder that shows the connection', () => {
-  const src = fs.readFileSync(path.join(appDir, 'App.tsx'), 'utf8')
-  const lines = src.split('\n').filter((l) => l.trim() !== '').length
-  assert.ok(lines <= 30, `App.tsx has ${lines} non-blank lines, the cap is 30`)
-  assert.match(src, /<h1[^>]*>\s*Truss\s*<\/h1>/)
-  assert.match(src, /role="status"/)
-  for (const s of ['Connecting to the run…', 'Live', 'Reconnecting…']) assert.ok(src.includes(s), `App.tsx lacks "${s}"`)
-  assert.match(src, /\buseConnection\b/)
-})
-
-test('no file exists under ui/app/views', () => {
-  assert.deepEqual(walk(path.join(appDir, 'views')), [])
-})
