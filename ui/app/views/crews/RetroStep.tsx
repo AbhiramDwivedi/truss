@@ -9,6 +9,8 @@ import { hhmm } from './format.ts'
 export interface RetroStepProps {
   label: string
   step: Step
+  /** The last step draws no line to a next one. */
+  last?: boolean
 }
 
 function Mark({ status }: { status: Step['status'] }) {
@@ -19,13 +21,13 @@ function Mark({ status }: { status: Step['status'] }) {
   return <Circle aria-hidden="true" className="size-4 text-muted" />
 }
 
-export function RetroStep({ label, step }: RetroStepProps) {
+export function RetroStep({ label, step, last = false }: RetroStepProps) {
   const at = step.at ? hhmm(step.at) : ''
   return (
     <li
       aria-label={`${label}: ${step.status}`}
       className={cn(
-        'flex min-w-0 flex-1 gap-2.5 rounded-card border p-3',
+        'relative flex min-w-0 flex-1 gap-2.5 rounded-card border p-3',
         step.status === 'running' ? 'border-brand-line bg-brand-soft' : step.status === 'failed' ? 'border-fail/40 bg-fail-soft' : 'border-border bg-surface',
       )}
     >
@@ -40,6 +42,16 @@ export function RetroStep({ label, step }: RetroStepProps) {
         </span>
         {step.detail && <span className="mt-1 min-w-0 break-words text-micro text-fg">{step.detail}</span>}
       </span>
+      {!last && (
+        // The rail's line to the next step: down the gap below lg, across it at lg; green after a done step.
+        <span
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute top-full left-5 h-3 border-l-2 lg:top-1/2 lg:left-full lg:h-0 lg:w-3 lg:border-t-2 lg:border-l-0',
+            step.status === 'done' ? 'border-ok' : 'border-border',
+          )}
+        />
+      )}
     </li>
   )
 }

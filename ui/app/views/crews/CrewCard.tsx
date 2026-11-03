@@ -86,7 +86,7 @@ export function CrewCard({ crew, now }: CrewCardProps) {
 
   const start = crewStart(crew)
   const end = crew.status === 'merged' ? crewEnd(crew) : null
-  const elapsed = start === null ? null : crew.status === 'merged' ? (end !== null ? `took ${short(end - start)}` : null) : planned ? null : short(now - start)
+  const elapsed = start === null ? null : crew.status === 'merged' ? (end !== null && end - start >= 60_000 ? `took ${short(end - start)}` : null) : planned ? null : short(now - start)
 
   return (
     <li id={`crew-${crew.slug}`} className="min-w-0 scroll-mt-28 list-none">

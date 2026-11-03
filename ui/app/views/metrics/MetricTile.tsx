@@ -31,7 +31,12 @@ export function MetricTile({ label, value, title, aside, graphic, sub, subTone =
         </span>
         {graphic}
         {sub != null && (
-          <span className={cn('mt-auto block truncate text-micro', subTone === 'signal' ? 'text-signal-text' : 'text-muted')}>{sub}</span>
+          <span
+            title={typeof sub === 'string' ? sub : undefined}
+            className={cn('mt-auto line-clamp-2 break-words text-micro', subTone === 'signal' ? 'text-signal-text' : 'text-muted')}
+          >
+            {sub}
+          </span>
         )}
       </dd>
     </div>

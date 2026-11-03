@@ -23,11 +23,11 @@ const phaseWords = (phase: StagePhase, took?: string | null) =>
 export function StageGroup({ label, phase, took, crews, now, wire = false }: StageGroupProps) {
   return (
     <div role="group" aria-label={label} className="relative min-w-0">
-      <h3 className="mb-2.5 flex items-center gap-2 text-meta font-semibold text-fg">
-        <span>{label}</span>
+      <h3 className="mb-2.5 text-meta font-semibold text-fg">
+        {label}
         <span className={cn('font-medium', phase === 'running' ? 'text-brand-strong' : 'text-muted')}>{phaseWords(phase, took)}</span>
       </h3>
-      {wire && (<svg aria-hidden="true" viewBox="0 0 24 8" preserveAspectRatio="none" className="absolute top-2 -right-6 h-2 w-6 max-lg:hidden">
+      {wire && (<svg aria-hidden="true" viewBox="0 0 24 8" preserveAspectRatio="none" className="absolute top-[3.25rem] -right-6 h-2 w-6 max-lg:hidden">
         <line
           x1="0"
           y1="4"
