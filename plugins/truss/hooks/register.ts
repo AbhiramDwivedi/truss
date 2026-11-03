@@ -741,15 +741,7 @@ export function workflowCallVerdict(
   if (!planAtLeastV2(plan)) return undefined
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
   if (input.script !== undefined && input.scriptPath !== undefined) return refuse('a Workflow call gives either script or scriptPath, not both')
-  const flat = (v: string) => v.replace(/\\/g, '/')
-  const dir = flat(input.pluginDir)
-  const path = typeof input.scriptPath === 'string' ? flat(input.scriptPath) : undefined
-  const text = typeof input.scriptText === 'string' ? input.scriptText : undefined
-  // pluginScriptTexts is positional: index 0 is plan.js's text, index 1 is stage.js's. An undefined entry matches nothing.
-  const isPlanJs = (path !== undefined && path === `${dir}/workflows/plan.js`) || (text !== undefined && input.pluginScriptTexts[0] !== undefined && text === input.pluginScriptTexts[0])
-  const isStageJs = (path !== undefined && path === `${dir}/workflows/stage.js`) || (text !== undefined && input.pluginScriptTexts[1] !== undefined && text === input.pluginScriptTexts[1])
-  const byPath = path !== undefined && (path === `${dir}/workflows/plan.js` || path === `${dir}/workflows/stage.js`)
-  const byText = text !== undefined && input.pluginScriptTexts.some((t) => t !== undefined && t === text)
+  const { text, isPlanJs, isStageJs, byPath, byText } = pluginScriptMatch(input)
   if (!byPath && !byText) {
     if (input.scriptPath !== undefined && text === undefined) return refuse(ONLY_FROM_PLUGIN)
     if (text === undefined || text.includes('truss:')) return refuse(ONLY_FROM_PLUGIN)
@@ -786,6 +778,87 @@ export function workflowCallVerdict(
   return undefined
 }
 const ONLY_FROM_PLUGIN = `truss agents run in a Workflow only from the plugin's plan.js and stage.js`
+
+// Whether a Workflow call's script is the plugin's plan.js or stage.js, by path or by text: the one match both the
+// gate and the trussFile expansion use.
+function pluginScriptMatch(input: { scriptPath?: unknown; scriptText?: unknown; pluginDir: string; pluginScriptTexts: readonly (string | undefined)[] }) {
+  const flat = (v: string) => v.replace(/\\/g, '/')
+  const dir = flat(input.pluginDir)
+  const path = typeof input.scriptPath === 'string' ? flat(input.scriptPath) : undefined
+  const text = typeof input.scriptText === 'string' ? input.scriptText : undefined
+  // pluginScriptTexts is positional: index 0 is plan.js's text, index 1 is stage.js's. An undefined entry matches nothing.
+  const isPlanJs = (path !== undefined && path === `${dir}/workflows/plan.js`) || (text !== undefined && input.pluginScriptTexts[0] !== undefined && text === input.pluginScriptTexts[0])
+  const isStageJs = (path !== undefined && path === `${dir}/workflows/stage.js`) || (text !== undefined && input.pluginScriptTexts[1] !== undefined && text === input.pluginScriptTexts[1])
+  const byPath = path !== undefined && (path === `${dir}/workflows/plan.js` || path === `${dir}/workflows/stage.js`)
+  const byText = text !== undefined && input.pluginScriptTexts.some((t) => t !== undefined && t === text)
+  return { text, isPlanJs, isStageJs, byPath, byText }
+}
+
+// Whether a Workflow call's args (an object or a JSON string) carry a trussFile key.
+export function hasTrussFile(args: unknown): boolean {
+  let obj = args
+  if (typeof obj === 'string') {
+    try {
+      obj = JSON.parse(obj)
+    } catch {
+      return false
+    }
+  }
+  return isRecord(obj) && 'trussFile' in obj
+}
+
+// ADR-0024 Item 29. args.trussFile names a file in the session's truss dir holding the `start` output; its `.truss`
+// becomes args.truss, so a stage launch need not paste the object inline. Pure but for `read`, which may be sync or
+// async. Without trussFile the args come back as given and nothing is read.
+export async function expandTrussFile(
+  args: unknown,
+  trussDir: string | undefined,
+  read: (path: string) => string | Promise<string>,
+): Promise<{ args: unknown; deny?: undefined } | { deny: string; args?: undefined }> {
+  if (!hasTrussFile(args)) return { args }
+  const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
+  const asString = typeof args === 'string'
+  const obj = (asString ? JSON.parse(args) : args) as Record<string, unknown>
+  if ('truss' in obj) return refuse('a Workflow call gives either args.truss or args.trussFile, not both')
+  const file = obj.trussFile
+  if (typeof file !== 'string' || file === '') return refuse('args.trussFile must be a path')
+  const flat = file.replace(/\\/g, '/')
+  if (!/^(\/|[A-Za-z]:\/)/.test(flat)) return refuse(`args.trussFile must be an absolute path, not ${JSON.stringify(file)}`)
+  if (trussDir === undefined || trussDir === '') return refuse(`this session has no truss dir, so args.trussFile cannot be read`)
+  const normal = normalPath(flat)
+  const dir = normalPath(slashed(trussDir))
+  if (!normal.startsWith(`${dir}/`)) return refuse(`args.trussFile must be inside the session's truss dir ${dir}, not ${JSON.stringify(file)}`)
+  let text: string
+  try {
+    text = String(await read(normal))
+  } catch (err) {
+    return refuse(`args.trussFile ${normal} could not be read: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return refuse(`args.trussFile ${normal} is not valid JSON`)
+  }
+  const truss = isRecord(parsed) ? parsed.truss : undefined
+  if (!isRecord(truss)) return refuse(`args.trussFile ${normal} holds no object .truss`)
+  const { trussFile: _dropped, ...rest } = obj
+  const out = { ...rest, truss }
+  return { args: asString ? JSON.stringify(out) : out }
+}
+
+// A slashed absolute path with its `.` and `..` segments resolved; a `..` never climbs above the root.
+function normalPath(path: string): string {
+  const m = /^([A-Za-z]:)?\//.exec(path)
+  const head = m === null ? '' : m[0]
+  const parts: string[] = []
+  for (const seg of path.slice(head.length).split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return `${head}${parts.join('/')}`.replace(/\/$/, '') || '/'
+}
 
 export function stallText(label: string, crew: string, minutes: number): string {
   return `${STALLED} ${label} in crew ${crew}, no activity for ${minutes}m. Check /truss and message the ${crew} foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.`
@@ -2085,9 +2158,11 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
     // ADR-0009 s6: on a v>=2 plan, the main session's Workflow calls run truss agents only from the plugin's scripts
     if (e.agentId === undefined) {
-      const refused = await safely($, 'Workflow gate', async () => {
+      // ADR-0024 Item 29: a plugin script's args.trussFile is expanded into args.truss before the gate judges it
+      const expand = hasTrussFile(e.args)
+      const outcome = await safely($, 'Workflow gate', async (): Promise<{ deny: string; args?: undefined } | { args: unknown; deny?: undefined } | undefined> => {
         const plan = await planWithin($, state, PLAN_READ_MS)
-        if (!planAtLeastV2(plan)) return undefined
+        if (!expand && !planAtLeastV2(plan)) return undefined
         const readText = async (path: unknown): Promise<string | undefined> => {
           if (typeof path !== 'string') return undefined
           try {
@@ -2101,18 +2176,47 @@ export const register: Register = on => {
         const texts = pluginDir === undefined ? [undefined, undefined] : await Promise.all([`${pluginDir}/workflows/plan.js`, `${pluginDir}/workflows/stage.js`].map(readText))
         const script: unknown = e.script
         const scriptPath: unknown = e.scriptPath
+        const scriptText = typeof script === 'string' ? script : await readText(scriptPath)
+        let args: unknown = e.args
+        if (expand) {
+          const match = pluginScriptMatch({ scriptPath, scriptText, pluginDir: pluginDir ?? '\0', pluginScriptTexts: texts })
+          if (match.byPath || match.byText) {
+            const root = await rootOf($, state)
+            // the file's real path must stay inside the truss dir too, so a symlink cannot lead out of it
+            const readReal = async (path: string): Promise<string> => {
+              if (root !== undefined) {
+                const realFile = (await $.fs.stat(path, { resolve: true })).realPath
+                const realDir = (await $.fs.stat(root, { resolve: true })).realPath
+                if (realFile === undefined || realDir === undefined) throw new Error('its real path could not be resolved')
+                const real = normalPath(slashed(realFile))
+                const dir = normalPath(slashed(realDir))
+                if (!real.startsWith(`${dir}/`)) throw new Error(`it resolves to ${real}, outside the truss dir`)
+              }
+              return String(await $.fs.read(path))
+            }
+            const expanded = await expandTrussFile(e.args, root, readReal)
+            if (expanded.deny !== undefined) {
+              await logRule($, `Workflow gate refused a call: ${expanded.deny}`)
+              return expanded
+            }
+            args = expanded.args
+          }
+        }
         const verdict = workflowCallVerdict(plan, {
           script,
           scriptPath,
-          scriptText: typeof script === 'string' ? script : await readText(scriptPath),
-          args: e.args,
+          scriptText,
+          args,
           pluginDir: pluginDir ?? ' ',
           pluginScriptTexts: texts, // positional: [plan.js text, stage.js text]
         })
         if (verdict !== undefined) await logRule($, `Workflow gate refused a call: ${verdict.deny}`)
-        return verdict
+        if (verdict !== undefined) return verdict
+        return args === e.args ? undefined : { args }
       })
+      const refused = outcome?.deny !== undefined ? outcome : undefined
       if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
+      if (outcome !== undefined) return next({ ...e, args: outcome.args } as typeof e)
     }
     return next(e)
   }).catch(failOpen)
