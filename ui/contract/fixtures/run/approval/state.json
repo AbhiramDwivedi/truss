@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": { "path": "/work/demo/.git/truss/run-1", "exists": true },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-approval",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": { "name": "truss", "version": "0.17.0", "path": "/work/demo/plugins/truss", "source": null },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [
+    {
+      "id": "req-reply-1",
+      "kind": "reply",
+      "status": "open",
+      "createdAt": "2026-11-02T11:57:00.000Z",
+      "answeredAt": null,
+      "cancelReason": null,
+      "text": "The plan is ready: three crews in two stages. Approve it to start the build, or tell me what to change.",
+      "isError": false,
+      "backgroundTasks": 0,
+      "decision": null,
+      "message": null
+    },
+    {
+      "id": "req-permission-1",
+      "kind": "permission",
+      "status": "open",
+      "createdAt": "2026-11-02T11:59:00.000Z",
+      "answeredAt": null,
+      "cancelReason": null,
+      "toolName": "Bash",
+      "title": "Run the contract checks",
+      "summary": "npm --prefix ui test",
+      "input": { "command": "npm --prefix ui test", "description": "Run the contract checks" },
+      "decisionReason": "The command is not in the allowlist for this project.",
+      "blockedPath": "/work/demo/ui/package.json",
+      "decision": null,
+      "message": null
+    }
+  ],
+  "transcript": [
+    { "n": 1, "role": "user", "text": "Add per-user quotas to the API.", "ts": "2026-11-02T11:50:00.000Z", "id": "msg-1", "intent": "goal" },
+    { "n": 2, "role": "assistant", "text": "I have planned the work and need two calls from you.", "ts": "2026-11-02T11:59:00.000Z", "id": null, "intent": null }
+  ],
+  "run": {
+    "goal": "Add per-user quotas to the API.",
+    "version": 3,
+    "approval": null,
+    "approvedAt": null,
+    "crews": [
+      { "slug": "quota-store", "stage": 0, "verdict": "change", "status": "planned", "goal": null, "owns": ["server/quota/**"], "foreman": null, "members": [], "latest": null, "estAgents": 5, "stuck": null, "qc": null },
+      { "slug": "quota-api", "stage": 1, "verdict": "change", "status": "planned", "goal": null, "owns": ["server/http/**"], "foreman": null, "members": [], "latest": null, "estAgents": 4, "stuck": null, "qc": null }
+    ],
+    "goals": [
+      { "id": "run", "goal": "Add per-user quotas to the API.", "approval": null, "approvedAt": null }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": { "planMd": null, "architecture": null, "images": [] },
+  "notices": []
+}

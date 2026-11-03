@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": { "path": "/work/demo/.git/truss/run-1", "exists": true },
+  "session": {
+    "status": "running",
+    "sessionId": "session-live",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": { "name": "truss", "version": "0.17.0", "path": "/work/demo/plugins/truss", "source": null },
+    "usage": {
+      "costUsd": 4.82,
+      "models": {
+        "claude-opus-5-5": { "inputTokens": 12000, "outputTokens": 38000, "cacheReadInputTokens": 410000, "cacheCreationInputTokens": 52000 }
+      },
+      "results": 3,
+      "at": "2026-11-02T11:40:00.000Z",
+      "live": {
+        "inputTokens": 15000,
+        "outputTokens": 44000,
+        "cacheReadInputTokens": 480000,
+        "cacheCreationInputTokens": 60000,
+        "subagentTokens": 120000,
+        "totalTokens": 719000,
+        "at": "2026-11-02T11:54:00.000Z"
+      }
+    },
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    { "n": 1, "role": "user", "text": "Add per-user quotas to the API.", "ts": "2026-11-02T11:00:00.000Z", "id": "msg-1", "intent": "goal" },
+    { "n": 2, "role": "assistant", "text": "Two crews are building.", "ts": "2026-11-02T11:58:00.000Z", "id": null, "intent": null }
+  ],
+  "run": {
+    "goal": "Add per-user quotas to the API.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:05:00.000Z",
+    "crews": [
+      {
+        "slug": "quota-store", "stage": 0, "verdict": "change", "status": "merged", "goal": null, "owns": ["server/quota/**"],
+        "foreman": { "name": "quota-store", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "reported", "detail": "DONE", "ts": "2026-11-02T11:40:00.000Z" },
+        "members": [],
+        "latest": { "ts": "2026-11-02T11:40:00.000Z", "agent": "quota-store", "event": "report", "text": "quota-store reported DONE" },
+        "estAgents": 5, "stuck": null, "qc": { "verdict": "PASS", "file": "reports/quota-store/quota-store-qc-1.md" }
+      },
+      {
+        "slug": "quota-api", "stage": 1, "verdict": "change", "status": "running", "goal": null, "owns": ["server/http/**"],
+        "foreman": { "name": "quota-api", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "spawned", "detail": null, "ts": "2026-11-02T11:45:00.000Z" },
+        "members": [
+          { "name": "quota-api-builder", "type": "general-purpose", "model": "claude-sonnet-5-5", "effort": "medium", "state": "spawned", "detail": null, "ts": "2026-11-02T11:50:00.000Z" }
+        ],
+        "latest": { "ts": "2026-11-02T11:50:00.000Z", "agent": "quota-api-builder", "event": "spawn", "text": "quota-api-builder spawned" },
+        "estAgents": 4, "stuck": null, "qc": null
+      }
+    ],
+    "goals": [
+      { "id": "run", "goal": "Add per-user quotas to the API.", "approval": "client", "approvedAt": "2026-11-02T11:05:00.000Z" }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": { "planMd": null, "architecture": null, "images": [] },
+  "notices": []
+}
