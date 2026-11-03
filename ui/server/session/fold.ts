@@ -166,13 +166,22 @@ function withTally(view: SessionView, seen: Record<string, true>, tasks: Record<
   return usage ? withSession(out, { usage: { ...usage, live } }) : out
 }
 
+// seen keeps only the most recent message ids: a message's content blocks arrive back to back with one id,
+// so a recent window still counts each id once while the cost per message stays fixed.
+const SEEN_KEEP = 256
+
 function foldAssistantUsage(view: SessionView, msg: Record<string, unknown>): SessionView {
   if (msg.parent_tool_use_id || !isObj(msg.message)) return view
   const id = msg.message.id
   const u = msg.message.usage
   // Counted once per message id: the stream repeats one message's usage on each content block.
   if (typeof id !== 'string' || !isObj(u) || view.tally.seen[id]) return view
-  return withTally(view, { ...view.tally.seen, [id]: true }, view.tally.tasks, {
+  // A new seen with id added last; a Record keeps string-key insertion order, so the first keys are the oldest.
+  const keys = Object.keys(view.tally.seen)
+  const seen: Record<string, true> = {}
+  for (const k of keys.slice(Math.max(0, keys.length - SEEN_KEEP + 1))) seen[k] = true
+  seen[id] = true
+  return withTally(view, seen, view.tally.tasks, {
     inputTokens: count(u.input_tokens),
     outputTokens: count(u.output_tokens),
     cacheReadInputTokens: count(u.cache_read_input_tokens),
