@@ -3,7 +3,7 @@
 // ({"error": "..."}). Node built-ins and ../hooks/register.ts only.
 import { spawnSync } from 'node:child_process'
 import {
-  appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -1199,6 +1199,12 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
 }
 
 // start --slug S --resume answers|merge-ready|stale: one crew entry, or a refusal {slug, why}.
+/** The ids of plan.goals rows whose approvedAt is null; the top-level goal `run` is never one. */
+function unapprovedGoals(plan: Obj): Set<string> {
+  const goals: unknown[] = Array.isArray(plan.goals) ? plan.goals : []
+  return new Set(goals.filter((g): g is Obj => isObj(g) && g.approvedAt === null && typeof g.id === 'string' && g.id !== RUN_GOAL).map((g) => String(g.id)))
+}
+
 function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj {
   if (!['answers', 'merge-ready', 'stale'].includes(kind)) throw usage(`--resume needs answers, merge-ready or stale, got ${kind}`)
   const transcript = str(f, 'transcript') ?? ''
@@ -1210,6 +1216,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     answers = a
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
+  // ADR-0025 item 37: a crew of an unapproved goal is never resumed
+  if (crew !== undefined && unapprovedGoals(c.plan).has(goalOf(crew))) throw refuse({ slug, why: `its goal ${goalOf(crew)} is not approved (approvedAt is null)` })
   if (crew === undefined || crew.status !== 'running' || factorySpawned(c.dir, slug) === undefined) throw refuse({ slug, why: kind === 'stale' ? 'not stale' : 'not restartable' })
   // tasks and done are rebuilt from every run of the crew in the runs root (T's parent), T included, not from T alone:
   // a resumed run that took saved tasks has no planner result, and its done list holds tasks no member of it ran.
@@ -1286,8 +1294,10 @@ function cmdStart(f: Flags): Obj {
   }
   const stageArg = need(f, 'stage')
   const noWorkflow = f['no-workflow'] === true
-  const crews: Obj[] = plan.crews.filter(isObj)
-  const open = crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
+  // ADR-0025 item 37: a crew whose goal is in plan.goals with approvedAt null is skipped: not started, refused, held or in goalNext
+  const unapproved = unapprovedGoals(plan)
+  const crews: Obj[] = plan.crews.filter(isObj).filter((c: Obj) => !unapproved.has(goalOf(c)))
+  const open =crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
   if (open.length === 0) throw refuse({ error: 'no stage has a planned or running crew' })
   const next = Math.min(...open)
   // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
@@ -1373,6 +1383,24 @@ function cmdStart(f: Flags): Obj {
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
 // so the stage args never fill the PM's Bash output. A Workflow script has no file system and the Workflow gate reads
 // args.truss from the call, so the PM still Reads P and passes that object as the Workflow's args.
+// ADR-0025 item 36: start checks --args-file before cmdStart or cmdStartResume changes any state, in both forms.
+// A relative P, or a P whose nearest existing ancestor isn't a writable directory, is a usage error (exit 2).
+function checkArgsFile(f: Flags): void {
+  const p = str(f, 'args-file')
+  if (p === undefined) return
+  if (!path.isAbsolute(p)) throw usage(`--args-file needs an absolute path, got ${p}`)
+  let a = path.dirname(p)
+  while (!existsSync(a) && path.dirname(a) !== a) a = path.dirname(a)
+  let ok = false
+  try {
+    ok = statSync(a).isDirectory()
+    if (ok) accessSync(a, fsConstants.W_OK)
+  } catch {
+    ok = false
+  }
+  if (!ok) throw usage(`cannot write ${flat(p)}: its nearest existing ancestor ${flat(a)} is not a writable directory`)
+}
+
 function argsFileOut(f: Flags, out: Obj): Obj {
   const p = str(f, 'args-file')
   if (p === undefined) return out
@@ -2006,7 +2034,7 @@ function cmdFinish(f: Flags): Obj {
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
-  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => argsFileOut(f, cmdStart(f)),
+  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap,
   heavy: () => {
