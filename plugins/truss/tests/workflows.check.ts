@@ -1219,13 +1219,15 @@ t('stage crews: each crew has its own slug in labels and commands', async () => 
 // ---------------------------------------------------------------- stage.js: resume
 
 t('stage resume answers: skips red and done tasks; the builder prompt carries the answer for its task and not another', async () => {
-  const e = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }, { at: 'write-tests', text: 'OLD-TESTER-ANSWER' }] })
-  const r = await runStage([e], { labels: base('a', { 'a-stress': RT0 }) })
+  // the other answer names a second, not-done builder task, so the case does not depend on re-running a done task (ADR-0026 seam 1)
+  const B2 = { name: 'build-more', role: 'builder', effort: 'medium', files: ['src/b.ts'], reads: [], brief: 'BRIEF-B2: build b', after: ['write-tests'] }
+  const e = rtCrew({ resume: 'answers', tasks: [T1, B1, B2], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }, { at: 'build-more', text: 'OLD-OTHER-ANSWER' }] })
+  const r = await runStage([e], { labels: base('a', { 'a-stress': RT0, 'a-builder-2': done('feat/b2', 'PROOF-B2') }) })
   assert.ok(noRunner(r, 'check:red'))
   assert.ok(!had(r, 'a-planner') && !had(r, 'a-tester'))
-  const p = call(r, 'a-builder').prompt
+  const p = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: build-it')).prompt
   has(p, 'ANSWER-FOR-BUILD')
-  assert.ok(!p.includes('OLD-TESTER-ANSWER'))
+  assert.ok(!p.includes('OLD-OTHER-ANSWER'))
   assert.ok(had(r, 'a-stress'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc', e)
 })
