@@ -30,6 +30,8 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 
 Never be brave with the truth: proof or it didn't happen.
 
+Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your checkout or the session scratchpad, never a shared temp path.
+
 ## How to QC engineer
 
 1. Get the diff: `git diff <base>...<branch>` or the range in your brief. Note the branch head with `git rev-parse <branch>`.
