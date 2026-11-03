@@ -2,7 +2,7 @@
 // harness proxy; the proxy cuts the browser's connection while the same server instance keeps emitting deltas.
 // Pinned to ADR-0018: the transcript is a log named Transcript, a card is an article, the status is a role.
 import { test, expect, type Page } from '@playwright/test'
-import { card, rand, sessionStatus, startInterface, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
+import { card, rand, runStatus, sessionStatus, startInterface, WITHIN, INSTANCE_RE, type Iface } from './harness.ts'
 
 async function withIface(fn: (iface: Iface) => Promise<void>): Promise<void> {
   const iface = await startInterface({})
@@ -41,12 +41,16 @@ test.describe('SSE drop and replay', () => {
       // Nothing can reach the page while it is cut off.
       await page.waitForTimeout(300)
       expect(await count(page, `dropped-1-${tag}`)).toBe(0)
+      // D2 (ADR-0023): the lost stream shows a `Status:` notice, "Reconnecting…", and it goes on recovery.
+      const reconnecting = runStatus(page).getByRole('listitem').filter({ hasText: 'Reconnecting…' })
+      await expect(reconnecting).toContainText('Status:', { timeout: 5000 })
 
       iface.refuse(false)
       // The page reconnects by itself and shows everything it missed, within 2 s of the line being back.
       for (const t of dropped) await expect(transcript(page).getByText(t)).toBeVisible({ timeout: 5000 })
       await expect(page.getByRole('banner')).toContainText(`model-while-dropped-${tag}`, WITHIN)
       await expect(sessionStatus(page)).toContainText('running', WITHIN)
+      await expect(page.getByText('Reconnecting…')).toHaveCount(0, WITHIN)
 
       // Exactly once each, including the one shown before the drop.
       for (const t of [`before-${tag}`, ...dropped]) expect(await count(page, t), t).toBe(1)
