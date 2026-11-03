@@ -62,34 +62,52 @@ test('i54 2: a later line of successor foreman a-2 clears the idle-foreman stall
   } finally { w.store.close(); x.store.close() }
 })
 
-test('control 1: i54 a spawn by a crew member named main does not clear the foreman stall (member main)', () => {
-  const w = storeFor({
-    'plan.json': plan(['a']),
-    'events.jsonl': jsonl([
-      spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12),
-      spawn(T(25), 'a', 'main', 'main'),
-    ]),
-  })
+test('i54 3: spawns by successor a-2, logged under crew a-2 (hook shape) or under crew a, clear the idle-foreman stall of crew a', () => {
+  const run = (rows: unknown[]) => storeFor({ 'plan.json': plan(['a']), 'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12), ...rows]) })
+  const h = run([spawn(T(25), 'a-2', 'k', 'a-2')])
+  const u = run([spawn(T(25), 'a', 'k', 'a-2')])
+  const c = run([spawn(T(25), 'a-2', 'k', 'other')])
   try {
-    const s = crewBy(w.run(), 'a').stuck
-    assert.ok(s, 'still stuck')
-    assert.equal(s.kind, 'idle-foreman')
-  } finally { w.store.close() }
+    assert.equal(crewBy(h.run(), 'a').stuck, null, 'hook shape (crew a-2) cleared it')
+    assert.equal(crewBy(u.run(), 'a').stuck, null, 'spawn by a-2 under crew a cleared it')
+    assert.equal(crewBy(c.run(), 'a').stuck?.kind, 'idle-foreman', 'a spawn by an unrelated name under crew a-2 does not')
+  } finally { h.store.close(); u.store.close(); c.store.close() }
 })
 
-test('control 2: i54 a spawn by a crew member named workflow:x does not clear the foreman stall (member workflow:x)', () => {
-  const w = storeFor({
+test('control 1: i54 a spawn by crew member named main does not clear a stall on that member (member main)', () => {
+  const mem = (by: string) => storeFor({
     'plan.json': plan(['a']),
     'events.jsonl': jsonl([
-      spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12),
-      spawn(T(25), 'a', 'workflow:x', 'main'), spawn(T(26), 'a', 'a-b', 'workflow:x'),
+      spawn(T(0), 'a', 'a', 'main'), spawn(T(1), 'a', 'main', 'a'),
+      stall(T(20), 'a', 'main', 'agent', 10), spawn(T(25), 'a', 'x', by),
     ]),
   })
+  const w = mem('main')
+  const ok = storeFor({ 'plan.json': plan(['a']), 'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), spawn(T(1), 'a', 'main', 'a'), stall(T(20), 'a', 'main', 'agent', 10), tag(T(25), 'a', 'main')]) })
   try {
     const s = crewBy(w.run(), 'a').stuck
     assert.ok(s, 'still stuck')
-    assert.equal(s.kind, 'idle-foreman')
-  } finally { w.store.close() }
+    assert.equal(s.kind, 'stalled')
+    assert.equal(crewBy(ok.run(), 'a').stuck, null, 'sanity: the member own later line clears the same stall')
+  } finally { w.store.close(); ok.store.close() }
+})
+
+test('control 2: i54 a spawn by crew member named workflow:x does not clear a stall on that member (member workflow:x)', () => {
+  const mem = (by: string) => storeFor({
+    'plan.json': plan(['a']),
+    'events.jsonl': jsonl([
+      spawn(T(0), 'a', 'a', 'main'), spawn(T(1), 'a', 'workflow:x', 'a'),
+      stall(T(20), 'a', 'workflow:x', 'agent', 10), spawn(T(25), 'a', 'x', by),
+    ]),
+  })
+  const w = mem('workflow:x')
+  const ok = storeFor({ 'plan.json': plan(['a']), 'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), spawn(T(1), 'a', 'workflow:x', 'a'), stall(T(20), 'a', 'workflow:x', 'agent', 10), tag(T(25), 'a', 'workflow:x')]) })
+  try {
+    const s = crewBy(w.run(), 'a').stuck
+    assert.ok(s, 'still stuck')
+    assert.equal(s.kind, 'stalled')
+    assert.equal(crewBy(ok.run(), 'a').stuck, null, 'sanity: the member own later line clears the same stall')
+  } finally { w.store.close(); ok.store.close() }
 })
 
 test('control 3: i54 in a crew slugged factory a spawn by factory does not clear its foreman stall (crew factory)', () => {
