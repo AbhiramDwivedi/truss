@@ -901,7 +901,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
-    base: baseOf(wt, c.settings.target), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
+    base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
     ux, direction: directionOf(c.dir, slug), members: membersOf(sections.Members, goalFile).members,
   }
@@ -909,7 +909,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    held, foremen, refused, stale, unfinished, warnings: stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug))),
+    held, foremen, refused, stale, unfinished, warnings: [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug))), ...roleWarnings(c, entries)],
   }
 }
 
@@ -961,6 +961,77 @@ function stressWarnings(c: StartCtx, slugs: string[]): string[] {
     else if (changed > started) out.push(`crew ${slug} runs ${type}, but the role's agent file changed after this session loaded its agents; restart the session to load it`)
   }
   return out
+}
+// ADR-0024 item 24: one warning per truss:* agent type the stage workflow spawns for a starting workflow crew, besides stress
+// (stressWarnings keeps its own texts): planner, qc and writer, tester and builder when their type is truss:*, and ux when the
+// entry is ux. Never designer or checker, which the stage workflow does not spawn. A type warns when its agent file is missing,
+// is newer than the session start, or the session start can't be read; each warning names both fallbacks.
+function roleWarnings(c: StartCtx, entries: Obj[]): string[] {
+  const out: string[] = []
+  let started: number | undefined
+  let read = false
+  for (const e of entries) {
+    const slug = String(e.slug)
+    const roles = ['planner', 'qc', 'writer', 'tester', 'builder', ...(e.ux === true ? ['ux'] : [])]
+    for (const role of roles) {
+      const type = isObj(c.roles[role]) && typeof c.roles[role].agentType === 'string' ? String(c.roles[role].agentType) : ''
+      if (!type.startsWith('truss:')) continue
+      if (!read) {
+        read = true
+        started = sessionStart()
+      }
+      const file = `agents/${type.slice('truss:'.length)}.md`
+      let changed: number | undefined
+      try {
+        changed = statSync(`${PLUGIN}/${file}`).mtimeMs
+      } catch {
+        changed = undefined
+      }
+      const fallback = `or resume with roles.${role}.agentType set to general-purpose and an answer telling the agent to read ${file} and follow it`
+      if (changed === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but its agent file ${file} is missing; restart the session once it is back, ${fallback}`)
+      else if (started === undefined) out.push(`crew ${slug} runs ${type} as its ${role}, but I can't tell whether ${file} changed after this session loaded its agents; restart the session if it did, ${fallback}`)
+      else if (changed > started) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents; restart the session to load it, ${fallback}`)
+    }
+  }
+  return out
+}
+
+// ADR-0024 item 26: the crew's member worktrees, found by their branch names worktree-<run id>-<n> for the crew's runs,
+// whose directory is gone. When any is, a decision line names them and `git worktree prune` drops their registrations.
+function missingWorktrees(c: StartCtx, slug: string, runs: WfRun[]): { branch: string; worktree: string }[] {
+  const ids = new Set(runs.map((r) => r.id))
+  const out: { branch: string; worktree: string }[] = []
+  const list = run(c.repo, ['worktree', 'list', '--porcelain'])
+  if (list.status !== 0) return out
+  let wtPath: string | undefined
+  for (const line of list.out.split('\n')) {
+    if (line.startsWith('worktree ')) wtPath = line.slice('worktree '.length)
+    else if (line.startsWith('branch refs/heads/') && wtPath !== undefined) {
+      const branch = line.slice('branch refs/heads/'.length)
+      const m = /^worktree-(.+)-(\d+)$/.exec(branch)
+      if (m !== null && ids.has(m[1]) && !existsSync(wtPath)) out.push({ branch, worktree: flat(wtPath) })
+    }
+  }
+  if (out.length > 0) {
+    appendDecision(c.dir, `crew ${slug}: member worktree(s) gone before the resume: ${out.map((w) => `${w.branch} (${w.worktree})`).join(', ')} | ran git worktree prune so a recreated member worktree is not refused; the branches stay`)
+    run(c.repo, ['worktree', 'prune'])
+  }
+  return out
+}
+
+// ADR-0024 item 35: the newest `<slug>-ux*` agent result of the crew's runs (highest label number, later run on a tie) whose
+// first non-empty line, after unbannered, is UX: DIRECTION, as {label, text} trimmed as directionOf trims it; null when none.
+function runDirectionOf(runs: WfRun[], slug: string): { label: string; text: string } | null {
+  let best: { n: number; label: string; text: string } | undefined
+  for (const wfRun of runs) {
+    for (const a of wfRun.agents) {
+      const p = parseLabel(a.label)
+      if (p === undefined || p.slug !== slug || p.role !== 'ux' || !a.hasResult || typeof a.result !== 'string') continue
+      if (!/^UX: DIRECTION\b/.test(firstLine(a.result))) continue
+      if (best === undefined || p.n >= best.n) best = { n: p.n, label: a.label, text: unbannered(a.result.replace(/^﻿/, '').replace(/\r/g, '')).trim() }
+    }
+  }
+  return best === undefined ? null : { label: best.label, text: best.text }
 }
 
 // The runs of this session: the dirs next to the transcript dir T (T's parent is the runs root).
@@ -1069,7 +1140,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     if (st.kind === 'unfinished') throw refuse({ slug, why: 'run not finished' })
     if (st.kind === 'live') throw refuse({ slug, why: 'run may be live' })
     runs = crewRunsOf(all, slug)
-  } else if (kind === 'answers') {
+  } else if (transcript !== '') {
+    // answers, and merge-ready given --transcript (whose runs only find member worktrees and the direction; it rebuilds nothing)
     const t = runOf(transcript)
     const all = runsNextTo(transcript)
     runs = crewRunsOf(all.some((r) => r.id === t.id) ? all : [...all, t], slug)
@@ -1093,6 +1165,9 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by
   const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after } : t))
   const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
+  // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
+  if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
+  const missing = missingWorktrees(c, slug, runs)
   // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
   const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
   if (existsSync(rtFile)) {
@@ -1107,7 +1182,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
     appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
   }
-  return stageOut(c, [entry], [], [], [], [])
+  const out = stageOut(c, [entry], [], [], [], [])
+  return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
 }
 
 function cmdStart(f: Flags): Obj {
@@ -1226,7 +1302,24 @@ function argsFileOut(f: Flags, out: Obj): Obj {
   } catch (e) {
     throw usage(`cannot write ${flat(p)}: ${(e as Error).message}`)
   }
-  return { argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished, warnings: out.warnings }
+  // ADR-0024 item 29, seam 3: a P inside the truss dir is one the Workflow gate can read, so the PM passes {"trussFile": P}
+  // instead of the object; outside it the gate refuses that form, so no workflowArgs and a warning instead
+  const real = (q: string): string => {
+    try {
+      return flat(realpathSync(q))
+    } catch {
+      return flat(path.resolve(q))
+    }
+  }
+  const trussDir = real(path.resolve(dirOf(f)))
+  const inside = `${real(path.dirname(p))}/${path.basename(p)}`.startsWith(`${trussDir}/`)
+  const short: Obj = {
+    argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
+    warnings: inside ? out.warnings : [...out.warnings, `--args-file ${flat(p)} is outside the truss dir ${trussDir}, so the Workflow gate can't read it as args.trussFile; pass the file's object as args.truss inline`],
+  }
+  if (out.missingWorktrees !== undefined) short.missingWorktrees = out.missingWorktrees
+  if (inside) short.workflowArgs = { trussFile: flat(p) }
+  return short
 }
 
 // ==== resources (ADR-0015): admit, heavy, reap ====
