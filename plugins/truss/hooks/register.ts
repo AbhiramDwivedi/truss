@@ -1144,7 +1144,8 @@ export function commandSegments(command: string): { segments: string[]; ops: str
   return { segments, ops }
 }
 
-const SCRUB_RUN = /retro\/cli\.ts\s+scrub(?:\s|$)/
+// the plugin path may be quoted, as `node "${CLAUDE_PLUGIN_ROOT}/retro/cli.ts" scrub` is, and so may the word scrub
+const SCRUB_RUN = /retro\/cli\.ts["']?\s+(["']?)scrub\1(?:\s|$)/
 // ends at whitespace or the segment's end, never at \b: `git merge-base` is not a merge
 const PUSH_OR_MERGE = /(?:^|[^\w.-])git\s+(?:-C\s+\S+\s+)?(?:push|merge)(?:\s|$)/
 
