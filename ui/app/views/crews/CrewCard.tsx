@@ -9,7 +9,7 @@ import { cn } from '../../lib/utils.ts'
 import { Badge, ModelBadge } from '../../components/ui/badge.tsx'
 import { SegmentBar, type Segment } from '../metrics/SegmentBar.tsx'
 import { StuckCard } from './StuckCard.tsx'
-import { DONE_STATES, FAILED_STATES, LIVE_STATES, crewEnd, crewName, crewStart, detailMinutes, flaggedAt, hhmmAt, short } from './format.ts'
+import { DONE_STATES, FAILED_STATES, LIVE_STATES, crewEnd, crewNameExtra, crewStart, detailMinutes, flaggedAt, hhmmAt, short } from './format.ts'
 
 export interface CrewCardProps {
   crew: Crew
@@ -108,10 +108,10 @@ export function CrewCard({ crew, now }: CrewCardProps) {
         )}
         <div className="p-3">
           <button
+            data-crew={crew.slug}
             type="button"
             aria-expanded={open}
             aria-controls={open ? listId : undefined}
-            aria-label={crewName(crew)}
             onClick={() => setChosen(!open)}
             className="flex w-full min-w-0 flex-col gap-2 rounded-ctl text-left"
           >
@@ -137,13 +137,12 @@ export function CrewCard({ crew, now }: CrewCardProps) {
               )}
               <span className="ml-auto flex items-center gap-1.5">
                 <StatusBadge crew={crew} />
-                {crew.qc?.verdict && (
-                  <Badge size="sm" tone={crew.qc.verdict === 'PASS' ? 'ok' : 'fail'}>
-                    QC {crew.qc.verdict}
-                  </Badge>
-                )}
+                <Badge size="sm" tone={crew.qc?.verdict === 'PASS' ? 'ok' : crew.qc?.verdict === 'FAIL' ? 'fail' : undefined}>
+                  QC {crew.qc?.verdict ?? 'none'}
+                </Badge>
               </span>
             </span>
+            <span className="sr-only">, {crewNameExtra(crew)}</span>
           </button>
 
           {planned && (

@@ -133,6 +133,10 @@ export function YourMove({ state, now }: YourMoveProps) {
     .filter(isSettledHere)
     .sort((a, b) => Date.parse(b.answeredAt ?? b.createdAt) - Date.parse(a.answeredAt ?? a.createdAt))
     .slice(0, MAX_SETTLED)
+  // A reply that came back while agents still run asks nothing; it keeps a quiet card with its text.
+  const waitingReplies = state.requests.filter(
+    (r): r is Extract<Request, { kind: 'reply' }> => r.status === 'open' && !isSettledHere(r) && replyWaitsOnAgents(r),
+  )
   const waitingOnAgents =
     open.length === 0 &&
     ((state.session.status === 'waiting' && state.session.backgroundTasks.length > 0) ||
@@ -179,6 +183,17 @@ export function YourMove({ state, now }: YourMoveProps) {
         </Card>
       )}
 
+      {waitingReplies.map((r) => (
+        <Card key={r.id} variant="default" density="compact" asChild>
+          <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
+            <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>
+            <p className="min-w-0 text-meta text-muted break-words">
+              {plural(r.backgroundTasks, 'background task')} still running; nothing needed from you yet.
+            </p>
+          </article>
+        </Card>
+      ))}
+
       {rest.length > 0 && (
         <div className="flex min-w-0 flex-col gap-3">
           <p className="text-meta font-medium text-muted">{rest.length} more waiting on you</p>
@@ -199,6 +214,14 @@ export function YourMove({ state, now }: YourMoveProps) {
                     <span className="font-medium text-fg">{cardName(r)}</span>
                     {when && <span className="font-mono text-meta text-muted tabular-nums">{when}</span>}
                   </div>
+                  {r.kind === 'permission' && (r.title || r.summary) && (
+                    <p className="min-w-0 text-fg break-words">
+                      {r.title}
+                      {r.title && r.summary ? ' ' : ''}
+                      {r.summary && <code className="rounded-chip bg-secondary px-1.5 py-0.5 font-mono text-meta break-all">{r.summary}</code>}
+                    </p>
+                  )}
+                  {r.kind === 'reply' && r.text && <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>}
                   <p role="status" className="min-w-0 text-muted break-words">
                     {head}
                   </p>

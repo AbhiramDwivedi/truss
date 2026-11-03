@@ -22,16 +22,18 @@ export function MetricTile({ label, value, title, aside, graphic, sub, subTone =
   return (
     <div className={cn('flex h-30 min-w-0 flex-col rounded-card bg-sunken px-3.5 py-3', className)}>
       <dt className="text-micro font-medium text-muted">{label}</dt>
-      <dd className="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-title tabular-nums text-fg">
-        <span className="min-w-0 truncate motion-safe:animate-tick-up" title={title}>
-          {value}
+      <dd className="flex min-w-0 flex-1 flex-col">
+        <span className="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-title tabular-nums text-fg">
+          <span className="min-w-0 truncate motion-safe:animate-tick-up" title={title}>
+            {value}
+          </span>
+          {aside != null && <span className="shrink-0 text-meta text-muted">{aside}</span>}
         </span>
-        {aside != null && <span className="shrink-0 text-meta text-muted">{aside}</span>}
+        {graphic}
+        {sub != null && (
+          <span className={cn('mt-auto block truncate text-micro', subTone === 'signal' ? 'text-signal-text' : 'text-muted')}>{sub}</span>
+        )}
       </dd>
-      {graphic}
-      {sub != null && (
-        <p className={cn('mt-auto truncate text-micro', subTone === 'signal' ? 'text-signal-text' : 'text-muted')}>{sub}</p>
-      )}
     </div>
   )
 }

@@ -17,6 +17,7 @@ import { RunTabs, type RunTab } from './views/run/RunTabs.tsx'
 import { Banner } from './views/shell/Banner.tsx'
 import { RunStatus } from './views/shell/RunStatus.tsx'
 import { SkipLink } from './views/shell/SkipLink.tsx'
+import { useInstantThemeSwitch } from './views/shell/instantTheme.ts'
 import { Transcript } from './views/transcript/Transcript.tsx'
 
 // ADR-0018 section 10: the Design and the Decisions and ADRs panels load as lazy chunks.
@@ -47,6 +48,7 @@ export default function App() {
   const [tab, setTab] = useState<RunTab>('crews')
   const tabs = useRef<HTMLDivElement>(null)
   const [jump, setJump] = useState(0)
+  useInstantThemeSwitch()
 
   // A link elsewhere (Open log, Open in Design tab) selects a tab: bring the tablist into view and focus it.
   const openTab = useCallback((t: RunTab) => {

@@ -53,7 +53,10 @@ const marked = new Marked({
 /** HTML for `markdown`, or null when marked throws (the caller shows the text as it is). */
 function toHtml(markdown: string): string | null {
   try {
-    return marked.parse(String(markdown), { async: false }) as string
+    // A wide table scrolls inside a focusable box, so a keyboard can scroll it too (axe scrollable-region-focusable).
+    // Raw HTML in the markdown is escaped, so every <table> here is one marked wrote.
+    const html = marked.parse(String(markdown), { async: false }) as string
+    return html.replace(/<table>/g, '<div tabindex="0" data-table-scroll><table>').replace(/<\/table>/g, '</table></div>')
   } catch {
     return null
   }
@@ -71,11 +74,50 @@ const prose =
   '[&_blockquote]:border-l-2 [&_blockquote]:border-border-strong [&_blockquote]:pl-3 [&_blockquote]:text-muted ' +
   '[&_code]:font-mono [&_code]:text-ui [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-ctl [&_pre]:bg-secondary [&_pre]:p-3 ' +
   '[&_figcaption]:mt-2 [&_figcaption]:text-meta [&_figcaption]:font-medium [&_figcaption]:text-muted ' +
-  '[&_table]:my-2 [&_table]:block [&_table]:overflow-x-auto [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left ' +
+  '[&_[data-table-scroll]]:my-2 [&_[data-table-scroll]]:max-w-full [&_[data-table-scroll]]:overflow-x-auto [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left ' +
   '[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_hr]:my-4 [&_hr]:border-border'
 
+/** The markdown cut at its `## ` headings (never inside a code fence), each part with its heading. */
+export function sections(markdown: string): string[] {
+  const out: string[] = []
+  let part: string[] = []
+  let fence: string | null = null
+  for (const line of String(markdown).split('\n')) {
+    const f = /^\s{0,3}(`{3,}|~{3,})/.exec(line)
+    if (f) fence = fence === null ? f[1]![0]! : fence === f[1]![0] ? null : fence
+    if (fence === null && /^## /.test(line) && part.length > 0) {
+      out.push(part.join('\n'))
+      part = []
+    }
+    part.push(line)
+  }
+  out.push(part.join('\n'))
+  return out
+}
+
+// A long document opens at its first sections, up to this many lines; the rest renders on request.
+// The architecture doc runs to over a thousand lines, and drawing it all at once makes the tab slow to open.
+export const FIRST_LINES = 150
+
+/** How many of `parts` show before "Show the whole document": always the first, then while they fit. */
+export function firstCount(parts: string[], budget = FIRST_LINES): number {
+  let lines = 0
+  let n = 0
+  for (const p of parts) {
+    lines += p.split('\n').length
+    if (n > 0 && lines > budget) break
+    n++
+  }
+  return n
+}
+
 function Markdown({ text }: { text: string }) {
-  const html = useMemo(() => toHtml(text), [text])
+  const parts = useMemo(() => sections(text), [text])
+  const first = useMemo(() => firstCount(parts), [parts])
+  const [whole, setWhole] = useState(false)
+  const shownText = whole || first >= parts.length ? text : parts.slice(0, first).join('\n')
+  const html = useMemo(() => toHtml(shownText), [shownText])
+  const more = parts.length - first
   if (html === null) {
     return (
       <pre tabIndex={0} className="overflow-x-auto rounded-ctl bg-secondary p-3 font-mono text-ui whitespace-pre-wrap text-fg">
@@ -83,13 +125,23 @@ function Markdown({ text }: { text: string }) {
       </pre>
     )
   }
-  return <div className={prose} dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <>
+      <div className={prose} dangerouslySetInnerHTML={{ __html: html }} />
+      {!whole && more > 0 && (
+        <Button size="sm" variant="secondary" className="mt-3" onClick={() => setWhole(true)}>
+          Show the whole document ({more} more {more === 1 ? 'section' : 'sections'})
+        </Button>
+      )}
+    </>
+  )
 }
 
 function Figure({ img }: { img: DesignImage }) {
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
-  const src = imageUrl(img) + (attempt ? `&retry=${attempt}` : '')
+  // An absolute URL on the page's own origin, so the src works wherever it is read back.
+  const src = new URL(imageUrl(img) + (attempt ? `&retry=${attempt}` : ''), window.location.href).href
   return (
     <li className="min-w-0">
       <figure className="min-w-0 overflow-hidden rounded-card border border-border bg-surface shadow-e1">
@@ -115,7 +167,6 @@ function Figure({ img }: { img: DesignImage }) {
             key={attempt}
             src={src}
             alt={`${img.path} (built on ${img.ref})`}
-            loading="lazy"
             onError={() => setFailed(true)}
             className="block h-auto w-full bg-secondary"
           />
