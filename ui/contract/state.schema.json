@@ -137,7 +137,22 @@
             }
           }
         },
-        "error": { "description": "The first line of the thrown error's message, at most 500 characters, when status is error.", "type": ["string", "null"] }
+        "error": { "description": "The first line of the thrown error's message, at most 500 characters, when status is error.", "type": ["string", "null"] },
+        "queue": {
+          "description": "ADR-0023 gap b: accepted messages the SDK has not yet taken, oldest first.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "text", "intent", "at"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "text": { "type": "string" },
+              "intent": { "enum": ["goal", "add", null] },
+              "at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
       }
     },
     "usage": {
@@ -163,7 +178,22 @@
           }
         },
         "results": { "description": "How many result messages the session has had.", "type": "integer", "minimum": 1 },
-        "at": { "description": "Server clock when the result arrived, RFC 3339 UTC.", "type": "string", "format": "date-time" }
+        "at": { "description": "Server clock when the result arrived, RFC 3339 UTC.", "type": "string", "format": "date-time" },
+        "live": {
+          "description": "ADR-0023 gap e: a running estimate of the session's tokens, from top-level assistant usage (once per message id) and task_progress usage.total_tokens. at is when the last message that changed it arrived.",
+          "type": "object",
+          "required": ["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens", "subagentTokens", "totalTokens", "at"],
+          "additionalProperties": false,
+          "properties": {
+            "inputTokens": { "type": "integer", "minimum": 0 },
+            "outputTokens": { "type": "integer", "minimum": 0 },
+            "cacheReadInputTokens": { "type": "integer", "minimum": 0 },
+            "cacheCreationInputTokens": { "type": "integer", "minimum": 0 },
+            "subagentTokens": { "type": "integer", "minimum": 0 },
+            "totalTokens": { "type": "integer", "minimum": 0 },
+            "at": { "type": "string", "format": "date-time" }
+          }
+        }
       }
     },
     "transcriptEntry": {
@@ -174,7 +204,9 @@
         "n": { "description": "1, 2, 3 ... per server process; the browser appends only entries with n above its last.", "type": "integer", "minimum": 1 },
         "role": { "description": "user: text the UI sent. assistant: a text block of a top-level assistant message (no parent_tool_use_id, no agent_id). error: the session error.", "enum": ["user", "assistant", "error"] },
         "text": { "type": "string" },
-        "ts": { "type": "string", "format": "date-time" }
+        "ts": { "type": "string", "format": "date-time" },
+        "id": { "description": "ADR-0023 gap a: a user entry carries the id of the message that made it; assistant and error entries have null.", "type": ["string", "null"] },
+        "intent": { "description": "ADR-0023 gap a: goal, add or null.", "enum": ["goal", "add", null] }
       }
     },
     "requests": {
@@ -278,6 +310,21 @@
             "approval": { "enum": ["auto", "client", null] },
             "approvedAt": { "type": ["string", "null"] },
             "crews": { "type": "array", "items": { "$ref": "#/$defs/crew" } },
+            "goals": {
+              "description": "ADR-0023 gap d: the run's first goal as id run (from plan.json's top-level goal, approval, approvedAt), then plan.json's goals entries in order; [] without a readable plan.json.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "goal", "approval", "approvedAt"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "goal": { "type": ["string", "null"] },
+                  "approval": { "enum": ["auto", "client", null] },
+                  "approvedAt": { "type": ["string", "null"] }
+                }
+              }
+            },
             "skipped": {
               "description": "jsonl lines not used, at most the first 100: json = not a JSON object; version = an events line whose v isn't 1, or a messages line that has a v other than 1 (message lines carry no v today). A last line with no newline yet is not skipped; it waits.",
               "type": "array",
@@ -312,6 +359,24 @@
         "foreman": { "description": "The member line of the agent whose name equals the slug.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/member" }] },
         "members": { "description": "Every other agent named in the crew's event lines, in order of first appearance.", "type": "array", "items": { "$ref": "#/$defs/member" } },
         "latest": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/activity" }] },
+        "estAgents": { "description": "ADR-0023 gap f: plan.json's crew estAgents, or null for a crew not in plan.json.", "type": ["integer", "null"], "minimum": 1 },
+        "stuck": {
+          "description": "ADR-0023 gap g: null, or the crew's latest stall event, while the stalled agent has no later event and the crew status is running.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["kind", "since", "minutes", "detail"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "description": "stalled for a stall event of kind agent, idle-foreman for kind idle-foreman.", "enum": ["stalled", "idle-foreman"] },
+                "since": { "description": "The event's ts minus minutes minutes, RFC 3339 UTC.", "type": "string", "format": "date-time" },
+                "minutes": { "type": "number", "minimum": 0 },
+                "detail": { "description": "<agent> stalled <minutes> min.", "type": "string" }
+              }
+            }
+          ]
+        },
         "qc": {
           "description": "The newest QC file under reports/<slug>/ by the hooks' rule (isQcFile, latestQc without the run filter).",
           "oneOf": [
