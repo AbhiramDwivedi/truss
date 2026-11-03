@@ -28,6 +28,8 @@ Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by t
 
 [ADR-0025](adr/0025-factory-fixes4.md) (proposed 2026-11-03 by the `fixes4-design` crew, goal `factory-fixes4`) fixes plugin bugs 36 to 44. `start` validates `--args-file` before it changes any state and skips crews of a goal whose `approvedAt` is null, the stale-agent warning names what changed, and resume fixes three factory-resume QC deferreds. The resource monitor holds instead of stepping down while running crews exceed the parallelism, and reads admit's line as a memory reading. It pins one seam, `entry.livePage`, under "Workflow calls (ADR-0009)" below.
 
+[ADR-0026](adr/0026-factory-fixes5.md) (proposed 2026-11-03 by the `fixes5-design` crew, goal `factory-fixes5`) fixes plugin items 45 to 57. The resource monitor steps up above three times `minFreeMB` and backs off on memory pressure and swap, which the sampler now reads; an answer at a done task re-runs it; acceptance tests pin behaviour, not spelling; and the ui pretest names missing dependencies. It pins four seams: the answer at a done task, string args, `check-deps` and the sample's `memPressure` and `swapUsedPct`. It also decides the factory items 46, 49, 50, 53 and 56 and the admit hold on pressure, which a follow-up crew builds.
+
 The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
 
 ```mermaid
