@@ -1,123 +1,113 @@
-// Helpers for the redesign specs (ADR-0018 sections 10 and 11). The specs reach the page by role only;
-// nothing here touches the DOM by selector. Every server is the real one (ui/e2e/harness.ts), on port 0.
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+// Helpers for the redesign specs (ADR-0023 sections 4 to 6, on top of ADR-0018 sections 10 and 11). The specs
+// reach the page by role only; nothing here touches the DOM by selector. Every state is a fixture under
+// fixtures/run/<state>/ planted into the fake interface of ui/e2e/harness.ts (startFixture), on port 0.
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import type { Page } from '@playwright/test'
-import { startInterface, startReal, rand, type Iface, type Real } from '../../e2e/harness.ts'
+import { join, relative, resolve } from 'node:path'
+import type { Browser, BrowserContext, Page } from '@playwright/test'
+import { startFixture, rand, type Iface } from '../../e2e/harness.ts'
 
 const here = import.meta.dirname
 export const fixtureDir = resolve(here, '..', 'fixtures', 'run')
-export const screensDir = resolve(here, '..', '..', 'screens')
-const adrFile = resolve(here, '..', '..', '..', 'plugins', 'truss', 'docs', 'adr', '0018-ui-redesign.md')
+export const screensDir = resolve(here, '../../screens/')
+const adrFile = resolve(here, '..', '..', '..', 'plugins', 'truss', 'docs', 'adr', '0023-factory-floor-ui.md')
 
-// The states and widths come from the ADR's two lines, so the specs and the ADR cannot drift apart.
+// The states and widths come from ADR-0023's two lines, so the specs and the ADR cannot drift apart.
 const adr = readFileSync(adrFile, 'utf8')
 export const STATES = (adr.match(/^Screenshot states: (.+)$/m)?.[1] ?? '').split(', ').filter(Boolean)
 export const WIDTHS: Array<[string, number]> = (() => {
   const m = adr.match(/^Screenshot widths: phone (\d+) px, tablet (\d+) px, desktop (\d+) px$/m)
-  if (!m) throw new Error('ADR-0018 has no "Screenshot widths:" line')
+  if (!m) throw new Error('ADR-0023 has no "Screenshot widths:" line')
   return [['phone', +m[1]!], ['tablet', +m[2]!], ['desktop', +m[3]!]]
 })()
+export const THEMES = ['light', 'dark'] as const
+export type Theme = (typeof THEMES)[number]
+export const HEIGHT = 900
 export const T = { timeout: 5000 }
 export const LOAD = { timeout: 10000 }
 
-// ---- the fixture copy ------------------------------------------------------------------------------------
+// ---- the tokens ------------------------------------------------------------------------------------------
 
-export interface Copy { dir: string; run: string; webSlug: string; sessionSlug: string; serverSlug: string; files: Record<string, Buffer> }
+export interface Tokens { colors: Record<string, { light: string; dark: string }>; [k: string]: any }
+export const tokens: Tokens = JSON.parse(readFileSync(resolve(here, 'tokens.json'), 'utf8'))
 
-function walk(dir: string, rel = ''): string[] {
-  return readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(dir, join(rel, e.name)) : [join(rel, e.name)]))
+/** The CSS colour string a browser computes for a token hex: rgb(r, g, b). */
+export function rgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
 }
+export function token(name: string, theme: Theme): string { return rgb(tokens.colors[name]![theme]) }
 
-// A private copy of fixtures/run in an mkdtemp dir, with a per-run value planted: the goal's suffix and the
-// planned crew's slug. Event times shift so the newest is now, so no running member reads as stalled.
-// The fixture itself is never written.
-export function copyFixture(): Copy {
-  const dir = mkdtempSync(join(tmpdir(), 'truss-redesign-'))
-  cpSync(fixtureDir, dir, { recursive: true })
-  const run = `${rand()}${randomBytes(2).toString('hex')}`
-  const webSlug = `ui-web-${run}`
-  const plan = readFileSync(join(dir, 'plan.json'), 'utf8').replaceAll('ui-web', webSlug)
-  const p = JSON.parse(plan)
-  p.goal = `${p.goal} ${randomUUID().slice(0, 8)}-${run}`
-  writeFileSync(join(dir, 'plan.json'), JSON.stringify(p, null, 2))
-  const lines = readFileSync(join(dir, 'events.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
-  const newest = Math.max(...lines.map((e) => Date.parse(e.ts)))
-  const now = Date.now()
-  for (const e of lines) e.ts = new Date(now - (newest - Date.parse(e.ts))).toISOString()
-  writeFileSync(join(dir, 'events.jsonl'), lines.map((e) => JSON.stringify(e)).join('\n') + '\n')
-  return { dir, run, webSlug, sessionSlug: 'ui-session', serverSlug: 'ui-server', files: {} }
-}
-
-// Writes a file into the copy (before the server starts).
-export function putInCopy(c: Copy, rel: string, text: string): void {
-  mkdirSync(join(c.dir, rel, '..'), { recursive: true })
-  writeFileSync(join(c.dir, rel), text)
-}
-
-export async function startOnCopy(c: Copy): Promise<Real> {
-  const trussFiles: Record<string, string | Buffer> = {}
-  for (const rel of walk(c.dir)) trussFiles[rel] = readFileSync(join(c.dir, rel))
-  return startReal({ trussFiles })
-}
-
-export function dropCopy(c: Copy): void { rmSync(c.dir, { recursive: true, force: true }) }
-
-// ---- scenarios -------------------------------------------------------------------------------------------
+// ---- the planted state -----------------------------------------------------------------------------------
 
 export interface Scenario {
+  /** The page URL (through the fake interface's proxy). */
   url: string
+  /** The per-run value planted in the fixture copy. */
   run: string
-  /** The mkdtemp fixture copy; absent for the three interface states, which have no truss dir. */
-  copy?: Copy
-  real?: Real
-  iface?: Iface
-  /** Changes one thing the server reads (a file, or for the interface states a pushed delta). */
+  /** The crew slug that carries the per-run value (quota-api in the fixtures). */
+  apiSlug: string
+  /** The planted snapshot, times unshifted (the text the page shows). */
+  fixture: any
+  iface: Iface
+  /** Changes one thing the server holds, pushed as a delta. */
   change(): void
   stop(): Promise<void>
 }
 
-export async function scenario(state: string): Promise<Scenario> {
-  const delta = (run: string) => () => { iface!.emit(null, [{ n: 1, role: 'user', text: `hello ${run}`, ts: new Date().toISOString() }]) }
-  let iface: Iface | undefined
-  if (state === 'empty' || state === 'pending-question' || state === 'pending-approval') {
-    // The fake interface serves state over HTTP and has no truss dir: the per-run value goes into that state
-    // and the change is a pushed transcript delta (ADR-0018 section 11).
-    const run = `${rand()}${randomBytes(2).toString('hex')}`
-    if (state === 'empty') iface = await startInterface({ state: { notices: [{ id: 'no-truss-dir', text: `No Truss directory yet ${run}` }] } })
-    else {
-      iface = await startInterface()
-      if (state === 'pending-question') iface.question([{ header: `Store ${run}`, question: `Which store should hold the quotas ${run}?`, options: [{ label: 'Postgres' }, { label: 'SQLite (Recommended)' }] }])
-      else {
-        iface.reply({ text: `The plan is ready ${run}` })
-        iface.permission({ toolName: 'Bash', title: `Run the checks ${run}`, summary: 'npm --prefix ui test' })
-      }
-    }
-    const i = iface
-    return { url: i.url, run, iface: i, change: delta(run), stop: async () => { await i.stop() } }
+/**
+ * Plants a fixture. `name` is a state slug, or `<state>/<file>` (live-counter/stale). The fixture is copied to an
+ * mkdtemp dir with a per-run value planted into the crew slug, the goal and the first transcript line; the fixture
+ * itself is only read.
+ */
+export async function scenario(name: string, opts: { now?: number } = {}): Promise<Scenario> {
+  const [state, file = 'state'] = name.split('/')
+  const run = `${rand()}${randomBytes(2).toString('hex')}`
+  const apiSlug = `quota-api-${run}`
+  const raw = readFileSync(join(fixtureDir, state!, `${file}.json`), 'utf8').replaceAll('quota-api', apiSlug)
+  const fixture = JSON.parse(raw)
+  const tag = randomUUID().slice(0, 8)
+  if (fixture.run?.goal) {
+    for (const g of fixture.run.goals ?? []) if (g.goal === fixture.run.goal) g.goal = `${g.goal} ${tag}-${run}`
+    fixture.run.goal = `${fixture.run.goal} ${tag}-${run}`
   }
-  const copy = copyFixture()
-  const { run } = copy
-  const done = async () => { dropCopy(copy) }
-  if (state === 'blocked-crew') putInCopy(copy, join('reports', copy.serverSlug, `${copy.serverSlug}-qc.md`), 'VERDICT: FAIL\n\nChecked by the redesign spec.\n')
-  if (state === 'retro') {
-    const step = (status: string, detail: string | null) => ({ status, at: new Date().toISOString(), detail })
-    const pend = { status: 'pending', at: null, detail: null }
-    putInCopy(copy, join('retro', 'state.json'), JSON.stringify({ v: 1, updatedAt: new Date().toISOString(), steps: { extract: step('done', null), judges: step('running', `judging ${run}`), triage: pend, fixGoal: pend, applied: pend } }))
-  }
-  const real = await startOnCopy(copy)
-  const stop = async () => { await real.stop(); await done() }
+  const first = (fixture.transcript ?? []).find((e: any) => e.role === 'user')
+  if (first) first.text = `${first.text} ${tag}-${run}`
+  const dir = mkdtempSync(join(tmpdir(), 'truss-redesign-'))
+  mkdirSync(join(dir, state!), { recursive: true })
+  writeFileSync(join(dir, state!, `${file}.json`), JSON.stringify(fixture, null, 2))
+  const iface = await startFixture(relative(fixtureDir, join(dir, state!, file)), { now: opts.now })
   const change = () => {
-    if (state === 'crews-running') real.writePlan((p) => { p.crews.find((c: any) => c.slug === copy.webSlug).status = 'merged' })
-    else if (state === 'blocked-crew') real.writeQc(copy.sessionSlug, 'FAIL')
-    else if (state === 'retro') {
-      const pend = { status: 'pending', at: null, detail: null }
-      real.writeTrussFile(join('retro', 'state.json'), JSON.stringify({ v: 1, updatedAt: new Date().toISOString(), steps: { extract: { status: 'done', at: null, detail: null }, judges: { status: 'done', at: null, detail: null }, triage: { status: 'running', at: new Date().toISOString(), detail: `triaging ${run}` }, fixGoal: pend, applied: pend } }))
-    } else if (state === 'decisions') real.appendDecision(`- 12:00 | decision marker ${run} | the redesign spec | none | followed`)
+    if (state === 'crews-running') {
+      iface.emit({ run: { ...fixture.run, crews: fixture.run.crews.map((c: any) => (c.slug === apiSlug ? { ...c, status: 'merged' } : c)) } })
+    } else if (state === 'retro') {
+      const at = new Date().toISOString()
+      const step = (status: string, detail: string | null) => ({ status, at, detail })
+      iface.emit({ retro: { ...fixture.retro, steps: { ...fixture.retro.steps, judges: step('done', null), triage: step('running', `triaging ${run}`) } } })
+    } else if (state === 'decisions') {
+      iface.emit({ decisions: [...fixture.decisions, { n: 99, run: fixture.decisions[0]?.run ?? '', text: `12:00 | decision marker ${run} | the redesign spec | none | followed` }] })
+    } else {
+      iface.emit(null, [{ n: 100, role: 'user', text: `hello ${run}`, ts: new Date().toISOString(), id: `msg-${run}`, intent: null }])
+    }
   }
-  return { url: real.url, run, copy, real, change, stop }
+  return {
+    url: iface.url, run, apiSlug, fixture, iface, change,
+    stop: async () => { await iface.stop(); rmSync(dir, { recursive: true, force: true }) },
+  }
+}
+
+// ---- opening a page --------------------------------------------------------------------------------------
+
+export interface Opened { page: Page; context: BrowserContext; problems: () => Promise<string[]>; close(): Promise<void> }
+
+/** Opens the scenario's page in a context of its own: the colour scheme is the theme, the width is CSS px at scale 1. */
+export async function openState(browser: Browser, s: Scenario, theme: Theme, width: number): Promise<Opened> {
+  const context = await browser.newContext({ colorScheme: theme, viewport: { width, height: HEIGHT }, deviceScaleFactor: 1 })
+  const page = await context.newPage()
+  const problems = await watch(page)
+  await page.goto(s.url)
+  return { page, context, problems, close: () => context.close() }
 }
 
 // ---- watching the page -----------------------------------------------------------------------------------

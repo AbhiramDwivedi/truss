@@ -3,9 +3,11 @@
 // to show, then runs axe with the WCAG 2.2 AA tags in the light and the dark theme and requires zero
 // violations in both. Servers bind port 0 (harness). Written before ui/web is rebuilt: every test fails
 // on the old client, which lacks the ADR-0018 roles and names.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { WITHIN, card, crewLine, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { WITHIN, card, crewLine, expectD2Colours, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -30,7 +32,32 @@ async function expectNoViolations(page: Page, state: string): Promise<void> {
   }
 }
 
-const crewsRegion = (page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
+const tokens = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'contract', 'redesign', 'tokens.json'), 'utf8'))
+
+// Renders one sample per [text colour token, background token] pair on the page (styles set through the CSSOM,
+// which the CSP allows), runs axe's color-contrast rule over them and returns the violated rule ids.
+async function contrastViolations(page: Page, pairs: ReadonlyArray<readonly [string, string]>, text: string): Promise<string[]> {
+  const hex = pairs.map(([fg, bg]) => [tokens.colors[fg].light, tokens.colors[bg].light])
+  await page.evaluate(([list, label]) => {
+    document.getElementById('contrast-fixture')?.remove()
+    const box = document.createElement('div')
+    box.id = 'contrast-fixture'
+    for (const [fg, bg] of list as string[][]) {
+      const p = document.createElement('p')
+      p.textContent = label as string
+      p.style.color = fg!
+      p.style.backgroundColor = bg!
+      p.style.fontSize = '14px'
+      box.appendChild(p)
+    }
+    document.body.prepend(box)
+  }, [hex, text] as const)
+  const res = await new AxeBuilder({ page }).withTags(TAGS).include('#contrast-fixture').analyze()
+  await page.evaluate(() => document.getElementById('contrast-fixture')?.remove())
+  return res.violations.map((v) => v.id)
+}
+
+const crewsRegion =(page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
 const members = (page: Page, slug: string) => page.getByRole('list', { name: `${slug} members`, exact: true })
 const openTab = async (page: Page, name: string) => {
   const tab = page.getByRole('tab', { name, exact: true })
@@ -46,6 +73,29 @@ test('a11y: empty run, with the no-Truss-dir notice', async ({ page }) => {
   await expect(runStatus(page).getByRole('listitem').filter({ hasText: rx(text) })).toContainText('Status:', LOAD)
   await expect(sessionStatus(page)).toContainText('idle')
   await expectNoViolations(page, 'empty run')
+
+  // D2 contrast pairs (ADR-0023 section 3), rendered by hex from tokens.json: the allowed pairs pass axe,
+  // and each failing pair (light theme) is caught by axe's color-contrast rule.
+  await page.emulateMedia({ colorScheme: 'light' })
+  const sample = 'Contrast sample text'
+  const ok = [['muted', 'sunken'], ['fg', 'ok-soft'], ['move-fg', 'move'], ['signal-text', 'signal-soft']] as const
+  const bad = [['subtle', 'sunken'], ['ok', 'surface'], ['ok', 'ok-soft'], ['sonnet', 'surface'], ['signal', 'surface']] as const
+  expect(await contrastViolations(page, ok, sample), 'muted on sunken, fg on ok-soft: no violation').toEqual([])
+  for (const [fg, bg] of bad) {
+    const hit = await contrastViolations(page, [[fg, bg]], sample)
+    expect(hit, `${fg} text on ${bg} must fail color-contrast`).toContain('color-contrast')
+  }
+})
+
+// ADR-0023 checklist item 22: the app's own styles, not a planted sample, paint the tokens.json colours.
+test('a11y: D2 colours, body is tokens.json bg and the move surface is move, light and dark', async ({ page }) => {
+  iface = await startInterface()
+  await page.goto(iface.url)
+  await expect(sessionStatus(page)).toContainText('idle', LOAD)
+  for (const colorScheme of SCHEMES) {
+    await page.emulateMedia({ colorScheme })
+    await expectD2Colours(page, colorScheme)
+  }
 })
 
 test('a11y: a live run with the crews collapsed, then expanded', async ({ page }) => {

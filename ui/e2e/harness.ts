@@ -17,6 +17,8 @@ import { dirname, join, resolve } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import { createServer } from '../server/http/index.ts'
 import { createRegistry } from '../server/session/index.ts'
+// The D2 colour check (tokens.json bg on body, move on the move surface) each spec file runs once.
+export { expectD2Colours, d2Colour, type D2Theme } from '../contract/e2e/colours.ts'
 
 const here = import.meta.dirname
 export const uiDir = resolve(here, '..')
@@ -243,7 +245,7 @@ export interface Iface {
   /** Opens a question card (recommended first when the caller orders it so). Returns the request id. */
   question(qs: QuestionSpec[]): string
   /** Opens an approval card for a tool call. Returns the request id. */
-  permission(o: { toolName: string; title: string; summary: string; input?: Record<string, unknown> }): string
+  permission(o: { toolName: string; title: string; summary: string; input?: Record<string, unknown>; decisionReason?: string | null; blockedPath?: string | null }): string
   /** Opens a "reply needed" card. Returns the request id. */
   reply(o: { text: string; isError?: boolean; backgroundTasks?: number }): string
   /** The registry's view of the requests (what the page should show). */
@@ -268,7 +270,8 @@ export async function startInterface(opts: { state?: Record<string, unknown>; we
   const calls: Call[] = []
   const sseRequests: SseRequest[] = []
   let ended = false
-  let nTranscript = 0
+  // New entries continue after any transcript the initial state carries (a planted fixture).
+  let nTranscript = Math.max(0, ...((opts.state?.transcript as Array<{ n: number }> | undefined) ?? []).map((e) => e.n))
 
   // The StateSource handed to createServer delegates to the current instance, so restart() can swap it.
   const state = {
@@ -346,7 +349,7 @@ export async function startInterface(opts: { state?: Record<string, unknown>; we
       }))
       return registry.open({ kind: 'question', questions, answers: null }).id
     },
-    permission: (o) => registry.open({ kind: 'permission', toolName: o.toolName, title: o.title, summary: o.summary, input: o.input ?? {}, decisionReason: null, blockedPath: null, decision: null, message: null }).id,
+    permission: (o) => registry.open({ kind: 'permission', toolName: o.toolName, title: o.title, summary: o.summary, input: o.input ?? {}, decisionReason: o.decisionReason ?? null, blockedPath: o.blockedPath ?? null, decision: null, message: null }).id,
     reply: (o) => registry.open({ kind: 'reply', text: o.text, isError: o.isError === true, backgroundTasks: o.backgroundTasks ?? 0, decision: null, message: null }).id,
     requests: () => registry.list(),
     endSession() { ended = true },
@@ -368,6 +371,43 @@ export async function startInterface(opts: { state?: Record<string, unknown>; we
       await upstream.close()
       await new Promise<void>((ok) => { proxy.close(() => ok()); proxy.closeAllConnections() })
     },
+  }
+  return iface
+}
+
+// ---- planted fixtures (ADR-0023 section 6) ----------------------------------------------------------------
+
+/** The instant every time in ui/contract/fixtures/run/<state>/*.json is relative to. */
+export const FIXTURE_ANCHOR = '2026-11-02T12:00:00.000Z'
+export const fixturesDir = join(uiDir, 'contract', 'fixtures', 'run')
+const TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/
+
+/** A copy of `v` with every RFC 3339 UTC string moved by `shift` ms. */
+export function shiftTimes<T>(v: T, shift: number): T {
+  if (typeof v === 'string') return (TIME.test(v) ? new Date(Date.parse(v) + shift).toISOString() : v) as T
+  if (Array.isArray(v)) return v.map((x) => shiftTimes(x, shift)) as T
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shiftTimes(x, shift)])) as T
+  return v
+}
+
+/**
+ * Starts the fake interface on a fixture. `name` is a state slug (reads <state>/state.json) or `<state>/<file>`
+ * (such as live-counter/stale). The fixture's times move so that its anchor is `now`. Session fields go through
+ * setSession; open requests go through question(), permission() and reply(), oldest first, so the page can answer
+ * them. The fixture file is only read.
+ */
+export async function startFixture(name: string, opts: { now?: number; webDir?: string } = {}): Promise<Iface> {
+  const file = join(fixturesDir, name.includes('/') ? `${name}.json` : join(name, 'state.json'))
+  const raw = JSON.parse(readFileSync(file, 'utf8'))
+  const st: any = shiftTimes(raw, (opts.now ?? Date.now()) - Date.parse(FIXTURE_ANCHOR))
+  const { session, requests, ...rest } = st
+  const iface = await startInterface({ state: rest, webDir: opts.webDir })
+  iface.setSession(session)
+  for (const r of requests as any[]) {
+    if (r.status !== 'open') continue
+    if (r.kind === 'question') iface.question(r.questions)
+    else if (r.kind === 'permission') iface.permission({ toolName: r.toolName, title: r.title, summary: r.summary, input: r.input, decisionReason: r.decisionReason, blockedPath: r.blockedPath })
+    else iface.reply({ text: r.text, isError: r.isError, backgroundTasks: r.backgroundTasks })
   }
   return iface
 }

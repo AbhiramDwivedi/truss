@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { WITHIN, crewLine, rand, startReal, type Real } from './harness.ts'
+import { WITHIN, crewLine, expectD2Colours, rand, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -131,6 +131,16 @@ test('R-23: the retro lane comes after the Crews region in document order', asyn
   expect(pos & 4, `compareDocumentPosition ${pos}`).toBe(4)
   expect(pos & 8, 'the lane is not inside the Crews region').toBe(0)
   expect(pos & 16, 'the lane is not inside the Crews region').toBe(0)
+})
+
+// ADR-0023 checklist item 22: with the lane showing, the page paints the tokens.json colours.
+test('D2 colours: with the retro lane showing, body is tokens.json bg and the move surface is move', async ({ page }) => {
+  real = await startReal()
+  await page.goto(real.url)
+  await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
+  writeRetro(real, { extract: { status: 'running', at: stamp(), detail: null } })
+  await expect(lane(page)).toBeVisible(WITHIN)
+  await expectD2Colours(page, 'light')
 })
 
 test('R-23: axe finds no violations with the retro lane showing', async ({ page }) => {

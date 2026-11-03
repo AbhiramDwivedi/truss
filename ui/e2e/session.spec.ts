@@ -6,7 +6,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { startInterface, rand, rx, repoRoot, WITHIN, yourMove, goalBox, sendButton, sessionStatus, runStatus, type Iface, type QuestionSpec } from './harness.ts'
+import { expectD2Colours, startInterface, rand, rx, repoRoot, WITHIN, yourMove, goalBox, sendButton, sessionStatus, runStatus, type Iface, type QuestionSpec } from './harness.ts'
 import { questionCard, permissionCard } from '../server/session/index.ts'
 
 // ---- fixture inputs ------------------------------------------------------------------------------------
@@ -81,6 +81,17 @@ const wrapRequest = (card: Record<string, unknown>, over: Record<string, unknown
 })
 
 // ---- question cards ------------------------------------------------------------------------------------
+
+// ADR-0023 checklist item 22: with a question open, the card is the move surface and paints tokens.json move.
+test('D2 colours: with a question card open, body is tokens.json bg and the card is move', async ({ page }) => {
+  await withIface({}, async (iface) => {
+    await open(page, iface)
+    const specs = specOf(questionCard(ASK.input).questions)
+    iface.question(specs)
+    await expect(openCard(page, rx(specs[0]!.header), SUBMIT)).toBeVisible(WITHIN)
+    await expectD2Colours(page, 'light')
+  })
+})
 
 test.describe('R-3 question cards', () => {
   test('R-3: a brief question card shows each header, text and option in sent order, the recommended option first and marked in text', async ({ page }) => {
@@ -381,7 +392,9 @@ test.describe('goal and message box', () => {
       const typed = `Build the thing ${rand()}`
       const box = goalBox(page)
       await expect(box).toBeVisible()
-      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
+      // D2 (ADR-0023): the box lives in the Composer, the form named Message, not in Your move.
+      await expect(page.getByRole('form', { name: 'Message', exact: true }).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
+      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toHaveCount(0)
       const posted = page.waitForRequest((r) => r.url().endsWith('/api/message') && r.method() === 'POST')
       const t0 = Date.now()
       await box.fill(typed)
@@ -499,8 +512,12 @@ test.describe('header', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const line = `claude exited with code 1 ${rand()}`
+      // D2 (ADR-0023): a session error leaves the composer's typed text in place.
+      const typed = `unsent draft ${rand()}`
+      await goalBox(page).fill(typed)
       iface.setSession({ status: 'error', error: line })
       await expect(banner(page)).toContainText(/error/i, WITHIN)
+      await expect(goalBox(page)).toHaveValue(typed)
       await expect(sessionStatus(page)).toHaveText(`error: ${line}`, WITHIN)
       await expect(page.getByText(line).first()).toBeVisible(WITHIN)
     })

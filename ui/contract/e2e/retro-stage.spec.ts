@@ -4,6 +4,7 @@
 // applied, each within 2 s. Elements are found by role and accessible name; the per-run value
 // is the step's detail text, so no fixed string can pass by accident.
 import { test, expect } from '@playwright/test'
+import { expectD2Colours } from './colours.ts'
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -65,6 +66,14 @@ test.afterAll(() => {
   if (dir) rmSync(dir, { recursive: true })
 })
 
+// ADR-0023 checklist item 22: the page paints the tokens.json colours.
+test('D2 colours: the page with crew lanes paints body with tokens.json bg and the move surface with move', async ({ page }) => {
+  await page.goto(url)
+  const crews = page.getByRole('region', { name: 'Crews', exact: true })
+  await expect(crews.getByRole('button', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
+  await expectD2Colours(page, 'light')
+})
+
 test('R-23: the retro lane shows running and then fixes applied within 2 s without a reload', async ({ page }) => {
   await page.goto(url)
   // The work lanes are on the page first; the retro lane is not there while no retro state file exists.
@@ -75,8 +84,12 @@ test('R-23: the retro lane shows running and then fixes applied within 2 s witho
 
   // 1. the retro starts: extract done with a per-run detail, judges running.
   const found = `${run} findings kept`
-  writeRetro({ extract: { status: 'done', at: stamp(), detail: found }, judges: { status: 'running', at: stamp(), detail: null } })
+  const working = `${run} judges at work`
+  writeRetro({ extract: { status: 'done', at: stamp(), detail: found }, judges: { status: 'running', at: stamp(), detail: working } })
   await expect(lane).toBeVisible(WITHIN)
+  // D2 (ADR-0023): the lane follows the Crews region, and a running step shows its detail text.
+  await expect(lane.getByRole('listitem', { name: 'Judges: running' }).getByText(working)).toBeVisible(WITHIN)
+  expect(await crews.evaluate((a, b) => a.compareDocumentPosition(b as Node) & 4, await lane.elementHandle())).toBe(4)
   await expect(lane.getByRole('listitem', { name: 'Judges: running' })).toBeVisible(WITHIN)
   await expect(lane.getByRole('listitem', { name: 'Extract: done' })).toBeVisible(WITHIN)
   await expect(lane.getByRole('listitem', { name: 'Fixes applied: pending' })).toBeVisible(WITHIN)

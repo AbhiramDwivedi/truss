@@ -5,6 +5,7 @@
 // `waiting` status plus backgroundTasks.length. Elements are found by role and accessible name; texts carry
 // per-run random values.
 import { test, expect, type Page } from '@playwright/test'
+import { expectD2Colours } from './colours.ts'
 import { randomBytes } from 'node:crypto'
 import { resolve } from 'node:path'
 import { createServer } from '../../server/http/index.ts'
@@ -136,6 +137,14 @@ test('R-18: after a keyboard answer to a question card, focus is on the next act
     })
     expect(active.tag, 'focus fell to the page body after the answer').not.toBe('BODY')
     expect(active.ok, `focus is on a visible, enabled, actionable element (got ${active.tag})`).toBe(true)
+  })
+})
+
+// ADR-0023 checklist item 22: the page paints the tokens.json colours (read by ./colours.ts).
+test('D2 colours: the page paints body with tokens.json bg and the move surface with move', async ({ page }) => {
+  await withRig(baseState(), async (rig) => {
+    await open(page, rig)
+    await expectD2Colours(page, 'light')
   })
 })
 

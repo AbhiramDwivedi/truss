@@ -1,0 +1,68 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": { "path": "/work/demo/.git/truss/run-1", "exists": true },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-artifacts",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": { "name": "truss", "version": "0.17.0", "path": "/work/demo/plugins/truss", "source": null },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    { "n": 1, "role": "user", "text": "Add per-user quotas to the API.", "ts": "2026-11-02T11:00:00.000Z", "id": "msg-1", "intent": "goal" },
+    { "n": 2, "role": "user", "text": "Please also make the follow-up list handle very long messages: the row should truncate the text with an ellipsis, keep the whole text in the title attribute and on focus, and never push the page wider than the phone width, even when a single unbroken run of words keeps going and going on. Thank you.", "ts": "2026-11-02T11:30:00.000Z", "id": "msg-2", "intent": "add" },
+    { "n": 3, "role": "assistant", "text": "The first crew has merged; its plan and screenshots are listed under deliverables.", "ts": "2026-11-02T11:58:00.000Z", "id": null, "intent": null }
+  ],
+  "run": {
+    "goal": "Add per-user quotas to the API.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:05:00.000Z",
+    "crews": [
+      {
+        "slug": "quota-store", "stage": 0, "verdict": "change", "status": "merged", "goal": null, "owns": ["server/quota/**"],
+        "foreman": { "name": "quota-store", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "reported", "detail": "DONE", "ts": "2026-11-02T11:40:00.000Z" },
+        "members": [],
+        "latest": { "ts": "2026-11-02T11:40:00.000Z", "agent": "quota-store", "event": "report", "text": "quota-store reported DONE" },
+        "estAgents": 5, "stuck": null, "qc": { "verdict": "PASS", "file": "reports/quota-store/quota-store-qc-1.md" }
+      },
+      {
+        "slug": "quota-ui", "stage": 1, "verdict": "change", "status": "running", "goal": null, "owns": ["ui/quota/**"],
+        "foreman": { "name": "quota-ui", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "spawned", "detail": null, "ts": "2026-11-02T11:46:00.000Z" },
+        "members": [],
+        "latest": { "ts": "2026-11-02T11:46:00.000Z", "agent": "quota-ui", "event": "spawn", "text": "quota-ui spawned" },
+        "estAgents": 3, "stuck": null, "qc": null
+      },
+      {
+        "slug": "crew-with-a-very-long-slug-that-must-truncate-but-keep-its-full-name-for-readers", "stage": 2, "verdict": "change", "status": "planned", "goal": null, "owns": ["docs/**"],
+        "foreman": null, "members": [], "latest": null, "estAgents": 2, "stuck": null, "qc": null
+      }
+    ],
+    "goals": [
+      { "id": "run", "goal": "Add per-user quotas to the API.", "approval": "client", "approvedAt": "2026-11-02T11:05:00.000Z" }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [
+    { "file": "0001-quota-store.md", "title": "ADR-0001: Quota store", "status": "Accepted" }
+  ],
+  "design": {
+    "planMd": "# Plan\n\nThree crews in three stages.\n",
+    "architecture": { "path": "docs/architecture.md", "markdown": "# Architecture\n\nThe quota store sits behind the HTTP layer.\n" },
+    "images": [
+      { "ref": "truss-quota-store", "path": "docs/screens/quota-store-before.png" },
+      { "ref": "truss-quota-store", "path": "docs/screens/quota-store-after.png" },
+      { "ref": "truss-quota-ui", "path": "docs/screens/quota-ui.png" },
+      { "ref": "truss-crew-with-a-very-long-slug-that-must-truncate-but-keep-its-full-name-for-readers", "path": "docs/screens/long-slug-crew.png" }
+    ]
+  },
+  "notices": []
+}
