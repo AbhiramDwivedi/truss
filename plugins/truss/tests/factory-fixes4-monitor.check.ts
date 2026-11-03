@@ -22,8 +22,8 @@ mt('control 1: the down rule still names twice minFreeMB and load1 above cpus', 
   assert.match(text, /Go down one when[^\n]*twice[^\n]*minFreeMB[^\n]*load1[^\n]*above[^\n]*cpus/i)
 })
 
-mt('control 2: the up rule still names four times minFreeMB and half of cpus', () => {
-  assert.match(text, /Go up one when[^\n]*four times[^\n]*minFreeMB[^\n]*half of[^\n]*cpus/i)
+mt('control 2: the up rule still names three times minFreeMB and half of cpus', () => {
+  assert.match(text, /Go up one when[^\n]*three times[^\n]*minFreeMB[^\n]*half of[^\n]*cpus/i)
 })
 
 mt('control 3: step 3 still runs factory.ts admit', () => {
