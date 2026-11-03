@@ -8,7 +8,7 @@ truss fixes the plugin bugs its own runs logged, items 1 to 21 of [ADR-0019](doc
 
 ### Install and listing
 
-- **subagent-limits `^0.3.2`.** `plugin.json` now asks for subagent-limits `^0.3.2` (was `^0.3.1`); kit `^0.3.1` and worktrees `^0.8.4` are unchanged. subagent-limits 0.3.2 measures a request before the tool calls it streams, so an agent that calls tools only mid-stream is now nudged at `nudgeAtK` (item 15).
+- **subagent-limits `^0.3.2`.** `plugin.json` now asks for subagent-limits `^0.3.2` (was `^0.3.1`); kit `^0.3.1` and worktrees `^0.8.4` are unchanged, and `claude plugin install truss@truss` still installs all three with truss. subagent-limits 0.3.2 measures a request before the tool calls it streams, so an agent that calls tools only mid-stream is now nudged at `nudgeAtK` (item 15).
 - **`claude plugin validate plugins/truss` is clean.** It reports no `(CODE)` warning. The README's fetch-log example no longer holds a URL with a user name and password, which validate dropped from the listing preview (LISTING_URL_SCHEME), and the plugin has an icon (item 14).
 - **The plugin has an icon.** `.claude-plugin/icon.png` is a 1024 x 1024 PNG: an amber Warren truss on a navy rounded square. It may become the permanent listing icon the first time the plugin is saved or submitted in the developer portal.
 - **`tests/plugin-validate.check.ts` keeps validate clean.** It runs `claude plugin validate` on the plugin root it finds from its own module path, and fails on any `(CODE)` warning or a missing, non-square or out-of-range icon.
