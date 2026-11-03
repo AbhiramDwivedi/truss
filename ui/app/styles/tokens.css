@@ -1,0 +1,117 @@
+/* The D2 tokens, from ui/contract/redesign/tokens.json (ADR-0023 section 2). Plain blocks, not @theme,
+   so Tailwind never tree-shakes a token. app.css maps them to utilities. */
+
+:root {
+  color-scheme: light;
+
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --sunken: #F1F5F9;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --fg: #0F172A;
+  --muted: #475569;
+  --subtle: #64748B;
+  --brand: #2563EB;
+  --brand-strong: #1D4ED8;
+  --brand-soft: #EFF6FF;
+  --brand-line: #BFDBFE;
+  --move: #1D4ED8;
+  --move-fg: #FFFFFF;
+  --move-muted: #C7D7FE;
+  --move-line: #4F75E8;
+  --signal: #F59E0B;
+  --signal-soft: #FEF3C7;
+  --signal-text: #92400E;
+  --ok: #059669;
+  --ok-soft: #ECFDF5;
+  --fail: #E11D48;
+  --fail-soft: #FFF1F2;
+  --fail-text: #BE123C;
+  --opus: #7C3AED;
+  --sonnet: #0284C7;
+
+  --e1: 0 1px 2px rgb(15 23 42 / .05);
+  --e2: 0 1px 2px rgb(15 23 42 / .04), 0 12px 28px -16px rgb(15 23 42 / .22);
+  --e-hero: 0 2px 6px rgb(29 78 216 / .22), 0 28px 56px -28px rgb(29 78 216 / .65);
+
+  --radius-chip: 6px;
+  --radius-ctl: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-hero: 20px;
+
+  --text-micro: 11px;
+  --text-meta: 12px;
+  --text-ui: 13px;
+  --text-body: 14px;
+  --text-lead: 16px;
+  --text-title: 18px;
+  --text-h1: 22px;
+  --text-ask: 24px;
+
+  /* shadcn's names, per tokens.json "shadcn". --muted and --border are D2 keys of the same name, so
+     they already hold their hex above; a var() of themselves would be circular. */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+  --primary: var(--move);
+  --primary-foreground: var(--move-fg);
+  --secondary: var(--sunken);
+  --secondary-foreground: var(--fg);
+  --muted-foreground: var(--muted);
+  --accent: var(--brand-soft);
+  --accent-foreground: var(--brand-strong);
+  --destructive: var(--fail);
+  --input: var(--border-strong);
+  --ring: var(--brand);
+
+  /* The focus outline colour. Not a tokens key: brand on move is 1.30:1 (ADR-0023:128, :141). */
+  --focus: var(--brand);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: #0A0F1C;
+  --surface: #0F172A;
+  --sunken: #0B1222;
+  --border: #1E293B;
+  --border-strong: #334155;
+  --fg: #E2E8F0;
+  --muted: #A3B1C6;
+  --subtle: #7D8BA1;
+  --brand: #3B82F6;
+  --brand-strong: #60A5FA;
+  --brand-soft: #0F1E3D;
+  --brand-line: #1E3A8A;
+  --move: #1D4ED8;
+  --move-fg: #FFFFFF;
+  --move-muted: #C7D7FE;
+  --move-line: #4F75E8;
+  --signal: #FBBF24;
+  --signal-soft: #33260A;
+  --signal-text: #FCD34D;
+  --ok: #34D399;
+  --ok-soft: #06281F;
+  --fail: #FB7185;
+  --fail-soft: #2A0E17;
+  --fail-text: #FDA4AF;
+  --opus: #A78BFA;
+  --sonnet: #38BDF8;
+
+  --e1: 0 0 0 1px rgb(255 255 255 / .02);
+  --e2: 0 16px 32px -18px rgb(0 0 0 / .7);
+  --e-hero: 0 0 0 1px rgb(96 165 250 / .35), 0 30px 70px -30px rgb(59 130 246 / .75);
+}
+
+[data-surface="move"] {
+  --focus: var(--move-fg);
+}
+
+[aria-invalid="true"] {
+  --focus: var(--fail);
+}

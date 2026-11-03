@@ -24,6 +24,22 @@ npm --prefix ui ci
 
 This installs the exact versions in `ui/package-lock.json` into `ui/node_modules`.
 
+## Build the page
+
+```
+npm --prefix ui run build
+```
+
+The page's source is in `ui/app/`: React 19, TypeScript, Tailwind v4 and shadcn primitives restyled to `ui/contract/redesign/tokens.json`, with Geist self-hosted ([ADR-0018](../plugins/truss/docs/adr/0018-ui-redesign.md), [ADR-0023](../plugins/truss/docs/adr/0023-factory-floor-ui.md)). The build typechecks it, then Vite writes it to `ui/web/`, which the server serves. `ui/web/` is build output only and git ignores it, so build again after every pull or change under `ui/app/`.
+
+The whole start path, from the repo root:
+
+```
+npm --prefix ui ci
+npm --prefix ui run build
+npm --prefix ui start
+```
+
 ## Start the UI
 
 1. Start the server, and point it at the repo you want Truss to work in. Run this from the repo root:
