@@ -7,7 +7,17 @@ export const meta = {
 // agent type, model, effort and isolation from the roles table and throws before the call when the table is bad.
 
 // ADR-0024 item 29: the Workflow gate expands args.trussFile into args.truss; without an object there, stop before any agent call
-const F = args && args.truss
+// ADR-0026 item 51e: args may also be a JSON string holding that object; both give the same args.truss
+const ARGS = (() => {
+  if (typeof args !== 'string') return args
+  try {
+    const v = JSON.parse(args)
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+  } catch {
+    return null
+  }
+})()
+const F = ARGS && ARGS.truss
 if (!F || typeof F !== 'object' || Array.isArray(F)) throw new Error('args.truss is missing: the Workflow gate expands args.trussFile into args.truss; pass args.truss inline when the gate did not run')
 const ROLE_EFFORTS = ['low', 'medium']
 const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
@@ -324,6 +334,7 @@ const acceptanceOf = (e) => (typeof e.acceptanceTest === 'string' ? e.acceptance
 
 // ADR-0019 item 12: the answers a member gets. An answer at a task name goes to that task only; one at any other name
 // (a step such as red, split, green or qc, or a task the plan no longer has) goes to every member. name: null for a fix member.
+// ADR-0026 item 48: an answer at a done task's name re-runs that task (runMembers), and still reaches that task only.
 // ADR-0024 item 25: an answer at a UX step reaches that step, the planner and QC, never a member.
 const UX_STEPS = ['ux-direction', 'ux-review']
 const answersFor = (crew, name) => {
@@ -331,9 +342,10 @@ const answersFor = (crew, name) => {
   return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) && ((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
 }
 
-// the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1)
+// the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1).
+// ADR-0026 item 51 4: the Head line names crew.head once the run has moved it, entry.head before that.
 const testsCheckExtra = (crew, ...lines) => {
-  const head = typeof crew.e.head === 'string' && crew.e.head ? [`Head: ${crew.e.head}`] : []
+  const head = typeof crew.e.head === 'string' && crew.e.head ? [`Head: ${typeof crew.head === 'string' && crew.head ? crew.head : crew.e.head}`] : []
   const all = [...lines.filter(Boolean), ...head]
   return all.length ? all.join('\n') : null
 }
@@ -375,7 +387,7 @@ function memberPrompt(crew, role, parts) {
     '',
     'Members run plain single `node --test <files>` commands; the stage green step runs the acceptance test.',
     '',
-    ...memberHeavyLines(crew),
+    ...(parts.inCrewWorktree ? memberHeavyLines(crew).slice(0, -1) : memberHeavyLines(crew)),
     '',
     'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.',
     '',
@@ -386,7 +398,7 @@ function memberPrompt(crew, role, parts) {
     "They go in the message's last block, with no blank line between them or before any Co-Authored-By line, or git does not read them. After each commit, run `git log -1 --format=%B` and check that its last block holds the Truss-Crew and Truss-Role lines; if it does not, fix the message with git commit --amend. A merge refuses a commit whose Truss-Crew or Truss-Role git cannot read.",
     '',
     'You have no Agent tool; do the work yourself.',
-    'Commit on your branch and report the branch and commit. Put your proof in the proof field. marker is DONE when finished, CHECKPOINT when you must stop early (put a handoff note in text), QUESTION, BLOCKED or PROPOSAL when you cannot go on.',
+    `${parts.inCrewWorktree ? `Work and commit on the crew branch ${crew.e.branch} in the crew worktree ${crew.e.worktree}` : 'Commit on your branch'} and report the branch and commit. Put your proof in the proof field. marker is DONE when finished, CHECKPOINT when you must stop early (put a handoff note in text), QUESTION, BLOCKED or PROPOSAL when you cannot go on.`,
   )
   return lines.join('\n')
 }
@@ -537,8 +549,10 @@ async function runTask(crew, task) {
 }
 
 // a task starts only when every task in its after list is integrated; after a stop no new task starts
+// ADR-0026 item 48: a done task an answer's at names runs again with that answer; its done dependants stay done
 async function runMembers(crew, tasks) {
-  const doneNames = new Set(crew.e.done || [])
+  const answered = new Set((crew.e.answers || []).map((a) => a.at))
+  const doneNames = new Set((crew.e.done || []).filter((n) => !answered.has(n)))
   const byName = {}
   for (const t of tasks) byName[t.name] = t
   const started = {}
@@ -617,7 +631,8 @@ function backstopPrompt(crew, what, lines) {
     `Truss-Role: ${TRAILER_ROLE.tester}`,
     'and the rest keep their original Truss-Crew and Truss-Role lines; never give them Truss-Role: resolver.',
   ]
-  return memberPrompt(crew, 'resolver', { start: [], body, trailers })
+  // ADR-0026 item 51 2: inCrewWorktree drops the own-worktree proof line and says to commit on the crew branch in the crew worktree
+  return memberPrompt(crew, 'resolver', { start: [], body, trailers, inCrewWorktree: true })
 }
 
 // bug 28: after a builder fix, the tests check testsGuard runs. Touched tester files get a resolver that moves each such
@@ -633,6 +648,8 @@ async function testsBackstop(crew, what) {
   const at = crew.step
   const label = `${what}, builder commits on tester files`
   const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at })
+  // ADR-0026 item 51 3: a resolver's QUESTION, PROPOSAL or CHECKPOINT stops the crew with that tag, as runMember does
+  if (report && ['QUESTION', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker)) throw new Stop(report.marker, report.text, at)
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish the tests backstop (${label}): ${report ? report.text : 'no report'}`, at)
   crew.proofs.push(`tests backstop (${what}): ${report.proof}`)
   await check(2)
@@ -1076,7 +1093,8 @@ async function uxDirection(crew) {
 
 // i30: a page, component or style is a literal suffix match on an owns entry; a glob such as ui/e2e/** is not one
 const UI_SUFFIXES = ['.tsx', '.jsx', '.vue', '.svelte', '.css', '.html']
-const ownsUiFile = (owns) => (owns || []).some((f) => UI_SUFFIXES.some((s) => String(f).endsWith(s)))
+// ADR-0026 item 51 1: an owns entry exactly ui/** also counts as owning UI; other subtree globs stay files
+const ownsUiFile = (owns) => (owns || []).some((f) => String(f) === 'ui/**' || UI_SUFFIXES.some((s) => String(f).endsWith(s)))
 
 // i30/i33: the review mode and how the reviewer takes its own screenshots
 function reviewModeLines(e) {

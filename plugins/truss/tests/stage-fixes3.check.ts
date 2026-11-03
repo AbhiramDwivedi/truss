@@ -455,31 +455,34 @@ const H = 'f0'.repeat(20)
 const headLines = (p) => p.split('\n').filter((l) => l.startsWith('Head: '))
 
 t('i31 1: the tests guard prompt carries "Head: <entry.head>" and no other runner prompt does', async () => {
-  const r = await runStage([OLD('a', { head: H })], { labels: base('a') })
+  const r = await runStage([OLD('a', { head: HEAD })], { labels: base('a') })
   passed(r)
   const guards = runnerPrompts(r, 'tests-check')
   assert.ok(guards.length > 0, 'no tests-check ran')
-  for (const p of guards) assert.deepEqual(headLines(p), [`Head: ${H}`])
-  for (const cmd of ['owns-check', 'integrate', 'sync']) for (const p of runnerPrompts(r, cmd)) hasnt(p, `Head: ${H}`)
+  for (const p of guards) assert.deepEqual(headLines(p), [`Head: ${HEAD}`])
+  for (const cmd of ['owns-check', 'integrate', 'sync']) for (const p of runnerPrompts(r, cmd)) hasnt(p, `Head: ${HEAD}`)
 })
 t('i31 2: the Head line follows the Attempt line when the crew has an answer at tests', async () => {
-  const r = await runStage([answersEntry([{ at: 'tests', text: 'BRANCH-REWRITTEN' }], { head: H })], { labels: base('a') })
+  const r = await runStage([answersEntry([{ at: 'tests', text: 'BRANCH-REWRITTEN' }], { head: HEAD })], { labels: base('a') })
   passed(r)
   const lines = runnerPrompts(r, 'tests-check')[0].split('\n')
   const a = lines.indexOf('Attempt: 1')
-  const h = lines.indexOf(`Head: ${H}`)
+  const h = lines.indexOf(`Head: ${HEAD}`)
   assert.ok(a >= 0, 'no Attempt: 1 line')
   assert.ok(h > a, `Head line at ${h}, Attempt line at ${a}`)
 })
 t('i31 3: both backstop runs carry the Head line, and a changed head changes the prompt', async () => {
   const seen = []
-  const r = await runStage([{ ...backstopCrew(), head: H }], { labels: backstopLabels(), runner: ({ cmd, prompt }) => {
+  const r = await runStage([{ ...backstopCrew(), head: HEAD }], { labels: backstopLabels(), runner: ({ cmd, prompt }) => {
     if (cmd === 'tests-check' && /Backstop: /.test(prompt)) seen.push(prompt)
     return backstopRunner()({ cmd, prompt })
   } })
   assert.equal(seen.length, 2, `backstop runs: ${seen.length}`)
-  for (const p of seen) assert.deepEqual(headLines(p), [`Head: ${H}`])
-  const r2 = await runStage([{ ...backstopCrew(), head: 'e0'.repeat(20) }], { labels: backstopLabels(), runner: backstopRunner() })
+  for (const p of seen) assert.deepEqual(headLines(p), [`Head: ${HEAD}`])
+  // the green record's head equals entry.head in both runs, so the title holds on the entry head and on the run's head alike
+  const E0 = 'e0'.repeat(20)
+  const greenE0 = ({ key }) => (key === 'check:green' ? rj({ ok: true, head: E0 }) : undefined)
+  const r2 = await runStage([{ ...backstopCrew(), head: E0 }], { labels: mrLabels(qcFail('BFIND in src/a.ts'), { 'a-qc-2': PASS.replace(HEAD, E0), 'a-resolver': done('truss/a', 'PROOF-RESOLVER') }), runner: (x) => backstopRunner()(x) ?? greenE0(x) })
   const first = (x) => runnerPrompts(x, 'tests-check').find((p) => p.includes('Backstop: 1.1'))
   assert.notEqual(first(r), first(r2))
 })
