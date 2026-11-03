@@ -36,9 +36,12 @@ export function FollowUpRow({ text, intent, at, queued }: FollowUpRowProps) {
         </span>
       </div>
       {queued ? (
-        <span className="inline-flex h-6 shrink-0 items-center rounded-chip bg-signal-soft px-2.5 text-meta font-medium text-signal-text">
-          Queued
-        </span>
+        <>
+          <span className="inline-flex h-6 shrink-0 items-center rounded-chip bg-signal-soft px-2.5 text-meta font-medium text-signal-text">
+            Queued
+          </span>
+          {time && <span className="shrink-0 font-mono text-meta text-muted tabular-nums">{time}</span>}
+        </>
       ) : (
         <Badge tone="neutral" className="shrink-0 font-mono">
           {time ? `Sent ${time}` : 'Sent'}

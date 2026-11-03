@@ -22,9 +22,9 @@ export function RetroRail({ state }: RetroRailProps) {
   return (
     <section aria-label="Retro stage" className="min-w-0 rounded-panel border border-border bg-surface p-4 shadow-e1 sm:p-5">
       <h2 className="text-lead font-semibold text-fg">Retro stage</h2>
-      <ol className="mt-3 flex min-w-0 flex-col gap-2 lg:flex-row">
-        {STEPS.map((s) => (
-          <RetroStep key={s.key} label={s.label} step={retro.steps[s.key]} />
+      <ol className="mt-3 flex min-w-0 flex-col gap-3 lg:flex-row">
+        {STEPS.map((s, i) => (
+          <RetroStep key={s.key} label={s.label} step={retro.steps[s.key]} last={i === STEPS.length - 1} />
         ))}
       </ol>
     </section>

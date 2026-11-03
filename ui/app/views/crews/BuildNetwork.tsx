@@ -41,7 +41,10 @@ function stagesOf(crews: Crew[]): Stage[] {
       phase = 'merged'
       const starts = live.map(crewStart).filter((x): x is number => x !== null)
       const ends = live.map(crewEnd).filter((x): x is number => x !== null)
-      if (starts.length && ends.length) took = short(Math.max(...ends) - Math.min(...starts))
+      const span = starts.length && ends.length ? Math.max(...ends) - Math.min(...starts) : 0
+      // Under a minute means the stamps cannot tell the span (a merged crew's latest stamp is often its
+      // start too), so the stage says only "merged" rather than a false "merged in 0s".
+      if (span >= 60_000) took = short(span)
     } else if (list.some((c) => c.status === 'running')) {
       phase = 'running'
       sawRunning = true
