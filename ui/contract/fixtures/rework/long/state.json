@@ -76,7 +76,7 @@
           "ts": "2026-11-02T11:58:20.000Z",
           "agentId": "a1b2c3d4e5f60040",
           "purpose": "Leads one truss crew.",
-          "task": "Rework the network view so each agent card shows its role, model, purpose and current task, with a three step progress and a disclosure for the full task text, and keep the wires drawn for every crew. Rework the network view so each agent card shows its role, model, purpose and current task, with a "
+          "task": "Split the network rework into builder tasks and check each against the spec."
         },
         "members": [
           {
@@ -89,7 +89,7 @@
             "ts": "2026-11-02T11:59:10.000Z",
             "agentId": "a1b2c3d4e5f60041",
             "purpose": null,
-            "task": "Rework the network view so each agent card shows its role, model, purpose and current task, with a three step progress and a disclosure for the full task text, and keep the wires drawn for every crew. Rework the network view so each agent card shows its role, model, purpose and current task, with a "
+            "task": "Rework the network view so each agent card shows its role, model, purpose and current task, with a three step progress and a disclosure for the full task text, and keep the wires drawn for every crew. Rework the network view so each agent card shows its role, model, purpose and current task, with a."
           }
         ],
         "latest": {
