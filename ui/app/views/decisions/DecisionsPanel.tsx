@@ -1,10 +1,8 @@
 // The Decisions and ADRs tab's body (ADR-0018 section 10, ADR-0023 section 4 "decisions"): a Decisions region
 // with an h3 per `## Run` heading and one item per decision line in file order, and an ADRs region with each
-// title and its status in words. No "Plan revision" text (gap c).
-import { FileText } from 'lucide-react'
-import { Badge, type BadgeTone } from '../../components/ui/badge.tsx'
+// card and its status in words (AdrSection). No "Plan revision" text (gap c).
 import type { Decision, RunState } from '../../store/types.ts'
-import { cap } from '../rail/format.ts'
+import { AdrSection } from './AdrSection.tsx'
 
 export interface DecisionsPanelProps {
   state: RunState | null
@@ -28,14 +26,6 @@ function runTitle(run: string | null): { title: string; when: string } {
   if (run == null) return { title: 'Before the first run', when: '' }
   const [when, ...rest] = run.split(' | ')
   return rest.length ? { title: `Run: ${rest.join(' | ')}`, when: when ?? '' } : { title: `Run ${run}`, when: '' }
-}
-
-function statusTone(status: string | null): BadgeTone {
-  const s = (status ?? '').toLowerCase()
-  if (s.startsWith('accepted')) return 'ok'
-  if (s.startsWith('proposed')) return 'signal'
-  if (s.startsWith('rejected')) return 'fail'
-  return 'neutral'
 }
 
 function DecisionLine({ d }: { d: Decision }) {
@@ -63,7 +53,7 @@ export function DecisionsPanel({ state }: DecisionsPanelProps) {
   const decisions = state?.decisions ?? []
   const adrs = state?.adrs ?? []
   return (
-    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
       <section aria-labelledby="decisions-h" className="min-w-0 rounded-card border border-border bg-surface p-4 shadow-e1">
         <h2 id="decisions-h" className="mb-3 text-body font-semibold text-fg">
           Decisions
@@ -99,22 +89,7 @@ export function DecisionsPanel({ state }: DecisionsPanelProps) {
         {adrs.length === 0 ? (
           <p className="text-ui text-muted">No ADR files found.</p>
         ) : (
-          <ul aria-label="ADRs" className="space-y-2">
-            {adrs.map((a) => (
-              <li key={a.file} className="flex min-w-0 items-start gap-2.5 rounded-ctl border border-border px-3 py-2">
-                <FileText aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-ui font-semibold break-words text-fg">{a.title}</span>
-                  <span className="block truncate font-mono text-micro text-muted" title={a.file}>
-                    {a.file}
-                  </span>
-                </span>
-                <Badge tone={statusTone(a.status)} size="sm">
-                  {a.status ? cap(a.status) : 'Status not stated'}
-                </Badge>
-              </li>
-            ))}
-          </ul>
+          <AdrSection adrs={adrs} />
         )}
       </section>
     </div>
