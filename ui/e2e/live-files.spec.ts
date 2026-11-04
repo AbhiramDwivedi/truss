@@ -62,7 +62,7 @@ test('R-4: one status line per crew shows stage, status, latest activity and QC 
   // R-15: a new event changes the latest activity and the member's state within 2 s.
   real.appendEvent({ v: 1, ts: new Date().toISOString(), event: 'stall', crew: 'quotas', agent: memberName, kind: 'agent', minutes: 15 })
   await expect(line).toContainText(new RegExp(`${memberName}.*stalled 15 min|stalled 15 min.*${memberName}`, 'is'), WITHIN) // ADR-0028 section 10: no expand step
-  await expect(member(page, 'quotas', memberName)).toContainText(/stalled/, WITHIN)
+  await expect(member(page, 'quotas', memberName)).toContainText(/stalled/i, WITHIN)
 })
 
 test('R-15, R-4: a QC file with VERDICT: FAIL written to reports/<crew>/<crew>-qc.md shows in the crew line within 2 s', async ({ page }) => {
@@ -191,7 +191,9 @@ test('R-14, R-15: a plan of 12 crews with 100 agents renders, opens, and a chang
   // A change in the busy run still shows within 2 s.
   real.writeQc('lane-05', 'FAIL')
   await expect(crewLine(page, 'lane-05')).toContainText(/FAIL/, WITHIN)
+  // The rail timeline lists ADRs and events; a decisions.md line only raises the "N decisions" count (ADR-0028 section 3).
   const decision = `busy-${run}-decision`
+  const before = Number((await page.getByText(/\d+ decisions?$/).first().innerText()).match(/(\d+) decisions?$/)?.[1] ?? 0)
   real.appendDecision(`- 11:00 | ${decision} | because ${run} | checker: none | followed`)
-  await expect(adrTimeline(page).getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
+  await expect(page.getByText(new RegExp(`\\b${before + 1} decisions?$`)).first()).toBeVisible(WITHIN)
 })
