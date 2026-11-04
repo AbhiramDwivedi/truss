@@ -1,4 +1,4 @@
-// Spec-first checks for the library views: RunContext, Timeline, DecisionsPanel, Deliverables, Transcript.
+// Spec-first checks for the rail views: RunContext, Timeline, DecisionsPanel, Deliverables.
 // Pins roles, names and copy from ADR-0023 section 4 and ADR-0018 section 10. Interactions are the e2e specs' job.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -282,34 +282,4 @@ test('Deliverables: the desktop preview is an aside with Open in Design tab and 
   assert.equal(find(pv[0]!, 'button', 'Copy path').length, 1)
   assert.equal(find(v, 'dialog').length + all(v, (n) => n.a.role === 'dialog').length, 0, 'no dialog until an item is opened')
   nothingBanned(v)
-})
-
-// ---- Transcript ------------------------------------------------------------------------------------------
-test('Transcript: a log named Transcript with an h2 and every entry in order', async () => {
-  const s = fx('follow-up/state')
-  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
-  const log = find(v, 'log', 'Transcript')
-  assert.equal(log.length, 1)
-  assert.equal(find(v, 'heading', 'Transcript').filter((h) => h.tag === 'h2').length, 1)
-  const body = tidy(text(log[0]!))
-  let at = -1
-  for (const e of s.transcript) {
-    const i = body.indexOf(tidy(e.text), at + 1)
-    assert.ok(i > at, `entry ${e.n} follows the one before it`)
-    at = i
-  }
-  nothingBanned(v)
-})
-test('Transcript: an error entry uses fail-soft and the word Error', async () => {
-  const s = fx('follow-up/state')
-  s.transcript[1].role = 'error'
-  s.transcript[1].text = 'The model call failed.'
-  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
-  const hit = all(v, (n) => cls(n, 'bg-fail-soft') && tidy(text(n)).includes('The model call failed.'))
-  assert.ok(hit.length > 0, 'the error entry sits on fail-soft')
-  assert.match(tidy(text(hit[hit.length - 1]!)), /Error/)
-})
-test('Transcript: no state renders without an entry', async () => {
-  const v = await mount('transcript/Transcript', 'Transcript', { state: null, now: NOW })
-  assert.equal(find(v, 'log', 'Transcript').length, 1)
 })
