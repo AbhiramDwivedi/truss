@@ -48,7 +48,7 @@ export function StageGroup({ label, phase, took, crews, now, handoffs, first, la
         </p>
         <ul aria-label={label} className="grid min-w-0 grid-cols-1 gap-x-6 @xl:grid-cols-2 @4xl:grid-cols-3">
           {crews.map((c) => (
-            <CrewCard key={c.slug} crew={c} now={now} handoff={handoffs.get(c.slug) ?? null} />
+            <CrewCard key={c.slug} crew={c} now={now} handoff={handoffs.get(c.slug) ?? null} trunkAnimated={trunkAnimated} trunkLit={trunkLit} />
           ))}
         </ul>
       </div>

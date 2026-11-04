@@ -10,7 +10,7 @@ import { StatusBadge } from '../status/StatusBadge.tsx'
 import { agentStatus, crewStatus } from '../status/status.ts'
 import { AgentCard } from './AgentCard.tsx'
 import { StuckCard } from './StuckCard.tsx'
-import { LIT_MS, Wire } from './Wire.tsx'
+import { GutterLink, LIT_MS, Wire } from './Wire.tsx'
 import { detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
 
 export interface CrewCardProps {
@@ -18,6 +18,9 @@ export interface CrewCardProps {
   now: number
   /** The latest hand-off from the PM to this crew, whatever its age. */
   handoff?: FlowEntry | null
+  /** Trunk paint for the gutter segment that joins this card's grid line to the next. */
+  trunkAnimated?: boolean
+  trunkLit?: boolean
 }
 
 /** Agent cards shown before "Show n more agents". */
@@ -57,7 +60,7 @@ function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React
   )
 }
 
-export function CrewCard({ crew, now, handoff = null }: CrewCardProps) {
+export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false }: CrewCardProps) {
   const slugId = React.useId()
   const listId = `${slugId}-agents`
   const [expanded, setExpanded] = React.useState(false)
@@ -78,6 +81,7 @@ export function CrewCard({ crew, now, handoff = null }: CrewCardProps) {
 
   return (
     <li id={`crew-${crew.slug}`} className="relative min-w-0 list-none pt-6">
+      <GutterLink animated={trunkAnimated} lit={trunkLit} />
       <Wire crew={crew.slug} status={status} recent={isRecent(handoff, now)} />
       <article
         aria-labelledby={slugId}

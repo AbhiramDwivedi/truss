@@ -57,6 +57,19 @@ export interface TrunkProps {
   className?: string
 }
 
+// Which cards carry a gutter segment: the first card of every grid line except the last line, per container
+// step. The last line's trunk is the stage header's own segment. CSS only, so no layout reads.
+const GUTTER_SHOW = [
+  '@max-xl:[li:not(:last-child)>&]:block',
+  '@xl:@max-4xl:[li:nth-child(2n+1):not(:nth-last-child(-n+2))>&]:block',
+  '@4xl:[li:nth-child(3n+1):not(:nth-last-child(-n+3))>&]:block',
+].join(' ')
+
+/** The trunk between one grid line's first card and the next line's bus, in a stage that wraps. */
+export function GutterLink({ animated, lit }: Omit<TrunkProps, 'className'>) {
+  return <Trunk animated={animated} lit={lit} className={cn('top-0 -left-6 hidden h-[calc(100%+1px)]', GUTTER_SHOW)} />
+}
+
 /** One segment of the trunk, at gutter x = 1. The caller positions it. */
 export function Trunk({ animated, lit, className }: TrunkProps) {
   return (
