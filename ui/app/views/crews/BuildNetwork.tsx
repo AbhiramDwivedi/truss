@@ -1,12 +1,14 @@
-// The build network (D2 direction-d2.html:600-760; ADR-0018 section 10; ADR-0023 section 4): the region
-// named Crews, a Claude node, then one group per stage in order, side by side on wide screens and
-// stacked below. Busy with no state; No plan yet. with no crews.
-import { Workflow } from 'lucide-react'
-import type { Crew, RunState } from '../../store/types.ts'
-import { ModelBadge } from '../../components/ui/badge.tsx'
+// The build network (ADR-0028 sections 7 and 10; R-36, R-40): the PM node, then one row per stage, each a
+// list of crew cards wired to the PM and holding their agents. Busy with no state; a dashed placeholder
+// while there are no crews. A polite live region announces a crew whose status changed between snapshots.
+import * as React from 'react'
+import type { Crew, FlowEntry, RunState } from '../../store/types.ts'
 import { Skeleton } from '../../components/ui/skeleton.tsx'
+import { crewStatus, pmStatus, STATUS_WORD, type Status } from '../status/status.ts'
+import { PmNode, type PmNodeProps } from './PmNode.tsx'
 import { StageGroup, type StagePhase } from './StageGroup.tsx'
-import { crewEnd, crewStart, plural, short } from './format.ts'
+import { isRecent } from './CrewCard.tsx'
+import { crewEnd, crewStart, short } from './format.ts'
 
 export interface BuildNetworkProps {
   state: RunState | null
@@ -59,56 +61,116 @@ function stagesOf(crews: Crew[]): Stage[] {
   return out
 }
 
-const modelKey = (m: string | null): string => (m && /opus/i.test(m) ? 'opus' : m && /sonnet/i.test(m) ? 'sonnet' : (m ?? 'model unknown'))
+/** The latest hand-off to each crew, by slug. */
+function handoffsOf(flow: readonly FlowEntry[]): Map<string, FlowEntry> {
+  const out = new Map<string, FlowEntry>()
+  for (const f of flow) {
+    if (f.to === null) continue
+    const prev = out.get(f.to)
+    if (!prev || Date.parse(f.at) >= Date.parse(prev.at)) out.set(f.to, f)
+  }
+  return out
+}
+
+// The wire widths (UX direction section 4). Named here, used by the wires as CSS variables.
+const WIRE_VARS = { '--wire-w': '2px', '--wire-w-live': '3px' } as React.CSSProperties
+
+const SECTION = 'min-w-0 rounded-panel border border-border bg-surface p-4 sm:p-5'
+
+function pmState(crewCount: number, status: Status): PmNodeProps['state'] {
+  if (crewCount > 0) return status === 'done' ? 'finished' : 'running'
+  return status === 'planned' ? 'waiting-goal' : 'planning'
+}
 
 export function BuildNetwork({ state, now }: BuildNetworkProps) {
+  const loaded = state !== null
+  const crews = state?.run?.crews ?? []
+  const statusKey = crews.map((c) => `${c.slug}:${crewStatus(c)}`).join('|')
+  const prev = React.useRef<Map<string, Status> | null>(null)
+  const [announce, setAnnounce] = React.useState('')
+
+  // One polite message for the latest crew whose status changed since the last snapshot; none on the first.
+  React.useEffect(() => {
+    const cur = new Map<string, Status>(crews.map((c) => [c.slug, crewStatus(c)]))
+    const before = prev.current
+    prev.current = cur
+    if (!loaded || before === null) return
+    let latest = ''
+    for (const [slug, s] of cur) {
+      const was = before.get(slug)
+      if (was !== undefined && was !== s) latest = `Crew ${slug} is now ${STATUS_WORD[s].toLowerCase()}`
+    }
+    if (latest) setAnnounce(latest)
+  }, [statusKey, loaded])
+
   if (state === null) {
     return (
-      <section aria-label="Crews" aria-busy="true" className="min-w-0 rounded-panel border border-border bg-surface p-4 sm:p-5">
-        <h2 className="text-lead font-semibold text-fg">Build network</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <Skeleton className="h-36" />
-          <Skeleton className="h-36" />
-          <Skeleton className="h-36" />
+      <section aria-label="Build network" aria-busy="true" className={SECTION}>
+        <h2 className="text-title font-semibold text-fg">Build network</h2>
+        <Skeleton className="mt-4 h-28 w-full rounded-card md:w-64" />
+        <div className="mt-6 grid grid-cols-[24px_minmax(0,1fr)]">
+          <div className="@container col-start-2 min-w-0">
+            <Skeleton className="h-5 w-24" />
+            <div className="grid grid-cols-1 gap-x-6 @xl:grid-cols-2 @4xl:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="pt-6">
+                  <Skeleton className="h-56 rounded-card" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
     )
   }
 
-  const crews = state.run?.crews ?? []
-  if (crews.length === 0) {
-    return (
-      <section aria-label="Crews" className="min-w-0 rounded-panel border border-border bg-surface p-4 sm:p-5">
-        <h2 className="text-lead font-semibold text-fg">Build network</h2>
-        <p className="mt-2 text-body text-muted">No plan yet.</p>
-      </section>
-    )
-  }
-
+  const status = pmStatus(state)
   const stages = stagesOf(crews)
-  const model = state.session.model
+  const flow = state.session.flow ?? []
+  const handoffs = handoffsOf(flow)
+  const trunkLit = crews.some((c) => isRecent(handoffs.get(c.slug), now))
+  const trunkAnimated = crews.some((c) => crewStatus(c) === 'active')
+  const lastFlow = flow.length > 0 ? flow[flow.length - 1] : undefined
+
   return (
-    <section aria-label="Crews" className="min-w-0 rounded-panel border border-border bg-surface p-4 shadow-e1 sm:p-5">
-      <h2 className="text-lead font-semibold text-fg">Build network</h2>
-      <div className="mt-3 flex min-w-0 items-center gap-3 rounded-card bg-sunken p-3">
-        <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-ctl bg-brand-soft text-brand-strong">
-          <Workflow className="size-4.5" />
-        </span>
-        <div className="flex min-w-0 flex-col">
-          <h3 className="flex min-w-0 items-center gap-2 text-ui font-semibold text-fg">
-            Claude
-            {model && <ModelBadge model={modelKey(model)}>{model}</ModelBadge>}
-          </h3>
-          <p className="text-micro text-muted">
-            Running {plural(crews.length, 'crew')} in {plural(stages.length, 'stage')}
-          </p>
+    <section aria-label="Build network" aria-busy="false" style={WIRE_VARS} className={SECTION + (crews.length > 0 ? ' shadow-e1' : '')}>
+      <h2 className="text-title font-semibold text-fg">Build network</h2>
+      <p role="status" aria-live="polite" className="sr-only">
+        {announce}
+      </p>
+      <div className="mt-4">
+        <PmNode
+          state={pmState(crews.length, status)}
+          status={status}
+          crewCount={crews.length}
+          stageCount={stages.length}
+          lastFlow={crews.length === 0 ? lastFlow : undefined}
+          model={state.session.model}
+        />
+      </div>
+      {crews.length === 0 ? (
+        <p className="mt-6 min-w-0 rounded-card border border-dashed border-border-strong bg-sunken p-4 text-body text-muted">
+          Crews appear here once the PM has a plan.
+        </p>
+      ) : (
+        <div className="mt-6">
+          {stages.map((s, i) => (
+            <StageGroup
+              key={s.key}
+              label={s.label}
+              phase={s.phase}
+              took={s.took}
+              crews={s.crews}
+              now={now}
+              handoffs={handoffs}
+              first={i === 0}
+              last={i === stages.length - 1}
+              trunkAnimated={trunkAnimated}
+              trunkLit={trunkLit}
+            />
+          ))}
         </div>
-      </div>
-      <div className="mt-4 grid grid-cols-1 gap-6 lg:auto-cols-[minmax(0,1fr)] lg:grid-flow-col">
-        {stages.map((s, i) => (
-          <StageGroup key={s.key} label={s.label} phase={s.phase} took={s.took} crews={s.crews} now={now} wire={i < stages.length - 1} />
-        ))}
-      </div>
+      )}
     </section>
   )
 }
