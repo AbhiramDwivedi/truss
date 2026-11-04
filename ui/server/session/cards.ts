@@ -40,6 +40,7 @@ export interface ReplyRequest extends Base {
   text: string
   isError: boolean
   backgroundTasks: number
+  approvalAsk?: boolean
   decision: 'allow' | 'deny' | 'message' | null
   message: string | null
 }
