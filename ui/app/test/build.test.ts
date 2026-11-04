@@ -164,6 +164,18 @@ test('built css: reduced motion nulls animation on *, ::before and ::after', () 
   assert.ok(ss.some((s) => /^(\*)?::?after$/.test(s)), 'reduced motion does not cover ::after')
 })
 
+// rework-page UX section 5: the summary link scrolls smoothly, and not under reduced motion.
+test('built css: smooth scroll-behavior is on only outside reduced motion', () => {
+  const rules = cssRules().filter((r) => !hasKeyframes(r))
+  const smooth = rules.filter((r) => squash(r.decls['scroll-behavior'] ?? '') === 'smooth')
+  assert.ok(smooth.length > 0, 'no rule sets scroll-behavior: smooth')
+  const reduce = (r: Rule) => r.at.some((a) => /prefers-reduced-motion:\s*reduce/.test(a))
+  const noPref = (r: Rule) => r.at.some((a) => /prefers-reduced-motion:\s*no-preference/.test(a))
+  const resets = rules.some((r) => reduce(r) && squash(r.decls['scroll-behavior'] ?? '').replace(/!important/, '') === 'auto')
+  const bad = smooth.filter((r) => reduce(r) || (!noPref(r) && !resets))
+  assert.deepEqual(bad.map((r) => r.sel), [], 'smooth scroll must sit under no-preference or be reset to auto under reduce')
+})
+
 test('built css: the D2 keyframes, durations and easing exist', () => {
   const css = readCss()
   for (const k of ['arrive', 'tick-up', 'ping', 'dash', 'scan', 'sheen', 'glow']) {
