@@ -139,6 +139,20 @@ test.describe('page', () => {
     } finally { await o.stop() }
   })
 
+  test('R-45: the four newest thread messages are in view on load', async ({ browser }) => {
+    const o = await openFixture(browser, 'thread', 'light', WIDTHS.desktop)
+    try {
+      const log = thread(o.page)
+      await expect(log).toBeVisible(LOAD)
+      for (const text of [
+        'Add CSV export to the reports page.',
+        'On it. I will plan two crews and start the first now.',
+        'Also make it respect the date filter.',
+        'Noted: the export will use the same date filter as the page.',
+      ]) await expect(log.getByText(text)).toBeInViewport(T)
+    } finally { await o.stop() }
+  })
+
   test('R-46: loading: with the stream held, placeholders hold their final sizes, no spinner, nothing moves when the state arrives', async ({ browser }) => {
     const held: Route[] = []
     const on = { v: true }
