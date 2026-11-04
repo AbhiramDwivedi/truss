@@ -89,6 +89,11 @@ test.describe('R-37 ADRs live in one place', () => {
       // the full title is reachable: the title attribute on the item or its focusable ancestor
       const titled = timeline(page).locator(`[title="${full}"], [title="${plain}"]`).first()
       await expect(titled, 'the full title is in a title attribute').toHaveCount(1, T)
+      // focus: the timeline item that opens this ADR takes focus and is named by the full title
+      const opener = timeline(page).getByRole('button', { name: new RegExp(plain.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first()
+      await opener.focus()
+      await expect(opener, 'the ADR item takes focus').toBeFocused(T)
+      await expect(opener, 'the full title is announced on focus').toHaveAccessibleName(new RegExp(plain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
       expect(await page.evaluate(() => document.scrollingElement!.scrollWidth <= window.innerWidth), 'no horizontal page scroll').toBe(true)
     } finally { await o.stop() }
   })
