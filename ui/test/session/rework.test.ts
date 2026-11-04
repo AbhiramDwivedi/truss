@@ -132,7 +132,8 @@ async function boot() {
 
 const pmCall = (n: number) => {
   const slug = SLUGS[n % 12];
-  const tool = ['Agent', 'SendMessage', 'Workflow'][n % 3];
+  // Workflow is not invented here: its real input has only scriptPath and args (see the Workflow test below).
+  const tool = ['Agent', 'SendMessage'][n % 2];
   const tag = `call ${String(n).padStart(4, '0')} ${slug} `;
   const text = tag + 'x'.repeat(300);
   const input = tool === 'SendMessage' ? { to: slug, message: text + '\nsecond line' } : { description: text, prompt: `Work on ${slug}`, subagent_type: 'truss:foreman' };
@@ -182,6 +183,26 @@ test('R-14 R-40 R-42: 5,000 task_progress messages and 1,000 PM calls over 12 cr
     assert.ok(JSON.stringify(flow).length < 200 * 500, 'the serialised flow stays small');
     const task = member().task as string;
     assert.ok(typeof task === 'string' && task.length <= 500, 'Member.task is one short description');
+  } finally { await w.close(); }
+});
+
+test('ADR-0028 section 7: a real Workflow call (input keys scriptPath and args only, as recorded in the PM transcript) still shows a summary in session.flow', async () => {
+  const w = await boot();
+  try {
+    await w.post({ text: 'workflow' });
+    await until(() => (stub()?.sent.length ?? 0) >= 1, 'the session to take the first message');
+    stub()!.emit({ type: 'system', subtype: 'init', session_id: 's', model: 'claude-opus-5-5', slash_commands: ['truss:run'], tools: [], cwd: '/' });
+    const input = { scriptPath: '/home/u/plugins/truss/workflows/truss-stage.js', args: { trussFile: '/home/u/.git/truss/x/stage-args.json' } };
+    stub()!.emit({
+      type: 'assistant', parent_tool_use_id: null,
+      message: { id: 'msg_wf', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_wf', name: 'Workflow', input }], usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
+    });
+    await until(() => (w.state().session.flow?.length ?? 0) > 0, 'the Workflow call to reach session.flow');
+    const e = w.state().session.flow.at(-1);
+    assert.equal(e.tool, 'Workflow');
+    assert.ok(typeof e.summary === 'string' && e.summary.trim() !== '', `the Workflow summary is not empty (got ${JSON.stringify(e.summary)})`);
+    assert.ok(e.summary.length <= 200);
+    assert.match(e.summary, /truss-stage/, 'the summary names the script that was started');
   } finally { await w.close(); }
 });
 
