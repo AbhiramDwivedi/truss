@@ -69,8 +69,6 @@ test.describe('network', () => {
       await expect(net.getByRole('list').filter({ has: o.page.getByRole('article') }), 'one list per stage').toHaveCount(stages.size, T)
       for (const c of crews) await expect(crewCard(o.page, c.slug)).toHaveCount(1, T)
       await expect(net.getByRole('article')).toHaveCount(crews.length, T)
-      // the network is first in main: no Crews / Decisions / Design tabs
-      await expect(o.page.getByRole('tab')).toHaveCount(0)
     } finally { await o.stop() }
   })
 

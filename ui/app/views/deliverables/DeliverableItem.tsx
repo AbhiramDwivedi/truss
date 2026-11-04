@@ -1,6 +1,7 @@
 // One row of the Deliverables list (D2 :762-769). An openable item is a button whose name is its title only, so
 // the page keeps one button per crew slug; the crew and path sit beside it as aria-describedby meta in mono.
 // A pending item is plain text: it says when it arrives and offers nothing to open.
+import { useState } from 'react'
 import { Box, Clock, FileText, Image, Layers } from 'lucide-react'
 import { cn } from '../../lib/utils.ts'
 import { hhmm } from '../rail/format.ts'
@@ -25,6 +26,22 @@ export interface Deliverable {
   /** An image whose crew has not merged: nothing to open yet. */
   pending: boolean
   preview: DeliverablePreview
+}
+
+/** Copy a path to the clipboard; `copied` is the polite status line ("Copied …" or why it failed). */
+export function useCopy(path: string): { copied: string | null; copy: () => void } {
+  const [copied, setCopied] = useState<string | null>(null)
+  const copy = () => {
+    const done = (ok: boolean) => setCopied(ok ? `Copied ${path}` : 'Not copied: the browser blocked the clipboard.')
+    try {
+      const w = navigator.clipboard?.writeText(path)
+      if (w) w.then(() => done(true), () => done(false))
+      else done(false)
+    } catch {
+      done(false)
+    }
+  }
+  return { copied, copy }
 }
 
 export const TYPE_LABEL: Record<DeliverableType, string> = { docs: 'Docs', code: 'Code', plan: 'Plan', images: 'Images' }
