@@ -1,0 +1,36 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": null,
+    "exists": false
+  },
+  "session": {
+    "status": "idle",
+    "sessionId": null,
+    "model": null,
+    "claudeCodeVersion": null,
+    "permissionMode": null,
+    "plugin": null,
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [],
+  "run": null,
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": [
+    {
+      "id": "no-truss-dir",
+      "text": "Waiting for a session: the Truss directory is set when one starts."
+    }
+  ]
+}

@@ -1,0 +1,592 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/rework",
+    "exists": true
+  },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-rework",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Older message 1 from the client.",
+      "ts": "2026-11-02T02:05:00.000Z",
+      "id": "msg-1",
+      "intent": null
+    },
+    {
+      "n": 2,
+      "role": "assistant",
+      "text": "Older reply 2 from the PM.",
+      "ts": "2026-11-02T02:10:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 3,
+      "role": "user",
+      "text": "Older message 3 from the client.",
+      "ts": "2026-11-02T02:15:00.000Z",
+      "id": "msg-3",
+      "intent": null
+    },
+    {
+      "n": 4,
+      "role": "assistant",
+      "text": "Older reply 4 from the PM.",
+      "ts": "2026-11-02T02:20:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 5,
+      "role": "user",
+      "text": "Older message 5 from the client.",
+      "ts": "2026-11-02T02:25:00.000Z",
+      "id": "msg-5",
+      "intent": null
+    },
+    {
+      "n": 6,
+      "role": "assistant",
+      "text": "Older reply 6 from the PM.",
+      "ts": "2026-11-02T02:30:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 7,
+      "role": "user",
+      "text": "Older message 7 from the client.",
+      "ts": "2026-11-02T02:35:00.000Z",
+      "id": "msg-7",
+      "intent": null
+    },
+    {
+      "n": 8,
+      "role": "assistant",
+      "text": "Older reply 8 from the PM.",
+      "ts": "2026-11-02T02:40:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 9,
+      "role": "user",
+      "text": "Older message 9 from the client.",
+      "ts": "2026-11-02T02:45:00.000Z",
+      "id": "msg-9",
+      "intent": null
+    },
+    {
+      "n": 10,
+      "role": "assistant",
+      "text": "Older reply 10 from the PM.",
+      "ts": "2026-11-02T02:50:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 11,
+      "role": "user",
+      "text": "Older message 11 from the client.",
+      "ts": "2026-11-02T02:55:00.000Z",
+      "id": "msg-11",
+      "intent": null
+    },
+    {
+      "n": 12,
+      "role": "assistant",
+      "text": "Older reply 12 from the PM.",
+      "ts": "2026-11-02T03:00:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 13,
+      "role": "user",
+      "text": "Older message 13 from the client.",
+      "ts": "2026-11-02T03:05:00.000Z",
+      "id": "msg-13",
+      "intent": null
+    },
+    {
+      "n": 14,
+      "role": "assistant",
+      "text": "Older reply 14 from the PM.",
+      "ts": "2026-11-02T03:10:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 15,
+      "role": "user",
+      "text": "Older message 15 from the client.",
+      "ts": "2026-11-02T03:15:00.000Z",
+      "id": "msg-15",
+      "intent": null
+    },
+    {
+      "n": 16,
+      "role": "assistant",
+      "text": "Older reply 16 from the PM.",
+      "ts": "2026-11-02T03:20:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 17,
+      "role": "user",
+      "text": "Older message 17 from the client.",
+      "ts": "2026-11-02T03:25:00.000Z",
+      "id": "msg-17",
+      "intent": null
+    },
+    {
+      "n": 18,
+      "role": "assistant",
+      "text": "Older reply 18 from the PM.",
+      "ts": "2026-11-02T03:30:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 19,
+      "role": "user",
+      "text": "Older message 19 from the client.",
+      "ts": "2026-11-02T03:35:00.000Z",
+      "id": "msg-19",
+      "intent": null
+    },
+    {
+      "n": 20,
+      "role": "assistant",
+      "text": "Older reply 20 from the PM.",
+      "ts": "2026-11-02T03:40:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 21,
+      "role": "user",
+      "text": "Older message 21 from the client.",
+      "ts": "2026-11-02T03:45:00.000Z",
+      "id": "msg-21",
+      "intent": null
+    },
+    {
+      "n": 22,
+      "role": "assistant",
+      "text": "Older reply 22 from the PM.",
+      "ts": "2026-11-02T03:50:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 23,
+      "role": "user",
+      "text": "Older message 23 from the client.",
+      "ts": "2026-11-02T03:55:00.000Z",
+      "id": "msg-23",
+      "intent": null
+    },
+    {
+      "n": 24,
+      "role": "assistant",
+      "text": "Older reply 24 from the PM.",
+      "ts": "2026-11-02T04:00:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 25,
+      "role": "user",
+      "text": "Older message 25 from the client.",
+      "ts": "2026-11-02T04:05:00.000Z",
+      "id": "msg-25",
+      "intent": null
+    },
+    {
+      "n": 26,
+      "role": "assistant",
+      "text": "Older reply 26 from the PM.",
+      "ts": "2026-11-02T04:10:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 27,
+      "role": "user",
+      "text": "Older message 27 from the client.",
+      "ts": "2026-11-02T04:15:00.000Z",
+      "id": "msg-27",
+      "intent": null
+    },
+    {
+      "n": 28,
+      "role": "assistant",
+      "text": "Older reply 28 from the PM.",
+      "ts": "2026-11-02T04:20:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 29,
+      "role": "user",
+      "text": "Older message 29 from the client.",
+      "ts": "2026-11-02T04:25:00.000Z",
+      "id": "msg-29",
+      "intent": null
+    },
+    {
+      "n": 30,
+      "role": "assistant",
+      "text": "Older reply 30 from the PM.",
+      "ts": "2026-11-02T04:30:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 31,
+      "role": "user",
+      "text": "Older message 31 from the client.",
+      "ts": "2026-11-02T04:35:00.000Z",
+      "id": "msg-31",
+      "intent": null
+    },
+    {
+      "n": 32,
+      "role": "assistant",
+      "text": "Older reply 32 from the PM.",
+      "ts": "2026-11-02T04:40:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 33,
+      "role": "user",
+      "text": "Older message 33 from the client.",
+      "ts": "2026-11-02T04:45:00.000Z",
+      "id": "msg-33",
+      "intent": null
+    },
+    {
+      "n": 34,
+      "role": "assistant",
+      "text": "Older reply 34 from the PM.",
+      "ts": "2026-11-02T04:50:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 35,
+      "role": "user",
+      "text": "Older message 35 from the client.",
+      "ts": "2026-11-02T04:55:00.000Z",
+      "id": "msg-35",
+      "intent": null
+    },
+    {
+      "n": 36,
+      "role": "assistant",
+      "text": "Older reply 36 from the PM.",
+      "ts": "2026-11-02T05:00:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 37,
+      "role": "user",
+      "text": "Older message 37 from the client.",
+      "ts": "2026-11-02T05:05:00.000Z",
+      "id": "msg-37",
+      "intent": null
+    },
+    {
+      "n": 38,
+      "role": "assistant",
+      "text": "Older reply 38 from the PM.",
+      "ts": "2026-11-02T05:10:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 39,
+      "role": "user",
+      "text": "Older message 39 from the client.",
+      "ts": "2026-11-02T05:15:00.000Z",
+      "id": "msg-39",
+      "intent": null
+    },
+    {
+      "n": 40,
+      "role": "assistant",
+      "text": "Older reply 40 from the PM.",
+      "ts": "2026-11-02T05:20:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 41,
+      "role": "user",
+      "text": "Older message 41 from the client.",
+      "ts": "2026-11-02T05:25:00.000Z",
+      "id": "msg-41",
+      "intent": null
+    },
+    {
+      "n": 42,
+      "role": "assistant",
+      "text": "Older reply 42 from the PM.",
+      "ts": "2026-11-02T05:30:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 43,
+      "role": "user",
+      "text": "Older message 43 from the client.",
+      "ts": "2026-11-02T05:35:00.000Z",
+      "id": "msg-43",
+      "intent": null
+    },
+    {
+      "n": 44,
+      "role": "assistant",
+      "text": "Older reply 44 from the PM.",
+      "ts": "2026-11-02T05:40:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 45,
+      "role": "user",
+      "text": "Older message 45 from the client.",
+      "ts": "2026-11-02T05:45:00.000Z",
+      "id": "msg-45",
+      "intent": null
+    },
+    {
+      "n": 46,
+      "role": "assistant",
+      "text": "Older reply 46 from the PM.",
+      "ts": "2026-11-02T05:50:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 47,
+      "role": "user",
+      "text": "Older message 47 from the client.",
+      "ts": "2026-11-02T05:55:00.000Z",
+      "id": "msg-47",
+      "intent": null
+    },
+    {
+      "n": 48,
+      "role": "assistant",
+      "text": "Older reply 48 from the PM.",
+      "ts": "2026-11-02T06:00:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 49,
+      "role": "user",
+      "text": "Older message 49 from the client.",
+      "ts": "2026-11-02T06:05:00.000Z",
+      "id": "msg-49",
+      "intent": null
+    },
+    {
+      "n": 50,
+      "role": "assistant",
+      "text": "Older reply 50 from the PM.",
+      "ts": "2026-11-02T06:10:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 51,
+      "role": "user",
+      "text": "Older message 51 from the client.",
+      "ts": "2026-11-02T06:15:00.000Z",
+      "id": "msg-51",
+      "intent": null
+    },
+    {
+      "n": 52,
+      "role": "assistant",
+      "text": "Older reply 52 from the PM.",
+      "ts": "2026-11-02T06:20:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 53,
+      "role": "user",
+      "text": "Older message 53 from the client.",
+      "ts": "2026-11-02T06:25:00.000Z",
+      "id": "msg-53",
+      "intent": null
+    },
+    {
+      "n": 54,
+      "role": "assistant",
+      "text": "Older reply 54 from the PM.",
+      "ts": "2026-11-02T06:30:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 55,
+      "role": "user",
+      "text": "Older message 55 from the client.",
+      "ts": "2026-11-02T06:35:00.000Z",
+      "id": "msg-55",
+      "intent": null
+    },
+    {
+      "n": 56,
+      "role": "assistant",
+      "text": "Older reply 56 from the PM.",
+      "ts": "2026-11-02T06:40:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 57,
+      "role": "user",
+      "text": "Older message 57 from the client.",
+      "ts": "2026-11-02T06:45:00.000Z",
+      "id": "msg-57",
+      "intent": null
+    },
+    {
+      "n": 58,
+      "role": "assistant",
+      "text": "Older reply 58 from the PM.",
+      "ts": "2026-11-02T06:50:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 59,
+      "role": "user",
+      "text": "Older message 59 from the client.",
+      "ts": "2026-11-02T06:55:00.000Z",
+      "id": "msg-59",
+      "intent": null
+    },
+    {
+      "n": 60,
+      "role": "assistant",
+      "text": "Older reply 60 from the PM.",
+      "ts": "2026-11-02T07:00:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 61,
+      "role": "user",
+      "text": "Add CSV export to the reports page.",
+      "ts": "2026-11-02T11:45:00.000Z",
+      "id": "msg-61",
+      "intent": "goal"
+    },
+    {
+      "n": 62,
+      "role": "assistant",
+      "text": "On it. I will plan two crews and start the first now.",
+      "ts": "2026-11-02T11:46:00.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 63,
+      "role": "user",
+      "text": "Also make it respect the date filter.",
+      "ts": "2026-11-02T11:55:00.000Z",
+      "id": "msg-63",
+      "intent": null
+    },
+    {
+      "n": 64,
+      "role": "assistant",
+      "text": "Noted: the export will use the same date filter as the page.",
+      "ts": "2026-11-02T11:56:00.000Z",
+      "id": null,
+      "intent": null
+    }
+  ],
+  "run": {
+    "goal": "Rework the UI to the client design reference.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:10:00.000Z",
+    "crews": [
+      {
+        "slug": "csv-export",
+        "stage": 0,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "csv-export/**"
+        ],
+        "foreman": {
+          "name": "csv-export",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T11:56:40.000Z",
+          "agentId": "a1b2c3d4e5f60050",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": null,
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Rework the UI to the client design reference.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:10:00.000Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { WITHIN, card, crewLine, expectD2Colours, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
+import { WITHIN, adrTimeline, card, crewLine, openArchitecture, expectD2Colours, rand, rx, runStatus, sessionStatus, spawnEvent, startInterface, startReal, type Iface, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
@@ -57,13 +57,7 @@ async function contrastViolations(page: Page, pairs: ReadonlyArray<readonly [str
   return res.violations.map((v) => v.id)
 }
 
-const crewsRegion =(page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
-const members = (page: Page, slug: string) => page.getByRole('list', { name: `${slug} members`, exact: true })
-const openTab = async (page: Page, name: string) => {
-  const tab = page.getByRole('tab', { name, exact: true })
-  await tab.click()
-  await expect(tab).toHaveAttribute('aria-selected', 'true')
-}
+const crewsRegion =(page: Page) => page.getByRole('region', { name: 'Build network', exact: true }) // ADR-0028 section 10
 
 test('a11y: empty run, with the no-Truss-dir notice', async ({ page }) => {
   const run = rand()
@@ -98,7 +92,7 @@ test('a11y: D2 colours, body is tokens.json bg and the move surface is move, lig
   }
 })
 
-test('a11y: a live run with the crews collapsed, then expanded', async ({ page }) => {
+test('a11y: a live run with crew cards and their agent cards', async ({ page }) => {
   const run = rand()
   const member = `quotas-builder-${run}`
   real = await startReal({
@@ -108,13 +102,12 @@ test('a11y: a live run with the crews collapsed, then expanded', async ({ page }
   })
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await expect(crewLine(page, 'gateway')).toHaveAccessibleName(/FAIL/, LOAD)
-  await expectNoViolations(page, 'live run, crews collapsed')
+  await expect(crewLine(page, 'gateway')).toContainText(/FAIL/, LOAD) // ADR-0028 section 10: crew card is an article named by slug
+  await expectNoViolations(page, 'live run, crew cards')
 
-  for (const slug of ['ratelimit-design', 'quotas', 'gateway']) await crewLine(page, slug).click()
-  await expect(crewLine(page, 'quotas')).toHaveAttribute('aria-expanded', 'true')
-  await expect(members(page, 'quotas').getByRole('listitem').filter({ hasText: rx(member) })).toBeVisible(WITHIN)
-  await expectNoViolations(page, 'live run, crews expanded')
+  // ADR-0028 section 10: every crew card lists its agents as cards, with no expand step.
+  await expect(crewLine(page, 'quotas').getByRole('listitem').filter({ hasText: rx(member) })).toBeVisible(WITHIN)
+  await expectNoViolations(page, 'live run, agent cards shown')
 })
 
 test('a11y: an open question card', async ({ page }) => {
@@ -143,38 +136,40 @@ test('a11y: a reply card, plain and as an error', async ({ page }) => {
   const run = rand()
   iface = await startInterface()
   await page.goto(iface.url)
-  iface.reply({ text: `Approve the plan ${run}?`, backgroundTasks: 2 })
+  iface.reply({ text: `Approve the plan ${run}?`, backgroundTasks: 2, approvalAsk: true })
   await expect(card(page, 'reply', `Approve the plan ${run}?`)).toBeVisible(LOAD)
+  await expect(page.getByRole('article', { name: 'Approval needed', exact: true })).toBeVisible() // ADR-0028 section 2
   await expectNoViolations(page, 'reply card')
 
-  iface.reply({ text: `The run failed ${run}`, isError: true })
+  iface.reply({ text: `The run failed ${run}`, isError: true, approvalAsk: false })
   await expect(card(page, 'reply', `The run failed ${run}`)).toBeVisible(WITHIN)
   await expectNoViolations(page, 'reply card, error')
 })
 
-test('a11y: the design panel open', async ({ page }) => {
+// ADR-0028 sections 3, 5, 10: no Design tab; the Architecture deliverable opens in the preview and draws mermaid.
+test('a11y: the architecture preview open', async ({ page }) => {
   const run = rand()
   real = await startReal({ trussFiles: { 'plan.md': `# Plan ${run}\n\nThe plan for run ${run}.\n` } })
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await openTab(page, 'Design')
-  const panel = page.getByRole('tabpanel', { name: 'Design', exact: true })
-  await expect(panel.getByText(rx(`The plan for run ${run}.`)).first()).toBeVisible(LOAD)
-  await expect(panel.getByText('mermaid diagram (source)').first()).toBeVisible(LOAD)
-  await expectNoViolations(page, 'design panel')
+  await openArchitecture(page)
+  await expect(page.getByRole('figure', { name: /^Diagram \d+ of \d+$/ }).first()).toBeVisible(LOAD)
+  await expect(page.getByText('mermaid diagram (source)')).toHaveCount(0)
+  await expectNoViolations(page, 'architecture preview')
 })
 
-test('a11y: the decisions and ADRs panel open', async ({ page }) => {
+// ADR-0028 section 3: the rail's timeline is the one list of decisions and ADRs; no tab.
+test('a11y: the decisions and ADRs timeline in the rail', async ({ page }) => {
   const run = rand()
   real = await startReal()
   real.appendDecision(`- 10:00 | choose-${run}-store | because ${run} | checker: none | followed`)
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await openTab(page, 'Decisions and ADRs')
-  const panel = page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true })
-  await expect(panel.getByRole('region', { name: 'Decisions', exact: true }).getByRole('listitem').filter({ hasText: rx(`choose-${run}-store`) })).toBeVisible(LOAD)
-  await expect(panel.getByRole('region', { name: 'ADRs', exact: true }).getByRole('listitem').first()).toBeVisible(LOAD)
-  await expectNoViolations(page, 'decisions and ADRs panel')
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  const timeline = adrTimeline(page)
+  await expect(timeline.getByRole('listitem').filter({ hasText: rx(`choose-${run}-store`) })).toBeVisible(LOAD)
+  await expect(timeline.getByRole('listitem').filter({ hasText: /ADR-\d+/ }).first()).toBeVisible(LOAD)
+  await expectNoViolations(page, 'decisions and ADRs timeline')
 })
 
 test('a11y: the session error state', async ({ page }) => {
