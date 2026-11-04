@@ -101,22 +101,15 @@ test('YourMove: no state renders the region aria-busy with no article and no pro
   assert.equal(find(v, 'article').length, 0)
   assert.equal(find(v, 'progressbar').length, 0)
 })
-test('YourMove: empty state is a quiet Start a run card, no article, no move fill', async () => {
-  const v = await mount('move/YourMove', 'YourMove', { state: fx('empty/state'), now: NOW })
-  const reg = find(v, 'region', 'Your move')[0]!
-  assert.equal(find(reg, 'heading').filter((h) => h.tag === 'h2').length, 1)
-  assert.equal(find(reg, 'heading', 'Start a run').length, 1)
-  assert.match(tidy(text(reg)), /Type a goal\. Truss plans it, and asks you here when it needs a call\./)
-  assert.equal(find(reg, 'article').length, 0)
-  assert.equal(all(reg, (n) => cls(n, 'bg-move') || n.a['data-surface'] === 'move').length, 0)
-})
-test('YourMove: a run with nothing open says Nothing needs you right now and counts running crews', async () => {
-  const v = await mount('move/YourMove', 'YourMove', { state: fx('crews-running/state'), now: NOW })
-  const reg = find(v, 'region', 'Your move')[0]!
-  assert.equal(find(reg, 'heading', 'Nothing needs you right now').length, 1)
-  assert.match(tidy(text(reg)), /2 crews running in stage 1\./)
-  assert.equal(find(reg, 'article').length, 0)
-})
+for (const name of ['empty/state', 'crews-running/state']) {
+  test(`YourMove: ${name} with nothing open renders nothing (no region, no article, no quiet card)`, async () => {
+    const v = await mount('move/YourMove', 'YourMove', { state: fx(name), now: NOW })
+    assert.equal(find(v, 'region', 'Your move').length, 0)
+    assert.equal(find(v, 'article').length, 0)
+    assert.equal(find(v, 'heading').length, 0)
+    assert.doesNotMatch(tidy(text(v)), /Nothing needs you right now|Start a run/)
+  })
+}
 test('YourMove: an open reply with background tasks asks nothing of the person', async () => {
   const s = fx('approval/state')
   s.requests = [{ ...s.requests[0], backgroundTasks: 2 }]
@@ -153,17 +146,33 @@ test('YourMove: approval shows the oldest card as the hero and the next as a sur
   const v = await mount('move/YourMove', 'YourMove', { state: s, now: NOW })
   const articles = find(v, 'article')
   assert.equal(articles.length, 2)
-  const rc = find(v, 'article', 'Reply needed')[0]!
+  const rc = find(v, 'article', 'The PM replied')[0]!
   const pc = find(v, 'article', `Permission request: ${perm.toolName}`)[0]!
   assert.ok(rc && pc)
   assert.equal(articles[0], rc, 'the oldest card comes first')
   assert.ok(cls(rc, 'bg-move'))
   assert.ok(!cls(pc, 'bg-move'))
   assert.match(tidy(text(rc)), new RegExp(esc(reply.text.slice(0, 40))))
-  for (const b of ['Approve', 'Deny']) { assert.equal(find(rc, 'button', b).length, 1); assert.equal(find(pc, 'button', b).length, 1) }
-  assert.equal(find(rc, 'textbox', 'Message with your answer').length, 1)
+  for (const b of ['Approve', 'Deny']) { assert.equal(find(rc, 'button', b).length, 0, 'a non-approval reply has no ' + b); assert.equal(find(pc, 'button', b).length, 1) }
+  assert.equal(find(rc, 'textbox', 'Your reply').length, 1)
+  assert.equal(find(rc, 'button', 'Send reply').length, 1)
+  assert.equal(find(rc, 'button', 'Read in thread').length, 1)
+  assert.doesNotMatch(tidy(text(v)), /Reply needed/)
   for (const t of [perm.toolName, perm.title, perm.summary, perm.decisionReason, perm.blockedPath]) assert.ok(tidy(text(pc)).includes(t), `the permission card shows ${t}`)
   assert.match(tidy(text(v)), /1 more waiting on you/)
+})
+test('YourMove: an approval-ask reply is Approval needed with Approve and Deny each stating what it sends', async () => {
+  const s = fx('approval/state')
+  s.requests = [{ ...s.requests[0], approvalAsk: true }]
+  const v = await mount('move/YourMove', 'YourMove', { state: s, now: NOW })
+  const card = find(v, 'article', 'Approval needed')
+  assert.equal(card.length, 1)
+  const c = card[0]!
+  assert.equal(find(c, 'button', /^Approve\b.*Sends: Approved\.$/).length, 1)
+  assert.equal(find(c, 'button', /^Deny\b.*Sends: Not approved\.$/).length, 1)
+  assert.equal(find(c, 'textbox', 'Your reply').length, 1)
+  assert.equal(find(c, 'button', 'Send reply').length, 1)
+  assert.doesNotMatch(tidy(text(v)), /Reply needed/)
 })
 test('YourMove: an answered card keeps its name and reads Answered.', async () => {
   const s = fx('question/state')
@@ -192,43 +201,50 @@ test('YourMove: a stuck crew gets no Your move card', async () => {
 })
 
 // ---- Composer --------------------------------------------------------------------------------------------
-test('Composer: empty state has the Message form, a goal box, Send, and no intent radiogroup', async () => {
+const isChecked = (n: N) => n.a['aria-checked'] ?? (n.a.checked !== undefined ? 'true' : 'false')
+test('Composer: no plan, nothing sent has a visible Your goal label, a disabled Start run, the hint and no radiogroup', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: fx('empty/state'), now: NOW })
   const form = find(v, 'form', 'Message')
   assert.equal(form.length, 1)
   assert.equal(form[0]!.a.id, 'composer')
-  assert.equal(find(form[0]!, 'textbox', 'Goal or message').length, 1)
-  assert.equal(find(form[0]!, 'radiogroup', 'What this message is').length, 0)
-  const send = find(form[0]!, 'button', 'Send')
+  const box = find(form[0]!, 'textbox', 'Your goal')
+  assert.equal(box.length, 1)
+  assert.ok(all(form[0]!, (n) => n.tag === 'label' && tidy(text(n)) === 'Your goal').length >= 1, 'the label is visible')
+  assert.equal(find(form[0]!, 'radiogroup').length, 0)
+  assert.equal(find(form[0]!, 'radio').length, 0)
+  const send = find(form[0]!, 'button', 'Start run')
   assert.equal(send.length, 1)
-  assert.ok(cls(send[0]!, 'bg-move') && cls(send[0]!, 'text-move-fg'), 'the send button is move with move-fg text')
-  assert.match(tidy(text(form[0]!)), /Nothing sent yet\./)
-  assert.equal(find(form[0]!, 'list').length, 0, 'no follow-up list when nothing was sent')
+  assert.notEqual(send[0]!.a.disabled, undefined, 'Start run is disabled while the box is empty')
+  assert.match(tidy(text(form[0]!)), /Type a goal first\./)
+  assert.doesNotMatch(tidy(text(form[0]!)), /Nothing sent yet|Goal or message/)
 })
-test('Composer: follow-up has the segmented intents, Add to current goal checked, and Send details', async () => {
+test('Composer: a plan or a sent goal shows Message to the PM, Send as radios and Send to PM', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: fx('follow-up/state'), now: NOW })
   const form = find(v, 'form', 'Message')[0]!
-  const group = find(form, 'radiogroup', 'What this message is')
+  assert.equal(find(form, 'textbox', 'Message to the PM').length, 1)
+  const group = find(form, 'radiogroup', 'Send as')
   assert.equal(group.length, 1)
+  const msg = find(group[0]!, 'radio', 'Message')
+  assert.equal(msg.length, 1)
+  assert.equal(isChecked(msg[0]!), 'true', 'Message is the default')
   assert.equal(find(group[0]!, 'radio', 'New goal').length, 1)
-  const add = find(group[0]!, 'radio', 'Add to current goal')
-  assert.equal(add.length, 1)
-  assert.equal(add[0]!.a['aria-checked'] ?? (add[0]!.a.checked !== undefined ? 'true' : 'false'), 'true')
-  assert.equal(find(group[0]!, 'radio', 'Answer the question').length, 0)
-  const send = find(form, 'button', 'Send details')
-  assert.equal(send.length, 1)
-  assert.ok(cls(send[0]!, 'bg-move') && cls(send[0]!, 'text-move-fg'))
-  assert.match(tidy(text(form)), /Details for the approved goal\. Claude checks them against the frozen scope: a crew that hasn't started takes them in its brief, and anything bigger asks you first\./)
+  assert.equal(find(group[0]!, 'radio').length, 2)
+  assert.equal(find(form, 'radio', 'Add to current goal').length, 0)
+  assert.equal(find(form, 'radio', 'Answer the question').length, 0)
+  assert.equal(find(form, 'radiogroup', 'What this message is').length, 0)
+  assert.equal(find(form, 'button', 'Send to PM').length, 1)
+  assert.match(tidy(text(form)), /Sends to the PM as a message\./)
+  assert.doesNotMatch(tidy(text(form)), /Details for the approved goal|Send details/)
   assert.equal(find(form, 'region', 'Follow-ups').length, 1, 'the Follow-ups region sits inside the form')
 })
-test('Composer: an open question adds the signal note and the Answer the question intent', async () => {
+test('Composer: an open question keeps the box enabled and says the PM is waiting on the card above', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: fx('question/state'), now: NOW })
   const form = find(v, 'form', 'Message')[0]!
-  assert.match(tidy(text(form)), /Claude's turn is open on your question\. Anything you send now waits in the queue and goes out once you answer it\./)
-  const group = find(form, 'radiogroup', 'What this message is')[0]!
-  assert.equal(find(group, 'radio', 'Answer the question').length, 1)
-  const add = find(group, 'radio', 'Add to current goal')[0]!
-  assert.equal(add.a['aria-checked'] ?? (add.a.checked !== undefined ? 'true' : 'false'), 'true')
+  assert.match(tidy(text(form)), /The PM is waiting on the card above; a message here is sent as well\./)
+  assert.doesNotMatch(tidy(text(form)), /Anything you send now waits in the queue/)
+  const box = all(form, (n) => n.tag === 'textarea')[0]!
+  assert.equal(box.a.disabled, undefined, 'the box stays enabled')
+  assert.equal(find(form, 'radio', 'Answer the question').length, 0)
 })
 test('Composer: no state still renders the form and never mentions a plan revision', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: null, now: NOW })
@@ -269,12 +285,16 @@ test('FollowUps: rows run newest first, one chip each, sentence-case labels, ful
 })
 
 // ---- Transcript ------------------------------------------------------------------------------------------
-test('Transcript: a log named Transcript with an h2 and every entry in order', async () => {
+test('Transcript: a polite log named Conversation with the PM, an h2 Conversation and every entry in order', async () => {
   const s = fx('follow-up/state')
   const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
-  const log = find(v, 'log', 'Transcript')
+  const log = find(v, 'log', 'Conversation with the PM')
   assert.equal(log.length, 1)
-  assert.equal(find(v, 'heading', 'Transcript').filter((h) => h.tag === 'h2').length, 1)
+  assert.equal(log[0]!.a['aria-live'], 'polite')
+  assert.equal(find(v, 'heading', 'Conversation').filter((h) => h.tag === 'h2').length, 1)
+  assert.equal(find(v, 'heading', 'Transcript').length, 0)
+  assert.equal(find(v, 'log', 'Transcript').length, 0)
+  assert.doesNotMatch(tidy(text(v)), /Claude said|Nothing said yet/)
   const body = tidy(text(log[0]!))
   let at = -1
   for (const e of s.transcript) {
@@ -293,7 +313,21 @@ test('Transcript: an error entry uses fail-soft and the word Error', async () =>
   assert.ok(hit.length > 0, 'the error entry sits on fail-soft')
   assert.match(tidy(text(hit[hit.length - 1]!)), /Error/)
 })
-test('Transcript: no state renders without an entry', async () => {
+test('Transcript: the PM is labelled PM, never Claude', async () => {
+  const v = await mount('transcript/Transcript', 'Transcript', { state: fx('follow-up/state'), now: NOW })
+  const log = find(v, 'log', 'Conversation with the PM')[0]!
+  assert.ok(log, 'the log named Conversation with the PM exists')
+  assert.ok(all(log, (n) => tidy(text(n)) === 'PM').length > 0, 'a PM sender label shows')
+  assert.doesNotMatch(tidy(text(log)), /\bClaude\b/)
+})
+test('Transcript: no state still renders the log', async () => {
   const v = await mount('transcript/Transcript', 'Transcript', { state: null, now: NOW })
-  assert.equal(find(v, 'log', 'Transcript').length, 1)
+  assert.equal(find(v, 'log', 'Conversation with the PM').length, 1)
+})
+test('Transcript: no run and no transcript shows the PM-side first-use line, never Nothing said yet.', async () => {
+  const v = await mount('transcript/Transcript', 'Transcript', { state: fx('empty/state'), now: NOW })
+  const log = find(v, 'log', 'Conversation with the PM')[0]!
+  assert.ok(log, 'the log named Conversation with the PM exists')
+  assert.match(tidy(text(log)), /Tell the PM what to build\. Sending your goal starts a truss run\./)
+  assert.doesNotMatch(tidy(text(v)), /Nothing said yet/)
 })
