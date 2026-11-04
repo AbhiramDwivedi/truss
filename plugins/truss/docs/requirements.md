@@ -25,7 +25,7 @@ Example: Given the UI started on a repo, when the client types a goal, then the 
 Example: Given a run whose plan.json has crews ratelimit-design, quotas and gateway, when plan.json marks quotas running and events.jsonl gets a spawn line for quotas-builder, then the quotas lane shows "running" and "builder spawned" within 2 s, without a page reload.
 
 ## R-4: Each crew shows as one status line that opens into its members
-Status: open
+Status: replaced by R-36
 Kind: functional
 Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin
 Source: client
@@ -151,7 +151,7 @@ Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives 
 Source: client
 
 ## R-22: The header shows the run's usage, with no ceiling
-Status: open
+Status: replaced by R-43
 Kind: nfr
 Measure: 0 spending limits set by the UI; usage the SDK reports (tokens, and cost when reported) refreshed in the header on every session message
 Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin
@@ -247,6 +247,84 @@ Kind: nfr
 Measure: the extract is kept with the truss dir until the truss dir is removed, and 0 retro steps need a transcript older than Claude Code's 30-day cleanup
 Added: 2026-10-31T07:23:37Z | Make truss improve itself from each run (independent retro judge, transcript extract, known-problems catalog, startup check, auto-applied fixes)
 Source: default
+
+## R-36: The crew network is the main view of the run
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a run whose plan.json has crews ui-network and ui-chat running and a crew ui-docs planned, when the client opens the page, then a PM node sits at the top with a wire to each of the three crew cards, the wires to running crews animate, and each crew card lists its agents as cards with the agent's current task and progress.
+Example: Given a session with no plan.json yet, when the client opens the page, then the network still shows the PM node and states what the PM is doing (for example "planning"), not a bare "No plan yet."
+
+## R-37: ADRs show in one place only
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a repo with 27 ADRs, when the client looks at the page, then the ADRs are listed in exactly one panel, and the built artifacts and deliverables list holds none of them.
+
+## R-38: The architecture's mermaid diagrams render as diagrams
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given an architecture doc with a mermaid flowchart block, when the client opens the architecture, then the browser shows the drawn diagram (an SVG), not the mermaid source text; a block that fails to parse shows its source with a short error.
+
+## R-39: The page shows one architecture, the latest
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given an architecture doc that carries a change log or version history section, when the client opens the architecture, then the page shows the current architecture only, with no change log, history or older versions.
+
+## R-40: The page shows that work flows from the client to the PM, then to crews and agents
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a running session, when the client sends a message from the page, then the page shows it going to the PM node first, and when the PM starts or messages a crew, the wire from the PM to that crew lights up with what was sent.
+
+## R-41: A goal typed in the page starts a truss run without typing /truss:run
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a fresh UI session, when the client types "add CSV export" in the goal box and sends it, then the session runs the truss:run skill on that goal, and the client never types /truss:run; how the page decides between a new run, a follow-up and a plain message is recorded in an ADR.
+
+## R-42: Each agent shows what it is doing and why it exists
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a crew with a foreman, a builder and a QC engineer, when the client looks at the crew card, then each agent card shows its role, a one-line purpose (for the QC engineer, "Checks the crew's work against proof before it merges"), and its current task or last activity.
+
+## R-43: Costs and run metrics have their own area, with no ceiling
+Status: open
+Kind: nfr
+Measure: 0 spending limits set by the UI; one metrics area shows cost, tokens per model, run time, agents started and crews done, each refreshed within 2 s of the session message or state file that changes it
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+
+## R-44: Every crew and agent shows a clear status
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a run with one crew running, one merged, one waiting on the client and one stalled, when the client looks at the page, then each shows a distinct status (active, done, waiting on you, stuck) as a word plus a visual cue that is not colour alone, and the run as a whole shows whether it is working, waiting on the client or finished.
+
+## R-45: Messages with the PM read as a chat thread
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a session where the client sent two messages and the PM replied to each, when the client looks at the page, then the four messages show as a thread with the newest in view, next to the composer, without scrolling to the bottom of the page.
+
+## R-46: The page follows the client's design reference
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given the client's reference truss_factory.tsx (left rail with the repo and the idea, a build network of PM and crews, built artifacts below), when the client compares it with the page during a live run, then the layout, hierarchy and crew network follow the reference, and screenshots of a live run show R-36 to R-45 met.
 
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
