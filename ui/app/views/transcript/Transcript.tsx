@@ -221,7 +221,7 @@ export function Transcript({ state, now }: TranscriptProps) {
           onScroll={onScroll}
           className={cn(
             'max-h-[50vh] min-w-0 overflow-x-hidden overflow-y-auto rounded-card bg-sunken px-3 py-3 lg:max-h-[min(60vh,560px)]',
-            !state && 'min-h-56',
+            'min-h-56',
           )}
         >
           {!state ? (
