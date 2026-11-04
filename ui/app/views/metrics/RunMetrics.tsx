@@ -36,13 +36,13 @@ export function RunMetrics({ state, now }: RunMetricsProps) {
         Run metrics
       </h2>
       {state === null ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-4 min-[30rem]:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-30 rounded-card" />
           ))}
         </div>
       ) : (
-        <dl className="mt-4 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4">
+        <dl className="mt-4 grid grid-cols-1 gap-4 min-[30rem]:grid-cols-2 xl:grid-cols-4">
           <MetricTile
             label="Cost"
             value={usage && usage.costUsd != null ? formatUsd(usage.costUsd) : <Dash />}

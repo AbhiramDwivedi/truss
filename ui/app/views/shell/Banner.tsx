@@ -102,6 +102,9 @@ export function Banner({ state, now, connection }: BannerProps) {
   const summary = `${formatUsd(cost)} · ${formatRunTime((state ? runTimeMs(state, now) : null) ?? 0)}`
   const words = slow && !live ? 'Still connecting to the session…' : sessionWords(state, false, flags.expired)
   const working = session !== null && (session.status === 'running' || session.backgroundTasks.length > 0)
+  // Same reading as views/status/status.ts: a waiting session with background tasks and no open request.
+  const stillRunning =
+    session?.status === 'waiting' && session.backgroundTasks.length > 0 && !(state?.requests ?? []).some((q) => q.status === 'open')
   const bad = flags.expired || unreachable || session?.status === 'error'
 
   // Scroll Run metrics into view and move focus to its heading (the link's own jump leaves focus on the link).
@@ -112,6 +115,11 @@ export function Banner({ state, now, connection }: BannerProps) {
     const h = section.querySelector<HTMLElement>('h2')
     section.scrollIntoView({ block: 'start' })
     h?.focus({ preventScroll: true })
+    // Sections above it can still grow after a load (deliverables, the network): keep the target in view while
+    // the layout settles, for a short time only.
+    const keep = new ResizeObserver(() => section.scrollIntoView({ block: 'start', behavior: 'instant' }))
+    keep.observe(document.body)
+    window.setTimeout(() => keep.disconnect(), 1500)
   }
 
   return (
@@ -142,6 +150,7 @@ export function Banner({ state, now, connection }: BannerProps) {
           <p role="status" aria-label="Session" className={bad ? 'min-w-0 text-ui text-fail-text' : 'min-w-0 text-ui text-fg'}>
             {words}
           </p>
+          {stillRunning && <p className="min-w-0 text-ui text-muted">Agents still running; nothing needed from you</p>}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
@@ -171,7 +180,10 @@ export function Banner({ state, now, connection }: BannerProps) {
         </div>
       )}
 
-      <RunStatus state={state} now={now} connection={connection} />
+      {/* At 1024 px and up one notice's height is held back, so a notice that arrives with the state moves nothing below. */}
+      <div className="min-w-0 lg:min-h-13">
+        <RunStatus state={state} now={now} connection={connection} />
+      </div>
     </header>
   )
 }

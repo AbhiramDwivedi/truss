@@ -91,11 +91,13 @@ test('changes to the Truss files show on the page within 2 s without a reload', 
   await expect(page.getByRole('tab', { name: 'Decisions and ADRs', exact: true })).toHaveCount(0)
   const decisions = page.getByRole('region', { name: 'Decisions and ADRs', exact: true })
   const adrs = decisions
+  const decisionsBefore = Number((await decisions.getByText(/\d+ decisions?$/).first().innerText()).match(/(\d+) decisions?$/)![1])
 
   // 3. decisions.md: a line with a per-run value (R-5).
   const decision = `choose-${run}-store`
   appendFileSync(join(trussDir, 'decisions.md'), `- 10:00 | ${decision} | because ${run} | checker: none | followed\n`)
-  await expect(decisions.getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
+  // The rail timeline lists ADRs and events; a decisions.md line raises its header count (ADR-0028 section 3).
+  await expect(decisions.getByText(new RegExp(`\\b${decisionsBefore + 1} decisions?$`))).toBeVisible(WITHIN)
 
   // 4. a new ADR file in the repo's ADR dir (R-5).
   const adrTitle = `Adopt ${run} queue`

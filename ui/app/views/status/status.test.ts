@@ -230,6 +230,18 @@ test('runStatus: session.status waiting is waiting', async () => {
   s.session.status = 'waiting'
   assert.equal(runStatus(s), 'waiting')
 })
+test('runStatus: waiting session with background tasks and no open request is working; pmStatus is active', async () => {
+  const { runStatus, pmStatus } = await status()
+  const s = clone(fixture('live'))
+  s.session.status = 'waiting'
+  s.session.backgroundTasks = [{ taskId: 't1', description: 'ls', subagentType: null }]
+  s.requests = []
+  assert.equal(runStatus(s), 'working')
+  assert.equal(pmStatus(s), 'active')
+  s.requests = [{ id: 'q1', status: 'open', createdAt: '2026-11-02T12:00:00.000Z', answeredAt: null, cancelReason: null }]
+  assert.equal(runStatus(s), 'waiting')
+  assert.equal(pmStatus(s), 'waiting')
+})
 test('runStatus: an open request is waiting even while the session runs', async () => {
   const { runStatus } = await status()
   const s = clone(fixture('live'))

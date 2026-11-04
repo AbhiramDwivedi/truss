@@ -20,7 +20,7 @@ async function d2(page: Page, theme: Theme): Promise<void> {
 const unexpected = (lines: string[]) => lines.filter((l) => !/Failed to load resource/.test(l))
 
 test.describe('paths', () => {
-  test('loading: with the stream held and no snapshot, Session reads connecting, then the can\'t-reach copy and Retry', async ({ browser }) => {
+  test('loading: with the stream held and no snapshot, Session reads connecting, then the can\'t-reach copy and Reload', async ({ browser }) => {
     const s = await scenario('follow-up')
     const held: Route[] = []
     let hold = true
@@ -36,7 +36,8 @@ test.describe('paths', () => {
       const { page } = o
       await d2(page, 'light')
       const status = page.getByRole('status', { name: 'Session' })
-      await expect(status, 'before the first snapshot the session is connecting').toHaveText('connecting', T)
+      // rework page.spec.ts:178 (R-46): "connecting" gives way to "Still connecting to the session…" at 5 s.
+      await expect(status, 'before the first snapshot the session is connecting').toHaveText(/^(connecting|Still connecting to the session…)$/, T)
       await expect(page.getByRole('article'), 'no card before the first snapshot').toHaveCount(0, T)
       // placeholder blocks, not a spinner: Your move and Crews hold their final heights, busy, before any data
       await expect(page.getByRole('progressbar'), 'no spinner before the first snapshot').toHaveCount(0, T)
@@ -50,13 +51,14 @@ test.describe('paths', () => {
         expect(h, `${name} holds a non-zero height before the snapshot`).toBeGreaterThan(0)
       }
       // after 10 s with no snapshot
-      await expect(status).toHaveText("Can't reach the Truss session. Is truss ui still running?", { timeout: 15000 })
-      const retry = page.getByRole('button', { name: 'Retry' })
+      // rework page.spec.ts:178-190 (R-46): at 20 s the Banner reads the copy below with a Reload button (no Retry).
+      await expect(page.getByText("Can't reach the truss UI server. Check it is still running, then reload.")).toBeVisible({ timeout: 25000 })
+      const retry = page.getByRole('button', { name: 'Reload' })
       await expect(retry).toBeVisible(T)
       hold = false
       await retry.click()
-      await expect(page.getByRole('log', { name: 'Transcript' }), 'Retry opens the stream again').toContainText(s.fixture.transcript[0].text, LOAD)
-      await expect(status).not.toHaveText(/connecting|Can't reach/, T)
+      await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true }), 'Reload opens the stream again').toContainText(s.fixture.transcript[0].text, LOAD)
+      await expect(status).not.toHaveText(/connecting|Can't reach/i, T)
       expect(unexpected(await o.problems())).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
@@ -107,7 +109,7 @@ test.describe('paths', () => {
   })
 
   for (const theme of ['light', 'dark'] as Theme[]) {
-    test(`stuck-crew idle-foreman (${theme}): stuck: foreman idle <n> min, and Start a successor foreman sends its message`, async ({ browser }) => {
+    test(`stuck-crew idle-foreman (${theme}): Stuck with How long <n> min and the idle-foreman Why text, and Start a successor foreman sends its message`, async ({ browser }) => {
       const s = await scenario('stuck-crew/idle-foreman')
       const o = await openState(browser, s, theme, DESKTOP)
       try {
@@ -120,7 +122,10 @@ test.describe('paths', () => {
         const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
         await expect(line).toHaveCount(1, LOAD)
         await expect(line.getByText('Stuck', { exact: true }).first()).toBeVisible(T)
-        await expect(line.getByText(new RegExp(`foreman idle ${stuck.stuck.minutes} min`)).first()).toBeVisible(T)
+        // ruled as "Stuck, silent Nm" was (ADR-0028 section 9, views/crews StuckCard): the Stuck word plus Why / How long / Next
+        await expect(line.getByText('How long', { exact: true }).first()).toBeVisible(T)
+        await expect(line.getByText(new RegExp(`\\b${stuck.stuck.minutes} min\\b`)).first()).toBeVisible(T)
+        await expect(line.getByText(`The foreman has sent nothing for ${stuck.stuck.minutes} min.`), 'the idle-only Why text').toBeVisible(T)
         await expect(crews.getByText(/stuck: stalled/), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
         const successor = crews.getByRole('button', { name: 'Start a successor foreman' })
         await expect(successor).toBeVisible(T)
@@ -186,7 +191,7 @@ test.describe('paths', () => {
     } finally { await o.close(); await s.stop() }
   })
 
-  test('artifacts, zero results: a type filter with no items reads No images yet., and Show all types resets it', async ({ browser }) => {
+  test('artifacts, zero results: a type filter with no items reads No deliverables of this type., and Show all resets it', async ({ browser }) => {
     const s = await scenario('artifacts/no-images')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
@@ -206,13 +211,13 @@ test.describe('paths', () => {
       await expect(list.getByRole('listitem').first()).toBeVisible(T)
       await images.click()
       await expect(images).toHaveAttribute('aria-pressed', 'true', T)
-      await expect(page.getByText('No images yet.', { exact: true })).toBeVisible(T)
-      const reset = page.getByRole('button', { name: 'Show all types' })
+      await expect(page.getByText('No deliverables of this type.', { exact: true })).toBeVisible(T)
+      const reset = page.getByRole('button', { name: 'Show all', exact: true })
       await expect(reset).toBeVisible(T)
       await reset.click()
-      await expect(filter.getByRole('button', { name: /^All\b/ }), 'Show all types presses All again').toHaveAttribute('aria-pressed', 'true', T)
+      await expect(filter.getByRole('button', { name: /^All\b/ }), 'Show all presses All again').toHaveAttribute('aria-pressed', 'true', T)
       await expect(images).toHaveAttribute('aria-pressed', 'false', T)
-      await expect(page.getByText('No images yet.', { exact: true })).toHaveCount(0, T)
+      await expect(page.getByText('No deliverables of this type.', { exact: true })).toHaveCount(0, T)
       await expect(list.getByRole('listitem').first(), 'the items are back').toBeVisible(T)
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
