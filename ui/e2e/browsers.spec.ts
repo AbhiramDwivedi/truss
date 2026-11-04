@@ -43,8 +43,8 @@ for (const [browserName, launcher] of BROWSERS) {
 
         // Status and verdict are words in the visible text of each crew line, not only in a color or icon.
         const cases: Array<[string, RegExp, RegExp]> = [
-          ['ratelimit-design', /merged/i, /QC PASS/],
-          ['quotas', /running/i, /QC FAIL/],
+          ['ratelimit-design', /done/i, /QC PASS/], // ADR-0028 section 9: merged shows as Done, running as Active
+          ['quotas', /active/i, /QC FAIL/],
           ['gateway', /planned/i, /QC none/],
         ]
         for (const [slug, status, verdict] of cases) {
@@ -67,10 +67,8 @@ for (const [browserName, launcher] of BROWSERS) {
           expect(box!.x + box!.width, `${slug} line right edge`).toBeLessThanOrEqual(width)
         }
 
-        // Opening a line adds a member line without widening the page.
-        await crewLine(page, 'quotas').click()
-        await expect(crewLine(page, 'quotas')).toHaveAttribute('aria-expanded', 'true')
-        await expect(page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: member })).toBeVisible()
+        // ADR-0028 section 10: the crew card lists its agents as cards, with no expand step, and they fit the page width.
+        await expect(crewLine(page, 'quotas').getByRole('listitem').filter({ hasText: member })).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
         } finally {
           await browser.close()
