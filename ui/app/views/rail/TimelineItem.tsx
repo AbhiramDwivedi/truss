@@ -86,7 +86,7 @@ export function TimelineItem({ kind, title, time, detail, tag, id, date, onOpen,
             selected && 'border-brand ring-1 ring-brand',
           )}
         >
-          <span className="line-clamp-2 block text-ui font-semibold break-words text-fg">{title}</span>
+          <span className="line-clamp-2 text-ui font-semibold break-words text-fg">{title}</span>
           <span className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-micro text-muted">
             <span>{detail}</span>
             {date && <span className="font-mono text-micro tabular-nums">{date}</span>}
