@@ -13,7 +13,7 @@ async function open(page: Page, iface: Iface): Promise<void> {
   await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible({ timeout: 10000 })
 }
 // The transcript is the record of the conversation (ADR-0018 section 5): a log named Transcript.
-const transcript = (page: Page) => page.getByRole('log', { name: 'Transcript', exact: true })
+const transcript = (page: Page) => page.getByRole('log', { name: 'Conversation with the PM', exact: true })
 let n = 0
 const entry = (text: string) => ({ n: ++n, role: 'assistant', text, ts: new Date().toISOString() })
 // Delivers one transcript entry per call, as the server would.
@@ -33,6 +33,9 @@ test.describe('SSE drop and replay', () => {
   test('R-3, R-15: deltas emitted while the connection is dropped show exactly once after reconnect, with no reload', async ({ page }) => {
     await withIface(async (iface) => {
       await open(page, iface)
+      // ADR-0028 section 8: the model is no longer in the banner; the rail run context shows it below the lg
+      // breakpoint (views/rail/RunContext.tsx), so the viewport is narrowed.
+      await page.setViewportSize({ width: 800, height: 900 })
       await page.evaluate(() => { (window as any).__noReload = 'still here' })
       const tag = rand()
       say(iface, `before-${tag}`)
@@ -56,7 +59,7 @@ test.describe('SSE drop and replay', () => {
       iface.refuse(false)
       // The page reconnects by itself and shows everything it missed, within 2 s of the line being back.
       for (const t of dropped) await expect(transcript(page).getByText(t)).toBeVisible({ timeout: 5000 })
-      await expect(page.getByRole('banner')).toContainText(`model-while-dropped-${tag}`, WITHIN)
+      await expect(page.getByText(`model-while-dropped-${tag}`, { exact: true }).first()).toBeVisible(WITHIN)
       await expect(sessionStatus(page)).toContainText('running', WITHIN)
       await expect(page.getByText('Reconnecting…')).toHaveCount(0, WITHIN)
 
@@ -117,6 +120,9 @@ test.describe('SSE drop and replay', () => {
   test('R-3: a restarted server (new instance) gives a fresh snapshot the page shows', async ({ page }) => {
     await withIface(async (iface) => {
       await open(page, iface)
+      // ADR-0028 section 8: the model is no longer in the banner; the rail run context shows it below the lg
+      // breakpoint (views/rail/RunContext.tsx), so the viewport is narrowed.
+      await page.setViewportSize({ width: 800, height: 900 })
       await page.evaluate(() => { (window as any).__noReload = 'still here' })
       const tag = rand()
       const oldInstance = iface.instance
@@ -133,7 +139,7 @@ test.describe('SSE drop and replay', () => {
       iface.refuse(false)
 
       // The page shows the new snapshot's state.
-      await expect(page.getByRole('banner')).toContainText(`model-after-restart-${tag}`, { timeout: 5000 })
+      await expect(page.getByText(`model-after-restart-${tag}`, { exact: true }).first()).toBeVisible({ timeout: 5000 })
       // It asked with the old instance's id, which the new instance does not know: a snapshot, not a replay.
       const re = iface.sseRequests.slice(connections).find((r) => r.lastEventId !== null)
       expect(re!.lastEventId!.startsWith(`${oldInstance}:`)).toBe(true)

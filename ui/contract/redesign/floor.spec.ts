@@ -51,7 +51,7 @@ test.describe('floor', () => {
         const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
         await expect(line).toHaveCount(1, LOAD)
         await expect(line.getByText('Stuck', { exact: true }).first()).toBeVisible(T)
-        await expect(page.getByText(`Stuck, silent ${stuck.stuck.minutes}m`)).toBeVisible(T)
+        // ADR-0028 section 9 and views/crews StuckCard: the Stuck word above plus Why / How long / Next replace "Stuck, silent Nm".
         for (const term of ['Why', 'How long', 'Next']) await expect(page.getByRole('term').filter({ hasText: new RegExp(`^${term}$`) })).toHaveCount(1, T)
         const restart = crews.getByRole('button', { name: 'Restart builder' })
         await expect(restart).toBeInViewport(T)

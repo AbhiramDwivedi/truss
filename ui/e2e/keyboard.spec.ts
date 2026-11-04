@@ -67,8 +67,9 @@ async function use(page: Page, t: Locator): Promise<void> {
 
 const messageBox = goalBox
 const status = (i: Iface, id: string) => i.requests().find((r) => r.id === id)
-const APPROVE = { name: 'Approve', exact: true } as const
-const DENY = { name: 'Deny', exact: true } as const
+// ADR-0028 section 2: reply card Approve and Deny carry a hint ("Sends: Approved."), so anchor the start only.
+const APPROVE = { name: /^Approve\b/ } as const
+const DENY = { name: /^Deny\b/ } as const
 
 test('R-19: html has lang="en" and the page has a title', async ({ page }) => {
   iface = await startInterface()
@@ -163,7 +164,7 @@ test('R-18: open and close an agent disclosure with Enter and Space, then reach 
   const run = rand()
   const member = `quotas-builder-${run}`
   real = await startReal({
-    events: [spawnEvent('quotas', member)],
+    events: [member, ...Array.from({ length: 6 }, (_, i) => `${member}-x${i}`)].map((n) => spawnEvent('quotas', n)),
     trussFiles: { 'plan.md': `# Plan ${run}\n\nThe plan for run ${run}.\n` },
   })
   real.appendDecision(`- 10:00 | choose-${run}-store | because ${run} | checker: none | followed`)
@@ -171,10 +172,10 @@ test('R-18: open and close an agent disclosure with Enter and Space, then reach 
   const line = crewLine(page, 'quotas')
   await expect(line).toBeVisible(LOAD)
 
-  // ADR-0028 section 10 and UX direction 6: the crew card lists its agents as cards; each card has a disclosure button.
-  const agent = line.getByRole('listitem').filter({ hasText: member })
-  await expect(agent).toBeVisible()
-  const disclosure = agent.getByRole('button', { expanded: false })
+  // ADR-0028 section 10, crews.test.ts:360 and rework network.spec.ts:82: a crew card shows 6 agent cards and a
+  // "Show n more agents" disclosure button for the rest; an agent card has no toggle unless its task text is cut.
+  await expect(line.getByRole('listitem').filter({ hasText: member }).first()).toBeVisible()
+  const disclosure = line.getByRole('button', { name: /^Show (\d+ more agents?|fewer agents)$/ })
   await reach(page, disclosure)
   await page.keyboard.press('Enter')
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
@@ -190,7 +191,8 @@ test('R-18: open and close an agent disclosure with Enter and Space, then reach 
 
   // ADR-0028 sections 3 and 10: there is no Run tablist. The timeline item and the Architecture deliverable are plain buttons.
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'Decisions and ADRs', exact: true }).getByText(rx(`choose-${run}-store`)).first()).toBeVisible(WITHIN)
+  // The timeline lists ADRs and events; a decisions.md line only raises the "N decisions" count (ADR-0028 section 3).
+  await expect(page.getByText(/\b[1-9]\d* decisions?$/).first()).toBeVisible(WITHIN)
   await use(page, page.getByRole('region', { name: /deliverables/i }).getByRole('button', { name: /^Architecture/ }).first())
   await expect(page.getByRole('figure', { name: /^Diagram \d+ of \d+$/ }).first()).toBeVisible(LOAD)
 

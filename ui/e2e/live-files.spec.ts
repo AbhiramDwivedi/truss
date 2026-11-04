@@ -88,14 +88,16 @@ test('R-5, R-15: decisions.md lines and a new ADR file show in the rail timeline
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
   // ADR-0028 section 3: no tab; the rail's "Decisions and ADRs" timeline is the one list of both.
-  const decisions = adrTimeline(page)
   const adrs = adrTimeline(page)
   // The real ADR already on disk is listed with its title and status.
   await expect(adrs.getByRole('listitem').filter({ hasText: /a design phase, principle packs/i }).first()).toBeVisible(LOAD)
 
   const decision = `choose-${run}-store`
+  // The rail timeline lists ADRs and events; a decisions.md line only raises the "N decisions" count
+  // (ADR-0028 section 3, as contract/redesign/states.spec.ts does).
+  const before = Number((await page.getByText(/\d+ decisions?$/).first().innerText()).match(/(\d+) decisions?$/)?.[1] ?? 0)
   real.appendDecision(`- 10:00 | ${decision} | because ${run} | checker: none | followed`)
-  await expect(decisions.getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
+  await expect(page.getByText(new RegExp(`\\b${before + 1} decisions?$`)).first()).toBeVisible(WITHIN)
 
   const adrTitle = `Adopt ${run} queue`
   real.writeAdr(`0099-${run}.md`, `ADR-0099: ${adrTitle}`, 'accepted')
@@ -129,7 +131,8 @@ test('R-6: the Architecture deliverable shows the architecture doc as markdown a
 test('R-6: an image a crew branch added shows in the design panel, loaded through /api/image', async ({ page }) => {
   const run = rand()
   const path = `docs/shots/built-${run}.png`
-  real = await startReal({ images: [{ slug: 'quotas', path }] })
+  // views/deliverables/deliverables.test.ts:78: an image whose crew hasn't merged is a pending item with nothing to open, so the crew is merged here.
+  real = await startReal({ images: [{ slug: 'quotas', path }], plan: (p) => { p.crews.find((c: { slug: string }) => c.slug === 'quotas').status = 'merged' } })
   const imageResponses: string[] = []
   page.on('response', (r) => { if (r.url().includes('/api/image')) imageResponses.push(`${r.status()} ${r.url()}`) })
   await page.goto(real.url)
@@ -137,14 +140,16 @@ test('R-6: an image a crew branch added shows in the design panel, loaded throug
   // ADR-0028 section 10: no Design tab; images are deliverables in main.
 
   // git runs every 5 s (Decision 4), so the image may take a few seconds to be listed.
-  const img = deliverables(page).getByRole('img', { name: rx(`built-${run}`) }).first()
+  // ADR-0028 section 10 and views/deliverables: the item is a button; the image loads in its preview on open.
+  await deliverables(page).getByRole('button', { name: /^Screenshot \d+/ }).first().click({ timeout: 15000 })
+  const img = page.getByRole('img', { name: rx(`built-${run}`) }).first()
   await expect(img).toBeVisible({ timeout: 15000 })
   await expect(img).toHaveAttribute('src', /\/api\/image\?/)
   await expect(img).toHaveAttribute('src', new RegExp(`ref=truss-quotas`))
   await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth), { timeout: 5000 }).toBe(1)
   expect(imageResponses.some((r) => r.startsWith('200 '))).toBe(true)
   // The bytes the server sends are the PNG the branch holds.
-  const res = await page.request.get((await img.getAttribute('src'))!)
+  const res = await page.request.get(new URL((await img.getAttribute('src'))!, real.url).toString())
   expect(res.status()).toBe(200)
   expect(Buffer.compare(await res.body(), PNG)).toBe(0)
 })
