@@ -73,7 +73,7 @@ function isDir(p: string): boolean {
 export function createStore(opts: { repo: string; trussDir?: string; pluginPath?: string; pollMs?: number }): Store {
   const repo = opts.repo
   const purposes = readPurposes(opts.pluginPath) // once at start; nothing is written (R-9)
-  let taskOf: Record<string, string> = {} // the session view's task map; never published
+  let taskOf: Map<string, string> = new Map() // the session view's task map; never published
   const pollMs = opts.pollMs ?? 500
   const instance = crypto.randomBytes(8).toString('hex')
   const files = createFileReaders(repo)
@@ -228,7 +228,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
   function decorated(r: Run | null): Run | null {
     if (r === null) return null
     const ids: (string | null)[] = []
-    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(m.agentId !== null && Object.hasOwn(taskOf, m.agentId) ? taskOf[m.agentId] : null)
+    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(m.agentId !== null ? (taskOf.get(m.agentId) ?? null) : null)
     const key = JSON.stringify(ids)
     if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
     const value = decorate(r)
@@ -239,7 +239,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     const fill = (m: Member, isForeman: boolean): Member => ({
       ...m,
       purpose: purposeOf(purposes, m.type, isForeman),
-      task: m.agentId !== null && Object.hasOwn(taskOf, m.agentId) ? taskOf[m.agentId] : null,
+      task: m.agentId !== null ? (taskOf.get(m.agentId) ?? null) : null,
     })
     return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, true), members: c.members.map((m) => fill(m, false)) })) }
   }
@@ -319,7 +319,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     }
     const kept = (view.transcript as unknown as { n: number }[]).slice(-TRANSCRIPT_MAX).map((e) => cloneOnce(e))
     session = v.session
-    taskOf = (view as { taskDescriptions?: Record<string, string> }).taskDescriptions ?? {}
+    taskOf = (view as { taskDescriptions?: Map<string, string> }).taskDescriptions ?? new Map()
     requests = v.requests
     sessionNoPlugin = v.session.sessionId != null && v.session.plugin == null
     const lastN = transcript.length === 0 ? 0 : transcript[transcript.length - 1].n
