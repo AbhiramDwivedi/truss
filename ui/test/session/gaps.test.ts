@@ -132,7 +132,7 @@ test('gap a: the fixed line is kept off the transcript, and multi-line text with
   } finally { await w.close(); }
 });
 
-test('gap a: intent goal sends the goal line, and an absent intent sends no fixed line at all', async () => {
+test('gap a: the first intent goal with no plan sends /truss:run <text>, and an absent intent sends no fixed line at all', async () => {
   const w = await boot();
   try {
     await w.post({ text: 'alpha', intent: 'goal' });
@@ -141,9 +141,27 @@ test('gap a: intent goal sends the goal line, and an absent intent sends no fixe
     await until(() => w.state().session.status === 'waiting', 'the turn to end');
     await w.post({ text: 'beta' });
     await until(() => (stub()?.sent.length ?? 0) >= 2, 'second send');
-    assert.equal(stub()!.sent[0], `${GOAL_LINE}\n\nalpha`);
+    assert.equal(stub()!.sent[0], '/truss:run alpha');
     assert.equal(stub()!.sent[1], 'beta');
     assert.ok(!stub()!.sent[1].includes('[Truss UI'));
+    const e = w.state().transcript.find((x: any) => x.role === 'user');
+    assert.equal(e.text, 'alpha', 'the transcript keeps the text as typed, without /truss:run');
+  } finally { await w.close(); }
+});
+
+test('gap a: a later intent goal in the same session gets the goal line, a blank line and the text', async () => {
+  const w = await boot();
+  try {
+    await w.post({ text: 'alpha', intent: 'goal' });
+    await until(() => (stub()?.sent.length ?? 0) >= 1, 'first send');
+    stub()!.emit(result());
+    await until(() => w.state().session.status === 'waiting', 'the turn to end');
+    await w.post({ text: 'gamma', intent: 'goal' });
+    await until(() => (stub()?.sent.length ?? 0) >= 2, 'second send');
+    assert.equal(stub()!.sent[0], '/truss:run alpha');
+    assert.equal(stub()!.sent[1], `${GOAL_LINE}\n\ngamma`);
+    const users = w.state().transcript.filter((x: any) => x.role === 'user');
+    assert.deepEqual(users.map((u: any) => u.text), ['alpha', 'gamma']);
   } finally { await w.close(); }
 });
 

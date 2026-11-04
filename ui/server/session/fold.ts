@@ -38,7 +38,10 @@ export interface SessionState {
   backgroundTasks: BackgroundTask[]
   error: string | null
   queue: QueueItem[]
+  flow?: FlowEntry[]
 }
+// ADR-0028 section 7: one hand-off the PM made, folded from its own top-level tool_use blocks.
+export interface FlowEntry { at: string; tool: 'Agent' | 'SendMessage' | 'Workflow'; to: string | null; summary: string }
 export interface TranscriptEntry {
   n: number
   role: 'user' | 'assistant' | 'error'
@@ -47,9 +50,14 @@ export interface TranscriptEntry {
   id: string | null
   intent: Intent
 }
-export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[]; tally: Tally }
+export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[]; tally: Tally
+  // ADR-0028 section 6: the latest description per task_id, oldest first, at most KEEP. Beside `session`, so the snapshot is unchanged.
+  taskDescriptions?: Map<string, string>
+}
 
 const KEEP = 500
+const FLOW_KEEP = 200
+const SUMMARY_MAX = 200
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 const count = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : 0)
 
@@ -198,9 +206,51 @@ function foldTaskProgress(view: SessionView, msg: Record<string, unknown>): Sess
   })
 }
 
-export function foldMessage(view: SessionView, msg: unknown): SessionView {
+function foldTaskDescription(view: SessionView, msg: Record<string, unknown>): SessionView {
+  const description = str(msg.description)
+  if (typeof msg.task_id !== 'string' || description === null) return view
+  // O(1) per message: the Map is updated in place (delete then set moves the id to the newest end), the oldest key past KEEP is dropped.
+  const map = view.taskDescriptions ?? new Map<string, string>()
+  map.delete(msg.task_id)
+  map.set(msg.task_id, description)
+  if (map.size > KEEP) map.delete(map.keys().next().value as string)
+  return { ...view, taskDescriptions: map }
+}
+
+const FLOW_TOOLS = ['Agent', 'SendMessage', 'Workflow'] as const
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// The longest slug that stands as a whole word (not inside a longer slug-like word) in the first field that holds one.
+function slugIn(fields: unknown[], slugs: readonly string[]): string | null {
+  const sorted = [...slugs].filter((s) => s !== '').sort((a, b) => b.length - a.length)
+  for (const f of fields) {
+    if (typeof f !== 'string') continue
+    for (const s of sorted) if (new RegExp(`(?<![\\w-])${escapeRe(s)}(?![\\w-])`).test(f)) return s
+  }
+  return null
+}
+
+function foldFlow(view: SessionView, content: unknown[], slugs: readonly string[]): SessionView {
+  const added: FlowEntry[] = []
+  for (const b of content) {
+    if (!isObj(b) || b.type !== 'tool_use' || !FLOW_TOOLS.includes(b.name as never) || !isObj(b.input)) continue
+    const tool = b.name as FlowEntry['tool']
+    const inp = b.input
+    // A real Workflow call carries scriptPath and args only, so name the script it started.
+    const raw = tool === 'SendMessage' ? str(inp.message)
+      : tool === 'Workflow' ? (str(inp.description) || str(inp.scriptPath)?.split('/').pop()?.replace(/\.[^.]+$/, ''))
+        : str(inp.description)
+    const summary = (raw ?? '').split('\n')[0]!.slice(0, SUMMARY_MAX)
+    added.push({ at: new Date().toISOString(), tool, to: slugIn([inp.to, inp.description, inp.prompt], slugs), summary })
+  }
+  if (added.length === 0) return view
+  return withSession(view, { flow: [...(view.session.flow ?? []), ...added].slice(-FLOW_KEEP) })
+}
+
+export function foldMessage(view: SessionView, msg: unknown, crewSlugs: readonly string[] = []): SessionView {
   if (!isObj(msg)) return view
   if (msg.type === 'system') {
+    if (msg.subtype === 'task_started') return foldTaskDescription(view, msg)
     if (msg.subtype === 'init') return foldInit(view, msg)
     if (msg.subtype === 'background_tasks_changed') {
       const tasks: BackgroundTask[] = []
@@ -211,7 +261,7 @@ export function foldMessage(view: SessionView, msg: unknown): SessionView {
       }
       return withSession(view, { backgroundTasks: tasks })
     }
-    if (msg.subtype === 'task_progress') return foldTaskProgress(view, msg)
+    if (msg.subtype === 'task_progress') return foldTaskProgress(foldTaskDescription(view, msg), msg)
     return view
   }
   if (msg.type === 'result') return msg.parent_tool_use_id ? view : foldResult(view, msg)
@@ -222,7 +272,7 @@ export function foldMessage(view: SessionView, msg: unknown): SessionView {
     const texts = content.flatMap((b) =>
       isObj(b) && b.type === 'text' && typeof b.text === 'string' && b.text ? [b.text] : [],
     )
-    return addEntries(view, 'assistant', texts)
+    return addEntries(foldFlow(view, content, crewSlugs), 'assistant', texts)
   }
   return view
 }
