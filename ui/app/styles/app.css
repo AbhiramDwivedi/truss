@@ -163,8 +163,18 @@
   }
 }
 
+/* The header's cost link scrolls to Run metrics smoothly, and not at all under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  html {
+    scroll-behavior: auto;
+  }
+  *,*::before, *::after {
     animation: none !important;
     transition-duration: 0ms !important;
   }

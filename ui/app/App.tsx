@@ -1,30 +1,24 @@
-// The page (ADR-0023 sections 4 and 5, D2's grid). App is the only reader of the store: it passes
-// { state, now } to every area root and owns the Run tab. At 1024 px and up a sticky 400 px rail holds the
-// banner, the run context and the timeline beside the main column. Below 1024 px the rail and main dissolve
-// (display: contents) and D2's max-lg order stacks every area in one column.
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Skeleton } from './components/ui/skeleton.tsx'
+// The page (ADR-0028 section 10). App is the only reader of the store: it passes { state, now } to every
+// area root. At 1024 px and up there are two columns: a sticky 400 px rail (header, run context, the
+// conversation, the timeline) beside <main> (Your move, the network, deliverables, run metrics). Below
+// 1024 px it is one column and the DOM order is the visual order: no CSS order and no display: contents.
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useConnection, useRun } from './store/react.ts'
 import { Composer } from './views/composer/Composer.tsx'
 import { BuildNetwork } from './views/crews/BuildNetwork.tsx'
 import { RetroRail } from './views/crews/RetroRail.tsx'
 import { Deliverables } from './views/deliverables/Deliverables.tsx'
-import { LiveMetrics } from './views/metrics/LiveMetrics.tsx'
+import { RunMetrics } from './views/metrics/RunMetrics.tsx'
 import { YourMove } from './views/move/YourMove.tsx'
 import { RunContext } from './views/rail/RunContext.tsx'
 import { Timeline } from './views/rail/Timeline.tsx'
-import { RunTabs, type RunTab } from './views/run/RunTabs.tsx'
 import { Banner } from './views/shell/Banner.tsx'
-import { RunStatus } from './views/shell/RunStatus.tsx'
 import { SkipLink } from './views/shell/SkipLink.tsx'
 import { useInstantThemeSwitch } from './views/shell/instantTheme.ts'
 import { Transcript } from './views/transcript/Transcript.tsx'
 
-// ADR-0018 section 10: the Design and the Decisions and ADRs panels load as lazy chunks.
-const DesignPanel = lazy(() => import('./views/design/DesignPanel.tsx').then((m) => ({ default: m.DesignPanel })))
-const DecisionsPanel = lazy(() => import('./views/decisions/DecisionsPanel.tsx').then((m) => ({ default: m.DecisionsPanel })))
-
 const TICK_MS = 1000
+const WIDE = '(min-width: 1024px)'
 
 /** Wall-clock milliseconds, updated once a second, so every clock on the page agrees. */
 function useNow(): number {
@@ -36,95 +30,87 @@ function useNow(): number {
   return now
 }
 
-const panelLoading = <Skeleton className="h-40 w-full rounded-panel" />
+function subscribeWide(onChange: () => void): () => void {
+  const mq = window.matchMedia(WIDE)
+  mq.addEventListener('change', onChange)
+  return () => mq.removeEventListener('change', onChange)
+}
 
-// Below 1024 px every area is a flex item of the page column; these give D2's max-lg order.
+/** True at 1024 px and up. Read synchronously, so the first paint is already in the right layout. */
+function useWide(): boolean {
+  return useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE).matches,
+    () => true,
+  )
+}
+
+// Below 1024 px every area sits in a column with 16 px side margins; the rail and main drop these.
 const area = 'min-w-0 max-lg:mx-4'
 
 export default function App() {
   const state = useRun((s) => s)
   const connection = useConnection()
   const now = useNow()
-  const [tab, setTab] = useState<RunTab>('crews')
-  const tabs = useRef<HTMLDivElement>(null)
-  const [jump, setJump] = useState(0)
+  const wide = useWide()
   useInstantThemeSwitch()
 
-  // A link elsewhere (Open log, Open in Design tab) selects a tab: bring the tablist into view and focus it.
-  const openTab = useCallback((t: RunTab) => {
-    setTab(t)
-    setJump((n) => n + 1)
-  }, [])
-  useEffect(() => {
-    if (jump === 0) return
-    const box = tabs.current
-    if (box === null) return
-    box.scrollIntoView({ block: 'start' })
-    box.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true })
-  }, [jump])
-
   const props = { state, now }
+  // Your move is not rendered while loading, so the network cannot jump down under it.
+  const open = state?.requests.some((q) => q.status === 'open') ?? false
 
+  const composer = <Composer key="composer" {...props} />
+  const transcript = <Transcript key="transcript" {...props} />
+
+  const move = (
+    <div key="move" className={`${area} empty:hidden`}>
+      {state ? <YourMove {...props} /> : null}
+    </div>
+  )
+
+  const areas: Record<string, ReactNode> = {
+    banner: <Banner key="banner" {...props} connection={connection} />,
+    context: <RunContext key="context" {...props} />,
+    // Same parent and key at both widths, so the composer's text and the thread's scroll survive a resize.
+    // Wide: the composer is first in the DOM (tab order) and flex-col-reverse draws the thread above it.
+    conversation: (
+      <div key="conversation" id="conversation" className={`${area} flex scroll-mt-6 gap-3 ${wide ? 'flex-col-reverse' : 'flex-col'}`}>
+        {wide ? composer : transcript}
+        {wide ? transcript : composer}
+      </div>
+    ),
+    main: (
+      <main key="main" id="main" tabIndex={-1} className="flex min-w-0 flex-col gap-6 outline-none max-lg:mx-4 lg:gap-12 lg:px-8 lg:py-6">
+        <div className="flex max-w-[1200px] min-w-0 flex-col gap-6 lg:gap-12">
+          {wide ? move : null}
+          <div className="flex min-w-0 flex-col gap-6">
+            <BuildNetwork {...props} />
+            {state?.retro ? <RetroRail {...props} /> : null}
+          </div>
+          <Deliverables {...props} />
+          <RunMetrics {...props} />
+        </div>
+      </main>
+    ),
+    timeline: <Timeline key="timeline" {...props} />,
+  }
+
+  const skip = wide ? '#main' : open ? '#your-move' : '#conversation'
+
+  // One root and one rail element at both widths, so the conversation keeps its parent and key.
   return (
     <>
-      <SkipLink />
+      <SkipLink href={skip} />
       <div className="flex min-h-screen min-w-0 flex-col gap-6 pb-6 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-0 lg:pb-0">
-        {/* The outer box paints the rail column the page's full height; the inner one is the sticky rail. */}
-        <div className="contents lg:block lg:min-w-0 lg:border-r lg:border-border lg:bg-surface">
-        <div className="contents lg:sticky lg:top-0 lg:flex lg:h-screen lg:min-w-0 lg:flex-col lg:overflow-y-auto">
-          <div className="min-w-0 max-lg:order-1">
-            <Banner {...props} connection={connection} />
-          </div>
-          <div className="min-w-0 max-lg:order-5">
-            <RunContext {...props} />
-          </div>
-          <div className="min-w-0 max-lg:order-10">
-            <Timeline {...props} onOpenLog={() => openTab('decisions')} />
-          </div>
+        <div key="rail" className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-border lg:bg-surface">
+          {areas.banner}
+          {areas.context}
+          {wide ? null : move}
+          {areas.conversation}
+          {wide ? areas.timeline : null}
         </div>
-        </div>
-        <main className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6 lg:px-8 lg:py-6">
-          <div className={`${area} empty:hidden max-lg:order-4 lg:sticky lg:top-0 lg:z-20 lg:-mx-8 lg:-mt-6 lg:bg-bg/85 lg:px-8 lg:pt-6 lg:pb-3 lg:backdrop-blur`}>
-            <LiveMetrics {...props} />
-          </div>
-          <div className={`${area} max-lg:order-2`}>
-            <YourMove {...props} />
-          </div>
-          <div className={`${area} max-lg:order-3`}>
-            <Composer {...props} />
-          </div>
-          <div ref={tabs} id="run-tabs" className={`${area} scroll-mt-6 max-lg:order-6`}>
-            <RunTabs
-              tab={tab}
-              onTab={setTab}
-              crews={
-                <>
-                  <BuildNetwork {...props} />
-                  {state?.retro ? <RetroRail {...props} /> : null}
-                </>
-              }
-              decisions={
-                <Suspense fallback={panelLoading}>
-                  <DecisionsPanel {...props} />
-                </Suspense>
-              }
-              design={
-                <Suspense fallback={panelLoading}>
-                  <DesignPanel {...props} />
-                </Suspense>
-              }
-            />
-          </div>
-          <div className={`${area} max-lg:order-7`}>
-            <Deliverables {...props} onOpenDesign={() => openTab('design')} />
-          </div>
-          <div className={`${area} max-lg:order-8`}>
-            <Transcript {...props} />
-          </div>
-          <div className={`${area} empty:hidden max-lg:order-9`}>
-            <RunStatus {...props} connection={connection} />
-          </div>
-        </main>
+        {areas.main}
+        {wide ? null : areas.timeline}
       </div>
     </>
   )
