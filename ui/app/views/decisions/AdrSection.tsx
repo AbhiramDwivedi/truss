@@ -8,10 +8,10 @@ import { cn } from '../../lib/utils.ts'
 import type { Adr, AdrLink } from '../../store/types.ts'
 import { cap } from '../rail/format.ts'
 
-type Kind = 'accepted' | 'proposed' | 'rejected' | 'superseded' | 'unstated'
+export type Kind = 'accepted' | 'proposed' | 'rejected' | 'superseded' | 'unstated'
 
-const KINDS: readonly Kind[] = ['accepted', 'proposed', 'rejected', 'superseded', 'unstated']
-const TONE: Record<Kind, BadgeTone> = { accepted: 'ok', proposed: 'signal', rejected: 'fail', superseded: 'neutral', unstated: 'neutral' }
+export const KINDS: readonly Kind[] = ['accepted', 'proposed', 'rejected', 'superseded', 'unstated']
+export const TONE: Record<Kind, BadgeTone> = { accepted: 'ok', proposed: 'signal', rejected: 'fail', superseded: 'neutral', unstated: 'neutral' }
 // Bar segments and legend swatches use the same theme tokens the badges sit on.
 const SWATCH: Record<Kind, string> = {
   accepted: 'bg-ok',
@@ -63,7 +63,7 @@ function Chip({ children, title, mono }: { children: React.ReactNode; title?: st
   )
 }
 
-function StatusStrip({ counts, total }: { counts: Record<Kind, number>; total: number }) {
+export function StatusStrip({ counts, total }: { counts: Record<Kind, number>; total: number }) {
   const shown = KINDS.filter((k) => counts[k] > 0)
   const summary = shown.map((k) => `${counts[k]} ${k}`).join(', ')
   return (
