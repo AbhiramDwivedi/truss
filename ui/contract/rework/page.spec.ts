@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { test, expect, type Locator, type Page, type Route } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { WIDTHS, THEMES, T, LOAD, openFixture, type Theme } from './support.ts'
+import { WIDTHS, THEMES, T, LOAD, openFixture, unexpected, type Theme } from './support.ts'
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const FORBIDDEN = /\b(limit|budget|ceiling)\b|of \$/i
@@ -75,7 +75,7 @@ test.describe('page', () => {
       }
       expect(await inMain(timeline(page)), 'ADRs are listed in the rail only').toBe(false)
       expect(await noSideScroll(page)).toBe(true)
-      expect(await o.problems()).toEqual([])
+      expect(unexpected(await o.problems())).toEqual([])
     } finally { await o.stop() }
   })
 

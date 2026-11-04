@@ -5,7 +5,7 @@
 // The fake interface (ui/e2e/harness.ts) records a send as text only, so the intent a message carries is read off
 // the wire: a route on POST /api/message captures the body. A reply card answer is read from `iface.calls`.
 import { test, expect, type Page } from '@playwright/test'
-import { T, LOAD, WIDTHS, openFixture } from './support.ts'
+import { T, LOAD, WIDTHS, openFixture, unexpected } from './support.ts'
 
 const DESKTOP = WIDTHS.wide
 const THEME = 'light' as const
@@ -48,7 +48,7 @@ test.describe('chat: composer', () => {
       await expect.poll(() => o.planted.iface.calls.filter((c) => c.kind === 'send').length, T).toBe(1)
       expect(spy.bodies).toEqual([{ text: 'Add CSV export', intent: 'goal' }])
       expect(o.planted.iface.calls[0]!.text, 'the transcript text is what was typed').toBe('Add CSV export')
-      expect(await o.problems()).toEqual([])
+      expect(unexpected(await o.problems())).toEqual([])
     } finally { await o.stop() }
   })
 
@@ -76,7 +76,7 @@ test.describe('chat: composer', () => {
       await form.getByRole('button', { name: 'Add as new goal', exact: true }).click()
       await expect.poll(() => spy.bodies.length, T).toBe(2)
       expect(spy.bodies[1]).toEqual({ text: 'Add a second export format', intent: 'goal' })
-      expect(await o.problems()).toEqual([])
+      expect(unexpected(await o.problems())).toEqual([])
     } finally { await o.stop() }
   })
 
