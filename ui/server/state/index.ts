@@ -9,9 +9,10 @@ import type { SessionView } from '../session/index.ts'
 import { createJsonlReader } from './jsonl.ts'
 import type { JsonlReader } from './jsonl.ts'
 import { createReducer } from './reduce.ts'
-import type { Reducer, Run } from './reduce.ts'
+import type { Member, Reducer, Run } from './reduce.ts'
 import { createFileReaders } from './files.ts'
 import { readRetro } from './retro.ts'
+import { readPurposes, purposeOf } from './agents.ts'
 import { createImageTracker, trussDirFor } from './git.ts'
 import type { Adr, Decision } from './files.ts'
 
@@ -69,8 +70,10 @@ function isDir(p: string): boolean {
   }
 }
 
-export function createStore(opts: { repo: string; trussDir?: string; pollMs?: number }): Store {
+export function createStore(opts: { repo: string; trussDir?: string; pluginPath?: string; pollMs?: number }): Store {
   const repo = opts.repo
+  const purposes = readPurposes(opts.pluginPath) // once at start; nothing is written (R-9)
+  let taskOf: Record<string, string> = {} // the session view's task map; never published
   const pollMs = opts.pollMs ?? 500
   const instance = crypto.randomBytes(8).toString('hex')
   const files = createFileReaders(repo)
@@ -81,6 +84,27 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
   let requests: unknown[] = []
   let transcript: { n: number }[] = []
   let sessionNoPlugin = false
+  const cloned = new WeakMap<object, any>()
+  // JSON text of a published object, kept by identity so an unchanged value is serialised once.
+  const jsonOf = new WeakMap<object, string>()
+  const lastClone = new Map<string, { json: string; value: unknown }>()
+  function cloneByContent(key: string, o: object): unknown {
+    const json = JSON.stringify(o)
+    const last = lastClone.get(key)
+    if (last !== undefined && last.json === json) return last.value
+    const value = structuredClone(o)
+    lastClone.set(key, { json, value })
+    jsonOf.set(value as object, json)
+    return value
+  }
+  function cloneOnce<T extends object>(o: T): T {
+    let c = cloned.get(o)
+    if (c === undefined) {
+      c = structuredClone(o)
+      cloned.set(o, c)
+    }
+    return c
+  }
 
   // what the Truss dir gave on the last read
   let exists = false
@@ -198,6 +222,28 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
 
   // ---- publishing ---------------------------------------------------------------------------------------------
 
+  // The run with each member's purpose (agent files) and task (the session's task map, by agentId).
+  // Memoised on the run and the tasks of its members, so a session message that changes neither reuses the object.
+  let decoratedMemo: { run: Run; key: string; value: Run } | null = null
+  function decorated(r: Run | null): Run | null {
+    if (r === null) return null
+    const ids: (string | null)[] = []
+    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(m.agentId !== null && Object.hasOwn(taskOf, m.agentId) ? taskOf[m.agentId] : null)
+    const key = JSON.stringify(ids)
+    if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
+    const value = decorate(r)
+    decoratedMemo = { run: r, key, value }
+    return value
+  }
+  function decorate(r: Run): Run {
+    const fill = (m: Member, isForeman: boolean): Member => ({
+      ...m,
+      purpose: purposeOf(purposes, m.type, isForeman),
+      task: m.agentId !== null && Object.hasOwn(taskOf, m.agentId) ? taskOf[m.agentId] : null,
+    })
+    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, true), members: c.members.map((m) => fill(m, false)) })) }
+  }
+
   function compute(): Record<string, unknown> {
     const all = [...notices]
     if (sessionNoPlugin) all.push({ id: 'no-plugin', text: 'The session did not load the Truss plugin.' })
@@ -206,7 +252,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
       trussDir: { path: trussDir, exists },
       session,
       requests,
-      run,
+      run: decorated(run),
       decisions,
       adrs,
       design,
@@ -222,7 +268,12 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
     const set: Record<string, unknown> = {}
     let changed = false
     for (const k of KEYS) {
-      const s = JSON.stringify(next[k])
+      const o = next[k]
+      let s = typeof o === 'object' && o !== null ? jsonOf.get(o) : undefined
+      if (s === undefined) {
+        s = JSON.stringify(o)
+        if (k === 'run' && typeof o === 'object' && o !== null) jsonOf.set(o, s) // decorated runs are never mutated
+      }
       if (s !== json[k]) {
         json[k] = s
         values[k] = next[k]
@@ -259,13 +310,21 @@ export function createStore(opts: { repo: string; trussDir?: string; pollMs?: nu
 
   function setSession(view: SessionView): void {
     if (closed) return
-    const v = structuredClone(view) as unknown as { session: { plugin?: unknown; sessionId?: unknown }; requests: unknown[]; transcript: { n: number }[] }
+    // Clone only what is published: the task map (up to 500 entries) and the tally are read or ignored, never copied,
+    // and a transcript entry is cloned once (the session keeps the same object while it is unchanged).
+    // The session builds new session and requests objects for every view, so these are compared by content.
+    const v = {
+      session: cloneByContent('session', view.session) as { plugin?: unknown; sessionId?: unknown },
+      requests: cloneByContent('requests', view.requests) as unknown[],
+    }
+    const kept = (view.transcript as unknown as { n: number }[]).slice(-TRANSCRIPT_MAX).map((e) => cloneOnce(e))
     session = v.session
+    taskOf = (view as { taskDescriptions?: Record<string, string> }).taskDescriptions ?? {}
     requests = v.requests
     sessionNoPlugin = v.session.sessionId != null && v.session.plugin == null
     const lastN = transcript.length === 0 ? 0 : transcript[transcript.length - 1].n
-    const fresh = v.transcript.filter((e) => e.n > lastN)
-    transcript = v.transcript.slice(-TRANSCRIPT_MAX)
+    const fresh = kept.filter((e) => e.n > lastN)
+    transcript = kept
     publish(fresh)
   }
 
