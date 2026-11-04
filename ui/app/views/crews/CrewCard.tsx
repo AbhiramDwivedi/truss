@@ -21,6 +21,8 @@ export interface CrewCardProps {
   /** Trunk paint for the gutter segment that joins this card's grid line to the next. */
   trunkAnimated?: boolean
   trunkLit?: boolean
+  /** Draw the gutter link only in the last stage; other stages have a full-height trunk. */
+  gutterLink?: boolean
 }
 
 /** Agent cards shown before "Show n more agents". */
@@ -60,7 +62,7 @@ function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React
   )
 }
 
-export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false }: CrewCardProps) {
+export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false, gutterLink = true }: CrewCardProps) {
   const slugId = React.useId()
   const listId = `${slugId}-agents`
   const [expanded, setExpanded] = React.useState(false)
@@ -81,7 +83,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
 
   return (
     <li id={`crew-${crew.slug}`} className="relative min-w-0 list-none pt-6">
-      <GutterLink animated={trunkAnimated} lit={trunkLit} />
+      {gutterLink && <GutterLink animated={trunkAnimated} lit={trunkLit} />}
       <Wire crew={crew.slug} status={status} recent={isRecent(handoff, now)} />
       <article
         aria-labelledby={slugId}
