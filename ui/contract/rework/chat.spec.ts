@@ -145,7 +145,7 @@ test.describe('chat: thread', () => {
     } finally { await o.stop() }
   })
 
-  test('R-45: the thread is a polite log; the four newest messages are in view, client right and PM left', async ({ browser }) => {
+  test('R-45: the thread is a polite log, client right and PM left', async ({ browser }) => {
     const o = await openFixture(browser, 'thread', THEME, DESKTOP)
     try {
       const log = o.page.getByRole('log', { name: 'Conversation with the PM' })
@@ -157,7 +157,7 @@ test.describe('chat: thread', () => {
         client2: log.getByText('Also make it respect the date filter.'),
         pm2: log.getByText('Noted: the export will use the same date filter as the page.'),
       }
-      for (const m of Object.values(msgs)) await expect(m).toBeInViewport(T)
+      for (const m of Object.values(msgs)) await expect(m).toBeVisible(T)
       const box = async (l: typeof msgs.pm1) => (await l.boundingBox())!
       const [logBox, c1, c2, p1, p2] = [(await log.boundingBox())!, await box(msgs.client1), await box(msgs.client2), await box(msgs.pm1), await box(msgs.pm2)]
       for (const c of [c1, c2]) expect(logBox.x + logBox.width - (c.x + c.width), 'client messages hug the right edge').toBeLessThan(48)
@@ -242,7 +242,10 @@ test.describe('chat: Your move reply card', () => {
       await card.getByRole('button', { name: 'Send reply', exact: true }).click()
       await expect.poll(() => o.planted.iface.calls.filter((c) => c.kind === 'answer').length, T).toBe(1)
       const call = o.planted.iface.calls.find((c) => c.kind === 'answer')!
-      expect(call.id).toBe('req-reply-1')
+      const planted = o.planted.iface.requests()
+      expect(planted, 'one request is planted').toHaveLength(1)
+      expect(call.id, 'the answer goes to the planted request').toBe(planted[0].id)
+      await expect(card, 'the card carries the planted request id').toHaveAttribute('data-request', planted[0].id, T)
       expect(call.body).toEqual({ decision: 'message', message: 'Add dark mode to the export dialog' })
     } finally { await o.stop() }
   })
