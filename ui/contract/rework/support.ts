@@ -119,3 +119,7 @@ export function scratch(prefix = 'truss-rework-'): { dir: string; write(rel: str
     rm() { rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) },
   }
 }
+
+// ADR-0028 §179: drop the CSP reports mermaid's render logs. Mermaid's SVG, its DOMPurify and d3, and MermaidBlock's re-parse emit them;
+// the CSP sets no style-src, so the console line names default-src and the securitypolicyviolation lines name style-src-elem/attr.
+export const unexpected = (lines: string[]) => lines.filter((l) => !/Failed to load resource/.test(l) && !/Applying inline style violates the following Content Security Policy directive/.test(l) && !/^csp: style-src-(elem|attr) inline$/.test(l))

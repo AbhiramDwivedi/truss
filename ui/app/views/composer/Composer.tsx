@@ -85,7 +85,7 @@ export function Composer({ state, now }: ComposerProps) {
   let hint: string
   if (expired) hint = EXPIRED_HINT
   else if (cardOpen) hint = CARD_OPEN_HINT
-  else if (!planned) hint = empty ? TYPE_FIRST : `${START_HINT} Ctrl+Enter sends.`
+  else if (!planned) hint = empty ? TYPE_FIRST : START_HINT
   else hint = choice === 'goal' ? GOAL_HINT : MESSAGE_HINT
 
   useEffect(() => {
@@ -116,7 +116,8 @@ export function Composer({ state, now }: ComposerProps) {
       return
     }
     if (tokenDead) return
-    setError(notSent(reasonOf(res.status, res.error)))
+    // The page's own 15 s timeout means the session never took the message: say so as the 30 s stuck alert does.
+    setError(res.status === 0 && res.error === 'timeout' ? NOT_TAKEN : notSent(reasonOf(res.status, res.error)))
     refocus.current = true
   }
 
@@ -222,14 +223,14 @@ export function Composer({ state, now }: ComposerProps) {
 
       {alertText && (
         <div
-          id={alertId}
-          role="alert"
           className={cn(
             'flex flex-wrap items-center gap-2 rounded-ctl px-3 py-2 text-ui',
             error ? 'text-fail-text' : 'bg-signal-soft text-signal-text',
           )}
         >
-          <span className="min-w-0 [overflow-wrap:anywhere]">{alertText}</span>
+          <span id={alertId} role="alert" className="min-w-0 [overflow-wrap:anywhere]">
+            {alertText}
+          </span>
           <Button type="button" variant="secondary" size="sm" disabled={busy && !stuck} onClick={() => void send(true)}>
             Try again
           </Button>

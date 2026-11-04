@@ -2,15 +2,13 @@
 // R-46, R-47), written from the spec before rework-docs builds it. Elements are reached by role and name. Layout
 // placement (tabs gone, column order) belongs to page.spec.ts and is not asserted here.
 import { test, expect, type Browser, type Page } from '@playwright/test'
-import { T, LOAD, WIDTHS, openFixture } from './support.ts'
+import { T, LOAD, WIDTHS, openFixture, unexpected } from './support.ts'
 
 const DESKTOP = WIDTHS.desktop
 const PHONE = WIDTHS.phone
 const timeline = (page: Page) => page.getByRole('region', { name: 'Decisions and ADRs' })
 const deliverables = (page: Page) => page.getByRole('region', { name: 'Built artifacts and deliverables' })
 
-/** Console and CSP lines other than mermaid's own inserted <style> (ADR-0028 consequences, section 5). */
-const unexpected = (lines: string[]) => lines.filter((l) => !/Failed to load resource/.test(l) && !/style-src/.test(l))
 
 async function openArchitecture(browser: Browser, width = DESKTOP, opts: { edit?: (s: any) => void; before?: (p: Page) => Promise<void> } = {}) {
   const o = await openFixture(browser, 'architecture', 'light', width, opts)

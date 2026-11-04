@@ -66,11 +66,9 @@ test.describe('network', () => {
       await expect(net).toBeVisible(LOAD)
       const crews = o.planted.fixture.run.crews as any[]
       const stages = new Set(crews.map((c) => c.stage))
-      await expect(net.getByRole('list').filter({ has: net.getByRole('article') }), 'one list per stage').toHaveCount(stages.size, T)
+      await expect(net.getByRole('list').filter({ has: o.page.getByRole('article') }), 'one list per stage').toHaveCount(stages.size, T)
       for (const c of crews) await expect(crewCard(o.page, c.slug)).toHaveCount(1, T)
       await expect(net.getByRole('article')).toHaveCount(crews.length, T)
-      // the network is first in main: no Crews / Decisions / Design tabs
-      await expect(o.page.getByRole('tab')).toHaveCount(0)
     } finally { await o.stop() }
   })
 
@@ -157,7 +155,7 @@ test.describe('network', () => {
         const card = crewCard(o.page, slug)
         const badge = card.getByText(word, { exact: true }).first()
         await expect(badge, `${slug} shows ${word}`).toBeVisible(T)
-        const icon = badge.locator('xpath=ancestor-or-self::*[.//svg][1]').locator('svg').first()
+        const icon = badge.locator("xpath=ancestor-or-self::*[.//*[local-name()='svg']][1]").locator('svg').first()
         await expect(icon, `${slug} shows an icon beside ${word}`).toBeVisible(T)
         for (const other of Object.values(want).filter((w) => w !== word)) {
           await expect(card.getByText(other, { exact: true }), `${slug} does not also say ${other}`).toHaveCount(0)
@@ -214,7 +212,7 @@ test.describe('network', () => {
       await expect(network(o.page)).toBeVisible(LOAD)
       const crew = (o.planted.fixture.run.crews as any[])[0]
       const task: string = crew.members.find((m: any) => (m.task ?? '').length >= 300).task
-      const card = crewCard(o.page, crew.slug.slice(0, 20))
+      const card = crewCard(o.page, crew.slug)
       const line = card.getByText(task.slice(0, 40)).first()
       await expect(line).toBeVisible(T)
       const lines = await line.evaluate((el) => {

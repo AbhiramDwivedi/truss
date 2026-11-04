@@ -94,7 +94,7 @@ const nothingBanned = (root: N) => assert.doesNotMatch(tidy(text(root)), /In the
 /** The deliverable count per type chip, as ADR-0023 section 4 derives it from the state. */
 function typeCounts(f: any): Record<string, number> {
   const Plan = f.design?.planMd != null ? 1 : 0
-  const Docs = (f.design?.architecture != null ? 1 : 0) + (f.adrs ?? []).length
+  const Docs = f.design?.architecture != null ? 1 : 0 // ADRs moved to the rail list (R-37)
   const Code = (f.run?.crews ?? []).filter((c: any) => c.status === 'merged').length
   const Images = (f.design?.images ?? []).length
   return { All: Plan + Docs + Code + Images, Docs, Code, Plan, Images }
@@ -140,8 +140,8 @@ test('RunContext: empty state shows the repo, No goal yet. and no Pause build', 
 // ---- Timeline --------------------------------------------------------------------------------------------
 test('Timeline: ADR timeline region with Open log, ADRs and crews newest first', async () => {
   const s = fx('stuck-crew/state')
-  const v = await mount('rail/Timeline', 'Timeline', { state: s, now: NOW })
-  const reg = find(v, 'region', 'ADR timeline')
+  const v = await mount('rail/Timeline', 'Timeline', { state: s, now: NOW, onOpenLog: () => {} })
+  const reg = find(v, 'region', 'Decisions and ADRs')
   assert.equal(reg.length, 1)
   assert.equal(find(reg[0]!, 'link', 'Open log').length + find(reg[0]!, 'button', 'Open log').length, 1)
   const body = tidy(text(reg[0]!))
@@ -151,7 +151,7 @@ test('Timeline: ADR timeline region with Open log, ADRs and crews newest first',
 })
 test('Timeline: lists the ADR titles', async () => {
   const s = fx('decisions/state')
-  const reg = find(await mount('rail/Timeline', 'Timeline', { state: s, now: NOW }), 'region', 'ADR timeline')[0]!
+  const reg = find(await mount('rail/Timeline', 'Timeline', { state: s, now: NOW }), 'region', 'Decisions and ADRs')[0]!
   for (const a of s.adrs) assert.ok(tidy(text(reg)).includes(a.title), a.title)
 })
 
@@ -219,10 +219,10 @@ test('DecisionsPanel: the ADR strip counts each status and the filter offers the
 })
 
 // ---- Deliverables ----------------------------------------------------------------------------------------
-const deliv = async (state: any) => mount('deliverables/Deliverables', 'Deliverables', { state, now: NOW })
+const deliv = async (state: any) => mount('deliverables/Deliverables', 'Deliverables', { state, now: NOW, onOpenDesign: () => {} })
 test('Deliverables: empty state reads Nothing built yet. with no filter group', async () => {
   const v = await deliv(fx('empty/state'))
-  assert.match(tidy(text(v)), /Nothing built yet\. Plans, ADRs and screenshots appear here as crews finish\./)
+  assert.match(tidy(text(v)), /Nothing built yet\. Deliverables appear as crews finish\./)
   assert.equal(find(v, 'group', 'Filter by type').length, 0)
 })
 test('Deliverables: the region is labelled by its h2 and offers the type filter and Group by toggles', async () => {

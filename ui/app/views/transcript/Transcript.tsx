@@ -124,6 +124,16 @@ export function Transcript({ state, now }: TranscriptProps) {
     setBehind(false)
     el.scrollTo({ top: el.scrollHeight, behavior: smooth() })
     el.focus({ preventScroll: true })
+    // Items off screen are sized by estimate (content-visibility:auto), so the first target can fall short:
+    // once the smooth scroll has settled, land on the real bottom.
+    const settle = () => {
+      el.removeEventListener('scrollend', settle)
+      clearTimeout(timer)
+      if (el.scrollHeight - el.scrollTop - el.clientHeight >= 1) el.scrollTop = el.scrollHeight
+      atBottom.current = true
+    }
+    const timer = setTimeout(settle, 700)
+    el.addEventListener('scrollend', settle)
   }
   const earlier = () => {
     const el = box.current

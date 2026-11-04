@@ -33,7 +33,7 @@ export function DecisionButton({ kind, hero, primary, busy, disabled, onPress }:
   return (
     <Button
       variant={variant}
-      className={cn('h-auto min-h-10 py-2 max-sm:w-full max-sm:justify-start pointer-coarse:min-h-11', quiet)}
+      className={cn('h-auto min-h-10 py-2 transition-none max-sm:w-full max-sm:justify-start pointer-coarse:min-h-11', quiet)}
       busy={busy}
       disabled={disabled}
       icon={allow ? <Check aria-hidden="true" /> : <X aria-hidden="true" />}
