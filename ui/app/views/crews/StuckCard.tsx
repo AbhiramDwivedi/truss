@@ -103,7 +103,7 @@ export function StuckCard({ crew, stuck, now }: StuckCardProps) {
           {label('ask', 'Ask Claude')}
         </ActionButton>
       </div>
-      <p role="status" className="mt-2 text-micro text-muted empty:hidden">
+      <p aria-live="polite" className="mt-2 text-micro text-muted empty:hidden">
         {sent?.phase === 'sent' && sent.at !== undefined ? `Sent to Claude ${hhmmAt(sent.at)}` : ''}
       </p>
       <p role="alert" className="mt-2 text-micro text-fail-text empty:hidden">
