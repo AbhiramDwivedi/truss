@@ -244,7 +244,8 @@ test('control 2: i52 expandTrussFile accepts a trussFile given through a symlink
     const truss = join(root, 'truss')
     mkdirSync(truss)
     const link = join(root, 'link')
-    symlinkSync(truss, link)
+    // 'junction' on Windows: a directory link that needs no symlink privilege; the type is ignored elsewhere
+    symlinkSync(truss, link, 'junction')
     writeFileSync(join(truss, 'a.json'), JSON.stringify({ truss: stageTruss() }))
     const read = (p) => readFileSync(p, 'utf8')
     // the truss dir and the trussFile use the same symlinked spelling

@@ -50,7 +50,7 @@ async function until(store: any, pred: (s: any) => boolean, ms: number, what: st
 const stores: any[] = []
 after(() => {
   for (const s of stores) { try { s.close() } catch { /* ignore */ } }
-  fs.rmSync(tmpRoot, { recursive: true, force: true })
+  fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
 })
 
 async function ready(opts: Record<string, unknown>): Promise<any> {

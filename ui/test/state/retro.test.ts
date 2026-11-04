@@ -172,7 +172,7 @@ function tree(dir: string): string[] {
   return out.sort()
 }
 
-after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }) })
+after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) })
 
 function registerTests(): void {
   test('R-23: no retro/ dir reads as retro null; creating retro/state.json later sends a delta that sets retro', async () => {

@@ -100,7 +100,7 @@ export async function scenario(name: string, opts: { now?: number; edit?: (fixtu
   return {
     url: iface.url, run, apiSlug, fixture, iface, change,
     shown: (iso: string) => new Date(Date.parse(iso) + shift).toISOString(),
-    stop: async () => { await iface.stop(); rmSync(dir, { recursive: true, force: true }) },
+    stop: async () => { await iface.stop(); rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) },
   }
 }
 

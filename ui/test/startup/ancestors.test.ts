@@ -19,7 +19,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'truss-ancestors-test-'));
 const children: ChildProcess[] = [];
 after(() => {
   for (const c of children) { try { c.kill('SIGKILL'); } catch {} }
-  rmSync(tmp, { recursive: true, force: true });
+  rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

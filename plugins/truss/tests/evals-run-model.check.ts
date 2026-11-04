@@ -94,8 +94,10 @@ function run(env: Record<string, string> = {}, args: string[] = [], opts: { clau
     delete childEnv.CLAUDE_STUB_REPLY
     Object.assign(childEnv, env)
     for (const k of Object.keys(childEnv)) if (k.startsWith('GIT_')) delete childEnv[k]
+    // 600 s, not 120: a full golden run adds and removes one git worktree per case, which on a loaded Windows host
+    // took over 120 s and was killed (status null), so the run-model tests failed on timing, not on behaviour.
     const r = spawnSync(process.execPath, [runModel, ...args], {
-      cwd: opts.cwd ?? ROOT, env: childEnv, encoding: 'utf8', windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024,
+      cwd: opts.cwd ?? ROOT, env: childEnv, encoding: 'utf8', windowsHide: true, timeout: 600000, maxBuffer: 64 * 1024 * 1024,
     })
     const stdout = (r.stdout ?? '').replace(/\r/g, '')
     const m = stdout.split('\n').map((l) => l.match(/(\S*truss-evals-[^\s"'`]*)/)).find(Boolean)

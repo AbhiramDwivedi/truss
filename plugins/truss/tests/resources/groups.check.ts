@@ -42,7 +42,7 @@ async function waitFor(fn: () => boolean, ms: number): Promise<boolean> {
   return fn()
 }
 
-test('groupAlive and killGroup act on the whole group and nothing else', { skip: process.platform !== 'linux' }, async () => {
+test('groupAlive and killGroup act on the whole group and nothing else', { skip: process.platform !== 'linux' ? 'process-group signals (kill -pgid) are POSIX-only and this test is proven on Linux only (ADR-0015)' : false }, async () => {
   const m = await load()
   const d = mkdtempSync(`${os.tmpdir()}/resources-groups-`)
   const pidFile = `${d}/bg.pid`
@@ -96,7 +96,7 @@ test('groupAlive and killGroup act on the whole group and nothing else', { skip:
   }
 })
 
-test('groupAlive is false for a group that does not exist', { skip: process.platform !== 'linux' }, async () => {
+test('groupAlive is false for a group that does not exist', { skip: process.platform !== 'linux' ? 'process-group signals (kill -pgid) are POSIX-only and this test is proven on Linux only (ADR-0015)' : false }, async () => {
   const m = await load()
   // a pid that just exited has no group
   const c = spawn(process.execPath, ['-e', '0'], { detached: true, stdio: 'ignore' })

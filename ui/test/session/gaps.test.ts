@@ -60,7 +60,7 @@ const GOAL_LINE = '[Truss UI: new goal] Plan this as a new goal for the run.';
 const ADD_LINE = '[Truss UI: detail] Add this to the current goal.';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'truss-session-gaps-'));
-after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }); });
+after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 let counter = 0;
 const tmpDir = (name: string) => {
   const d = path.join(tmpRoot, `${name}-${++counter}`);

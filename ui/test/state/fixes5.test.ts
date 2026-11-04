@@ -11,7 +11,7 @@ const uiDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const { createStore } = (await import(pathToFileURL(join(uiDir, 'server/state/index.ts')).href)) as any
 
 const tmpRoot = mkdtempSync(join(tmpdir(), 'truss-fixes5-state-'))
-after(() => { rmSync(tmpRoot, { recursive: true, force: true }) })
+after(() => { rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) })
 let n = 0
 const dir = (name: string) => { const d = join(tmpRoot, `${name}-${++n}`); mkdirSync(d, { recursive: true }); return d }
 

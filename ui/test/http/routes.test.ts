@@ -149,7 +149,7 @@ describe('listen and close (Decision 6, Decision 9)', () => {
     assert.equal(x.state.subscribers, 0, 'subscribers released on close');
     tabs.forEach((t) => t.close());
     const { rmSync } = await import('node:fs');
-    rmSync(x.root, { recursive: true, force: true });
+    rmSync(x.root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     await assert.rejects(call(x.port, 'GET', '/', { headers: { cookie: x.cookie } }), 'port no longer accepts requests');
   });
 });

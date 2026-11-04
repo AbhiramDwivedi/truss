@@ -212,6 +212,6 @@ export async function boot(o: { state?: ReturnType<typeof makeState>; session?: 
     server, port: l.port, token: l.token, url: l.url, webDir, root, state, session, origin, cookie,
     authed: (extra = {}) => ({ origin, cookie, ...extra }),
     post: (path, body, headers) => call(l.port, 'POST', path, { headers: { 'content-type': 'application/json', ...(headers ?? { origin, cookie }) }, body: JSON.stringify(body) }),
-    async stop() { await server.close(); rmSync(root, { recursive: true, force: true }); },
+    async stop() { await server.close(); rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); },
   };
 }

@@ -124,7 +124,11 @@ test('pf 2: TRUSS_SESSION_START=1 with a stress-yes crew gives one warning namin
   assert.deepEqual(r.json.refused, [])
 })
 
-test('pf 3: a start with no TRUSS_SESSION_START and CLAUDE_PID=1 gives a definite warning, not "can\'t tell"', () => {
+// pf 3 and pf 4 read the session start from CLAUDE_PID, which factory gets from /proc/<pid>/stat; with no /proc it
+// can't tell, by design (bin/factory.ts sessionStart), so they only run where /proc exists.
+const NO_PROC = existsSync('/proc/self/stat') ? false : 'needs Linux /proc: factory reads the CLAUDE_PID start time from /proc/<pid>/stat'
+
+test('pf 3:a start with no TRUSS_SESSION_START and CLAUDE_PID=1 gives a definite warning, not "can\'t tell"', { skip: NO_PROC }, () => {
   // pid 1 started at boot, so an agent file written now is later than the session start.
   const factory = factoryWithAgentMtime(Date.now())
   const w = stressWorld()
@@ -137,7 +141,7 @@ test('pf 3: a start with no TRUSS_SESSION_START and CLAUDE_PID=1 gives a definit
   assert.ok(!text.includes("can't tell"), `a readable CLAUDE_PID gives a definite warning: ${text}`)
 })
 
-test('pf 4: no TRUSS_SESSION_START and CLAUDE_PID set to the test pid gives no warning', () => {
+test('pf 4: no TRUSS_SESSION_START and CLAUDE_PID set to the test pid gives no warning', { skip: NO_PROC }, () => {
   // this process started before now, and the agent file is from 2023, so the file is older than the session.
   const factory = factoryWithAgentMtime(LONG_AGO)
   const w = stressWorld()

@@ -161,7 +161,7 @@ after(async () => {
     child.kill('SIGTERM');
     await new Promise<void>((r) => { child!.on('exit', () => r()); setTimeout(r, 10000); });
   }
-  if (repo) rmSync(repo, { recursive: true, force: true });
+  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 describe('live session with the real SDK and the Truss plugin', { timeout: 15 * 60 * 1000 }, () => {

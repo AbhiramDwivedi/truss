@@ -188,7 +188,7 @@ before(async () => {
 after(async () => {
   for (const s of sseOpen) s.close();
   await server?.close();
-  rmSync(webDir, { recursive: true, force: true });
+  rmSync(webDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 describe('listen', () => {

@@ -8,11 +8,20 @@ import { boot, call, type Booted } from './helpers.ts';
 
 const SECRET = 'TOP-SECRET-OUTSIDE-WEBDIR';
 let b: Booted;
+// The links the symlink test checks. A file symlink needs a privilege on Windows (Developer Mode or admin),
+// so link.txt is only checked where it could be made; linkdir is a junction there, which needs none.
+const links: string[] = [];
 before(async () => {
   b = await boot({ files: { 'style.css': 'body{color:red}', 'app.js': 'export const a = 1;', 'logo.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>', 'sub/page.html': '<p>sub</p>' } });
   writeFileSync(join(b.root, 'secret.txt'), SECRET);
-  symlinkSync(join(b.root, 'secret.txt'), join(b.webDir, 'link.txt'));
-  symlinkSync(b.root, join(b.webDir, 'linkdir'));
+  try {
+    symlinkSync(join(b.root, 'secret.txt'), join(b.webDir, 'link.txt'));
+    links.push('/link.txt');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EPERM') throw e;
+  }
+  symlinkSync(b.root, join(b.webDir, 'linkdir'), 'junction');
+  links.push('/linkdir/secret.txt');
 });
 after(async () => { await b.stop(); });
 
@@ -72,7 +81,7 @@ describe('no path outside webDir (Decision 6)', () => {
     assert.ok(!r.text.includes(SECRET));
   });
   it('Decision 6: a symlink in webDir that points outside is not followed', async () => {
-    for (const p of ['/link.txt', '/linkdir/secret.txt']) {
+    for (const p of links) {
       const r = await get(p);
       assert.notEqual(r.status, 200, p);
       assert.ok(!r.text.includes(SECRET), p);

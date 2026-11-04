@@ -348,7 +348,7 @@ function listFiles(d: string): string[] {
   return readdirSync(d, { recursive: true }).map(String).filter((p) => statSync(`${d}/${p}`).isFile())
 }
 
-test('factory reap kills the recorded orphan group of its label and leaves an unrelated process', () => {
+test('factory reap kills the recorded orphan group of its label and leaves an unrelated process', { skip: process.platform === 'win32' ? 'process-group kill (kill -pgid) is POSIX-only; ADR-0015 leaves Windows group kill unproven' : false }, () => {
   const w = world([planned('q')])
   const probe = w.run(['reap', ...fl(w, 'q'), '--label', `none-${hex()}`])
   if (!Array.isArray(probe.json?.reaped)) assert.fail(`producer missing: factory reap (${say(probe)})`)

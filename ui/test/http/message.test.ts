@@ -46,7 +46,7 @@ register('data:text/javascript,' + encodeURIComponent(HOOKS_SOURCE));
 const stub = (): { sent: string[]; emit(m: unknown): void } | undefined => (globalThis as any).__trussStub;
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'truss-message-test-'));
-after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }); });
+after(() => { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 let n = 0;
 const tmpDir = (name: string) => { const d = path.join(tmpRoot, `${name}-${++n}`); fs.mkdirSync(d, { recursive: true }); return d; };
 

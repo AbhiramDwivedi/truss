@@ -9,9 +9,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { codeOnly } from './hooks-load.check.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname
+// fileURLToPath, not URL.pathname: on Windows the pathname is /C:/..., which reads as C:\C:\...
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const REGISTER = new URL('../hooks/register.ts', import.meta.url)
 
 async function exportOf(name: string): Promise<any> {

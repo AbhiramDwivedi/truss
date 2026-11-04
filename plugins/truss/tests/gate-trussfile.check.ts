@@ -26,6 +26,21 @@ import { fileURLToPath } from 'node:url'
 const REGISTER = new URL('../hooks/register.ts', import.meta.url)
 const SKILL = new URL('../skills/run/SKILL.md', import.meta.url)
 
+// A file symlink needs a privilege (Developer Mode or admin) on Windows; probe once instead of failing with EPERM.
+// Directory links below use 'junction', which Windows allows unprivileged (the type is ignored elsewhere).
+const FILE_SYMLINKS = (() => {
+  const d = mkdtempSync(join(tmpdir(), 'gate-symprobe-'))
+  try {
+    writeFileSync(join(d, 't'), '')
+    symlinkSync(join(d, 't'), join(d, 'l'))
+    return true
+  } catch {
+    return false
+  } finally {
+    rmSync(d, { recursive: true, force: true })
+  }
+})()
+
 const ROLES = {
   designer: { agentType: 'truss:design-engineer', model: 'opus', effort: 'medium', isolation: 'worktree' },
   checker: { agentType: 'truss:checking-engineer', model: 'opus', effort: 'medium', isolation: 'none' },
@@ -318,7 +333,7 @@ test('i29 14: the handler passes string args on to next as a string', async () =
   })
 })
 
-test('i29 15: the handler refuses a trussFile whose real path leaves the truss dir through a symlink', async () => {
+test('i29 15: the handler refuses a trussFile whose real path leaves the truss dir through a symlink', { skip: FILE_SYMLINKS ? false : 'this host cannot create file symlinks (Windows without Developer Mode or admin)' }, async () => {
   await drive(async ({ call, truss, outside, reads, nexts }) => {
     const target = join(outside, 'a.json')
     writeFileSync(target, JSON.stringify({ truss: stageTruss() }))
@@ -335,7 +350,7 @@ test('i29 15: the handler refuses a trussFile whose real path leaves the truss d
 test('i29 16: the handler refuses a trussFile under a symlinked sub-directory that leaves the truss dir', async () => {
   await drive(async ({ call, truss, outside, nexts }) => {
     writeFileSync(join(outside, 'a.json'), JSON.stringify({ truss: stageTruss() }))
-    symlinkSync(outside, join(truss, 'sub'))
+    symlinkSync(outside, join(truss, 'sub'), 'junction')
     const r = await call({ args: { trussFile: join(truss, 'sub', 'a.json') } })
     denied(r)
     assert.match(r.deny, /outside the truss dir/, r.deny)
