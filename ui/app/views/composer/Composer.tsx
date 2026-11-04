@@ -1,10 +1,11 @@
 // The Message form (ADR-0028 section 2, R-41): the first send starts a truss run, later sends are messages or a
 // new goal. Ctrl+Enter sends, Enter is a newline; on any failure the text stays in the box.
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ArrowUp, Play, Plus } from 'lucide-react'
 import type { RunState } from '../../store/types.ts'
 import { postMessage } from '../../store/api.ts'
+import { pageStore } from '../../store/store.ts'
 import { cn } from '../../lib/utils.ts'
 import { Button } from '../../components/ui/button.tsx'
 import { Textarea } from '../../components/ui/textarea.tsx'
@@ -39,6 +40,7 @@ const CHOICES: { value: Choice; label: string }[] = [
 ]
 
 const EXPIRED_HINT = "This page's session has expired. Reload to continue."
+const OFFLINE_HINT = 'Not connected. Your text is kept.'
 const TYPE_FIRST = 'Type a goal first.'
 const START_HINT = 'Starts a truss run on this goal.'
 const MESSAGE_HINT = 'Sends to the PM as a message.'
@@ -70,6 +72,8 @@ export function Composer({ state, now }: ComposerProps) {
   const cardOpen = openCards(state).length > 0
   const stage = useSendState(busy, error !== null)
   const expired = flags.expired
+  // useConnection has no server snapshot, and the view tests render on the server; assume live there.
+  const offline = useSyncExternalStore(pageStore().subscribe, pageStore().getConnection, () => 'live') !== 'live'
   const empty = text.trim() === ''
   const asGoal = !planned || choice === 'goal'
   const lastEntry = state?.transcript[state.transcript.length - 1]
@@ -84,6 +88,7 @@ export function Composer({ state, now }: ComposerProps) {
 
   let hint: string
   if (expired) hint = EXPIRED_HINT
+  else if (offline) hint = OFFLINE_HINT
   else if (cardOpen) hint = CARD_OPEN_HINT
   else if (!planned) hint = empty ? TYPE_FIRST : START_HINT
   else hint = choice === 'goal' ? GOAL_HINT : MESSAGE_HINT
@@ -95,7 +100,7 @@ export function Composer({ state, now }: ComposerProps) {
   })
 
   const send = async (retry = false) => {
-    if ((sending.current && !retry) || expired) return
+    if ((sending.current && !retry) || expired || offline) return
     if (empty) {
       box.current?.focus()
       return
@@ -206,7 +211,7 @@ export function Composer({ state, now }: ComposerProps) {
             type="submit"
             variant="primary"
             busy={busy}
-            disabled={expired || empty || busy}
+            disabled={expired || offline || empty || busy}
             icon={<SendIcon aria-hidden="true" />}
             className="bg-move text-move-fg hover:bg-move/90 [.dark_&]:hover:bg-move/90 pointer-coarse:h-11"
           >
@@ -231,7 +236,7 @@ export function Composer({ state, now }: ComposerProps) {
           <span id={alertId} role="alert" className="min-w-0 [overflow-wrap:anywhere]">
             {alertText}
           </span>
-          <Button type="button" variant="secondary" size="sm" disabled={busy && !stuck} onClick={() => void send(true)}>
+          <Button type="button" variant="secondary" size="sm" className="pointer-coarse:min-h-11" disabled={busy && !stuck} onClick={() => void send(true)}>
             Try again
           </Button>
         </div>

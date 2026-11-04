@@ -81,9 +81,9 @@ export function ReplyCard({ request, hero, now, busy, error, onAnswer, transcrip
           <Button
             variant="ghost"
             size="sm"
-            className={hero ? 'text-move-fg hover:bg-move-fg/10 hover:text-move-fg' : undefined}
+            className={cn('pointer-coarse:min-h-11 max-sm:w-full', hero && 'text-move-fg hover:bg-move-fg/10 hover:text-move-fg')}
             icon={<MessageSquareText aria-hidden="true" />}
-            disabled={target === null}
+            disabled={busy || target === null}
             onClick={() => target !== null && revealMessage(target)}
           >
             Read in thread
@@ -155,7 +155,7 @@ export function ReplyCard({ request, hero, now, busy, error, onAnswer, transcrip
           <div role="alert" className={cn('flex min-w-0 flex-wrap items-center gap-2 text-ui', hero ? 'text-move-fg' : 'text-fail-text')}>
             <p className="min-w-0">{alertText}</p>
             {pressed && (
-              <Button variant={hero ? 'ghost' : 'secondary'} size="sm" className={hero ? 'border border-move-line text-move-fg' : undefined} onClick={() => send(pressed)}>
+              <Button variant={hero ? 'ghost' : 'secondary'} size="sm" className={cn('pointer-coarse:min-h-11 max-sm:w-full', hero && 'border border-move-line text-move-fg')} onClick={() => send(pressed)}>
                 Try again
               </Button>
             )}
