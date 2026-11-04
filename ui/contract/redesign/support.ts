@@ -77,6 +77,9 @@ export async function scenario(name: string, opts: { now?: number; edit?: (fixtu
   }
   const first = (fixture.transcript ?? []).find((e: any) => e.role === 'user')
   if (first) first.text = `${first.text} ${tag}-${run}`
+  // ADR-0028 section 2: the server sets approvalAsk on a reply request. The approval fixture's turn is a plan
+  // approval ask, so the planted copy says so; the fixture file itself is not touched.
+  if (state === 'approval') for (const r of fixture.requests ?? []) if (r.kind === 'reply') r.approvalAsk = true
   opts.edit?.(fixture, apiSlug)
   const dir = mkdtempSync(join(tmpdir(), 'truss-redesign-'))
   mkdirSync(join(dir, state!), { recursive: true })
@@ -107,11 +110,18 @@ export async function scenario(name: string, opts: { now?: number; edit?: (fixtu
 /** The deliverable count per type filter chip, as ADR-0023 section 4 (artifacts) derives it from the state. */
 export function typeCounts(f: any): Record<'All' | 'Docs' | 'Code' | 'Plan' | 'Images', number> {
   const Plan = f.design?.planMd != null ? 1 : 0
-  const Docs = (f.design?.architecture != null ? 1 : 0) + (f.adrs ?? []).length
+  // ADR-0028 section 3 (R-37): ADRs are listed in the rail timeline only, so Deliverables hold no ADR item.
+  const Docs = f.design?.architecture != null ? 1 : 0
   const Code = (f.run?.crews ?? []).filter((c: any) => c.status === 'merged').length
   const Images = (f.design?.images ?? []).length
   return { All: Plan + Docs + Code + Images, Docs, Code, Plan, Images }
 }
+
+/**
+ * The composer textbox name (ADR-0028 section 1): "Your goal" while no goal is sent (the empty state), else
+ * "Message to the PM". The send button follows: "Start run" with no plan, else "Send to PM".
+ */
+export const boxName = (state: string): string => (state === 'empty' ? 'Your goal' : 'Message to the PM')
 
 /** Every context runs in this time zone, so a clock time the page shows can be built from the fixture. */
 export const TZ = 'UTC'
