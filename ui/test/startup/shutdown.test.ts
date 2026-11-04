@@ -20,7 +20,7 @@ const lockFor = (port: number) => join(lockDir, `truss-ui-${port}.json`);
 const children: ChildProcess[] = [];
 after(() => {
   for (const c of children) { try { c.kill('SIGKILL'); } catch {} }
-  rmSync(tmp, { recursive: true, force: true });
+  rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 async function freePort(): Promise<number> {
@@ -104,8 +104,10 @@ describe('main.ts lifecycle', () => {
     }
   });
 
+  // On Windows child.kill(sig) is TerminateProcess: no handler runs, so there is no clean exit to check.
+  const NO_SIGNALS = process.platform === 'win32' ? 'Windows child.kill(sig) force-terminates the process, so no signal handler runs and the lockfile stays (the next start treats it as stale)' : false;
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-    it(`${sig} ends the server cleanly and removes the lockfile`, async () => {
+    it(`${sig} ends the server cleanly and removes the lockfile`, { skip: NO_SIGNALS }, async () => {
       const port = await freePort();
       const s = start(port);
       const url = await s.ready;
@@ -122,7 +124,9 @@ describe('main.ts lifecycle', () => {
     });
   }
 
-  it('parent death ends the server within a few seconds', async () => {
+  // On Windows libuv puts every child of a Node process in a kill-on-close job object, so killing the
+  // intermediate hard-kills the server too: it is gone at once, and no handler gets to remove the lockfile.
+  it('parent death ends the server within a few seconds', { skip: process.platform === 'win32' ? "Windows kills a Node child with its parent (libuv's kill-on-close job object), so the server never runs its own parent-death shutdown" : false }, async () => {
     const port = await freePort();
     const pidFile = join(tmp, `server-${port}.pid`);
     // The intermediate stands in for npm: it starts the server and stays alive until killed.
@@ -158,7 +162,8 @@ describe('main.ts lifecycle', () => {
     if (process.platform !== 'win32') assert.equal(lstatSync(lockFor(port)).mode & 0o777, 0o600, 'stale 0644 file replaced by a 0600 one');
     s.child.kill('SIGTERM');
     await s.exited;
-    assert.ok(!existsSync(lockFor(port)));
+    // Windows SIGTERM is TerminateProcess, so no handler removes the lockfile there (see NO_SIGNALS).
+    if (process.platform !== 'win32') assert.ok(!existsSync(lockFor(port)));
   });
 
   it('a stale lockfile is not reported when the port is held by something else', async () => {

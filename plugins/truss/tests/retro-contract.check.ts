@@ -213,7 +213,8 @@ const find = (x: any, kind: string, file: string, line: number) => x.items.find(
 
 describe('committed fixtures (R-32): clean content, real record shapes', () => {
   test('the four fixture files exist and every line is JSON bar the one planted non-JSON line', () => {
-    const files = walk(FIXTURES).map(f => relative(FIXTURES, f))
+    // forward slashes: relative() gives backslashes on Windows
+    const files = walk(FIXTURES).map(f => relative(FIXTURES, f).replace(/\\/g, '/'))
     assert.deepEqual(files, ['session.jsonl', 'subagents/agent-fixture.jsonl', 'subagents/agent-fixture.meta.json', 'subagents/workflows/wf_fixture/journal.jsonl'])
     let bad = 0
     for (const f of files.filter(x => x.endsWith('.jsonl'))) {

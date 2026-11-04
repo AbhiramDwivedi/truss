@@ -21,7 +21,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'truss-build-check-'));
 const children: ChildProcess[] = [];
 after(() => {
   for (const c of children) { try { c.kill('SIGKILL'); } catch {} }
-  rmSync(tmp, { recursive: true, force: true });
+  rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 // A temp ui/ with the real server code and no web/ yet.

@@ -5,7 +5,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const init = readFileSync(new URL('../skills/init/SKILL.md', import.meta.url), 'utf8')
+// CRLF dropped: a Windows checkout (core.autocrlf) has CRLF, and the ```json\n match below then fails on the
+// checkout's line ends, not on the skill's text
+const init = readFileSync(new URL('../skills/init/SKILL.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const NO_MANIFEST = 'no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)'
 
 test('init runs kit:init through the Skill tool on a missing manifest (ADR-0021 Decision 3)', () => {

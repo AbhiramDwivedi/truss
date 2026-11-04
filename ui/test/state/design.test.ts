@@ -192,7 +192,7 @@ function registerTests(mod: any): void {
   const stores: any[] = []
   after(() => {
     for (const s of stores) { try { s.close() } catch { /* ignore */ } }
-    fs.rmSync(tmpRoot, { recursive: true, force: true })
+    fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   })
 
   async function ready(w: World): Promise<any> {

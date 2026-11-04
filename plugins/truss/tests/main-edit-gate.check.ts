@@ -13,10 +13,12 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { codeOnly } from './hooks-load.check.ts'
 
 const REGISTER = new URL('../hooks/register.ts', import.meta.url)
-const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '')
+// fileURLToPath, not URL.pathname: on Windows the pathname is /C:/..., which no cwd accepts (spawnSync git ENOENT)
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '')
 
 async function exportOf(name: string): Promise<(...a: unknown[]) => any> {
   let mod: Record<string, unknown>
@@ -44,7 +46,8 @@ test('worktreeRootsOf returns every worktree of a real repo, main checkout first
     git(main, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'one')
     git(main, 'worktree', 'add', '-q', '-b', 'other', second)
     const out = git(main, 'worktree', 'list', '--porcelain')
-    assert.deepEqual(worktreeRootsOf(out), [main, second])
+    // git prints forward slashes on Windows too; join() gave backslashes, so compare in git's spelling
+    assert.deepEqual(worktreeRootsOf(out), [main, second].map((p) => p.replace(/\\/g, '/')))
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }

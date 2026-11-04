@@ -13,7 +13,7 @@ const script = resolve(here, '../../scripts/check-deps.mjs')
 const realPkg = resolve(here, '../../package.json')
 
 const tmpRoot = mkdtempSync(join(tmpdir(), 'truss-fixes5-deps-'))
-after(() => { rmSync(tmpRoot, { recursive: true, force: true }) })
+after(() => { rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) })
 let n = 0
 
 // A fake ui dir: package.json with dependency `left-pad` and devDependency `typescript`.

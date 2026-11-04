@@ -400,7 +400,8 @@ t('F72 1: the prompt of the QC call, captured from a stubbed runStage run, carri
   has(qc.prompt, 'no polling loops, no sleep')
 })
 t('F72 2: the body of qc-engineer.md after the frontmatter carries the foreground rule key terms', () => {
-  const src = readFileSync(`${PLUGIN}/agents/qc-engineer.md`, 'utf8')
+  // CRLF dropped, so a Windows (core.autocrlf) checkout's frontmatter matches too
+  const src = readFileSync(`${PLUGIN}/agents/qc-engineer.md`, 'utf8').replace(/\r\n/g, '\n')
   const m = src.match(/^---\n[\s\S]*?\n---\n/)
   assert.ok(m, 'qc-engineer.md has no frontmatter')
   const body = src.slice(m[0].length)

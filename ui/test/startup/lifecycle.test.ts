@@ -67,7 +67,7 @@ test('lockfile: write, read live, ignore stale, remove only our own', () => {
     removeLock(p);
     assert.ok(!existsSync(p), 'ours: removed');
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -86,7 +86,7 @@ test('addrInUseMessage names host:port, the running UI and how to stop it or cha
   assert.match(n, /--port/);
 });
 
-test('writeLock replaces a stale 0644 file with a 0600 one, and never writes through a symlink', { skip: process.platform === 'win32' }, () => {
+test('writeLock replaces a stale 0644 file with a 0600 one, and never writes through a symlink', { skip: process.platform === 'win32' ? 'Windows has no POSIX file modes (0600) and file symlinks need a privilege there' : false }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'truss-lock-'));
   try {
     const p = lockPath(4311, dir);
@@ -108,7 +108,7 @@ test('writeLock replaces a stale 0644 file with a 0600 one, and never writes thr
     assert.ok(lstatSync(p).isFile());
     assert.equal(lstatSync(p).mode & 0o777, 0o600);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -117,6 +117,6 @@ test('writeLock returns false when the exclusive create fails', () => {
   try {
     assert.equal(writeLock(join(dir, 'missing-dir', 'truss-ui-1.json'), { pid: process.pid, host: 'h', port: 1, startedAt: 't' }), false);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

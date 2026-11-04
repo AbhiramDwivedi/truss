@@ -20,7 +20,7 @@ function withSession(fn: (s: any) => void | Promise<void>) {
       await fn(s)
     } finally {
       await s.close()
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
     }
   }
 }
@@ -62,6 +62,6 @@ test('close resolves, and send after close gives "ended"', async () => {
     await s.close()
     assert.deepEqual(s.send('hi'), { ok: false, error: 'ended' })
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   }
 })

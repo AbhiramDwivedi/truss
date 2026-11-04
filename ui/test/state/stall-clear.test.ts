@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { createStore } from '../../server/state/index.ts'
 
 const tmpRoot = mkdtempSync(join(tmpdir(), 'truss-stall-clear-'))
-after(() => { rmSync(tmpRoot, { recursive: true, force: true }) })
+after(() => { rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) })
 let n = 0
 const dir = (name: string) => { const d = join(tmpRoot, `${name}-${++n}`); mkdirSync(d, { recursive: true }); return d }
 

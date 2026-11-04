@@ -45,7 +45,7 @@ test('readEnginesRange reads engines.node and returns null on a missing or bad f
     writeFileSync(join(dir, 'package.json'), '{"engines":{"node":">=24"}}');
     assert.equal(readEnginesRange(dir), '>=24');
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

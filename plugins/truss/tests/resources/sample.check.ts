@@ -60,7 +60,7 @@ test('host sample: load1 is os.loadavg()[0] when not all zero, absent otherwise'
   }
 })
 
-test('worktrees: lists the worktree dir holding a live process, not the idle one', { skip: process.platform !== 'linux' }, async () => {
+test('worktrees: lists the worktree dir holding a live process, not the idle one', { skip: process.platform !== 'linux' ? 'the sampler finds a process cwd through Linux /proc/<pid>/cwd' : false }, async () => {
   const m = await load()
   const root = mkdtempSync(`${os.tmpdir()}/resources-sample-`)
   mkdirSync(`${root}/wt-busy`)

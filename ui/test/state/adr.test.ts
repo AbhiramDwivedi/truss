@@ -10,7 +10,7 @@ import { createFileReaders } from '../../server/state/files.ts'
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'truss-adr-'))
 fs.mkdirSync(path.join(repo, 'adr'))
 const put = (name: string, text: string): void => fs.writeFileSync(path.join(repo, 'adr', name), text)
-after(() => fs.rmSync(repo, { recursive: true, force: true }))
+after(() => fs.rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }))
 
 put(
   '0030-new.md',

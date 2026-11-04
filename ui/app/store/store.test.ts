@@ -35,7 +35,11 @@ class FakeSource implements SourceLike {
 function setup() {
   const sources: FakeSource[] = []
   let reloads = 0
+  // A fresh storage per store: the default is globalThis.sessionStorage, which Node 25+ has and which every test in
+  // this file would share, so one test's reload throttled the next test's (order-dependent failure).
+  const kept = new Map<string, string>()
   const store = createStore({
+    storage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => void kept.set(k, v) },
     open: (url) => {
       const s = new FakeSource(url)
       sources.push(s)

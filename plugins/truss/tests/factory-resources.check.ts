@@ -163,7 +163,7 @@ test('factory heavy deletes its group record when the group is empty', () => {
 
 // ---------- reap ----------
 
-test('factory reap skips a record whose heavyPid is alive and prints reaped and skipped arrays', () => {
+test('factory reap skips a record whose heavyPid is alive and prints reaped and skipped arrays', { skip: process.platform === 'win32' ? 'process-group kill (kill -pgid) is POSIX-only; ADR-0015 leaves Windows group kill unproven' : false }, () => {
   const w = world([planned('q')])
   const label = 'skipme'
   // Stand-ins this test started and owns: one for the heavy process, one for the group.

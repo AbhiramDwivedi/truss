@@ -149,7 +149,7 @@ function registerTests(mod: any): void {
   const stores: any[] = []
   after(() => {
     for (const s of stores) { try { s.close() } catch { /* ignore */ } }
-    fs.rmSync(tmpRoot, { recursive: true, force: true })
+    fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   })
   before(() => {
     assert.equal(typeof mod.createStore, 'function', `${MODULE} must export createStore`)
@@ -291,8 +291,9 @@ function registerTests(mod: any): void {
   test('real fixtures: ADRs sorted by file name, design from .claude/truss.json', async () => {
     const s = state(await ready(makeWorld()))
     assert.deepEqual(s.adrs, [
-      { file: '0001-first.md', title: 'ADR-0001: first choice', status: 'accepted, 2026-01-02' },
-      { file: '0002-second.md', title: 'ADR-0002: second choice', status: 'proposed, 2026-10-30' },
+      // number, date, decidedBy, links and summary joined the ADR entry in 5e6fe9b (state.schema.json)
+      { file: '0001-first.md', title: 'ADR-0001: first choice', status: 'accepted, 2026-01-02', number: 1, date: '2026-01-02', decidedBy: null, links: [], summary: null },
+      { file: '0002-second.md', title: 'ADR-0002: second choice', status: 'proposed, 2026-10-30', number: 2, date: '2026-10-30', decidedBy: null, links: [], summary: null },
     ])
     assert.deepEqual(s.design.architecture, { path: 'docs/architecture.md', markdown: '# Architecture\n\nA unique line, 7f3a.\n' })
     assert.equal(s.design.planMd, null)

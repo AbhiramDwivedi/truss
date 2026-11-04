@@ -10,12 +10,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const P = join(dirname(fileURLToPath(import.meta.url)), '..')
 const r = (p: string): string => {
   try {
-    return readFileSync(join(P, p), 'utf8')
+    // CRLF dropped, so a Windows (core.autocrlf) checkout reads like the LF one
+    return readFileSync(join(P, p), 'utf8').replace(/\r\n/g, '\n')
   } catch {
     return ''
   }
@@ -115,7 +116,8 @@ test('G4 tightened: no non-comment stage.js line says run/execute with acceptanc
 })
 
 async function shapeLedger() {
-  const { parseRequirements } = await import(P + '/brief/ledger.ts')
+  // a file URL: Windows' ESM loader refuses a bare C:\ path
+  const { parseRequirements } = await import(pathToFileURL(join(P, 'brief', 'ledger.ts')).href)
   const b = r('skills/brief/SKILL.md')
   const i = b.indexOf('The shape')
   const blk = i < 0 ? '' : (b.slice(i).split('```')[1] ?? '')

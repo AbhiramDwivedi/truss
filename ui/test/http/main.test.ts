@@ -14,7 +14,7 @@ const emptyPlugin = join(tmp, 'plugin-empty');
 const halfPlugin = join(tmp, 'plugin-half');
 mkdirSync(emptyPlugin);
 mkdirSync(join(halfPlugin, '.claude-plugin'), { recursive: true });
-after(() => { rmSync(tmp, { recursive: true, force: true }); });
+after(() => { rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [main, ...args], { encoding: 'utf8', timeout: 15000, cwd: tmp, env: { ...process.env, INIT_CWD: tmp } });

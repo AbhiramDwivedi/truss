@@ -17,6 +17,20 @@ const tooBig = (req: IncomingMessage, res: ServerResponse) => {
   res.end('{"error":"toolarge"}', () => req.socket.destroy());
 };
 
+// A chunked upload that goes over the limit mid-stream: drop the rest of the body, then answer 413 once it
+// ends. Answering while the client is still sending closes the socket on unread bytes, which sends an RST,
+// and on Windows the RST throws the 413 away before the client reads it. A client that keeps sending past
+// DRAIN_MS gets the 413 and the socket destroyed.
+const DRAIN_MS = 2000;
+const tooBigAfterDrain = (req: IncomingMessage, res: ServerResponse) => {
+  let done = false;
+  const answer = () => { if (!done) { done = true; clearTimeout(t); tooBig(req, res); } };
+  const t = setTimeout(answer, DRAIN_MS);
+  t.unref();
+  req.on('end', answer);
+  req.resume();
+};
+
 // Resolves with the body text, or null after it has already answered 413.
 function readBody(req: IncomingMessage, res: ServerResponse): Promise<string | null> {
   return new Promise((resolve) => {
@@ -28,7 +42,7 @@ function readBody(req: IncomingMessage, res: ServerResponse): Promise<string | n
     req.on('data', (c: Buffer) => {
       if (over) return;
       size += c.length;
-      if (size > MAX_BODY) { over = true; chunks.length = 0; tooBig(req, res); resolve(null); return; }
+      if (size > MAX_BODY) { over = true; chunks.length = 0; tooBigAfterDrain(req, res); resolve(null); return; }
       chunks.push(c);
     });
     req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });

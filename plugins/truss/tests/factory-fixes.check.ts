@@ -106,7 +106,9 @@ test('ff 4: when the stress agent file cannot be stat\'d, the stress-yes crew st
   assert.equal(r.json.truss.crews.length, 1)
 })
 
-test('ff 5: the /proc stat parse survives a comm holding spaces and parentheses', async () => {
+test('ff 5: the /proc stat parse survives a comm holding spaces and parentheses', {
+  skip: existsSync('/proc/self/stat') ? false : 'needs Linux /proc: factory reads the CLAUDE_PID start time from /proc/<pid>/stat',
+}, async () => {
   // A copy of sleep named ") x (" gives /proc/<pid>/comm = ") x (", so field 22 sits after the LAST ")" and a split on spaces
   // from the start of the line picks the wrong field. (A copy of node would not do: node renames its main thread.) The child
   // started just now, the agent file is from 2023: no warning.

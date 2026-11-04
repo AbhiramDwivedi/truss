@@ -24,7 +24,7 @@ async function withServer(setup: (webDir: string) => void, fn: (get: (path: stri
     await fn((path, method = 'GET') => call(l.port, method, path, { headers }));
   } finally {
     await server.close();
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
