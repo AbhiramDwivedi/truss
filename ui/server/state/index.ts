@@ -85,6 +85,8 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
   let transcript: { n: number }[] = []
   let sessionNoPlugin = false
   const cloned = new WeakMap<object, any>()
+  // JSON text of a published object, kept by identity so an unchanged value is serialised once.
+  const jsonOf = new WeakMap<object, string>()
   const lastClone = new Map<string, { json: string; value: unknown }>()
   function cloneByContent(key: string, o: object): unknown {
     const json = JSON.stringify(o)
@@ -92,6 +94,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     if (last !== undefined && last.json === json) return last.value
     const value = structuredClone(o)
     lastClone.set(key, { json, value })
+    jsonOf.set(value as object, json)
     return value
   }
   function cloneOnce<T extends object>(o: T): T {
@@ -220,8 +223,19 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
   // ---- publishing ---------------------------------------------------------------------------------------------
 
   // The run with each member's purpose (agent files) and task (the session's task map, by agentId).
+  // Memoised on the run and the tasks of its members, so a session message that changes neither reuses the object.
+  let decoratedMemo: { run: Run; key: string; value: Run } | null = null
   function decorated(r: Run | null): Run | null {
     if (r === null) return null
+    const ids: (string | null)[] = []
+    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(m.agentId !== null && Object.hasOwn(taskOf, m.agentId) ? taskOf[m.agentId] : null)
+    const key = JSON.stringify(ids)
+    if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
+    const value = decorate(r)
+    decoratedMemo = { run: r, key, value }
+    return value
+  }
+  function decorate(r: Run): Run {
     const fill = (m: Member, isForeman: boolean): Member => ({
       ...m,
       purpose: purposeOf(purposes, m.type, isForeman),
@@ -254,7 +268,12 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     const set: Record<string, unknown> = {}
     let changed = false
     for (const k of KEYS) {
-      const s = JSON.stringify(next[k])
+      const o = next[k]
+      let s = typeof o === 'object' && o !== null ? jsonOf.get(o) : undefined
+      if (s === undefined) {
+        s = JSON.stringify(o)
+        if (k === 'run' && typeof o === 'object' && o !== null) jsonOf.set(o, s) // decorated runs are never mutated
+      }
       if (s !== json[k]) {
         json[k] = s
         values[k] = next[k]
