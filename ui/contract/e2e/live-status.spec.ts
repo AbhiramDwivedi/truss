@@ -15,10 +15,9 @@ const uiDir = resolve(here, '..', '..')
 const root = join(resolve(uiDir, '..'), 'plugins', 'truss')
 const WITHIN = { timeout: 2000 }
 
-// A crew line: the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
+// A crew card: the one article per crew in the Build network region, named by its slug (ADR-0028 section 10).
 const crewLine = (page: Page, slug: string): Locator =>
-  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem')
-    .getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
+  page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
 const rx = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
 
 let dir = ''
@@ -77,25 +76,21 @@ test('changes to the Truss files show on the page within 2 s without a reload', 
   const plan = JSON.parse(readFileSync(join(trussDir, 'plan.json'), 'utf8'))
   plan.crews.find((c: { slug: string }) => c.slug === 'quotas').status = 'running'
   writeFileSync(join(trussDir, 'plan.json'), JSON.stringify(plan, null, 2))
-  await expect(crewLine(page, 'quotas')).toHaveAccessibleName(/running/i, WITHIN)
+  // ADR-0028 section 9: a running crew shows the Active StatusBadge word
+  await expect(crewLine(page, 'quotas').getByText('Active', { exact: true }).first()).toBeVisible(WITHIN)
 
   // 2. events.jsonl: a spawn line naming a per-run member (R-3, R-4). The member line sits
   // inside the crew's expandable line, so open the crew line first when it is a button.
   const member = `quotas-builder-${run}`
   const fields = [['v', 1], ['ts', new Date().toISOString()], ['event', 'spawn'], ['crew', 'quotas'], ['agent', member], ['agentId', `a${run}`], ['type', 'kit:builder'], ['model', 'sonnet'], ['effort', 'medium'], ['by', 'quotas']]
   appendFileSync(join(trussDir, 'events.jsonl'), JSON.stringify(Object.fromEntries(fields)) + '\n')
-  const line = crewLine(page, 'quotas')
-  await expect(line).toHaveAccessibleName(new RegExp(`${member} spawned`, 'i'), WITHIN)
-  if ((await line.getAttribute('aria-expanded')) !== 'true') await line.click()
-  await expect(line).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: rx(member) })).toBeVisible(WITHIN)
+  // ADR-0028 section 10 (R-42): the crew card lists its agents as cards, with no expand step
+  await expect(crewLine(page, 'quotas').getByText(rx(member)).first()).toBeVisible(WITHIN)
 
-  // The decisions and ADRs tab holds the next two (R-5).
-  const tab = page.getByRole('tab', { name: 'Decisions and ADRs', exact: true })
-  await tab.click()
-  await expect(tab).toHaveAttribute('aria-selected', 'true')
-  const decisions = page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByRole('region', { name: 'Decisions', exact: true })
-  const adrs = page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByRole('region', { name: 'ADRs', exact: true })
+  // The rail timeline holds the next two (R-5), and is the only list of ADRs (ADR-0028 section 3, R-37): no tab.
+  await expect(page.getByRole('tab', { name: 'Decisions and ADRs', exact: true })).toHaveCount(0)
+  const decisions = page.getByRole('region', { name: 'Decisions and ADRs', exact: true })
+  const adrs = decisions
 
   // 3. decisions.md: a line with a per-run value (R-5).
   const decision = `choose-${run}-store`

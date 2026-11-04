@@ -152,6 +152,22 @@
               "at": { "type": "string", "format": "date-time" }
             }
           }
+        },
+        "flow": {
+          "description": "ADR-0028 section 7: the PM's own Agent, SendMessage and Workflow tool calls, oldest first, at most the last 200.",
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "required": ["at", "tool", "to", "summary"],
+            "additionalProperties": false,
+            "properties": {
+              "at": { "description": "ISO time the tool call was seen.", "type": "string" },
+              "tool": { "enum": ["Agent", "SendMessage", "Workflow"] },
+              "to": { "description": "A crew slug, or null.", "type": ["string", "null"] },
+              "summary": { "type": "string", "maxLength": 200 }
+            }
+          }
         }
       }
     },
@@ -290,7 +306,8 @@
             "isError": { "description": "result is_error.", "type": "boolean" },
             "backgroundTasks": { "description": "How many background tasks ran when the turn ended; above 0 the session may start a turn by itself.", "type": "integer", "minimum": 0 },
             "decision": { "description": "allow: Approve. deny: Deny. message: the client sent a free message instead.", "enum": ["allow", "deny", "message", null] },
-            "message": { "description": "The text sent into the session, else null.", "type": ["string", "null"] }
+            "message": { "description": "The text sent into the session, else null.", "type": ["string", "null"] },
+            "approvalAsk": { "description": "ADR-0028 section 2: true when the turn asks for approval. Absent or false means it does not.", "type": "boolean" }
           },
           "required": ["text", "isError", "backgroundTasks", "decision", "message"]
         }
@@ -360,6 +377,7 @@
         "members": { "description": "Every other agent named in the crew's event lines, in order of first appearance.", "type": "array", "items": { "$ref": "#/$defs/member" } },
         "latest": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/activity" }] },
         "estAgents": { "description": "ADR-0023 gap f: plan.json's crew estAgents, or null for a crew not in plan.json.", "type": ["integer", "null"], "minimum": 1 },
+        "eventsUnread": { "description": "ADR-0028 section 10: the count of this crew's event lines skipped for version. Above 0 the card shows that it couldn't read the crew's events.", "type": "integer", "minimum": 0 },
         "stuck": {
           "description": "ADR-0023 gap g: null, or the crew's latest stall event, while the stalled agent has no later event and the crew status is running.",
           "oneOf": [
@@ -405,7 +423,10 @@
         "effort": { "type": ["string", "null"] },
         "state": { "description": "From the agent's latest event line.", "enum": ["spawned", "stalled", "tagged", "reported", "allowance-spent", "fetched"] },
         "detail": { "description": "stalled: `<minutes> min`; tagged: the tag; reported: the marker or null; fetched: the url or query; else null.", "type": ["string", "null"] },
-        "ts": { "type": "string" }
+        "ts": { "type": "string" },
+        "agentId": { "description": "ADR-0028 section 6: the spawn line's agentId; null for factory crew lines.", "type": ["string", "null"] },
+        "purpose": { "description": "ADR-0028 section 6: the first sentence of the description line in agents/<name>.md, else null.", "type": ["string", "null"] },
+        "task": { "description": "ADR-0028 section 6: the latest task_started or task_progress description whose task_id equals agentId, else null.", "type": ["string", "null"] }
       }
     },
     "activity": {
