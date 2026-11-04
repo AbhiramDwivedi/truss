@@ -12,7 +12,6 @@ import { RunMetrics } from './views/metrics/RunMetrics.tsx'
 import { YourMove } from './views/move/YourMove.tsx'
 import { RunContext } from './views/rail/RunContext.tsx'
 import { Timeline } from './views/rail/Timeline.tsx'
-import { Announcer } from './views/shell/Announcer.tsx'
 import { Banner } from './views/shell/Banner.tsx'
 import { SkipLink } from './views/shell/SkipLink.tsx'
 import { useInstantThemeSwitch } from './views/shell/instantTheme.ts'
@@ -55,7 +54,6 @@ export default function App() {
         <Banner {...props} connection={connection} />
       </div>
     ),
-    announcer: <Announcer key="announcer" state={state} connection={connection} />,
     context: (
       <div key="context" className={gutter}>
         <RunContext {...props} />
@@ -71,7 +69,7 @@ export default function App() {
         key="conversation"
         id="conversation"
         tabIndex={-1}
-        className={`${wide ? 'mx-4 flex flex-col-reverse' : 'mx-4 flex flex-col'} min-w-0 gap-3 outline-none`}
+        className={`${wide ? 'flex flex-col-reverse lg:[&_[role=log]]:max-h-[calc(100vh-30rem)]' : 'flex flex-col'} mx-4 min-w-0 gap-3 outline-none`}
       >
         {wide ? [composer, thread] : [thread, composer]}
       </div>
@@ -106,7 +104,6 @@ export default function App() {
       <div className="min-h-screen min-w-0 lg:grid lg:grid-cols-[400px_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-0 lg:h-screen lg:gap-4 lg:overflow-y-auto lg:border-r lg:border-border lg:bg-surface lg:pb-6">
           {areas.banner}
-          {areas.announcer}
           {areas.context}
           {wide ? null : areas.move}
           {areas.conversation}

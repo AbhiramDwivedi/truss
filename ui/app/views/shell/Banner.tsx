@@ -112,6 +112,11 @@ export function Banner({ state, now, connection }: BannerProps) {
     const h = section.querySelector<HTMLElement>('h2')
     section.scrollIntoView({ block: 'start' })
     h?.focus({ preventScroll: true })
+    // Sections above it can still grow after a load (deliverables, the network): keep the target in view while
+    // the layout settles, for a short time only.
+    const keep = new ResizeObserver(() => section.scrollIntoView({ block: 'start', behavior: 'instant' }))
+    keep.observe(document.body)
+    window.setTimeout(() => keep.disconnect(), 1500)
   }
 
   return (
@@ -171,7 +176,10 @@ export function Banner({ state, now, connection }: BannerProps) {
         </div>
       )}
 
-      <RunStatus state={state} now={now} connection={connection} />
+      {/* At 1024 px and up one notice's height is held back, so a notice that arrives with the state moves nothing below. */}
+      <div className="min-w-0 lg:min-h-13">
+        <RunStatus state={state} now={now} connection={connection} />
+      </div>
     </header>
   )
 }
