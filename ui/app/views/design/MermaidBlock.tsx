@@ -91,7 +91,17 @@ function SourcePre({ source, id }: { source: string; id?: string }) {
       tabIndex={0}
       className="mt-2 max-w-full overflow-x-auto rounded-ctl bg-secondary p-3 font-mono text-ui whitespace-pre text-fg"
     >
-      <code>{source}</code>
+      <code>
+        {source.split('\n').map((line, i) => {
+          const indent = line.length - line.trimStart().length
+          // One block per line, with the indentation as padding: the text has no newline to collapse into a space.
+          return (
+            <span key={i} className="block min-h-[1lh]" style={indent > 0 ? { paddingLeft: `${indent}ch` } : undefined}>
+              {line.trimStart()}
+            </span>
+          )
+        })}
+      </code>
     </pre>
   )
 }
@@ -186,7 +196,7 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
   }
   if (state.k === 'error') {
     return (
-      <div role="note" className="my-3">
+      <div role="note" style={{ minHeight: DIAGRAM_MIN }} className="my-3">
         <p className="text-ui text-fg">This diagram couldn't be drawn: {state.line}</p>
         <SourcePre source={source} />
       </div>
