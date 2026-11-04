@@ -8,13 +8,14 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { STATES, WIDTHS, THEMES, HEIGHT, T, LOAD, scenario, openState, screensDir, token, tokens, dayTime, typeCounts, type Scenario, type Theme } from './support.ts'
+import { STATES, WIDTHS, THEMES, HEIGHT, T, LOAD, scenario, openState, boxName, screensDir, token, tokens, typeCounts, type Scenario, type Theme } from './support.ts'
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
-const SEND = /^(Send|Add goal|Send details|Send answer)$/
+// ADR-0028 section 1: Start run (no plan), Send to PM, Add as new goal (New goal chosen); Send answer stays for a question.
+const SEND = /^(Start run|Send to PM|Add as new goal|Send answer)$/
 
 // The shell every state has (ADR-0018 section 10, first table) plus ADR-0023's Dark theme toggle.
-async function shell(page: Page, theme: Theme): Promise<void> {
+async function shell(page: Page, theme: Theme, state: string): Promise<void> {
   await expect(page.getByRole('link', { name: 'Skip to Your move' })).toBeAttached(T)
   await expect(page.getByRole('banner')).toBeVisible(T)
   await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss' })).toBeVisible(T)
@@ -25,13 +26,23 @@ async function shell(page: Page, theme: Theme): Promise<void> {
   await expect(toggle, 'the page starts in the OS theme').toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', T)
   await expect(page.getByRole('main')).toBeVisible(T)
   const move = page.getByRole('region', { name: 'Your move' })
-  await expect(move).toBeVisible(T)
-  await expect(move.getByRole('heading', { level: 2, name: 'Your move' })).toBeVisible(T)
+  if (state === 'question' || state === 'approval') {
+    await expect(move).toBeVisible(T)
+    await expect(move.getByRole('heading', { level: 2, name: 'Your move' })).toBeVisible(T)
+  } else {
+    // ADR-0028 section 10 / UX: Your move renders only when the session waits on the client; no hero otherwise
+    await expect(move, 'no Your move section with nothing pending').toHaveCount(0, T)
+    await expect(page.getByText('Nothing needs you right now')).toHaveCount(0, T)
+  }
   const form = page.getByRole('form', { name: 'Message' })
-  await expect(form.getByRole('textbox', { name: 'Goal or message' })).toBeVisible(T)
+  await expect(form.getByRole('textbox', { name: boxName(state), exact: true })).toBeVisible(T)
   await expect(form.getByRole('button', { name: SEND })).toBeVisible(T)
-  const tabs = page.getByRole('tablist', { name: 'Run' })
-  for (const name of ['Crews', 'Decisions and ADRs', 'Design']) await expect(tabs.getByRole('tab', { name })).toBeVisible(T)
+  // ADR-0028 section 10: no Crews, Decisions or Design tabs; the network is the first view in main (R-36)
+  await expect(page.getByRole('tablist', { name: 'Run' })).toHaveCount(0, T)
+  await expect(page.getByRole('tab')).toHaveCount(0, T)
+  await expect(page.getByRole('main').getByRole('region', { name: 'Build network' })).toBeVisible(T)
+  await expect(page.getByRole('region', { name: 'Decisions and ADRs' }), 'the rail timeline is the one list of decisions and ADRs').toBeVisible(T)
+  await expect(page.getByRole('main').getByRole('heading', { level: 2, name: 'Run metrics' })).toBeVisible(T)
   const log = page.getByRole('log', { name: 'Transcript' })
   await expect(log).toBeVisible(T)
   await expect(page.getByRole('heading', { level: 2, name: 'Transcript' })).toBeVisible(T)
@@ -52,8 +63,8 @@ async function colours(page: Page, state: string, theme: Theme): Promise<void> {
 // for dots, bars and icons only). The tile is the term's nearest ancestor that paints a background.
 async function pairs(page: Page, state: string, theme: Theme): Promise<void> {
   if (state === 'live-counter') {
-    const term = page.getByRole('region', { name: 'Live metrics' }).getByRole('term').first()
-    await expect(term, 'a Live metrics term is muted text').toHaveCSS('color', token('muted', theme), T)
+    const term = page.getByRole('region', { name: 'Run metrics' }).getByRole('term').first()
+    await expect(term, 'a Run metrics term is muted text').toHaveCSS('color', token('muted', theme), T)
     expect(token('muted', theme)).not.toBe(token('subtle', theme))
     const tile = await term.evaluate((el) => {
       for (let n = el.parentElement; n; n = n.parentElement) {
@@ -62,10 +73,10 @@ async function pairs(page: Page, state: string, theme: Theme): Promise<void> {
       }
       return null
     })
-    expect(tile, `the Live metrics tile behind a term is tokens.json sunken (${theme})`).toBe(token('sunken', theme))
+    expect(tile, `the Run metrics tile behind a term is tokens.json sunken (${theme})`).toBe(token('sunken', theme))
   } else if (state === 'crews-running') {
-    const chip = page.getByRole('region', { name: 'Crews' }).getByText('Merged', { exact: true }).first()
-    await expect(chip, 'the merged crew carries an ok status chip that reads Merged').toBeVisible(T)
+    const chip = page.getByRole('region', { name: 'Build network' }).getByText('Done', { exact: true }).first()
+    await expect(chip, 'the merged crew carries an ok StatusBadge that reads Done (ADR-0028 section 9)').toBeVisible(T)
     await expect(chip, 'ok status chip text is fg').toHaveCSS('color', token('fg', theme), T)
     expect(await chip.evaluate((el) => getComputedStyle(el).color), 'ok is never a text colour').not.toBe(token('ok', theme))
   }
@@ -74,9 +85,9 @@ async function pairs(page: Page, state: string, theme: Theme): Promise<void> {
 // What ADR-0023 section 4 gives the state beyond the shell.
 async function content(page: Page, state: string, s: Scenario): Promise<void> {
   const move = page.getByRole('region', { name: 'Your move' })
-  const crews = page.getByRole('region', { name: 'Crews' })
+  const crews = page.getByRole('region', { name: 'Build network' })
   const retro = page.getByRole('region', { name: 'Retro stage' })
-  const metrics = page.getByRole('region', { name: 'Live metrics' })
+  const metrics = page.getByRole('region', { name: 'Run metrics' })
   const form = page.getByRole('form', { name: 'Message' })
   const f = s.fixture
   // the per-run value planted in the first user line
@@ -85,14 +96,17 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
   if (state === 'empty') {
     await expect(page.getByRole('status', { name: 'Session' })).toHaveText(/\bidle\b/, T)
     await expect(move.getByRole('article')).toHaveCount(0, T)
-    await expect(move.getByRole('heading', { level: 3, name: 'Start a run' })).toBeVisible(T)
-    await expect(move.getByText('Type a goal. Truss plans it, and asks you here when it needs a call.')).toBeVisible(T)
     await expect(form.getByRole('radiogroup', { name: 'What this message is' })).toHaveCount(0, T)
-    await expect(form.getByRole('button', { name: 'Send', exact: true })).toBeVisible(T)
-    await expect(metrics).toHaveCount(0, T)
-    await expect(page.getByRole('tabpanel').getByRole('region', { name: 'Crews' }).getByText('No plan yet.')).toBeVisible(T)
-    await expect(crews.getByRole('button')).toHaveCount(0, T)
-    await expect(page.getByText('Nothing built yet. Plans, ADRs and screenshots appear here as crews finish.')).toBeVisible(T)
+    await expect(form.getByRole('button', { name: 'Start run', exact: true })).toBeVisible(T)
+    // ADR-0028 section 8: Run metrics is always the last section of main; with no usage every tile reads "No usage yet"
+    await expect(metrics).toBeVisible(T)
+    await expect(metrics.getByText('No usage yet').first()).toBeVisible(T)
+    // ADR-0028 section 10: the PM node and the dashed card replace the old empty-plan line
+    await expect(crews.getByText('Waiting for your goal')).toBeVisible(T)
+    await expect(crews.getByText('Crews appear here once the PM has a plan.')).toBeVisible(T)
+    await expect(page.getByText(/No plan\s+yet/)).toHaveCount(0, T)
+    await expect(crews.getByRole('article')).toHaveCount(0, T)
+    await expect(page.getByText('Nothing built yet. Deliverables appear as crews finish.')).toBeVisible(T)
     await expect(page.getByRole('group', { name: 'Filter by type' })).toHaveCount(0, T)
     const followUps = page.getByRole('region', { name: 'Follow-ups' })
     await expect(followUps, 'an empty Follow-ups region reads Nothing sent yet.').toContainText('Nothing sent yet.', T)
@@ -111,18 +125,22 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(form.getByText("Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it.")).toBeVisible(T)
     const answer = form.getByRole('radio', { name: 'Answer the question' })
     await expect(answer).toBeVisible(T)
-    await expect(form.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal stays checked while a question is open: answering belongs to Your move').toBeChecked(T)
+    await expect(form.getByRole('radio', { name: 'Message', exact: true }), 'Message stays checked while a question is open: answering belongs to Your move').toBeChecked(T)
     await expect(answer).not.toBeChecked(T)
     await answer.check()
     await expect(answer).toBeChecked(T)
     await expect(form.getByRole('button', { name: 'Send answer' }), 'the send button follows the checked intent').toBeVisible(T)
   } else if (state === 'approval') {
     const [reply, perm] = f.requests
-    const replyCard = move.getByRole('article', { name: 'Reply needed' })
+    // ADR-0028 section 2 (R-47): the planted reply is an approval ask, so the card is "Approval needed"
+    const replyCard = move.getByRole('article', { name: 'Approval needed' })
     await expect(replyCard).toContainText(reply.text, T)
     await expect(replyCard.getByRole('button', { name: 'Approve' })).toBeVisible(T)
+    await expect(replyCard.getByText('Sends: Approved.')).toBeVisible(T)
     await expect(replyCard.getByRole('button', { name: 'Deny' })).toBeVisible(T)
-    await expect(replyCard.getByRole('textbox', { name: 'Message with your answer' })).toBeVisible(T)
+    await expect(replyCard.getByText('Sends: Not approved.')).toBeVisible(T)
+    await expect(replyCard.getByRole('textbox', { name: 'Your reply' })).toBeVisible(T)
+    await expect(replyCard.getByRole('button', { name: 'Send reply' })).toBeVisible(T)
     const permCard = move.getByRole('article', { name: `Permission request: ${perm.toolName}` })
     for (const text of [perm.toolName, perm.title, perm.summary, perm.decisionReason, perm.blockedPath]) await expect(permCard).toContainText(text, T)
     await expect(permCard.getByRole('button', { name: 'Approve' })).toBeVisible(T)
@@ -140,38 +158,29 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(page.getByText(/In the plan|plan revision/i)).toHaveCount(0, T)
     const group = form.getByRole('radiogroup', { name: 'What this message is' })
     await expect(group.getByRole('radio', { name: 'New goal' })).toBeVisible(T)
-    await expect(group.getByRole('radio', { name: 'Add to current goal' })).toBeVisible(T)
+    await expect(group.getByRole('radio', { name: 'Message', exact: true })).toBeVisible(T)
     await expect(group.getByRole('radio', { name: 'Answer the question' })).toHaveCount(0, T)
-    await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default once a goal exists').toBeChecked(T)
-    await expect(form.getByRole('button', { name: 'Send details' }), 'the default intent names the send button').toBeVisible(T)
+    await expect(group.getByRole('radio', { name: 'Message', exact: true }), 'Message is checked by default once a goal exists').toBeChecked(T)
+    await expect(form.getByRole('button', { name: 'Send to PM' }), 'the default intent names the send button').toBeVisible(T)
     await group.getByRole('radio', { name: 'New goal' }).check()
-    await expect(form.getByRole('button', { name: 'Add goal' })).toBeVisible(T)
-    await group.getByRole('radio', { name: 'Add to current goal' }).check()
-    await expect(form.getByRole('button', { name: 'Send details' })).toBeVisible(T)
+    await expect(form.getByRole('button', { name: 'Add as new goal' })).toBeVisible(T)
+    await group.getByRole('radio', { name: 'Message', exact: true }).check()
+    await expect(form.getByRole('button', { name: 'Send to PM' })).toBeVisible(T)
   } else if (state === 'crews-running') {
-    for (const n of [0, 1, 2]) {
-      const group = crews.getByRole('group', { name: `Stage ${n}` })
-      await expect(group).toBeVisible(T)
-      await expect(group.getByRole('heading', { level: 3, name: `Stage ${n}` })).toBeVisible(T)
-      await expect(group.getByRole('list').getByRole('listitem').first()).toBeVisible(T)
-    }
+    // ADR-0028 section 10: crews sit in stage rows (a list per stage), each crew an article named by its slug,
+    // with a wire per crew (data-crew)
+    await expect(crews.getByRole('list').first()).toBeVisible(T)
     for (const c of f.run.crews) {
-      const line = crews.getByRole('button', { name: new RegExp(`\\b${c.slug}\\b`) })
-      await expect(line).toHaveCount(1, T)
-      await expect(line).toHaveAttribute('aria-expanded', /^(true|false)$/, T)
-      await expect(line).toHaveAccessibleName(new RegExp(`${c.estAgents} agents planned`), T)
+      await expect(crews.getByRole('article', { name: new RegExp(`\\b${c.slug}\\b`) })).toHaveCount(1, T)
     }
-    const line = crews.getByRole('button', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
-    await expect(line).toHaveAccessibleName(/running/i, T)
-    await expect(line).toHaveAccessibleName(/stage 1/i, T)
-    await line.click()
-    await expect(line).toHaveAttribute('aria-expanded', 'true', T)
-    await expect(page.getByRole('list', { name: `${s.apiSlug} members` }).getByRole('listitem').first()).toBeVisible(T)
+    await expect(crews.locator('[data-crew]'), 'one wire per crew card').toHaveCount(f.run.crews.length, T)
+    const card = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
+    await expect(card.getByText('Active', { exact: true }).first()).toBeVisible(T)
   } else if (state === 'stuck-crew') {
     const stuck = f.run.crews.find((c: any) => c.stuck)
-    const line = crews.getByRole('button', { name: /stuck: stalled \d+ min/ })
+    const line = crews.getByRole('article', { name: new RegExp(`\\b${stuck.slug}\\b`) })
     await expect(line).toHaveCount(1, T)
-    await expect(line).toHaveAccessibleName(new RegExp(`stuck: stalled ${stuck.stuck.minutes} min`), T)
+    await expect(line.getByText('Stuck', { exact: true }).first(), 'ADR-0028 section 9: the Stuck StatusBadge word').toBeVisible(T)
     for (const name of ['Restart builder', 'Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
     const band = crews.getByText(`Stuck, silent ${stuck.stuck.minutes}m`, { exact: true })
     await expect(band, 'the stuck band carries the word').toBeVisible(T)
@@ -181,7 +190,6 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(pause).toHaveAttribute('aria-disabled', 'true', T)
     await expect(pause).toHaveAccessibleDescription("Pausing needs a server endpoint that doesn't exist yet.", T)
     await expect(page.getByRole('tooltip'), 'the Pause tip is a description, not a tooltip').toHaveCount(0, T)
-    await expect(metrics.getByRole('link', { name: '1 crew stuck' })).toBeVisible(T)
     await expect(move.getByRole('article')).toHaveCount(0, T)
   } else if (state === 'artifacts') {
     const filter = page.getByRole('group', { name: 'Filter by type' })
@@ -199,15 +207,16 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(page.getByRole('link', { name: /Arrives when/ })).toHaveCount(0, T)
   } else if (state === 'live-counter') {
     await expect(metrics).toBeVisible(T)
-    await expect(metrics.getByRole('term')).toHaveText(['Elapsed', 'Tokens', 'Spend', 'Agents', 'Crews merged', 'Tasks done'], T)
-    await expect(metrics.getByRole('definition')).toHaveCount(6, T)
-    const goal = f.run.goals[0]
-    expect(goal.id, 'Elapsed counts from the run goal').toBe('run')
-    await expect(metrics.getByText(`since you approved, ${dayTime(s.shown(goal.approvedAt))}`, { exact: true }), 'the whole Elapsed sub-line, from run.goals[0].approvedAt').toBeVisible(T)
-    await expect(metrics.getByText(/as of \d\d:\d\d(?!, not updating)/).first()).toBeVisible(T)
-    await expect(metrics.getByText(/as of turn end \d\d:\d\d/)).toBeVisible(T)
-    await expect(metrics.getByText('needs a server change')).toHaveCount(0, T)
-    await expect(metrics.getByText('from events today')).toHaveCount(0, T)
+    // ADR-0028 section 8 (R-43): cost, tokens per model (a table), run time, agents started and crews done "n of m"
+    await expect(metrics.getByRole('heading', { level: 2, name: 'Run metrics' })).toBeVisible(T)
+    await expect(metrics.getByRole('term').filter({ hasText: /cost/i })).toHaveCount(1, T)
+    await expect(metrics.getByRole('term').filter({ hasText: /run time/i })).toHaveCount(1, T)
+    await expect(metrics.getByRole('term').filter({ hasText: /agents started/i })).toHaveCount(1, T)
+    await expect(metrics.getByRole('term').filter({ hasText: /crews done/i })).toHaveCount(1, T)
+    await expect(metrics.getByText(/\d+ of \d+/).first(), 'crews done reads n of m').toBeVisible(T)
+    const table = metrics.getByRole('table')
+    for (const name of ['Model', 'In', 'Out', 'Cache read', 'Cache write']) await expect(table.getByRole('columnheader', { name })).toBeVisible(T)
+    await expect(metrics.getByText(/limit|budget|ceiling|of \$/i), 'no limit, budget, ceiling or "of $X" anywhere').toHaveCount(0, T)
   } else if (state === 'retro') {
     await expect(crews).toBeVisible(T)
     await expect(retro).toBeVisible(T)
@@ -219,15 +228,12 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     }
     await expect(retro).toContainText(f.retro.steps.judges.detail, T)
   } else if (state === 'decisions') {
-    const tab = page.getByRole('tab', { name: 'Decisions and ADRs' })
-    await tab.click()
-    await expect(tab).toHaveAttribute('aria-selected', 'true', T)
-    await expect(page.getByRole('tabpanel', { name: 'Decisions and ADRs' })).toBeVisible(T)
-    const decisions = page.getByRole('region', { name: 'Decisions' })
-    await expect(decisions.getByRole('heading', { level: 3 }).first()).toBeVisible(T)
-    await expect(decisions.getByRole('list').getByRole('listitem').first()).toBeVisible(T)
-    const adrs = page.getByRole('region', { name: 'ADRs' })
-    await expect(adrs.getByRole('list').getByRole('listitem')).toHaveCount(f.adrs.length, T)
+    // ADR-0028 section 3 (R-37): the rail timeline lists decisions and ADRs; there is no tab to open
+    await expect(page.getByRole('tab', { name: 'Decisions and ADRs' })).toHaveCount(0, T)
+    const timeline = page.getByRole('region', { name: 'Decisions and ADRs' })
+    await expect(timeline.getByRole('list').getByRole('listitem').first()).toBeVisible(T)
+    for (const a of f.adrs) await expect(timeline.getByText(a.title).first()).toBeVisible(T)
+    await expect(page.getByRole('list', { name: 'Deliverables' }).getByText(f.adrs[0].title), 'Deliverables hold no ADR item').toHaveCount(0, T)
     await expect(page.getByText(/Approved by you at \d\d:\d\d/).first()).toBeVisible(T)
     await expect(page.getByText(/Plan revision/i)).toHaveCount(0, T)
   }
@@ -236,11 +242,11 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
 // After change(): the page shows it.
 async function shows(page: Page, state: string, s: Scenario): Promise<void> {
   if (state === 'crews-running') {
-    await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: new RegExp(`\\b${s.apiSlug}\\b`) })).toHaveAccessibleName(/merged/i, LOAD)
+    await expect(page.getByRole('region', { name: 'Build network' }).getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) }).getByText('Done', { exact: true }).first()).toBeVisible(LOAD)
   } else if (state === 'retro') {
     await expect(page.getByRole('region', { name: 'Retro stage' })).toContainText(`triaging ${s.run}`, LOAD)
   } else if (state === 'decisions') {
-    await expect(page.getByRole('region', { name: 'Decisions' }).getByRole('listitem').filter({ hasText: `decision marker ${s.run}` })).toHaveCount(1, LOAD)
+    await expect(page.getByRole('region', { name: 'Decisions and ADRs' }).getByRole('listitem').filter({ hasText: `decision marker ${s.run}` })).toHaveCount(1, LOAD)
   } else {
     await expect(page.getByRole('log', { name: 'Transcript' })).toContainText(`hello ${s.run}`, LOAD)
   }
@@ -252,7 +258,7 @@ for (const state of STATES) {
       const s = await scenario(state)
       const { page, problems, close } = await openState(browser, s, theme, WIDTHS[2]![1])
       try {
-        await shell(page, theme)
+        await shell(page, theme, state)
         await content(page, state, s)
         await colours(page, state, theme)
         await pairs(page, state, theme)
@@ -271,11 +277,11 @@ for (const state of STATES) {
       const { page, problems, close } = await openState(browser, s, theme, WIDTHS[2]![1])
       try {
         mkdirSync(screensDir, { recursive: true })
-        await shell(page, theme)
+        await shell(page, theme, state)
         await content(page, state, s)
         for (const [name, width] of WIDTHS) {
           await page.setViewportSize({ width, height: HEIGHT })
-          await shell(page, theme)
+          await shell(page, theme, state)
           await colours(page, state, theme)
           const fit = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
           expect(fit.scroll, `${state} ${name} ${theme}: scrollWidth ${fit.scroll} > clientWidth ${fit.client}`).toBeLessThanOrEqual(fit.client)
@@ -301,15 +307,13 @@ for (const state of STATES) {
       const s = await scenario(state)
       const { page, problems, close } = await openState(browser, s, 'light', ZOOM)
       try {
-        await shell(page, 'light')
+        await shell(page, 'light', state)
         await content(page, state, s)
         await colours(page, state, 'light')
         if (state === 'question') {
           await expect(page.getByRole('region', { name: 'Your move' }).getByRole('article', { name: /^Question from Claude: / })).toBeInViewport(T)
         } else {
-          const line = page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: /stuck: stalled \d+ min/ })
-          if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
-          await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: 'Restart builder' })).toBeVisible(T)
+          await expect(page.getByRole('region', { name: 'Build network' }).getByRole('button', { name: 'Restart builder' })).toBeVisible(T)
         }
         const fit = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
         expect(fit.scroll, `${state} at ${ZOOM} px: scrollWidth ${fit.scroll} > clientWidth ${fit.client}`).toBeLessThanOrEqual(fit.client)
@@ -325,7 +329,7 @@ for (const state of STATES) {
     const s = await scenario(state)
     const { page, problems, close } = await openState(browser, s, 'light', WIDTHS[2]![1])
     try {
-      await shell(page, 'light')
+      await shell(page, 'light', state)
       await content(page, state, s)
       s.change()
       await shows(page, state, s)
