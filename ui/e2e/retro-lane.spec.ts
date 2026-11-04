@@ -32,7 +32,7 @@ function writeRetro(r: Real, over: Partial<Record<(typeof STEPS)[number], Step>>
 }
 
 const lane = (page: Page) => page.getByRole('region', { name: 'Retro stage' })
-const crews = (page: Page) => page.getByRole('region', { name: 'Crews', exact: true })
+const crews = (page: Page) => page.getByRole('region', { name: 'Build network', exact: true }) // ADR-0028 section 10: was "Crews"
 
 test('R-23: with no retro/state.json the page shows the crew lanes and no region named Retro stage', async ({ page }) => {
   real = await startReal()

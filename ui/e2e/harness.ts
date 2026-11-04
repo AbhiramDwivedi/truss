@@ -34,17 +34,26 @@ export const rand = () => randomBytes(4).toString('hex')
 // ---- ADR-0018 shell, by role and accessible name --------------------------------------------------------
 // Roles and names are fixed by ADR-0018 section 10; none of these reaches the page by class, tag or id.
 export const yourMove = (page: Page): Locator => page.getByRole('region', { name: 'Your move', exact: true })
-export const goalBox = (page: Page): Locator => page.getByRole('textbox', { name: 'Goal or message', exact: true })
-export const sendButton = (page: Page): Locator => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: 'Send', exact: true })
-// A crew line: the one button per crew in its stage group of the Crews region (ADR-0018 section 10).
+// ADR-0028 section 1: the textarea is "Your goal" before a run and "Message to the PM" during one.
+export const goalBox = (page: Page): Locator => page.getByRole('textbox', { name: /^(Your goal|Message to the PM)$/ })
+// ADR-0028 section 1: the send button says what will happen: "Start run", "Send to PM" or "Add as new goal".
+export const sendButton = (page: Page): Locator => page.getByRole('button', { name: /^(Start run|Send to PM|Add as new goal)$/ })
+// A crew card: an article named by its slug in the Build network region (ADR-0028 section 10; UX direction 6).
 export const crewLine = (page: Page, slug: string): Locator =>
-  page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
+  page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
+// ADR-0028 section 3: the rail's "Decisions and ADRs" timeline is the one list of ADRs and decisions.
+export const adrTimeline = (page: Page): Locator => page.getByRole('region', { name: 'Decisions and ADRs', exact: true })
+// ADR-0028 section 10: deliverables are in main with no tab; "Architecture" is the first item and opens in the preview.
+export const deliverables = (page: Page): Locator => page.getByRole('region', { name: /deliverables/i })
+export async function openArchitecture(page: Page): Promise<void> {
+  await deliverables(page).getByRole('button', { name: /^Architecture/ }).first().click()
+}
 export const sessionStatus = (page: Page): Locator => page.getByRole('status', { name: 'Session', exact: true })
 export const runStatus = (page: Page): Locator => page.getByRole('list', { name: 'Run status', exact: true })
 export const CARD = {
   question: /^Question from Claude: /,
   permission: /^Permission request: /,
-  reply: /^Reply needed$/,
+  reply: /^(The PM replied|Approval needed)$/, // ADR-0028 section 2: replaces "Reply needed"
 } as const
 // A request card (an article) of one kind, optionally narrowed to the ones that hold `text`.
 export function card(page: Page, kind: keyof typeof CARD, text?: RegExp | string): Locator {
@@ -247,7 +256,7 @@ export interface Iface {
   /** Opens an approval card for a tool call. Returns the request id. */
   permission(o: { toolName: string; title: string; summary: string; input?: Record<string, unknown>; decisionReason?: string | null; blockedPath?: string | null }): string
   /** Opens a "reply needed" card. Returns the request id. */
-  reply(o: { text: string; isError?: boolean; backgroundTasks?: number }): string
+  reply(o: { text: string; isError?: boolean; backgroundTasks?: number; approvalAsk?: boolean }): string
   /** The registry's view of the requests (what the page should show). */
   requests(): any[]
   /** Makes the next send() fail with 'ended', as after the session ended. */
@@ -350,7 +359,7 @@ export async function startInterface(opts: { state?: Record<string, unknown>; we
       return registry.open({ kind: 'question', questions, answers: null }).id
     },
     permission: (o) => registry.open({ kind: 'permission', toolName: o.toolName, title: o.title, summary: o.summary, input: o.input ?? {}, decisionReason: o.decisionReason ?? null, blockedPath: o.blockedPath ?? null, decision: null, message: null }).id,
-    reply: (o) => registry.open({ kind: 'reply', text: o.text, isError: o.isError === true, backgroundTasks: o.backgroundTasks ?? 0, decision: null, message: null }).id,
+    reply: (o) => registry.open({ kind: 'reply', text: o.text, isError: o.isError === true, backgroundTasks: o.backgroundTasks ?? 0, decision: null, message: null, ...(o.approvalAsk === undefined ? {} : { approvalAsk: o.approvalAsk }) } as Parameters<typeof registry.open>[0]).id, // approvalAsk: ADR-0028 section 2
     requests: () => registry.list(),
     endSession() { ended = true },
     setImage(ref, path, bytes) { src.images.set(`${ref}\0${path}`, bytes) },
@@ -407,7 +416,7 @@ export async function startFixture(name: string, opts: { now?: number; webDir?: 
     if (r.status !== 'open') continue
     if (r.kind === 'question') iface.question(r.questions)
     else if (r.kind === 'permission') iface.permission({ toolName: r.toolName, title: r.title, summary: r.summary, input: r.input, decisionReason: r.decisionReason, blockedPath: r.blockedPath })
-    else iface.reply({ text: r.text, isError: r.isError, backgroundTasks: r.backgroundTasks })
+    else iface.reply({ text: r.text, isError: r.isError, backgroundTasks: r.backgroundTasks, approvalAsk: r.approvalAsk })
   }
   return iface
 }
