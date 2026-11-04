@@ -109,7 +109,7 @@ test.describe('paths', () => {
   })
 
   for (const theme of ['light', 'dark'] as Theme[]) {
-    test(`stuck-crew idle-foreman (${theme}): stuck: foreman idle <n> min, and Start a successor foreman sends its message`, async ({ browser }) => {
+    test(`stuck-crew idle-foreman (${theme}): Stuck with How long <n> min and the idle-foreman Why text, and Start a successor foreman sends its message`, async ({ browser }) => {
       const s = await scenario('stuck-crew/idle-foreman')
       const o = await openState(browser, s, theme, DESKTOP)
       try {
@@ -125,6 +125,7 @@ test.describe('paths', () => {
         // ruled as "Stuck, silent Nm" was (ADR-0028 section 9, views/crews StuckCard): the Stuck word plus Why / How long / Next
         await expect(line.getByText('How long', { exact: true }).first()).toBeVisible(T)
         await expect(line.getByText(new RegExp(`\\b${stuck.stuck.minutes} min\\b`)).first()).toBeVisible(T)
+        await expect(line.getByText(`The foreman has sent nothing for ${stuck.stuck.minutes} min.`), 'the idle-only Why text').toBeVisible(T)
         await expect(crews.getByText(/stuck: stalled/), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
         const successor = crews.getByRole('button', { name: 'Start a successor foreman' })
         await expect(successor).toBeVisible(T)
@@ -190,7 +191,7 @@ test.describe('paths', () => {
     } finally { await o.close(); await s.stop() }
   })
 
-  test('artifacts, zero results: a type filter with no items reads No images yet., and Show all types resets it', async ({ browser }) => {
+  test('artifacts, zero results: a type filter with no items reads No deliverables of this type., and Show all resets it', async ({ browser }) => {
     const s = await scenario('artifacts/no-images')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
@@ -210,13 +211,13 @@ test.describe('paths', () => {
       await expect(list.getByRole('listitem').first()).toBeVisible(T)
       await images.click()
       await expect(images).toHaveAttribute('aria-pressed', 'true', T)
-      await expect(page.getByText('No images yet.', { exact: true })).toBeVisible(T)
-      const reset = page.getByRole('button', { name: 'Show all types' })
+      await expect(page.getByText('No deliverables of this type.', { exact: true })).toBeVisible(T)
+      const reset = page.getByRole('button', { name: 'Show all', exact: true })
       await expect(reset).toBeVisible(T)
       await reset.click()
-      await expect(filter.getByRole('button', { name: /^All\b/ }), 'Show all types presses All again').toHaveAttribute('aria-pressed', 'true', T)
+      await expect(filter.getByRole('button', { name: /^All\b/ }), 'Show all presses All again').toHaveAttribute('aria-pressed', 'true', T)
       await expect(images).toHaveAttribute('aria-pressed', 'false', T)
-      await expect(page.getByText('No images yet.', { exact: true })).toHaveCount(0, T)
+      await expect(page.getByText('No deliverables of this type.', { exact: true })).toHaveCount(0, T)
       await expect(list.getByRole('listitem').first(), 'the items are back').toBeVisible(T)
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }

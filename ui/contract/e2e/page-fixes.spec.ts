@@ -166,7 +166,7 @@ test('waiting with background tasks and no reply card: says agents still running
     transcript: [{ n: 1, role: 'assistant', text: resultText, ts: new Date().toISOString() }],
   }, async (rig) => {
     await open(page, rig)
-    await expect(page.getByRole('region', { name: 'Your move', exact: true }).getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
+    await expect(page.getByRole('banner').getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
     await expect(page.getByRole('button', { name: /^(Approve|Deny)$/ })).toHaveCount(0)
     await expect(transcript(page).getByText(resultText)).toBeVisible()
     const box = goalBox(page)
