@@ -10,7 +10,7 @@ const THEMES: Theme[] = ['light', 'dark']
 
 test.describe('moves', () => {
   for (const theme of THEMES) {
-    test(`empty (${theme}): Start a run, no plan, no metrics, Send, and the move colour`, async ({ browser }) => {
+    test(`empty (${theme}): no Your move, the PM node and dashed card, Start run, Run metrics, and the move colour`, async ({ browser }) => {
       expect(tokens.colors.move, 'tokens.json holds move').toBeTruthy()
       const s = await scenario('empty')
       const o = await openState(browser, s, theme, DESKTOP)
@@ -27,19 +27,25 @@ test.describe('moves', () => {
         await expect(toggle, 'pressing Dark theme again restores aria-pressed').toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', T)
         await expect(page.locator('body'), 'pressing Dark theme again restores the bg').toHaveCSS('background-color', token('bg', theme), T)
         const move = page.getByRole('region', { name: 'Your move' })
-        await expect(move.getByRole('article')).toHaveCount(0, T)
-        await expect(move.getByRole('heading', { level: 3, name: 'Start a run' })).toBeVisible(T)
-        await expect(move.getByText('Type a goal. Truss plans it, and asks you here when it needs a call.')).toBeVisible(T)
+        // ADR-0028 section 10 / UX: nothing pending means no Your move section and no "Start a run" hero
+        await expect(move).toHaveCount(0, T)
+        await expect(page.getByText('Nothing needs you right now')).toHaveCount(0, T)
         const form = page.getByRole('form', { name: 'Message' })
         await expect(form.getByRole('radiogroup', { name: 'What this message is' })).toHaveCount(0, T)
-        const send = form.getByRole('button', { name: 'Send', exact: true })
+        // ADR-0028 section 1: with no plan the composer is "Your goal" and the button "Start run"
+        await expect(form.getByRole('textbox', { name: 'Your goal', exact: true })).toBeVisible(T)
+        const send = form.getByRole('button', { name: 'Start run', exact: true })
         await expect(send).toBeVisible(T)
         await expect(send, 'the one primary action is the move surface').toHaveCSS('background-color', token('move', theme), T)
         await expect(page.locator('body')).toHaveCSS('background-color', token('bg', theme), T)
-        await expect(page.getByRole('region', { name: 'Live metrics' })).toHaveCount(0, T)
-        await expect(page.getByRole('tabpanel').getByText('No plan yet.')).toBeVisible(T)
-        await expect(page.getByRole('region', { name: 'Crews' }).getByRole('button')).toHaveCount(0, T)
-        await expect(page.getByText('Nothing built yet. Plans, ADRs and screenshots appear here as crews finish.')).toBeVisible(T)
+        await expect(page.getByRole('region', { name: 'Run metrics' }), 'Run metrics is always shown (R-43)').toBeVisible(T)
+        // ADR-0028 section 10 (R-36): the PM node and a dashed card replace the old empty-plan line
+        const network = page.getByRole('region', { name: 'Build network' })
+        await expect(network.getByText('Waiting for your goal')).toBeVisible(T)
+        await expect(network.getByText('Crews appear here once the PM has a plan.')).toBeVisible(T)
+        await expect(page.getByText(/No plan\s+yet/)).toHaveCount(0, T)
+        await expect(network.getByRole('article')).toHaveCount(0, T)
+        await expect(page.getByText('Nothing built yet. Deliverables appear as crews finish.')).toBeVisible(T)
         await expect(page.getByRole('group', { name: 'Filter by type' })).toHaveCount(0, T)
         expect(await o.problems()).toEqual([])
       } finally { await o.close(); await s.stop() }
@@ -100,13 +106,17 @@ test.describe('moves', () => {
         const { page } = o
         const [reply, perm] = s.fixture.requests
         const move = page.getByRole('region', { name: 'Your move' })
-        const replyCard = move.getByRole('article', { name: 'Reply needed' })
+        // ADR-0028 section 2 (R-47): the planted reply is an approval ask (approvalAsk true), so "Approval needed"
+        const replyCard = move.getByRole('article', { name: 'Approval needed' })
         await expect(replyCard).toBeVisible(LOAD)
         await expect(replyCard, 'the oldest article is the filled move surface').toHaveCSS('background-color', token('move', theme), T)
         await expect(replyCard).toContainText(reply.text, T)
         await expect(replyCard.getByRole('button', { name: 'Approve' })).toBeVisible(T)
+        await expect(replyCard.getByText('Sends: Approved.')).toBeVisible(T)
         await expect(replyCard.getByRole('button', { name: 'Deny' })).toBeVisible(T)
-        await expect(replyCard.getByRole('textbox', { name: 'Message with your answer' })).toBeVisible(T)
+        await expect(replyCard.getByText('Sends: Not approved.')).toBeVisible(T)
+        await expect(replyCard.getByRole('textbox', { name: 'Your reply' })).toBeVisible(T)
+        await expect(replyCard.getByRole('button', { name: 'Send reply' })).toBeVisible(T)
         const permCard = move.getByRole('article', { name: `Permission request: ${perm.toolName}` })
         await expect(permCard).toBeVisible(T)
         await expect(permCard, 'the second card is a surface card, not the move colour').not.toHaveCSS('background-color', token('move', theme), T)
@@ -122,7 +132,39 @@ test.describe('moves', () => {
     })
   }
 
-  test('follow-up: Queued and Sent chips, newest first, no plan-revision status, the send name follows the radio', async ({ browser }) => {
+  test('reply, not an approval ask: "The PM replied", a Your reply box and Send reply, and no Approve or Deny on the card (R-47)', async ({ browser }) => {
+    const s = await scenario('approval', {
+      edit: (f) => {
+        for (const r of f.requests) {
+          if (r.kind !== 'reply') continue
+          r.approvalAsk = false
+          r.text = 'Nothing is waiting on approval right now. Tell me what you want next, or give me something new.'
+        }
+      },
+    })
+    const o = await openState(browser, s, 'light', DESKTOP)
+    try {
+      const { page } = o
+      const move = page.getByRole('region', { name: 'Your move' })
+      const card = move.getByRole('article', { name: 'The PM replied' })
+      await expect(card).toBeVisible(LOAD)
+      await expect(card.getByRole('heading', { name: 'The PM replied' })).toBeVisible(T)
+      await expect(card).toContainText('Nothing is waiting on approval', T)
+      await expect(card.getByRole('button', { name: 'Read in thread' })).toBeVisible(T)
+      await expect(card.getByRole('button', { name: 'Approve' })).toHaveCount(0, T)
+      await expect(card.getByRole('button', { name: 'Deny' })).toHaveCount(0, T)
+      const box = card.getByRole('textbox', { name: 'Your reply' })
+      await expect(box).toBeVisible(T)
+      await box.fill('Add a CSV export')
+      const send = card.getByRole('button', { name: 'Send reply' })
+      const posted = page.waitForRequest((r) => r.method() === 'POST' && /^\/api\/requests\/[^/]+\/answer$/.test(new URL(r.url()).pathname), LOAD)
+      await send.click()
+      expect(JSON.parse((await posted).postData() ?? '{}'), 'Send reply posts {decision: message, message}').toMatchObject({ decision: 'message', message: 'Add a CSV export' })
+      expect(await o.problems()).toEqual([])
+    } finally { await o.close(); await s.stop() }
+  })
+
+  test('follow-up: Queued and Sent chips, newest first, no plan-revision status, the send name follows Message / New goal', async ({ browser }) => {
     const s = await scenario('follow-up')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
@@ -145,19 +187,20 @@ test.describe('moves', () => {
       expect(iNew, 'newest first').toBeLessThan(iOld)
       const group = page.getByRole('form', { name: 'Message' }).getByRole('radiogroup', { name: 'What this message is' })
       await expect(group.getByRole('radio', { name: 'Answer the question' })).toHaveCount(0, T)
-      await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default once a goal exists').toBeChecked(T)
+      await expect(group.getByRole('radio', { name: 'Message', exact: true }), 'Message is checked by default once a goal exists (ADR-0028 section 1)').toBeChecked(T)
+      await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Send to PM' })).toBeVisible(T)
       await group.getByRole('radio', { name: 'New goal' }).check()
-      await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Add goal' })).toBeVisible(T)
-      await group.getByRole('radio', { name: 'Add to current goal' }).check()
-      await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Send details' })).toBeVisible(T)
+      await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Add as new goal' })).toBeVisible(T)
+      await group.getByRole('radio', { name: 'Message', exact: true }).check()
+      await expect(page.getByRole('form', { name: 'Message' }).getByRole('button', { name: 'Send to PM' })).toBeVisible(T)
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
 
   for (const theme of THEMES) {
-    // follow-up gives Add goal and Send details; question gives Send answer (Answer the question is offered there only)
+    // follow-up gives Add as new goal and Send to PM; question gives Send answer (Answer the question is offered there only)
     for (const [state, intents] of [
-      ['follow-up', [['New goal', 'Add goal'], ['Add to current goal', 'Send details']]],
+      ['follow-up', [['New goal', 'Add as new goal'], ['Message', 'Send to PM']]],
       ['question', [['Answer the question', 'Send answer']]],
     ] as const) {
       test(`${state} (${theme}): the send button is --primary, move with move-fg text, for every intent`, async ({ browser }) => {
@@ -168,10 +211,10 @@ test.describe('moves', () => {
           await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', LOAD)
           const form = page.getByRole('form', { name: 'Message' })
           const group = form.getByRole('radiogroup', { name: 'What this message is' })
-          await expect(group.getByRole('radio', { name: 'Add to current goal' }), 'Add to current goal is checked by default').toBeChecked(T)
+          await expect(group.getByRole('radio', { name: 'Message', exact: true }), 'Message is checked by default').toBeChecked(T)
           for (const [intent, name] of intents) {
-            await group.getByRole('radio', { name: intent }).check()
-            await expect(group.getByRole('radio', { name: intent })).toBeChecked(T)
+            await group.getByRole('radio', { name: intent, exact: true }).check()
+            await expect(group.getByRole('radio', { name: intent, exact: true })).toBeChecked(T)
             const send = form.getByRole('button', { name, exact: true })
             await expect(send, `${name} is tokens.json move in ${theme}, not D2's brand`).toHaveCSS('background-color', token('move', theme), T)
             await expect(send, `${name} text is tokens.json move-fg in ${theme}`).toHaveCSS('color', token('move-fg', theme), T)
@@ -218,7 +261,7 @@ test.describe('moves', () => {
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
       const { page } = o
-      const box = page.getByRole('form', { name: 'Message' }).getByRole('textbox', { name: 'Goal or message' })
+      const box = page.getByRole('form', { name: 'Message' }).getByRole('textbox', { name: 'Message to the PM', exact: true })
       await expect(page.getByRole('button', { name: 'Dark theme' })).toBeVisible(LOAD)
       await box.fill('my half-typed detail')
       s.iface.setSession({ status: 'error', error: 'rate limited\nretry in 30s' })

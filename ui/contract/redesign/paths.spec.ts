@@ -7,7 +7,7 @@ import { T, LOAD, scenario, openState, token, tokens, typeCounts, WIDTHS, type T
 
 const PHONE = WIDTHS[0]![1]
 const DESKTOP = WIDTHS[2]![1]
-const SEND = /^(Send|Add goal|Send details|Send answer)$/
+const SEND = /^(Start run|Send to PM|Add as new goal|Send answer)$/
 const LONG_SLUG = 'crew-with-a-very-long-slug-that-must-truncate-but-keep-its-full-name-for-readers'
 
 /** The D2 banner toggle, in the theme the context set: the first assertion of every test. */
@@ -40,7 +40,9 @@ test.describe('paths', () => {
       await expect(page.getByRole('article'), 'no card before the first snapshot').toHaveCount(0, T)
       // placeholder blocks, not a spinner: Your move and Crews hold their final heights, busy, before any data
       await expect(page.getByRole('progressbar'), 'no spinner before the first snapshot').toHaveCount(0, T)
-      for (const name of ['Your move', 'Crews']) {
+      // ADR-0028 section 10: Your move renders only when the session waits on the client, so the placeholder is the network
+      await expect(page.getByRole('region', { name: 'Your move' })).toHaveCount(0, T)
+      for (const name of ['Build network']) {
         const region = page.getByRole('region', { name })
         await expect(region, `${name} is a placeholder before the first snapshot`).toBeVisible(T)
         await expect(region, `${name} is aria-busy until the snapshot lands`).toHaveAttribute('aria-busy', 'true', T)
@@ -69,7 +71,7 @@ test.describe('paths', () => {
         ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) })
         : route.continue())
       const form = page.getByRole('form', { name: 'Message' })
-      const box = form.getByRole('textbox', { name: 'Goal or message' })
+      const box = form.getByRole('textbox', { name: 'Message to the PM', exact: true })
       await box.fill(`a detail that must survive ${s.run}`)
       const posted = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/message', LOAD)
       await form.getByRole('button', { name: SEND }).click()
@@ -93,7 +95,7 @@ test.describe('paths', () => {
         ? route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'token' }) })
         : route.continue())
       const form = page.getByRole('form', { name: 'Message' })
-      const box = form.getByRole('textbox', { name: 'Goal or message' })
+      const box = form.getByRole('textbox', { name: 'Message to the PM', exact: true })
       await box.fill(`kept after the link expired ${s.run}`)
       await form.getByRole('button', { name: SEND }).click()
       await expect(page.getByRole('status', { name: 'Session' })).toHaveText('Session link expired. Open the link truss ui printed again.', T)
@@ -113,12 +115,13 @@ test.describe('paths', () => {
         await d2(page, theme)
         const stuck = s.fixture.run.crews.find((c: any) => c.stuck)
         expect(stuck.stuck.kind).toBe('idle-foreman')
-        const crews = page.getByRole('region', { name: 'Crews' })
-        const line = crews.getByRole('button', { name: new RegExp(`stuck: foreman idle ${stuck.stuck.minutes} min`) })
+        // ADR-0028 sections 9 and 10: the crew is an article named by its slug, with the Stuck StatusBadge
+        const crews = page.getByRole('region', { name: 'Build network' })
+        const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
         await expect(line).toHaveCount(1, LOAD)
-        await expect(line).toHaveAccessibleName(new RegExp(`\\b${s.apiSlug}\\b`), T)
-        await expect(crews.getByRole('button', { name: /stuck: stalled/ }), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
-        if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
+        await expect(line.getByText('Stuck', { exact: true }).first()).toBeVisible(T)
+        await expect(line.getByText(new RegExp(`foreman idle ${stuck.stuck.minutes} min`)).first()).toBeVisible(T)
+        await expect(crews.getByText(/stuck: stalled/), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
         const successor = crews.getByRole('button', { name: 'Start a successor foreman' })
         await expect(successor).toBeVisible(T)
         await expect(successor, 'the primary button is filled fail').toHaveCSS('background-color', token('fail', theme), T)
@@ -149,10 +152,9 @@ test.describe('paths', () => {
       await d2(page, 'light')
       const stuck = s.fixture.run.crews.find((c: any) => c.stuck)
       expect(stuck.stuck.detail, 'the planted detail is quota-api-tester stalled 15 min').toBe(`${s.apiSlug}-tester stalled 15 min`)
-      const crews = page.getByRole('region', { name: 'Crews' })
-      const line = crews.getByRole('button', { name: new RegExp(`stuck: stalled ${stuck.stuck.minutes} min`) })
+      const crews = page.getByRole('region', { name: 'Build network' })
+      const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
       await expect(line).toHaveCount(1, LOAD)
-      if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
       const primary = crews.getByRole('button', { name: 'Restart tester', exact: true })
       await expect(primary, 'the label follows the last hyphen segment of the stalled agent').toBeVisible(T)
       await expect(primary).toHaveCSS('background-color', token('fail', 'light'), T)
@@ -166,27 +168,20 @@ test.describe('paths', () => {
     } finally { await o.close(); await s.stop() }
   })
 
-  test('live-counter: no rate until a second live stamp arrives, then Tokens shows <n>/min', async ({ browser }) => {
+  test('live-counter: Run metrics derives its values in the client, with no live stamp and no rate', async ({ browser }) => {
     const s = await scenario('live-counter')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
       const { page } = o
       await d2(page, 'light')
-      const metrics = page.getByRole('region', { name: 'Live metrics' })
-      await expect(metrics.getByRole('term')).toHaveText(['Elapsed', 'Tokens', 'Spend', 'Agents', 'Crews merged', 'Tasks done'], LOAD)
-      const tokensDef = metrics.getByRole('definition').nth(1)
-      await expect(tokensDef.getByText(/as of \d\d:\d\d/), 'the first stamp is shown').toBeVisible(T)
-      await expect(tokensDef, 'one live stamp seen: no rate, never a made-up one').not.toContainText('/min', T)
-      const usage = s.fixture.session.usage
-      const live = usage.live
-      s.iface.setSession({
-        usage: {
-          ...usage,
-          at: s.shown(usage.at),
-          live: { ...live, outputTokens: live.outputTokens + 12000, totalTokens: live.totalTokens + 12000, at: new Date().toISOString() },
-        },
-      })
-      await expect(tokensDef, 'a second live stamp gives the rate, <n>/min').toContainText(/\d[\d.,]*k?\/min/, LOAD)
+      // ADR-0028 section 8 (R-43): five values, the tokens in a per-model table, nothing stamped "as of"
+      const metrics = page.getByRole('region', { name: 'Run metrics' })
+      await expect(metrics).toBeVisible(LOAD)
+      for (const re of [/cost/i, /run time/i, /agents started/i, /crews done/i]) await expect(metrics.getByRole('term').filter({ hasText: re })).toHaveCount(1, T)
+      await expect(metrics.getByRole('table').getByRole('columnheader')).toHaveCount(5, T)
+      await expect(metrics.getByText(/as of \d\d:\d\d/)).toHaveCount(0, T)
+      await expect(metrics.getByText('/min')).toHaveCount(0, T)
+      await expect(metrics.getByText(/limit|budget|ceiling|of \$/i)).toHaveCount(0, T)
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
@@ -230,7 +225,7 @@ test.describe('paths', () => {
       const { page } = o
       await d2(page, 'light')
       expect(LONG_SLUG.length).toBe(80)
-      const button = page.getByRole('region', { name: 'Crews' }).getByRole('button', { name: new RegExp(LONG_SLUG) })
+      const button = page.getByRole('region', { name: 'Build network' }).getByRole('article', { name: new RegExp(LONG_SLUG) })
       await expect(button, 'the full slug is in the accessible name').toHaveAccessibleName(new RegExp(LONG_SLUG), LOAD)
       const text = button.getByText(LONG_SLUG, { exact: true }).first()
       await expect(text).toBeVisible(T)

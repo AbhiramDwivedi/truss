@@ -1,0 +1,1459 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/real-12",
+    "exists": true
+  },
+  "session": {
+    "status": "running",
+    "sessionId": "session-real-12",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": {
+      "costUsd": 418.62,
+      "models": {
+        "claude-opus-5-5": {
+          "inputTokens": 1840233,
+          "outputTokens": 912044,
+          "cacheReadInputTokens": 61230918,
+          "cacheCreationInputTokens": 4418273
+        },
+        "claude-sonnet-5-5": {
+          "inputTokens": 922871,
+          "outputTokens": 540112,
+          "cacheReadInputTokens": 29814550,
+          "cacheCreationInputTokens": 2210664
+        }
+      },
+      "results": 14,
+      "at": "2026-11-02T11:58:00.000Z"
+    },
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin",
+      "ts": "2026-11-02T08:00:00.000Z",
+      "id": "msg-1",
+      "intent": "goal"
+    },
+    {
+      "n": 2,
+      "role": "assistant",
+      "text": "The plan has 12 crews in 4 stages. The build is under way.",
+      "ts": "2026-11-02T09:00:00.000Z"
+    }
+  ],
+  "run": {
+    "goal": "Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-10-29T17:33:03.374Z",
+    "crews": [
+      {
+        "slug": "retro-scrub-fixes",
+        "stage": 1,
+        "verdict": "extend",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "retro/cli.ts",
+          "retro/scrub.ts",
+          "retro/extract.ts",
+          "ui/README.md",
+          "tests/retro/**"
+        ],
+        "foreman": {
+          "name": "retro-scrub-fixes",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-10-30T13:47:09.651Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "retro-scrub-fixes-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.046Z",
+            "agentId": "a9200dad5e70d008d",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.059Z",
+            "agentId": "a60910668d500be19",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.070Z",
+            "agentId": "a0f08c96a57543fef",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.076Z",
+            "agentId": "a8f9cf23632c1504b",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.081Z",
+            "agentId": "a3adb493b77070ff0",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.089Z",
+            "agentId": "a88dc7241fffc47e8",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "retro-scrub-fixes-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-10-30T14:08:22.096Z",
+            "agentId": "ad3e0da4b3ddbda7b",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-10-30T14:08:22.096Z",
+          "agent": "retro-scrub-fixes-runner-5",
+          "event": "report",
+          "text": "retro-scrub-fixes-runner-5 reported"
+        },
+        "estAgents": 5,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "redesign-design",
+        "stage": 0,
+        "verdict": "design",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/docs/adr/0018-ui-redesign.md",
+          "plugins/truss/docs/adr/0011-local-web-ui.md",
+          "plugins/truss/docs/architecture.md",
+          "ui/package.json",
+          "ui/package-lock.json",
+          "ui/.gitignore",
+          "ui/playwright.config.ts",
+          "ui/contract/redesign/**",
+          "ui/contract/e2e/**",
+          "ui/contract/fixtures/run/**",
+          "ui/contract/build.check.ts",
+          "ui/e2e/**"
+        ],
+        "foreman": {
+          "name": "redesign-design",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-01T17:19:32.875Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "redesign-design-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.023Z",
+            "agentId": "a54b34e2256aef1f7",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "redesign-design-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.026Z",
+            "agentId": "a6118ef19955c2a6c",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "redesign-design-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.030Z",
+            "agentId": "a666e14397fdcaf4f",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "redesign-design-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.033Z",
+            "agentId": "a30842ac125e3f0ae",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "redesign-design-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.036Z",
+            "agentId": "afc9feb29b6d05582",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "redesign-design-writer",
+            "type": "truss:writer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.047Z",
+            "agentId": "a635e511b2fc8b193",
+            "purpose": "Writes the prose a truss crew ships - READMEs, docs, release notes, architecture docs - from the code and from commands it runs, never from guesses.",
+            "task": null
+          },
+          {
+            "name": "redesign-design-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T17:14:43.050Z",
+            "agentId": "a57c83bbb6c791d3d",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-01T17:19:32.875Z",
+          "agent": "redesign-design",
+          "event": "tag",
+          "text": "redesign-design sent BLOCKED"
+        },
+        "estAgents": 6,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "web-app",
+        "stage": 1,
+        "verdict": "change",
+        "status": "dropped",
+        "goal": null,
+        "owns": [
+          "ui/app/**",
+          "ui/web/**",
+          "ui/README.md",
+          "ui/package.json",
+          "ui/package-lock.json",
+          "ui/vite.config.ts",
+          "ui/tsconfig*.json",
+          "ui/components.json"
+        ],
+        "foreman": {
+          "name": "web-app",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-01T17:49:08.149Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "web-app-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.567Z",
+            "agentId": "aad31bbb4139dd903",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "web-app-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.589Z",
+            "agentId": "ae215b518752abb7e",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "web-app-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.609Z",
+            "agentId": "a040517433d08c7e7",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "web-app-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.631Z",
+            "agentId": "af0ffb6a02aba388e",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "web-app-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.645Z",
+            "agentId": "ac818d480f6b49013",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "web-app-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.665Z",
+            "agentId": "a7cd7e9fc6f2b8de1",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "web-app-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.675Z",
+            "agentId": "a3dba74483e91e3ce",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-01T18:48:33.675Z",
+          "agent": "web-app-runner-5",
+          "event": "report",
+          "text": "web-app-runner-5 reported"
+        },
+        "estAgents": 9,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "compose-runtime",
+        "stage": 1,
+        "verdict": "extend",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/workflows/stage.js",
+          "plugins/truss/bin/factory.ts",
+          "plugins/truss/tests/workflows.check.ts",
+          "plugins/truss/tests/compose-runtime.check.ts",
+          "plugins/truss/docs/events.schema.json"
+        ],
+        "foreman": {
+          "name": "compose-runtime",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-01T15:58:51.391Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "compose-runtime-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.094Z",
+            "agentId": "ad727b39d25c5504c",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-runtime-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.103Z",
+            "agentId": "a75b5ba97acf9473e",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-runtime-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.110Z",
+            "agentId": "a7e47b6831aee6f3c",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "compose-runtime-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.116Z",
+            "agentId": "aad101ae658cd7873",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-runtime-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.129Z",
+            "agentId": "ab095da670510d82a",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-runtime-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.139Z",
+            "agentId": "a5e561b0f15e332cf",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-runtime-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.170Z",
+            "agentId": "aa66d62633e6092b2",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-01T15:58:51.391Z",
+          "agent": "compose-runtime",
+          "event": "tag",
+          "text": "compose-runtime sent BLOCKED"
+        },
+        "estAgents": 5,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "compose-wiring",
+        "stage": 1,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/.claude-plugin/plugin.json",
+          "marketplace/.claude-plugin/marketplace.json",
+          "marketplace/README.md",
+          "README.md",
+          "plugins/truss/README.md",
+          "plugins/truss/CHANGELOG.md",
+          "checks/repo-home.check.ts",
+          "plugins/truss/skills/init/SKILL.md",
+          "plugins/truss/skills/run/SKILL.md",
+          "plugins/truss/agents/foreman.md",
+          "plugins/truss/tests/init.check.ts"
+        ],
+        "foreman": {
+          "name": "compose-wiring",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-01T15:58:51.407Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "compose-wiring-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.097Z",
+            "agentId": "a2a8c46cdabfb7f57",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-wiring-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.100Z",
+            "agentId": "a657ab7027787037e",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-wiring-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.107Z",
+            "agentId": "a104c36b6542db746",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "compose-wiring-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.113Z",
+            "agentId": "a8efac7d442bcd575",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-wiring-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.119Z",
+            "agentId": "a2581b41fb3abcc23",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-wiring-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.122Z",
+            "agentId": "ad80c47fb0d3b5206",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "compose-wiring-builder",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T15:44:54.126Z",
+            "agentId": "a3e13178e13dbc26b",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-01T15:58:51.407Z",
+          "agent": "compose-wiring",
+          "event": "tag",
+          "text": "compose-wiring sent BLOCKED"
+        },
+        "estAgents": 4,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "plugin-meta",
+        "stage": 1,
+        "verdict": "extend",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/.claude-plugin/plugin.json",
+          "plugins/truss/.claude-plugin/icon.png",
+          "plugins/truss/CHANGELOG.md",
+          "plugins/truss/README.md",
+          "plugins/truss/agents/planning-engineer.md",
+          "plugins/truss/docs/adr/0021-plugin-dependencies.md",
+          "plugins/truss/tests/plugin-validate.check.ts",
+          "checks/compose-manifests.check.ts"
+        ],
+        "foreman": {
+          "name": "plugin-meta",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-01T17:49:08.336Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "plugin-meta-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.584Z",
+            "agentId": "a87a54a88c896974b",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "plugin-meta-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.602Z",
+            "agentId": "a0a364ff5af356cd9",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "plugin-meta-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.625Z",
+            "agentId": "a54efa7458916119c",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "plugin-meta-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.671Z",
+            "agentId": "a78f95fad0414454c",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "plugin-meta-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.680Z",
+            "agentId": "acd5a6c2de3479d3c",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "plugin-meta-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.686Z",
+            "agentId": "aed08633c46911ea0",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "plugin-meta-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-01T18:48:33.695Z",
+            "agentId": "a6fcf6938c60d8664",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-01T18:48:33.695Z",
+          "agent": "plugin-meta-tester",
+          "event": "report",
+          "text": "plugin-meta-tester reported"
+        },
+        "estAgents": 5,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "floor-shell",
+        "stage": 3,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "ui/app/**",
+          "ui/web/**",
+          "ui/README.md",
+          "ui/package.json",
+          "ui/package-lock.json",
+          "ui/vite.config.ts",
+          "ui/tsconfig*.json",
+          "ui/components.json"
+        ],
+        "foreman": {
+          "name": "floor-shell",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-02T04:03:01.449Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "floor-shell-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.085Z",
+            "agentId": "afca515c2958ea495",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-shell-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.089Z",
+            "agentId": "acdd7433641ccac8b",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-shell-ux",
+            "type": "truss:ux-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.098Z",
+            "agentId": "a3bc411b5f6f640cd",
+            "purpose": "Senior product and UX designer for one truss crew that builds UI.",
+            "task": null
+          },
+          {
+            "name": "floor-shell-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.121Z",
+            "agentId": "a9a2050574d196d49",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-shell-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.124Z",
+            "agentId": "a01feee3445d17741",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-shell-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.130Z",
+            "agentId": "a51b01b2fcb26eb84",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "floor-shell-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T04:03:01.167Z",
+            "agentId": "a24302913c28b4657",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T04:03:01.449Z",
+          "agent": "floor-shell",
+          "event": "tag",
+          "text": "floor-shell sent BLOCKED"
+        },
+        "estAgents": 7,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "floor-views",
+        "stage": 4,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "ui/app/views/**",
+          "ui/app/App.tsx"
+        ],
+        "foreman": {
+          "name": "floor-views",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T04:46:48.859Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "floor-views-runner-20",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.637Z",
+            "agentId": "ad62ecdeb50f6d7d1",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-runner-21",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.642Z",
+            "agentId": "a2f47f3167cbd6fa9",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-builder-8",
+            "type": "general-purpose",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.666Z",
+            "agentId": "a1072662d38d5ffe6",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-runner-22",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.670Z",
+            "agentId": "aca724f11a9b9457e",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-runner-23",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.674Z",
+            "agentId": "a527c02337b0bab4b",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-runner-24",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.678Z",
+            "agentId": "aea6191007af851a2",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "floor-views-runner-25",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T07:02:41.681Z",
+            "agentId": "aa271dfb8707c27d3",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T07:02:41.681Z",
+          "agent": "floor-views-runner-25",
+          "event": "report",
+          "text": "floor-views-runner-25 reported"
+        },
+        "estAgents": 8,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "factory-resume",
+        "stage": 1,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/bin/factory.ts",
+          "plugins/truss/tests/factory-fixes3.check.ts",
+          "plugins/truss/tests/factory.check.ts",
+          "plugins/truss/tests/factory-fixes.check.ts",
+          "plugins/truss/tests/factory-fixes2.check.ts",
+          "plugins/truss/tests/plugin-fixes-factory-contract.check.ts",
+          "plugins/truss/tests/fixtures/workflow-run/start.cases.ts"
+        ],
+        "foreman": {
+          "name": "factory-resume",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T06:39:38.035Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "factory-resume-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.166Z",
+            "agentId": "a54348fb33ec09f72",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "factory-resume-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.173Z",
+            "agentId": "a0be0acfea0523d7b",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "factory-resume-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.182Z",
+            "agentId": "aee37f6d252fa2bb1",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "factory-resume-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.185Z",
+            "agentId": "a899ff8d940128dd9",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "factory-resume-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.188Z",
+            "agentId": "a37217382fa1e043f",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "factory-resume-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.200Z",
+            "agentId": "adfa5f82120aa29fd",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "factory-resume-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:00:49.209Z",
+            "agentId": "a077f690d9551976f",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T08:00:49.209Z",
+          "agent": "factory-resume-runner-5",
+          "event": "report",
+          "text": "factory-resume-runner-5 reported"
+        },
+        "estAgents": 7,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "gate-trussfile",
+        "stage": 1,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "plugins/truss/hooks/register.ts",
+          "plugins/truss/tests/gate-trussfile.check.ts",
+          "plugins/truss/tests/workflow-gate.check.ts",
+          "plugins/truss/skills/run/SKILL.md"
+        ],
+        "foreman": {
+          "name": "gate-trussfile",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T08:05:49.648Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "gate-trussfile-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.665Z",
+            "agentId": "aa5df42c76e8c79a0",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.669Z",
+            "agentId": "a7b5985d223cb40a8",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.673Z",
+            "agentId": "a5193e7471c93c732",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.677Z",
+            "agentId": "a86ed47b6f1fc954f",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.681Z",
+            "agentId": "ab9723560053394df",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.687Z",
+            "agentId": "ab7c1b18a7d8ba81f",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "gate-trussfile-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T08:55:12.692Z",
+            "agentId": "aba7629a75f88d2cf",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T08:55:12.692Z",
+          "agent": "gate-trussfile-runner-5",
+          "event": "report",
+          "text": "gate-trussfile-runner-5 reported"
+        },
+        "estAgents": 4,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "start-fixes4",
+        "stage": 1,
+        "verdict": "change",
+        "status": "planned",
+        "goal": null,
+        "owns": [
+          "plugins/truss/bin/factory.ts",
+          "plugins/truss/tests/factory-fixes4.check.ts",
+          "plugins/truss/tests/factory.check.ts",
+          "plugins/truss/tests/factory-fixes.check.ts",
+          "plugins/truss/tests/factory-fixes2.check.ts",
+          "plugins/truss/tests/factory-fixes3.check.ts",
+          "plugins/truss/tests/factory-resources.check.ts",
+          "plugins/truss/tests/plugin-fixes-factory-contract.check.ts",
+          "plugins/truss/tests/fixtures/workflow-run/start.cases.ts"
+        ],
+        "foreman": null,
+        "members": [],
+        "latest": null,
+        "estAgents": 6,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "ui-fixes5",
+        "stage": 1,
+        "verdict": "extend",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "ui/server/**",
+          "ui/test/**",
+          "ui/scripts/**",
+          "ui/package.json"
+        ],
+        "foreman": {
+          "name": "ui-fixes5",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "QUESTION",
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agentId": null,
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "ui-fixes5-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.312Z",
+            "agentId": "af0fb787a6e241c38",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.330Z",
+            "agentId": "a3a953d69fbf93b0d",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-planner",
+            "type": "truss:planning-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.407Z",
+            "agentId": "ae608799075f658dd",
+            "purpose": "Plans one truss crew's member tasks.",
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-runner-3",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.466Z",
+            "agentId": "ac0a7f7cfc5a17444",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-runner-4",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.480Z",
+            "agentId": "a9324f7af2f4b0840",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-tester",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.522Z",
+            "agentId": "a6fb9110427dd9f1c",
+            "purpose": null,
+            "task": null
+          },
+          {
+            "name": "ui-fixes5-runner-5",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:58:59.573Z",
+            "agentId": "a621f8abdc2fdc7da",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agent": "ui-fixes5",
+          "event": "tag",
+          "text": "ui-fixes5 sent QUESTION"
+        },
+        "estAgents": 4,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin",
+        "approval": "client",
+        "approvedAt": "2026-10-29T17:33:03.374Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}
