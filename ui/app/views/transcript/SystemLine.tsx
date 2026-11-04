@@ -15,7 +15,7 @@ export function SystemLine({ entry }: { entry: FlowEntry }) {
       ) : (
         <span>PM: {entry.summary}</span>
       )}
-      {t && <span className="font-mono text-micro tabular-nums text-subtle">{t}</span>}
+      {t && <span className="font-mono text-micro tabular-nums text-muted">{t}</span>}
     </p>
   )
 }

@@ -56,10 +56,10 @@ export function Bubble({ who, time, grouped, queued, lit, id, hint, children }: 
       {!inside && head}
       <div
         className={cn(
-          'min-w-0 max-w-[85%] rounded-card border px-3 py-2 text-ui leading-normal text-fg whitespace-pre-wrap [overflow-wrap:anywhere] max-[480px]:max-w-[90%]',
+          'min-w-0 max-w-[85%] rounded-card border px-3 py-2 text-ui leading-normal text-fg whitespace-pre-wrap [overflow-wrap:anywhere] max-[30rem]:max-w-[90%]',
           mine && 'rounded-br-chip border-brand-line bg-brand-soft',
-          who === 'pm' && 'max-w-[92%] rounded-bl-chip border-border bg-surface max-[480px]:max-w-[90%]',
-          who === 'error' && 'max-w-[92%] rounded-bl-chip border-fail bg-fail-soft max-[480px]:max-w-[90%]',
+          who === 'pm' && 'max-w-[92%] rounded-bl-chip border-border bg-surface max-[30rem]:max-w-[90%]',
+          who === 'error' && 'max-w-[92%] rounded-bl-chip border-fail bg-fail-soft max-[30rem]:max-w-[90%]',
           hint && 'border-dashed border-border-strong',
           queued && 'border-dashed opacity-70',
         )}
