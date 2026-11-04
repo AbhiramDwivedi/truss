@@ -236,7 +236,10 @@ function foldFlow(view: SessionView, content: unknown[], slugs: readonly string[
     if (!isObj(b) || b.type !== 'tool_use' || !FLOW_TOOLS.includes(b.name as never) || !isObj(b.input)) continue
     const tool = b.name as FlowEntry['tool']
     const inp = b.input
-    const raw = tool === 'SendMessage' ? str(inp.message) : str(inp.description)
+    // A real Workflow call carries scriptPath and args only, so name the script it started.
+    const raw = tool === 'SendMessage' ? str(inp.message)
+      : tool === 'Workflow' ? (str(inp.description) || str(inp.scriptPath)?.split('/').pop()?.replace(/\.[^.]+$/, ''))
+        : str(inp.description)
     const summary = (raw ?? '').split('\n')[0]!.slice(0, SUMMARY_MAX)
     added.push({ at: new Date().toISOString(), tool, to: slugIn([inp.to, inp.description, inp.prompt], slugs), summary })
   }
