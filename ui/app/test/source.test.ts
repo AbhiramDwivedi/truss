@@ -77,6 +77,26 @@ for (const [re, why] of BANNED) {
   })
 }
 
+// rework-page: the page is one two-column frame with no tabs (ADR-0028 section 10).
+const appSrc = () => fs.readFileSync(path.join(appDir, 'App.tsx'), 'utf8')
+
+for (const name of ['DecisionsPanel', 'DesignPanel', 'RunTabs', 'LiveMetrics']) {
+  test(`App.tsx does not import ${name}`, () => {
+    assert.doesNotMatch(appSrc(), new RegExp(`\\b${name}\\b`))
+  })
+}
+
+test('views/run/RunTabs.tsx is deleted', () => {
+  assert.equal(fs.existsSync(path.join(appDir, 'views', 'run', 'RunTabs.tsx')), false)
+})
+
+test('App.tsx uses no CSS order, no display: contents and no z-20', () => {
+  const src = appSrc()
+  assert.doesNotMatch(src, /(^|[\s"'`:])-?order-/m, 'a Tailwind order- class')
+  assert.doesNotMatch(src, /[\s"'`:]contents[\s"'`]/, 'the contents class')
+  assert.doesNotMatch(src, /\bz-20\b/)
+})
+
 test('Tabs keep automatic activation', () => {
   const src = fs.readFileSync(path.join(compDir, 'ui', 'tabs.tsx'), 'utf8')
   assert.doesNotMatch(src, /activationMode\s*=\s*["{']*manual/)

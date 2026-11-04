@@ -30,6 +30,7 @@ export function MetricTile({ label, value, title, aside, graphic, sub, subTone =
           {aside != null && <span className="shrink-0 text-meta text-muted">{aside}</span>}
         </span>
         {graphic}
+        {sub != null && ' '}
         {sub != null && (
           <span
             title={typeof sub === 'string' ? sub : undefined}
