@@ -52,7 +52,7 @@ export interface TranscriptEntry {
 }
 export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[]; tally: Tally
   // ADR-0028 section 6: the latest description per task_id, oldest first, at most KEEP. Beside `session`, so the snapshot is unchanged.
-  taskDescriptions?: Record<string, string>
+  taskDescriptions?: Map<string, string>
 }
 
 const KEEP = 500
@@ -209,9 +209,12 @@ function foldTaskProgress(view: SessionView, msg: Record<string, unknown>): Sess
 function foldTaskDescription(view: SessionView, msg: Record<string, unknown>): SessionView {
   const description = str(msg.description)
   if (typeof msg.task_id !== 'string' || description === null) return view
-  const { [msg.task_id]: _old, ...rest } = view.taskDescriptions ?? {}
-  const entries = Object.entries({ ...rest, [msg.task_id]: description })
-  return { ...view, taskDescriptions: Object.fromEntries(entries.slice(-KEEP)) }
+  // O(1) per message: the Map is updated in place (delete then set moves the id to the newest end), the oldest key past KEEP is dropped.
+  const map = view.taskDescriptions ?? new Map<string, string>()
+  map.delete(msg.task_id)
+  map.set(msg.task_id, description)
+  if (map.size > KEEP) map.delete(map.keys().next().value as string)
+  return { ...view, taskDescriptions: map }
 }
 
 const FLOW_TOOLS = ['Agent', 'SendMessage', 'Workflow'] as const

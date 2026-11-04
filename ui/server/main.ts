@@ -51,8 +51,15 @@ const { createStore, trussDirFor } = await import('./state/index.ts');
 const { createSession } = await import('./session/index.ts');
 const { createServer } = await import('./http/index.ts');
 
-const store = createStore(trussDirFlag === undefined ? { repo } : { repo, trussDir: trussDirFlag });
-const session = createSession({ repo, pluginPath });
+const store = createStore(trussDirFlag === undefined ? { repo, pluginPath } : { repo, pluginPath, trussDir: trussDirFlag });
+// The run as the store holds it: a typed goal starts /truss:run only when no plan is live (ADR-0028 section 1).
+const liveRun = () => (store.snapshot().state as { run?: { version: number | null; crews: { slug: string }[] } | null }).run ?? null;
+const session = createSession({
+  repo,
+  pluginPath,
+  hasPlan: () => { const r = liveRun(); return r !== null && r.version !== null; },
+  crewSlugs: () => liveRun()?.crews.map((c) => c.slug) ?? [],
+});
 let lastSessionId: string | null = null;
 session.subscribe((view) => {
   store.setSession(view);
