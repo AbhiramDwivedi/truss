@@ -326,6 +326,14 @@ Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client'
 Source: client
 Example: Given the client's reference truss_factory.tsx (left rail with the repo and the idea, a build network of PM and crews, built artifacts below), when the client compares it with the page during a live run, then the layout, hierarchy and crew network follow the reference, and screenshots of a live run show R-36 to R-45 met.
 
+## R-47: A turn that is not an approval ask is answered with a reply, not Approve or Deny
+Status: open
+Kind: functional
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Given a session turn that ends with "Nothing is waiting on approval ... Tell me which of these you want, or give me something new.", when the client looks at the card it opens, then the card offers a reply box whose send action delivers the typed text as the reply (decision message), it is not titled as an approval, and no button sends the bare word "Approved." to an open question.
+Example: Given a turn that asks to approve a plan or a push, when the card shows Approve and Deny, then each button states what it sends, and a typed reply can still be sent on its own.
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
