@@ -2,6 +2,11 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## Unreleased
+
+- **ADRs follow one template.** The design engineer writes every new ADR as `# ADR-NNNN: <decision>`, then `Status:`, `Decided by:` and an optional `Amends:` or `Supersedes:` line, then Context, Decision Drivers, Considered Options, Decision and Consequences. Existing ADRs keep their format. An engineer-default fork still carries the exact line `Decided by: default`.
+- **The clarity writing skill is required.** Install it with `npx skills add addyosmani/clarity`; it isn't a Claude plugin, so it can't be a plugin dependency. The design engineer loads `clarity` before it writes an ADR or architecture-doc prose, and the writer before it writes a doc or an ADR. Without it, either one writes nothing and reports `BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)`; no other skill stands in. `/truss:init` and `/truss:run` check the session's skill list first and stop with the install command when `clarity` is missing. For other prose the writer keeps its order: the brief's `writingSkill`, then `technical-writer`.
+
 ## 0.18.0
 
 truss adds a UX engineer that gives a UI crew a design direction and reviews the built screens against it, and fixes plugin bugs item 22 and item 23 ([ADR-0022](docs/adr/0022-ux-engineer.md)). Install or update as before; `claude plugin install truss@truss` still brings kit, worktrees and subagent-limits.

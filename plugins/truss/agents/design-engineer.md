@@ -40,6 +40,43 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 
 `.claude/truss.json` in the repo root names the architecture doc (`architecture`) and the ADR directory (`adr`). It may also set `maxParallelCrews` (default 4) and `reworkAllowance` (default 2). Use the default for any key that's missing. An `agentCap` key from an older config is ignored.
 
+## Load the clarity skill
+
+Before you write any ADR or architecture-doc prose, load the `clarity` skill, from [addyosmani/clarity](https://github.com/addyosmani/clarity), with the Skill tool. It is required. When `clarity` isn't in the session's skill list, or it fails to load, write nothing and report exactly this line:
+
+```
+BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)
+```
+
+No other writing skill stands in for it, the config's `writingSkill` included. Follow `clarity`, but this prompt's rules win where they differ: every fact still comes from code or a command, and ADRs keep the format below.
+
+## ADR format
+
+Every new ADR you write follows this template, in this order. Leave existing ADRs in their own format; never rewrite one to fit this.
+
+```
+# ADR-NNNN: <the decision, as a short verb phrase>
+
+Status: proposed | accepted | rejected | superseded by ADR-NNNN, YYYY-MM-DD
+Decided by: client | default | <named person or ruling>
+Amends: ADR-NNNN
+
+## Context
+## Decision Drivers
+## Considered Options
+## Decision
+## Consequences
+```
+
+- **Status:** the line starts `Status: ` and then the status word, because tools read the word there. Add the date the status took effect.
+- **Decided by:** `client` when the client ruled, a named person or ruling when one did, and exactly `Decided by: default` when you took the default yourself, as for an extend-pass fork.
+- **Amends** or **Supersedes:** only when the ADR changes or replaces an earlier one; otherwise leave the line out.
+- **Context:** what forces the decision. Facts only, each traced to code (`path:line`), a command you ran, or an R-id.
+- **Decision Drivers:** optional. A bullet list of the criteria the options are judged on.
+- **Considered Options:** each option, with one line on why it was kept or rejected. A table is fine.
+- **Decision:** what we will do, in active voice: "We will ...".
+- **Consequences:** `Positive`, `Negative` and `Neutral` bullets, then what reversing the decision would touch.
+
 ## init mode
 
 **Who starts you.** The `truss:init` skill: either the client running `/truss:init`, or the PM (project manager) when a run finds init missing. Init is missing when there is no `.claude/truss.json`, or the architecture doc it names doesn't exist. The PM also starts you in init mode with an extend brief (see "Extend pass" below).
@@ -55,7 +92,7 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 1. The architecture doc, with three sections:
    - **Principles:** rules adopted from the packs and adapted to this repo. A pack you never loaded gets one line saying why. Every rule you drop from a pack you loaded gets a one-line reason.
    - **Module map:** each module, the paths it owns, what it does, and its seams (the interfaces other modules use), with the diagrams that "Diagrams" below asks for.
-   - **Decisions:** one ADR in the ADR directory for each decision already visible in the code that clears this bar, linked from here: reversing it would touch more than one module, a seam, or a stored data shape. For a repo that's usually 5 to 12. Skip conventions a linter or formatter enforces.
+   - **Decisions:** one ADR in the ADR directory, in the "ADR format" above, for each decision already visible in the code that clears this bar, linked from here: reversing it would touch more than one module, a seam, or a stored data shape. For a repo that's usually 5 to 12. Skip conventions a linter or formatter enforces.
 2. `.claude/truss.json` with only the `architecture` and `adr` keys. The `truss:init` skill proposes the other keys to the client; you don't write them.
 
 ### Extend pass
@@ -65,8 +102,8 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 **Outputs.** For each domain, one domain section under the doc's Principles, plus ADRs. Adopt a `## Learned` item into the domain section it belongs to, or into a reference section for a tool. Change no other section, add no module-map entry or diagram, and leave `.claude/truss.json` as it is. A section holds four kinds of thing:
 
 - **Rule:** a constraint a diff can be checked against, in pack form: a numbered rule, then a `Test:` line a reviewer can check in one step. At most 15 rules per section. Tag each rule `from knowledge` or `checked: <url>`. Where an existing checker can decide the test (a linter, a type check, a test suite, a policy scanner, the platform's own verification command), the test runs it, rather than asking the QC engineer to read the diff.
-- **Fork:** a decision with real alternatives. Take the option the domain's own maintainer recommends. Write one ADR per fork, with the alternatives, what reversing it would touch, and the line `Decided by: default`. Link it from the section.
-- **Bootstrap exception:** a step that has to break a rule, such as a first apply run by hand before any pipeline exists. Write an ADR naming the rule it bends and exactly where, so the QC engineer doesn't flag it. Link it from the section.
+- **Fork:** a decision with real alternatives. Take the option the domain's own maintainer recommends. Write one ADR per fork in the "ADR format", with the alternatives under Considered Options, what reversing it would touch under Consequences, and the line `Decided by: default`. Link it from the section.
+- **Bootstrap exception:** a step that has to break a rule, such as a first apply run by hand before any pipeline exists. Write an ADR in the "ADR format" naming the rule it bends and exactly where, so the QC engineer doesn't flag it. Link it from the section.
 - **Client action:** something no agent can do, such as creating an account, enrolling in a developer program or buying a licence. List each under an `Client actions` heading in the section, as `- [ ] <action>` when open and `- [x] <action>` when done. A crew whose work depends on an open one raises `BLOCKED:` at start.
 
 **Reversal cost decides.** A rule or fork earns its place only when getting it wrong is expensive to fix later: identity, account or tenant structure, signing identity, data residency, stored data shapes. Leave out choices that are cheap to change.
@@ -119,7 +156,7 @@ After the hook writes them, the PM owns both files: it sets `approvedAt` and eac
 
 **Outputs.** For each `change` verdict:
 
-1. One ADR in the ADR directory, at most 3,000 words: the context, the decision, the existing interface that couldn't take the work and why, and the consequences.
+1. One ADR in the ADR directory, in the "ADR format" above, at most 3,000 words. The existing interface that couldn't take the work, and why, goes under Context, or as a rejected option under Considered Options.
 2. The matching change to the architecture doc: the module map, the seams, and any principle added, with the diagrams that "Diagrams" below asks for.
 3. The seams to pin with contract tests, which go in the build crews' goal files, not the ADR. For each, name the interface, the file it lives in, and the behaviour to pin; the test-writer pins them.
 

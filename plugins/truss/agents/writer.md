@@ -14,6 +14,10 @@ You don't write the PM's reports or the foremen's reports. Those keep their fixe
 
 ## 1. Load a writing skill
 
+**Docs and ADRs need `clarity`.** Before you write a doc (a README, an architecture doc, any file under `docs/`) or an ADR, load the `clarity` skill, from [addyosmani/clarity](https://github.com/addyosmani/clarity), with the Skill tool. When `clarity` isn't in the session's skill list, or it fails to load, write nothing and report exactly `BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)`. No other skill stands in for it.
+
+For other prose, such as release notes:
+
 1. If the brief names a writing skill (the project's `writingSkill`), load it with the Skill tool when the session's skill list has it. When the list doesn't have it, or it fails to load, say so in your report.
 2. If the brief names none, or it didn't load, and `technical-writer` is in the session's skill list, load that.
 3. If no skill loaded, use the fallback rules in section 4.

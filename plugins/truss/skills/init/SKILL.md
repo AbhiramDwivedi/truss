@@ -11,6 +11,10 @@ The person who ran `/truss:init`, or who started the run that called this skill,
 
 The design is truss's ADR-0002 (`<this skill's base dir>/../../docs/adr/0002-kit-manifest-and-config.md`). Read it if a case here isn't clear.
 
+## Before you start: the clarity skill
+
+The design engineer and the writer need the `clarity` skill, from [addyosmani/clarity](https://github.com/addyosmani/clarity), to write ADRs and docs. Look for `clarity` in the session's skill list first. When it's missing, tell the client "truss needs the clarity skill: run `npx skills add addyosmani/clarity`, then run /truss:init again in a session that lists it", and stop. Start no agent and write nothing.
+
 ## 1. Check for the architecture doc
 
 1. Find the repo root: `git rev-parse --show-toplevel`, run in the session's working directory. Call it `<repo>`.

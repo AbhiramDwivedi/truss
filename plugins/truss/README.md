@@ -20,6 +20,14 @@ claude plugin install truss@truss
 
 The first command adds the `claude-ops` catalog, and the second the `truss` catalog. The third installs `plugins/truss/` from the repo's `main` branch, with three plugins from claude-ops as its dependencies: [kit](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/kit) `^0.3.1`, [worktrees](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/worktrees) `^0.8.4` and [subagent-limits](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/subagent-limits) `^0.3.1`. Nothing else installs: a plugin-only install gets no `ui/`. The optional [local web UI](https://github.com/AbhiramDwivedi/truss/blob/main/ui/README.md) comes only from a clone of the repo.
 
+Truss also requires the [clarity](https://github.com/addyosmani/clarity) writing skill. It isn't a Claude plugin, so the truss install can't bring it; install it yourself:
+
+```
+npx skills add addyosmani/clarity
+```
+
+The design engineer and the writer load it for every ADR and doc. Without it, `/truss:init` and `/truss:run` tell you this command and stop.
+
 Without the claude-ops marketplace, truss fails to load. To fix it, run `claude plugin marketplace add AbhiramDwivedi/claude-ops`, then reinstall truss with `claude plugin install truss@truss`.
 
 Then run `/truss:run <goal>`. The first run writes your project's architecture doc if it has none.
@@ -148,7 +156,7 @@ The CLI is `bin/factory.ts`; the scripts are `workflows/plan.js` and `workflows/
 | Members | Your project's agents, plugin agents, or `general-purpose` | Do the building. Each starts with an explicit model and effort and a name that starts with its crew's. |
 | QC engineer | `truss:qc-engineer`, Opus | Never the builder. Checks the proof in the crew's reports, answers a five-question rubric, and reports `VERDICT: PASS` or `VERDICT: FAIL`. Runs at effort `medium`, whatever its builder runs at; `high` and `xhigh` only on your explicit call. In stress-test mode it tries to break the crew's work instead. |
 | UX engineer | `truss:ux-engineer`, Opus, effort `medium`, for a crew with `ux: true` in plan.json or a `## UX` section in its goal file | Read-only. Has two modes, picked by the first line of its brief. `UX direction:` writes the crew's design direction before the split: screens and states, layout, tokens and components, motion, accessibility, responsive rules and a checklist. `UX review:` checks the built screens against that checklist after green, and reports `UX: PASS` or `UX: REWORK` with numbered findings for a fix builder. The truss.json `roles.ux` key maps the `ux` role to another agent type. |
-| Writer | `truss:writer`, Opus | A member for the prose a crew ships. Loads the skill `writingSkill` names when the session lists it, else the best writing skill the session has (`technical-writer` when it's installed), and writes only what the code, a command it ran, or a page it fetched shows. |
+| Writer | `truss:writer`, Opus | A member for the prose a crew ships. Loads the skill `writingSkill` names when the session lists it, else the best writing skill the session has (`technical-writer` when it's installed). Docs and ADRs always use `clarity`. It writes only what the code, a command it ran, or a page it fetched shows. |
 | Commissioning engineer | `truss:commissioning-engineer`, Sonnet | A member that validates a deploy with proof: rollout status, health endpoint, smoke tests, logs. May deploy a preview or staging build. Never deploys to production or changes it. Takes the target and command from the `deploy` key when it's set, and asks its foreman otherwise. |
 
 Truss works with or without agents of your own. When the project defines none that fit, members run as `general-purpose` with a prompt the foreman writes, which says what the job is rather than who the agent is. The [kit](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/kit) plugin's `builder`, `test-writer`, `reviewer` and `scout` make good members, and the `roles` key can map jobs to them. The [worktrees](https://github.com/AbhiramDwivedi/claude-ops/tree/main/plugins/worktrees) plugin starts each worktree from your current commit instead of `origin/HEAD`, and gives no worktree to the agent types kit's manifest declares read-only. Truss init declares the QC engineer and the checking engineer read-only, because their tools are only `Read, Grep, Glob, Bash`. Since 0.16.0 the install brings kit, worktrees and subagent-limits as dependencies. Without kit's manifest declarations, QC engineers and checking engineers still get worktrees unless you set worktrees' `noIsolateAgents`.
@@ -185,7 +193,7 @@ Every key but `architecture` and `adr` is optional, and leaving a 0.4.0 key out 
 | `target` | the current branch | Target branch of every run; the PM never asks. |
 | `roles` | picked from the session's agent types, as in 0.3.0 | Which agent type does each job: `build`, `test`, `review`, `search`, `docs` or `deploy`, mapped to a full type such as `kit:builder`. The PM uses a listed type when the session can start it. The QC engineer, checking engineer, foreman and design engineer are always Truss's own and can't be mapped. |
 | `deploy` | none: commissioning engineer asks its foreman | `{"target", "command", "production"}`, all three required. A deploy to a target with `production: true` goes to you first, whatever else is set. |
-| `writingSkill` | none | A skill the writer loads before it writes, such as `technical-writer`. Used only when the session lists it; otherwise the writer says so and carries on. |
+| `writingSkill` | none | A skill the writer loads before it writes, such as `technical-writer`. Used only when the session lists it; otherwise the writer says so and carries on. Docs and ADRs use `clarity` instead. |
 | `promptOverrides` | none | Per role (`foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`), a file directly under `.claude/truss/prompts/`, such as `.claude/truss/prompts/qc-engineer.md`. |
 
 The skills read the file the same way, report each problem to you once, and never treat one as fatal. They ignore a key the schema doesn't declare and treat a rejected value as unset, so its default applies. A bad entry in `roles` or `promptOverrides` unsets only that entry. `deploy` fails closed: any error at or inside it, an undeclared key included, unsets the whole key, and a missing or non-boolean `production` is never read as `false`.
