@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PNG, WITHIN, crewLine, expectD2Colours, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
+import { PNG, WITHIN, adrTimeline, crewLine, deliverables, openArchitecture, expectD2Colours, rand, root, rx, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 let real: Real | undefined
@@ -15,15 +15,8 @@ test.afterEach(async () => {
 })
 
 type Page = import('@playwright/test').Page
-// The members of an open crew line: a list named "<slug> members".
-const members = (page: Page, slug: string) => page.getByRole('list', { name: `${slug} members`, exact: true })
-const member = (page: Page, slug: string, name: string) => members(page, slug).getByRole('listitem').filter({ hasText: name })
-async function openTab(page: Page, name: string): Promise<void> {
-  const tab = page.getByRole('tab', { name, exact: true })
-  await tab.click()
-  await expect(tab).toHaveAttribute('aria-selected', 'true')
-}
-const panel = (page: Page, name: string) => page.getByRole('tabpanel', { name, exact: true })
+// An agent card inside its crew card (ADR-0028 section 10: every crew card lists its agents as cards).
+const member = (page: Page, slug: string, name: string) => crewLine(page, slug).getByRole('listitem').filter({ hasText: name })
 
 // ADR-0023 checklist item 22: the live page paints the tokens.json colours.
 test('D2 colours: a live run paints body with tokens.json bg and the move surface with move', async ({ page }) => {
@@ -43,39 +36,32 @@ test('R-4: one status line per crew shows stage, status, latest activity and QC 
   })
   await page.goto(real.url)
 
-  // One line per plan crew, each a button.
+  // One card per plan crew: an article named by its slug in the Build network region (ADR-0028 section 10).
   for (const slug of ['ratelimit-design', 'quotas', 'gateway']) await expect(crewLine(page, slug)).toBeVisible(LOAD)
   for (const slug of ['ratelimit-design', 'quotas', 'gateway']) {
-    await expect(page.getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') })).toHaveCount(1)
+    await expect(page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') })).toHaveCount(1)
   }
-  // Crews sit in stage groups; the example plan's quotas crew is stage 1.
-  await expect(page.getByRole('region', { name: 'Crews', exact: true }).getByRole('group', { name: 'Stage 1', exact: true }).getByRole('heading', { level: 3, name: 'Stage 1' })).toBeVisible()
+  // Crews sit in stage rows, each a list of crew cards (ADR-0028 section 10).
+  await expect(page.getByRole('region', { name: 'Build network', exact: true }).getByRole('list').getByRole('article', { name: /\bquotas\b/i })).toBeVisible()
 
-  // Stage, status, latest activity and QC verdict are words in the line (not color alone).
+  // Stage, status, latest activity and QC verdict are words on the card (not color alone).
   const line = crewLine(page, 'quotas')
-  await expect(line).toHaveAccessibleName(/stage 1/i)
-  await expect(line).toHaveAccessibleName(/running/i)
-  await expect(line).toHaveAccessibleName(new RegExp(`${memberName} spawned`, 'i'))
-  await expect(line).toHaveAccessibleName(/QC PASS/)
+  await expect(line).toContainText(/stage 1/i)
+  await expect(line).toContainText(/active/i) // ADR-0028 section 9: one status vocabulary
+  await expect(line).toContainText(new RegExp(`${memberName}`, 'i'))
+  await expect(line).toContainText(/QC PASS/)
   // A crew with no QC file does not claim a verdict.
-  await expect(crewLine(page, 'gateway')).toHaveAccessibleName(/QC none/)
-  await expect(crewLine(page, 'gateway')).not.toHaveAccessibleName(/PASS|FAIL/)
+  await expect(crewLine(page, 'gateway')).toContainText(/QC none/)
+  await expect(crewLine(page, 'gateway')).not.toContainText(/PASS|FAIL/)
 
-  // The line is a button with aria-expanded; opening it shows the members' one-line status.
-  await expect(line).toHaveAttribute('aria-expanded', 'false')
-  await line.click()
-  await expect(line).toHaveAttribute('aria-expanded', 'true')
-  const m = member(page, 'quotas', memberName)
+  // ADR-0028 section 10: every crew card lists its agents as cards, with no expand step.
+  const m = line.getByRole('listitem').filter({ hasText: memberName })
   await expect(m).toBeVisible()
-  for (const word of ['kit:builder', 'sonnet', 'medium', 'spawned']) await expect(m).toContainText(word)
-  await line.press('Enter') // keyboard (R-18) closes it again
-  await expect(line).toHaveAttribute('aria-expanded', 'false')
-  await expect(members(page, 'quotas')).toBeHidden()
+  for (const word of ['sonnet']) await expect(m).toContainText(word)
 
   // R-15: a new event changes the latest activity and the member's state within 2 s.
   real.appendEvent({ v: 1, ts: new Date().toISOString(), event: 'stall', crew: 'quotas', agent: memberName, kind: 'agent', minutes: 15 })
-  await expect(line).toHaveAccessibleName(new RegExp(`${memberName} stalled 15 min`, 'i'), WITHIN)
-  await line.click()
+  await expect(line).toContainText(new RegExp(`${memberName}.*stalled 15 min|stalled 15 min.*${memberName}`, 'is'), WITHIN) // ADR-0028 section 10: no expand step
   await expect(member(page, 'quotas', memberName)).toContainText(/stalled/, WITHIN)
 })
 
@@ -83,27 +69,27 @@ test('R-15, R-4: a QC file with VERDICT: FAIL written to reports/<crew>/<crew>-q
   real = await startReal()
   await page.goto(real.url)
   await expect(crewLine(page, 'gateway')).toBeVisible(LOAD)
-  await expect(crewLine(page, 'gateway')).not.toHaveAccessibleName(/FAIL/)
+  await expect(crewLine(page, 'gateway')).not.toContainText(/FAIL/)
   real.writeQc('gateway', 'FAIL')
-  await expect(crewLine(page, 'gateway')).toHaveAccessibleName(/FAIL/, WITHIN)
+  await expect(crewLine(page, 'gateway')).toContainText(/FAIL/, WITHIN)
 })
 
 test('R-15, R-4: plan.json status and stage changes show in the crew line within 2 s without a reload', async ({ page }) => {
   real = await startReal()
   await page.goto(real.url)
-  await expect(crewLine(page, 'gateway')).toHaveAccessibleName(/planned/i, LOAD)
+  await expect(crewLine(page, 'gateway')).toContainText(/planned/i, LOAD)
   real.writePlan((p) => { p.crews.find((c: { slug: string }) => c.slug === 'gateway').status = 'merged' })
-  await expect(crewLine(page, 'gateway')).toHaveAccessibleName(/merged/i, WITHIN)
+  await expect(crewLine(page, 'gateway')).toContainText(/done/i, WITHIN) // ADR-0028 section 9: merged shows as Done
 })
 
-test('R-5, R-15: decisions.md lines and a new ADR file show in the decisions and ADRs panel within 2 s', async ({ page }) => {
+test('R-5, R-15: decisions.md lines and a new ADR file show in the rail timeline within 2 s', async ({ page }) => {
   const run = rand()
   real = await startReal()
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await openTab(page, 'Decisions and ADRs')
-  const decisions = panel(page, 'Decisions and ADRs').getByRole('region', { name: 'Decisions', exact: true })
-  const adrs = panel(page, 'Decisions and ADRs').getByRole('region', { name: 'ADRs', exact: true })
+  // ADR-0028 section 3: no tab; the rail's "Decisions and ADRs" timeline is the one list of both.
+  const decisions = adrTimeline(page)
+  const adrs = adrTimeline(page)
   // The real ADR already on disk is listed with its title and status.
   await expect(adrs.getByRole('listitem').filter({ hasText: /a design phase, principle packs/i }).first()).toBeVisible(LOAD)
 
@@ -119,28 +105,25 @@ test('R-5, R-15: decisions.md lines and a new ADR file show in the decisions and
   await expect(adr).toContainText(/accepted/i)
 })
 
-test('R-6: the design panel shows plan.md, the architecture doc as markdown and a mermaid block as labelled source', async ({ page }) => {
-  const run = rand()
+test('R-6: the Architecture deliverable shows the architecture doc as markdown and mermaid blocks drawn', async ({ page }) => {
   const arch = readFileSync(join(root, 'docs', 'architecture.md'), 'utf8')
   const title = /^# (.+)$/m.exec(arch)![1]!
-  const mermaidFirst = /```mermaid\n([^\n]+)\n/.exec(arch)![1]!
-  real = await startReal({ trussFiles: { 'plan.md': `# Plan ${run}\n\nThe plan for run ${run}.\n` } })
+  real = await startReal({ trussFiles: { 'plan.md': `# Plan ${rand()}\n\nThe plan.\n` } })
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await openTab(page, 'Design')
-  const design = panel(page, 'Design')
+  // ADR-0028 sections 4, 5, 10: no Design tab; Architecture is the first deliverable and opens in the preview.
+  await openArchitecture(page)
 
-  // plan.md, rendered: its heading is a heading.
-  await expect(design.getByText(rx(`The plan for run ${run}.`)).first()).toBeVisible(LOAD)
-  await expect(design.getByRole('heading', { name: rx(`Plan ${run}`) }).first()).toBeVisible()
+  // The architecture doc, rendered as markdown: its title is a heading, no raw "# ".
+  await expect(page.getByRole('heading', { name: rx(title) }).first()).toBeVisible(LOAD)
+  await expect(page.getByText(`# ${title}`, { exact: true })).toHaveCount(0)
 
-  // The architecture doc, rendered as markdown (loaded when the panel opens): its title is a heading, no raw "# ".
-  await expect(design.getByRole('heading', { name: rx(title) }).first()).toBeVisible(LOAD)
-  await expect(design.getByText(`# ${title}`, { exact: true })).toHaveCount(0)
-
-  // A mermaid block is shown as source under the label, not drawn.
-  await expect(design.getByText('mermaid diagram (source)').first()).toBeVisible()
-  await expect(design.getByText(mermaidFirst, { exact: false }).first()).toBeVisible()
+  // A mermaid block is drawn, in a focusable figure labelled "Diagram n of m"; the source is behind "Show source".
+  const figure = page.getByRole('figure', { name: /^Diagram 1 of \d+$/ })
+  await expect(figure).toBeVisible(LOAD)
+  await expect(figure).toHaveAttribute('tabindex', '0')
+  await expect(figure.getByText('Show source')).toBeVisible()
+  await expect(page.getByText('mermaid diagram (source)')).toHaveCount(0)
 })
 
 test('R-6: an image a crew branch added shows in the design panel, loaded through /api/image', async ({ page }) => {
@@ -151,10 +134,10 @@ test('R-6: an image a crew branch added shows in the design panel, loaded throug
   page.on('response', (r) => { if (r.url().includes('/api/image')) imageResponses.push(`${r.status()} ${r.url()}`) })
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await openTab(page, 'Design')
+  // ADR-0028 section 10: no Design tab; images are deliverables in main.
 
   // git runs every 5 s (Decision 4), so the image may take a few seconds to be listed.
-  const img = panel(page, 'Design').getByRole('img', { name: rx(`built-${run}`) }).first()
+  const img = deliverables(page).getByRole('img', { name: rx(`built-${run}`) }).first()
   await expect(img).toBeVisible({ timeout: 15000 })
   await expect(img).toHaveAttribute('src', /\/api\/image\?/)
   await expect(img).toHaveAttribute('src', new RegExp(`ref=truss-quotas`))
@@ -191,20 +174,19 @@ test('R-14, R-15: a plan of 12 crews with 100 agents renders, opens, and a chang
   await page.goto(real.url)
   for (const slug of slugs) await expect(crewLine(page, slug)).toBeVisible(LOAD)
   expect(Date.now() - t0, 'first render of 12 crews, ms').toBeLessThan(10000)
-  for (const slug of slugs) await expect(page.getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') })).toHaveCount(1)
+  for (const slug of slugs) await expect(page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') })).toHaveCount(1)
 
-  // A crew with many members opens into all of them.
+  // A crew with more than 6 agents shows the first 6 and a "Show n more agents" button (UX direction, Build network, Long).
   const last = slugs[11]!
   const names = members.get(last)!
   expect(names.length).toBeGreaterThanOrEqual(7)
-  await crewLine(page, last).click()
+  await crewLine(page, last).getByRole('button', { name: /^Show \d+ more agents$/ }).click()
   for (const n of names) await expect(member(page, last, n)).toBeVisible()
 
   // A change in the busy run still shows within 2 s.
   real.writeQc('lane-05', 'FAIL')
-  await expect(crewLine(page, 'lane-05')).toHaveAccessibleName(/FAIL/, WITHIN)
+  await expect(crewLine(page, 'lane-05')).toContainText(/FAIL/, WITHIN)
   const decision = `busy-${run}-decision`
   real.appendDecision(`- 11:00 | ${decision} | because ${run} | checker: none | followed`)
-  await openTab(page, 'Decisions and ADRs')
-  await expect(panel(page, 'Decisions and ADRs').getByRole('region', { name: 'Decisions', exact: true }).getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
+  await expect(adrTimeline(page).getByRole('listitem').filter({ hasText: rx(decision) })).toBeVisible(WITHIN)
 })
