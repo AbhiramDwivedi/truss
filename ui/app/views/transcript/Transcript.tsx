@@ -102,6 +102,19 @@ export function Transcript({ state, now }: TranscriptProps) {
     else setBehind(true)
   }, [last])
 
+  // Items off screen get their real height after layout (content-visibility:auto): while the reader has not
+  // scrolled up, keep the log on its real bottom as the list grows.
+  useEffect(() => {
+    const el = box.current
+    const list = el?.querySelector('ol')
+    if (!el || !list || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (atBottom.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [last, state])
+
   // After "Show earlier messages" the reader keeps looking at the same message: restore by the height delta.
   useLayoutEffect(() => {
     const el = box.current
