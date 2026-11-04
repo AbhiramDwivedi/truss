@@ -1,6 +1,6 @@
 ---
 name: stress-engineer
-description: Tries to break one truss crew's finished work, in its own worktree, and reports what it broke. Starts only on a brief whose first line is `Stress test:`. Writes only to scratch and temp dirs and its own worktree, never commits, never pushes, and resets and cleans before it reports. Reports `STRESSTEST: <n> findings`, never a merge verdict. Give it the goal-file path, the ADRs, the crew head SHA and branch, the high-impact paths, the resource slice, and how the crew's code is really called.
+description: "Tries to break one truss crew's finished work, in its own worktree, and reports what it broke. Starts only on a brief whose first line is `Stress test:`. Writes only to scratch and temp dirs and its own worktree, never commits, never pushes, and resets and cleans before it reports. Reports `STRESSTEST: <n> findings`, never a merge verdict. Give it the goal-file path, the ADRs, the crew head SHA and branch, the high-impact paths, the resource slice, and how the crew's code is really called."
 model: opus
 effort: medium
 tools: Read, Grep, Glob, Bash, Write, Edit
