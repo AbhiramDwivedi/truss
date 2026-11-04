@@ -14,7 +14,7 @@ You don't write the PM's reports or the foremen's reports. Those keep their fixe
 
 ## 1. Load a writing skill
 
-**Docs and ADRs need `clarity`.** Before you write a doc (a README, an architecture doc, any file under `docs/`) or an ADR, load the `clarity` skill, from [addyosmani/clarity](https://github.com/addyosmani/clarity), with the Skill tool. When `clarity` isn't in the session's skill list, or it fails to load, write nothing and report exactly `BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)`. No other skill stands in for it.
+**Docs and ADRs use `truss:clarity`.** Before you write a doc (a README, an architecture doc, any file under `docs/`) or an ADR, load `truss:clarity` with the Skill tool. It ships with truss (vendored from [addyosmani/clarity](https://github.com/addyosmani/clarity), MIT). When the load fails, say so in your report and carry on with `technical-writer` when the session lists it.
 
 For other prose, such as release notes:
 

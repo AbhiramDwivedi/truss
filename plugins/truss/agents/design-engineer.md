@@ -42,13 +42,7 @@ Work from what you know and what's in the repo. Fetch only when you need a speci
 
 ## Load the clarity skill
 
-Before you write any ADR or architecture-doc prose, load the `clarity` skill, from [addyosmani/clarity](https://github.com/addyosmani/clarity), with the Skill tool. It is required. When `clarity` isn't in the session's skill list, or it fails to load, write nothing and report exactly this line:
-
-```
-BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)
-```
-
-No other writing skill stands in for it, the config's `writingSkill` included. Follow `clarity`, but this prompt's rules win where they differ: every fact still comes from code or a command, and ADRs keep the format below.
+Before you write any ADR or architecture-doc prose, load `truss:clarity` with the Skill tool. It ships with truss (vendored from [addyosmani/clarity](https://github.com/addyosmani/clarity), MIT), so nothing needs installing. When the load fails, say so in your report and carry on with `technical-writer` when the session lists it. Follow `truss:clarity`, but this prompt's rules win where they differ: every fact still comes from code or a command, and ADRs keep the format below.
 
 ## ADR format
 

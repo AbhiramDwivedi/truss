@@ -2,12 +2,12 @@
 // (no type check: the plugin tsconfig carries the hook types, not Node's, and this file runs under node)
 // The design engineer's ADR template and writing-skill order: agents/design-engineer.md has one "ADR format"
 // section whose template lists the five sections in order, and every ADR-writing mode points at it. The
-// `clarity` skill is required: the design engineer and the writer block without it, and init and run check for it.
+// `clarity` skill ships with truss as `truss:clarity`: the design engineer and the writer load it, and nothing asks the user to install it.
 //
 // Run with: node --test tests/adr-format.check.ts
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 const text = readFileSync(new URL('../agents/design-engineer.md', import.meta.url), 'utf8').replace(/\r/g, '')
@@ -48,23 +48,31 @@ test('ADR format: init, design and the extend pass forks and exceptions all poin
   assert.match(ext, /\*\*Bootstrap exception:\*\*[^\n]*"ADR format"/)
 })
 
-const BLOCKED = 'BLOCKED: clarity skill not installed (npx skills add addyosmani/clarity)'
+const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '')
 
-test('clarity is required: the design engineer loads it before ADR or doc prose, else blocks with the install command', () => {
-  const body = section('Load the clarity skill')
-  assert.match(body, /load the `clarity` skill[^\n]*Skill tool/)
-  assert.ok(body.split('\n').includes(BLOCKED), 'the exact BLOCKED line stands on its own line')
-  assert.doesNotMatch(body, /`technical-writer`/, 'no technical-writer fallback for ADRs and doc prose')
-  assert.match(body, /No other writing skill stands in/)
-})
-
-test('clarity is required: the writer blocks on docs and ADRs, and init and run check the skill list before any agent', () => {
-  const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '')
-  assert.ok(read('../agents/writer.md').includes(BLOCKED), 'writer.md carries the BLOCKED line')
-  for (const p of ['../skills/init/SKILL.md', '../skills/run/SKILL.md']) {
-    const t = read(p)
-    const gate = t.indexOf('npx skills add addyosmani/clarity')
-    assert.ok(gate >= 0, `${p} names the install command`)
-    assert.ok(gate < t.indexOf('subagent_type: "truss:design-engineer"'), `${p} checks clarity before it starts the design engineer`)
+test('clarity ships with truss: skill, LICENSE and UPSTREAM.md exist, the skill is named clarity, every linked file is there', () => {
+  const dir = '../skills/clarity/'
+  for (const f of ['SKILL.md', 'LICENSE', 'UPSTREAM.md']) assert.ok(existsSync(new URL(dir + f, import.meta.url)), `${f} exists`)
+  const skill = read(dir + 'SKILL.md')
+  assert.match(skill, /^---\nname: clarity\n/, 'front matter name is clarity')
+  assert.match(read(dir + 'LICENSE'), /^MIT License[\s\S]*Copyright \(c\) \d{4} Addy Osmani/)
+  assert.match(read(dir + 'UPSTREAM.md'), /github\.com\/addyosmani\/clarity[\s\S]*[0-9a-f]{40}/)
+  for (const m of skill.matchAll(/\b((?:references|scripts)\/[\w.-]+\.(?:md|py))/g)) {
+    assert.ok(existsSync(new URL(dir + m[1], import.meta.url)), `${m[1]} exists`)
   }
 })
+
+test('clarity is bundled: the design engineer and the writer load truss:clarity, nothing asks for an install', () => {
+  const body = section('Load the clarity skill')
+  assert.match(body, /load `truss:clarity`[^\n]*Skill tool/)
+  assert.match(body, /load fails, say so in your report[^\n]*`technical-writer`/)
+  assert.ok(!body.includes('BLOCKED'), 'no BLOCKED stop')
+  assert.match(read('../agents/writer.md'), /load `truss:clarity`[^\n]*Skill tool/)
+  for (const p of ['../agents/design-engineer.md', '../agents/writer.md', '../skills/init/SKILL.md', '../skills/run/SKILL.md', '../README.md']) {
+    const t = read(p)
+    assert.ok(!t.includes('npx skills add'), `${p} has no npx skills add`)
+    assert.ok(!t.includes('BLOCKED: clarity'), `${p} has no BLOCKED: clarity`)
+  }
+  assert.match(read('../README.md'), /bundles the \[clarity\]\(https:\/\/github\.com\/addyosmani\/clarity\)[^\n]*`truss:clarity`[^\n]*MIT/)
+})
+
