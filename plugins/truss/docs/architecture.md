@@ -1077,6 +1077,8 @@ The resource checks ([ADR-0015](adr/0015-resource-aware.md), proposed) fail open
 
 The web client is redesigned by [ADR-0018](adr/0018-ui-redesign.md) (proposed 2026-11-02, goal `ui-redesign`), which supersedes ADR-0011's no-bundler web client only, and amended by [ADR-0023](adr/0023-factory-floor-ui.md) (proposed 2026-11-03, revision 5b). ADR-0023 replaces ADR-0018's visual direction with direction D and D2, and keeps ADR-0018's behaviour contract. The client is React 19, TypeScript, Vite, Tailwind CSS v4 and shadcn/ui restyled to D2's tokens (`ui/contract/redesign/tokens.json`), with lucide icons and Geist, and its source in `ui/app/`. Crew floor-shell builds the shell and store, and crew floor-views the views. `npm --prefix ui run build` writes `ui/web/index.html` and its assets, and `main.ts` serves `ui/web/` (`ui/server/main.ts:69`). Today `ui/web/` still holds the tracked vanilla client; floor-shell replaces it with untracked build output. When the build is missing, the server still starts, prints one stderr line naming the build command, and answers `GET /` with an error page that names it (ADR-0018, section 3). The routes and the SSE wire keep their shape; ADR-0023 adds optional state fields and an optional message `intent`, listed under "Gap fields" below.
 
+The UI rework, [ADR-0028](adr/0028-ui-rework.md) (proposed 2026-11-04, crew `rework-design`), amends ADR-0023's layout and ADR-0011's session input to follow the client's design reference (R-36 to R-47). The page has two columns. The rail holds the run status, the target repository, the thread with the PM and the composer, and the one list of ADRs and decisions. Main holds Your move, the build network (PM node, wires and crews of agent cards), the deliverables with the architecture drawn, and the run metrics. With no `plan.json`, a goal sent from the page reaches the session as `/truss:run <text>`. The design panel draws mermaid blocks under the unchanged CSP. The new optional fields are listed under "Rework fields" below.
+
 ```mermaid
 flowchart LR
   browser["Browser tab<br/>[ui-web: source ui/app/, build output ui/web/]<br/>Your move, metrics, composer, crews, deliverables"]
@@ -1178,13 +1180,28 @@ sequenceDiagram
 
 The page's ten screenshot states, their copy and the fixtures under `ui/contract/fixtures/run/<state>/` are in ADR-0023, sections 4 to 6.
 
+### Rework fields
+
+[ADR-0028](adr/0028-ui-rework.md) adds these optional fields, again with no `required` list growing:
+
+| Field | Source |
+| --- | --- |
+| `session.flow`: `{at, tool, to, summary}`, the last 200 | the PM's top-level `Agent`, `SendMessage` and `Workflow` tool calls; `to` is a crew slug or null |
+| `member.agentId` | the spawn line's `agentId` |
+| `member.task` | the latest SDK `task_started` or `task_progress` `description` whose `task_id` equals `agentId` |
+| `member.purpose` | the first sentence of `agents/<type>.md` `description:` |
+| `replyRequest.approvalAsk` | a rule in ui-session on the turn's text; false when unsure |
+| `crew.eventsUnread` | the count of the crew's event lines skipped for `version` |
+
+ADR-0028 section 1 also changes what intent `goal` sends before a plan exists: `/truss:run <text>` instead of the fixed line. The rework fixture states are under `ui/contract/fixtures/rework/<state>/`.
+
 ### On disk
 
 Nothing. The state, the replay ring, the requests and the transcript live in the process's memory (R-13). Restarting the server starts them over; a reconnecting tab from the old process gets a fresh snapshot, because its `instance` differs.
 
 ### Principles: what binds `ui/`
 
-**P19 binds the plugin, not `ui/`** (R-11, `docs/requirements.md:81`). The plugin stays erasable TypeScript on Node built-ins only. `ui/` is its own package with its own `package.json` and lockfile. Its runtime dependencies are `@anthropic-ai/claude-agent-sdk` and `marked`; its dev dependencies are `@playwright/test` and `@axe-core/playwright`. Its server code is still erasable TypeScript, run by Node 24 as is. No file in `ui/` imports the plugin, and the plugin imports nothing from `ui/`.
+**P19 binds the plugin, not `ui/`** (R-11, `docs/requirements.md:81`). The plugin stays erasable TypeScript on Node built-ins only. `ui/` is its own package with its own `package.json` and lockfile. Its runtime dependencies are `@anthropic-ai/claude-agent-sdk`, `marked` and `mermaid` (exactly `12.2.0`, [ADR-0028](adr/0028-ui-rework.md) section 5); its dev dependencies are `@playwright/test` and `@axe-core/playwright`. Its server code is still erasable TypeScript, run by Node 24 as is. No file in `ui/` imports the plugin, and the plugin imports nothing from `ui/`.
 
 **Core pack: all 14 rules adopted.** Rule 1: each module exports from its `index.ts` only. Rule 3: ui-server takes `StateSource` and `SessionControl` as interfaces, which `http.check.ts` implements. Rule 6: every POST body and query is checked at ui-server. Rule 7: a repeated answer POST leaves the same state. Rule 10: the server binds `127.0.0.1` and refuses requests without the token.
 
@@ -1195,7 +1212,7 @@ Nothing. The state, the replay ring, the requests and the transcript live in the
 | 1 to 11 | adopted | ui-web is small, but the rules cost nothing extra. Rule 6 covers no Truss dir yet, an empty run and the session error. Rules 10 and 11 back R-18. |
 | 12 | adopted, in the e2e run | The repo has no CI. `npm --prefix ui run e2e` runs an axe check (`@axe-core/playwright` 4.14.0, WCAG 2.2 AA tags) over each page state the e2e specs reach, and fails on any violation. ui-web writes that spec under `ui/e2e/`. |
 | 13 | dropped | No routes, no bundler and no public users: one local page on loopback. A per-route budget has nothing to measure against. R-15's 2 s and 1 s times are the budget, checked by the e2e specs. |
-| 14 | adapted | No rule-13 budget, but code the first screen doesn't need loads through `import()`: `marked` loads when the design panel first opens (ADR-0011 Decision 7). Mermaid isn't added. |
+| 14 | adapted | No rule-13 budget, but code the first screen doesn't need loads through `import()`: `marked` loads when the design panel first opens (ADR-0011 Decision 7). `mermaid` loads through `import()` in `ui/app/views/design/DesignPanel.tsx` only, the first time an architecture with a mermaid block opens, with `securityLevel: 'strict'` and no CSP change (ADR-0028 section 5). The client accepted the change from "Mermaid isn't added" for R-38. |
 
 **Service pack.**
 
