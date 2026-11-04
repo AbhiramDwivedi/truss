@@ -134,7 +134,7 @@ export function Timeline({ state, onOpenLog }: TimelineProps) {
           <button
             type="button"
             onClick={() => onOpenLog()}
-            className="ml-auto inline-flex min-h-6 items-center rounded-chip text-meta font-medium text-brand-strong hover:underline pointer-coarse:min-h-10"
+            className="ml-auto inline-flex min-h-6 items-center rounded-chip text-meta font-medium text-brand-strong hover:underline pointer-coarse:min-h-11"
           >
             Open log
           </button>
@@ -165,7 +165,7 @@ export function Timeline({ state, onOpenLog }: TimelineProps) {
                     setLimit(PAGE)
                   }}
                   className={cn(
-                    'inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-meta font-medium transition-colors duration-(--duration-quick) ease-out pointer-coarse:h-10',
+                    'inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-meta font-medium transition-colors duration-(--duration-quick) ease-out pointer-coarse:h-11',
                     on ? 'bg-fg text-bg' : 'bg-secondary text-muted hover:text-fg',
                   )}
                 >

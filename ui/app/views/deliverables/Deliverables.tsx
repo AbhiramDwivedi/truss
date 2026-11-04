@@ -209,7 +209,7 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
   const preview = adrCurrent ? adrCurrent.title : current?.title
   const docSelected = !adrCurrent && current?.preview.kind === 'text'
 
-  const narrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+  const narrow = () => typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches
   const open = (item: Deliverable, el: HTMLButtonElement) => {
     setSelected(item.id)
     setAdrSel(null)

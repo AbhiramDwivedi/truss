@@ -20,12 +20,12 @@ export function RunContext({ state }: RunContextProps) {
   return (
     <section
       aria-label="Run"
-      className="space-y-5 border-b border-border px-6 py-5 max-lg:mx-4 max-lg:rounded-card max-lg:border max-lg:bg-surface max-lg:px-4"
+      className="space-y-5 lg:space-y-0 border-b border-border px-6 py-3 max-lg:mx-4 max-lg:rounded-card max-lg:border max-lg:bg-surface max-lg:px-4 max-lg:py-5"
     >
       <div>
-        <h2 className="mb-1.5 text-meta font-medium text-muted">Target repository</h2>
+        <h2 className="mb-0.5 text-meta font-medium text-muted">Target repository</h2>
         <div
-          className="flex h-10 min-w-0 items-center gap-2.5 rounded-ctl border border-border bg-bg px-3"
+          className="flex h-9 min-w-0 items-center gap-2.5 rounded-ctl border border-border bg-bg px-3"
           title="Truss runs in the repo it was started in"
         >
           <FolderGit2 aria-hidden="true" className="size-4 shrink-0 text-muted" />
@@ -36,7 +36,7 @@ export function RunContext({ state }: RunContextProps) {
         </div>
       </div>
 
-      <div>
+      <div className="lg:sr-only">
         <h2 className="mb-1.5 text-meta font-medium text-muted">The idea</h2>
         {goal ? (
           <div className="rounded-ctl border border-brand-line bg-brand-soft p-3.5">
@@ -58,7 +58,7 @@ export function RunContext({ state }: RunContextProps) {
       )}
 
       {goal && (
-        <div>
+        <div className="lg:sr-only">
           <Button
             variant="secondary"
             size="lg"
