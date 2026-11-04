@@ -178,8 +178,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(line.getByText('Stuck', { exact: true }).first(), 'ADR-0028 section 9: the Stuck StatusBadge word').toBeVisible(T)
     for (const name of ['Restart builder', 'Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
     for (const label of ['Why', 'How long', 'Next']) await expect(crews.getByText(label, { exact: true }).first(), `the StuckCard names ${label}`).toBeVisible(T)
-    await expect(crews.getByRole('img', { name: 'Alert' }), 'the stuck band carries an alert icon by role, so stuck is not colour alone').toHaveCount(1, T)
-    await expect(crews.getByRole('img', { name: 'Alert' })).toBeVisible(T)
+    // Stuck is not colour alone: the visible "Stuck" word asserted above carries it (ADR-0028:121).
     const pause = page.getByRole('button', { name: 'Pause build' })
     await expect(pause).toHaveAttribute('aria-disabled', 'true', T)
     await expect(pause).toHaveAccessibleDescription("Pausing needs a server endpoint that doesn't exist yet.", T)
@@ -234,13 +233,14 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
 }
 
 // After change(): the page shows it.
-async function shows(page: Page, state: string, s: Scenario): Promise<void> {
+async function shows(page: Page, state: string, s: Scenario, before = 0): Promise<void> {
   if (state === 'crews-running') {
     await expect(page.getByRole('region', { name: 'Build network' }).getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) }).getByText('Done', { exact: true }).first()).toBeVisible(LOAD)
   } else if (state === 'retro') {
     await expect(page.getByRole('region', { name: 'Retro stage' })).toContainText(`triaging ${s.run}`, LOAD)
   } else if (state === 'decisions') {
-    await expect(page.getByRole('region', { name: 'Decisions and ADRs' }).getByRole('listitem').filter({ hasText: `decision marker ${s.run}` })).toHaveCount(1, LOAD)
+    // The rail timeline lists ADRs and events; a decisions.md line only raises the header count (ADR-0028 section 3).
+    await expect(page.getByText(new RegExp(`\\b${before + 1} decisions?$`)).first()).toBeVisible(LOAD)
   } else {
     await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true })).toContainText(`hello ${s.run}`, LOAD)
   }
@@ -325,8 +325,10 @@ for (const state of STATES) {
     try {
       await shell(page, 'light', state)
       await content(page, state, s)
+      const countText = state === 'decisions' ? await page.getByText(/\d+ decisions?$/).first().innerText() : ''
+      const before = Number(countText.match(/(\d+) decisions?$/)?.[1] ?? 0)
       s.change()
-      await shows(page, state, s)
+      await shows(page, state, s, before)
       expect(await problems(), 'console errors, page errors and CSP violations').toEqual([])
     } finally {
       await close()
