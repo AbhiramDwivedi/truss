@@ -1,0 +1,132 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/rework",
+    "exists": true
+  },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-rework",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [
+    {
+      "id": "req-reply-1",
+      "kind": "reply",
+      "status": "open",
+      "createdAt": "2026-11-02T11:59:00.000Z",
+      "answeredAt": null,
+      "cancelReason": null,
+      "text": "The plan is ready: three crews in two stages.\n\nDo you approve the plan?",
+      "isError": false,
+      "backgroundTasks": 0,
+      "decision": null,
+      "message": null,
+      "approvalAsk": true
+    }
+  ],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Rework the UI to the client design reference.",
+      "ts": "2026-11-02T11:50:00.000Z",
+      "id": "msg-1",
+      "intent": "goal"
+    },
+    {
+      "n": 2,
+      "role": "assistant",
+      "text": "The plan is ready: three crews in two stages.\n\nDo you approve the plan?",
+      "ts": "2026-11-02T11:59:00.000Z",
+      "id": null,
+      "intent": null
+    }
+  ],
+  "run": {
+    "goal": "Rework the UI to the client design reference.",
+    "version": 3,
+    "approval": null,
+    "approvedAt": null,
+    "crews": [
+      {
+        "slug": "rework-server",
+        "stage": 0,
+        "verdict": "change",
+        "status": "planned",
+        "goal": null,
+        "owns": [
+          "rework-server/**"
+        ],
+        "foreman": null,
+        "members": [],
+        "latest": null,
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "rework-network",
+        "stage": 1,
+        "verdict": "change",
+        "status": "planned",
+        "goal": null,
+        "owns": [
+          "rework-network/**"
+        ],
+        "foreman": null,
+        "members": [],
+        "latest": null,
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "rework-docs",
+        "stage": 1,
+        "verdict": "change",
+        "status": "planned",
+        "goal": null,
+        "owns": [
+          "rework-docs/**"
+        ],
+        "foreman": null,
+        "members": [],
+        "latest": null,
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Rework the UI to the client design reference.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:10:00.000Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}
