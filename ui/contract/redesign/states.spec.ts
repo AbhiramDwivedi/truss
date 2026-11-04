@@ -43,9 +43,9 @@ async function shell(page: Page, theme: Theme, state: string): Promise<void> {
   await expect(page.getByRole('main').getByRole('region', { name: 'Build network' })).toBeVisible(T)
   await expect(page.getByRole('region', { name: 'Decisions and ADRs' }), 'the rail timeline is the one list of decisions and ADRs').toBeVisible(T)
   await expect(page.getByRole('main').getByRole('heading', { level: 2, name: 'Run metrics' })).toBeVisible(T)
-  const log = page.getByRole('log', { name: 'Transcript' })
+  const log = page.getByRole('log', { name: 'Conversation with the PM', exact: true })
   await expect(log).toBeVisible(T)
-  await expect(page.getByRole('heading', { level: 2, name: 'Transcript' })).toBeVisible(T)
+  await expect(page.getByRole('heading', { level: 2, name: 'Conversation' })).toBeVisible(T)
 }
 
 // What a rendered token looks like: bg on body, and the move surface (the card when Your move has one, else the
@@ -92,11 +92,11 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
   const f = s.fixture
   // the per-run value planted in the first user line
   const firstUser = f.transcript.find((e: any) => e.role === 'user')
-  if (firstUser) await expect(page.getByRole('log', { name: 'Transcript' })).toContainText(firstUser.text, T)
+  if (firstUser) await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true })).toContainText(firstUser.text, T)
   if (state === 'empty') {
     await expect(page.getByRole('status', { name: 'Session' })).toHaveText(/\bidle\b/, T)
     await expect(move.getByRole('article')).toHaveCount(0, T)
-    await expect(form.getByRole('radiogroup', { name: 'What this message is' })).toHaveCount(0, T)
+    await expect(form.getByRole('radiogroup', { name: 'Send as' })).toHaveCount(0, T)
     await expect(form.getByRole('button', { name: 'Start run', exact: true })).toBeVisible(T)
     // ADR-0028 section 8: Run metrics is always the last section of main; with no usage every tile reads "No usage yet"
     await expect(metrics).toBeVisible(T)
@@ -108,9 +108,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(crews.getByRole('article')).toHaveCount(0, T)
     await expect(page.getByText('Nothing built yet. Deliverables appear as crews finish.')).toBeVisible(T)
     await expect(page.getByRole('group', { name: 'Filter by type' })).toHaveCount(0, T)
-    const followUps = page.getByRole('region', { name: 'Follow-ups' })
-    await expect(followUps, 'an empty Follow-ups region reads Nothing sent yet.').toContainText('Nothing sent yet.', T)
-    await expect(followUps.getByRole('list'), 'an empty Follow-ups region holds no list').toHaveCount(0, T)
+    await expect(page.getByRole('region', { name: 'Follow-ups' }), 'ADR-0028: no Follow-ups region before a plan exists').toHaveCount(0, T)
     await expect(retro).toHaveCount(0, T)
   } else if (state === 'question') {
     const q = f.requests[0].questions[0]
@@ -122,29 +120,27 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(card.getByRole('textbox', { name: 'Your own answer' })).toBeVisible(T)
     await expect(card.getByRole('button', { name: 'Submit answers' })).toBeVisible(T)
     await expect(page).toHaveTitle('(1) Truss', T)
-    await expect(form.getByText("Claude's turn is open on your question. Anything you send now waits in the queue and goes out once you answer it.")).toBeVisible(T)
-    const answer = form.getByRole('radio', { name: 'Answer the question' })
-    await expect(answer).toBeVisible(T)
-    await expect(form.getByRole('radio', { name: 'Message', exact: true }), 'Message stays checked while a question is open: answering belongs to Your move').toBeChecked(T)
-    await expect(answer).not.toBeChecked(T)
-    await answer.check()
-    await expect(answer).toBeChecked(T)
-    await expect(form.getByRole('button', { name: 'Send answer' }), 'the send button follows the checked intent').toBeVisible(T)
+    await expect(form.getByRole('textbox', { name: 'Message to the PM' })).toHaveAccessibleDescription('The PM is waiting on the card above; a message here is sent as well.', T)
+    const sendAs = form.getByRole('radiogroup', { name: 'Send as' })
+    await expect(sendAs.getByRole('radio', { name: 'Answer the question' }), 'ADR-0028: the answer intent is gone').toHaveCount(0, T)
+    await expect(sendAs.getByRole('radio', { name: 'Message', exact: true }), 'Message stays checked while a question is open: answering belongs to Your move').toBeChecked(T)
+    await sendAs.getByRole('radio', { name: 'New goal' }).check()
+    await expect(form.getByRole('button', { name: 'Add as new goal' }), 'the send button follows the checked intent').toBeVisible(T)
   } else if (state === 'approval') {
     const [reply, perm] = f.requests
     // ADR-0028 section 2 (R-47): the planted reply is an approval ask, so the card is "Approval needed"
     const replyCard = move.getByRole('article', { name: 'Approval needed' })
     await expect(replyCard).toContainText(reply.text, T)
-    await expect(replyCard.getByRole('button', { name: 'Approve' })).toBeVisible(T)
+    await expect(replyCard.getByRole('button', { name: /^Approve\b/ })).toBeVisible(T)
     await expect(replyCard.getByText('Sends: Approved.')).toBeVisible(T)
-    await expect(replyCard.getByRole('button', { name: 'Deny' })).toBeVisible(T)
+    await expect(replyCard.getByRole('button', { name: /^Deny\b/ })).toBeVisible(T)
     await expect(replyCard.getByText('Sends: Not approved.')).toBeVisible(T)
     await expect(replyCard.getByRole('textbox', { name: 'Your reply' })).toBeVisible(T)
     await expect(replyCard.getByRole('button', { name: 'Send reply' })).toBeVisible(T)
     const permCard = move.getByRole('article', { name: `Permission request: ${perm.toolName}` })
     for (const text of [perm.toolName, perm.title, perm.summary, perm.decisionReason, perm.blockedPath]) await expect(permCard).toContainText(text, T)
-    await expect(permCard.getByRole('button', { name: 'Approve' })).toBeVisible(T)
-    await expect(permCard.getByRole('button', { name: 'Deny' })).toBeVisible(T)
+    await expect(permCard.getByRole('button', { name: /^Approve\b/ })).toBeVisible(T)
+    await expect(permCard.getByRole('button', { name: /^Deny\b/ })).toBeVisible(T)
     await expect(move.getByRole('article')).toHaveCount(2, T)
     await expect(move.getByText('1 more waiting on you')).toBeVisible(T)
     await expect(page).toHaveTitle('(2) Truss', T)
@@ -154,9 +150,8 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(region.getByText('Queued', { exact: true })).toHaveCount(f.session.queue.length, T)
     await expect(region.getByText(/^Sent \d\d:\d\d$/).first()).toBeVisible(T)
     await expect(region.getByText('New goal').first()).toBeVisible(T)
-    await expect(region.getByText('Add to current goal').first()).toBeVisible(T)
     await expect(page.getByText(/In the plan|plan revision/i)).toHaveCount(0, T)
-    const group = form.getByRole('radiogroup', { name: 'What this message is' })
+    const group = form.getByRole('radiogroup', { name: 'Send as' })
     await expect(group.getByRole('radio', { name: 'New goal' })).toBeVisible(T)
     await expect(group.getByRole('radio', { name: 'Message', exact: true })).toBeVisible(T)
     await expect(group.getByRole('radio', { name: 'Answer the question' })).toHaveCount(0, T)
@@ -182,10 +177,8 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     await expect(line).toHaveCount(1, T)
     await expect(line.getByText('Stuck', { exact: true }).first(), 'ADR-0028 section 9: the Stuck StatusBadge word').toBeVisible(T)
     for (const name of ['Restart builder', 'Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
-    const band = crews.getByText(`Stuck, silent ${stuck.stuck.minutes}m`, { exact: true })
-    await expect(band, 'the stuck band carries the word').toBeVisible(T)
-    await expect(crews.getByRole('img', { name: 'Alert' }), 'the stuck band carries an alert icon by role, so stuck is not colour alone').toHaveCount(1, T)
-    await expect(crews.getByRole('img', { name: 'Alert' })).toBeVisible(T)
+    for (const label of ['Why', 'How long', 'Next']) await expect(crews.getByText(label, { exact: true }).first(), `the StuckCard names ${label}`).toBeVisible(T)
+    // Stuck is not colour alone: the visible "Stuck" word asserted above carries it (ADR-0028:121).
     const pause = page.getByRole('button', { name: 'Pause build' })
     await expect(pause).toHaveAttribute('aria-disabled', 'true', T)
     await expect(pause).toHaveAccessibleDescription("Pausing needs a server endpoint that doesn't exist yet.", T)
@@ -240,15 +233,16 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
 }
 
 // After change(): the page shows it.
-async function shows(page: Page, state: string, s: Scenario): Promise<void> {
+async function shows(page: Page, state: string, s: Scenario, before = 0): Promise<void> {
   if (state === 'crews-running') {
     await expect(page.getByRole('region', { name: 'Build network' }).getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) }).getByText('Done', { exact: true }).first()).toBeVisible(LOAD)
   } else if (state === 'retro') {
     await expect(page.getByRole('region', { name: 'Retro stage' })).toContainText(`triaging ${s.run}`, LOAD)
   } else if (state === 'decisions') {
-    await expect(page.getByRole('region', { name: 'Decisions and ADRs' }).getByRole('listitem').filter({ hasText: `decision marker ${s.run}` })).toHaveCount(1, LOAD)
+    // The rail timeline lists ADRs and events; a decisions.md line only raises the header count (ADR-0028 section 3).
+    await expect(page.getByText(new RegExp(`\\b${before + 1} decisions?$`)).first()).toBeVisible(LOAD)
   } else {
-    await expect(page.getByRole('log', { name: 'Transcript' })).toContainText(`hello ${s.run}`, LOAD)
+    await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true })).toContainText(`hello ${s.run}`, LOAD)
   }
 }
 
@@ -331,8 +325,10 @@ for (const state of STATES) {
     try {
       await shell(page, 'light', state)
       await content(page, state, s)
+      const countText = state === 'decisions' ? await page.getByText(/\d+ decisions?$/).first().innerText() : ''
+      const before = Number(countText.match(/(\d+) decisions?$/)?.[1] ?? 0)
       s.change()
-      await shows(page, state, s)
+      await shows(page, state, s, before)
       expect(await problems(), 'console errors, page errors and CSP violations').toEqual([])
     } finally {
       await close()
