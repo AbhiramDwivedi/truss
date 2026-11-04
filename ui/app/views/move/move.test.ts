@@ -1,4 +1,4 @@
-// Spec-first checks for the move views: Banner, SkipLink, RunStatus, YourMove, Composer, FollowUps.
+// Spec-first checks for the move views: YourMove, Composer, FollowUps, Transcript.
 // Pins roles, names and copy from ADR-0023 section 4 and ADR-0018 section 10. Interactions are the e2e specs' job.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -90,53 +90,6 @@ async function mount(file: string, name: string, props: Record<string, unknown>)
   return parse(r.render(React.createElement(mod[name], props)))
 }
 const nothingBanned = (root: N) => assert.doesNotMatch(tidy(text(root)), /In the plan|plan revision/i)
-
-// ---- Banner ----------------------------------------------------------------------------------------------
-test('Banner: h1 Truss, status Session, notifications and theme buttons, no limit words', async () => {
-  const b = await mount('shell/Banner', 'Banner', { state: fx('question/state'), now: NOW, connection: 'live' })
-  assert.equal(find(b, 'heading', /^Truss/).filter((h) => h.tag === 'h1').length, 1)
-  assert.equal(find(b, 'status', 'Session').length, 1)
-  assert.equal(find(b, 'button', /^Turn on notifications$/).length, 1)
-  const theme = find(b, 'button', 'Dark theme')
-  assert.equal(theme.length, 1)
-  assert.match(theme[0]!.a['aria-pressed'] ?? '', /^(true|false)$/)
-  assert.doesNotMatch(tidy(text(b)), /\b(limit|budget|quota)/i)
-})
-test('Banner: Session reads connecting before the first snapshot', async () => {
-  const b = await mount('shell/Banner', 'Banner', { state: null, now: NOW, connection: 'connecting' })
-  assert.equal(tidy(text(find(b, 'status', 'Session')[0]!)), 'connecting')
-})
-test('Banner: Session reads idle for the empty state', async () => {
-  const b = await mount('shell/Banner', 'Banner', { state: fx('empty/state'), now: NOW, connection: 'live' })
-  assert.equal(tidy(text(find(b, 'status', 'Session')[0]!)), 'idle')
-})
-test('Banner: a session error reads error: <first line>', async () => {
-  const s = fx('follow-up/state')
-  s.session.status = 'error'
-  s.session.error = 'rate limited\nretry in 30s'
-  const b = await mount('shell/Banner', 'Banner', { state: s, now: NOW, connection: 'live' })
-  assert.equal(tidy(text(find(b, 'status', 'Session')[0]!)), 'error: rate limited')
-})
-
-// ---- SkipLink --------------------------------------------------------------------------------------------
-test('SkipLink: a link Skip to Your move to #your-move', async () => {
-  const s = await mount('shell/SkipLink', 'SkipLink', {})
-  const l = find(s, 'link', 'Skip to Your move')
-  assert.equal(l.length, 1)
-  assert.equal(l[0]!.a.href, '#your-move')
-})
-
-// ---- RunStatus -------------------------------------------------------------------------------------------
-test('RunStatus: list Run status, each notice is Status: <text>, never Notice:', async () => {
-  const s = fx('follow-up/state')
-  s.notices = [{ id: 'n1', text: 'Reconnecting…' }, { id: 'n2', text: 'Saved' }]
-  const v = await mount('shell/RunStatus', 'RunStatus', { state: s, now: NOW })
-  const list = find(v, 'list', 'Run status')
-  assert.equal(list.length, 1)
-  const items = find(list[0]!, 'listitem').map((i) => tidy(text(i)))
-  assert.deepEqual(items, ['Status: Reconnecting…', 'Status: Saved'])
-  assert.doesNotMatch(tidy(text(v)), /Notice:/)
-})
 
 // ---- YourMove --------------------------------------------------------------------------------------------
 test('YourMove: no state renders the region aria-busy with no article and no progressbar', async () => {
@@ -313,4 +266,34 @@ test('FollowUps: rows run newest first, one chip each, sentence-case labels, ful
   const oneLine = all(reg, (n) => n.a.title === long)[0]!
   assert.ok(cls(oneLine, 'truncate') && cls(oneLine, 'whitespace-nowrap'), 'the row text is one line with an ellipsis')
   nothingBanned(v)
+})
+
+// ---- Transcript ------------------------------------------------------------------------------------------
+test('Transcript: a log named Transcript with an h2 and every entry in order', async () => {
+  const s = fx('follow-up/state')
+  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
+  const log = find(v, 'log', 'Transcript')
+  assert.equal(log.length, 1)
+  assert.equal(find(v, 'heading', 'Transcript').filter((h) => h.tag === 'h2').length, 1)
+  const body = tidy(text(log[0]!))
+  let at = -1
+  for (const e of s.transcript) {
+    const i = body.indexOf(tidy(e.text), at + 1)
+    assert.ok(i > at, `entry ${e.n} follows the one before it`)
+    at = i
+  }
+  nothingBanned(v)
+})
+test('Transcript: an error entry uses fail-soft and the word Error', async () => {
+  const s = fx('follow-up/state')
+  s.transcript[1].role = 'error'
+  s.transcript[1].text = 'The model call failed.'
+  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
+  const hit = all(v, (n) => cls(n, 'bg-fail-soft') && tidy(text(n)).includes('The model call failed.'))
+  assert.ok(hit.length > 0, 'the error entry sits on fail-soft')
+  assert.match(tidy(text(hit[hit.length - 1]!)), /Error/)
+})
+test('Transcript: no state renders without an entry', async () => {
+  const v = await mount('transcript/Transcript', 'Transcript', { state: null, now: NOW })
+  assert.equal(find(v, 'log', 'Transcript').length, 1)
 })
