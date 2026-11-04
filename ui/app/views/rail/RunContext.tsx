@@ -20,7 +20,7 @@ export function RunContext({ state }: RunContextProps) {
   return (
     <section
       aria-label="Run"
-      className="space-y-5 lg:space-y-0 border-b border-border px-6 py-3 max-lg:mx-4 max-lg:rounded-card max-lg:border max-lg:bg-surface max-lg:px-4 max-lg:py-5"
+      className="space-y-5 border-b border-border px-6 py-3 max-lg:mx-4 max-lg:rounded-card max-lg:border max-lg:bg-surface max-lg:px-4 max-lg:py-5 lg:space-y-2"
     >
       <div>
         <h2 className="mb-0.5 text-meta font-medium text-muted">Target repository</h2>
@@ -36,15 +36,34 @@ export function RunContext({ state }: RunContextProps) {
         </div>
       </div>
 
-      <div className="lg:sr-only">
-        <h2 className="mb-1.5 text-meta font-medium text-muted">The idea</h2>
+      <div className="flex flex-wrap items-center gap-y-1.5">
+        <h2 className="min-w-0 flex-1 text-meta font-medium text-muted">The idea</h2>
+        {goal && (
+          <div className="order-3 mt-3.5 w-full lg:order-2 lg:mt-0 lg:w-auto">
+            <Button
+              variant="secondary"
+              size="lg"
+              aria-disabled="true"
+              aria-describedby="pause-tip"
+              className="w-full lg:h-8 lg:w-auto"
+              icon={<Pause aria-hidden="true" />}
+            >
+              Pause build
+            </Button>
+            <Hint id="pause-tip" className="mt-1.5 lg:sr-only">
+              Pausing needs a server endpoint that doesn't exist yet.
+            </Hint>
+          </div>
+        )}
         {goal ? (
-          <div className="rounded-ctl border border-brand-line bg-brand-soft p-3.5">
-            <p className="text-body font-medium break-words text-fg">{goal.goal ?? 'A run with no goal text.'}</p>
-            <p className="mt-2 text-meta text-muted">{approved ?? 'Waiting for your approval.'}</p>
+          <div className="order-2 w-full rounded-ctl border border-brand-line bg-brand-soft p-3.5 lg:order-3 lg:px-3 lg:py-2">
+            <p title={goal.goal ?? undefined} className="text-body font-medium break-words text-fg lg:text-ui lg:leading-snug lg:line-clamp-2">
+              {goal.goal ?? 'A run with no goal text.'}
+            </p>
+            <p className="mt-2 text-meta text-muted lg:mt-0.5">{approved ?? 'Waiting for your approval.'}</p>
           </div>
         ) : (
-          <p className="rounded-ctl border border-dashed border-border-strong p-3.5 text-ui text-muted">
+          <p className="order-2 w-full rounded-ctl border border-dashed border-border-strong p-3.5 text-ui text-muted">
             No goal yet. Type one in the box to start.
           </p>
         )}
@@ -54,24 +73,6 @@ export function RunContext({ state }: RunContextProps) {
         <div className="flex flex-wrap items-center gap-2 lg:hidden">
           {model && <ModelBadge model={family(model)} size="md">{model}</ModelBadge>}
           <span className="font-mono text-meta tabular-nums text-muted">{cost ?? 'No cost yet'}</span>
-        </div>
-      )}
-
-      {goal && (
-        <div className="lg:sr-only">
-          <Button
-            variant="secondary"
-            size="lg"
-            aria-disabled="true"
-            aria-describedby="pause-tip"
-            className="w-full"
-            icon={<Pause aria-hidden="true" />}
-          >
-            Pause build
-          </Button>
-          <Hint id="pause-tip" className="mt-1.5">
-            Pausing needs a server endpoint that doesn't exist yet.
-          </Hint>
         </div>
       )}
     </section>
