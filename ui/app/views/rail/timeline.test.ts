@@ -99,7 +99,7 @@ function populated(): any {
   s.adrs = [adr(1, 'accepted, 2026-10-01'), adr(2, 'accepted, 2026-10-02'), adr(3, 'accepted, 2026-10-03'), adr(4, 'proposed'), adr(5, 'superseded by 0003'), adr(6, null)]
   return s
 }
-const adrButtons = (reg: N) => find(reg, 'button').filter((b) => /ADR-\d{4}: Item/.test(nameOf(b)))
+const adrButtons = (reg: N) => find(reg, 'button').filter((b) => /ADR-\d{4}: /.test(nameOf(b)))
 
 // ---- shared interfaces ------------------------------------------------------------------------------------
 test('AdrSection exports StatusStrip, kindOf, plainTitle and sortAdrs for the timeline to reuse', async () => {
