@@ -196,7 +196,7 @@ export function Composer({ state, now }: ComposerProps) {
           aria-invalid={error ? true : undefined}
           rows={3}
           placeholder={planned ? 'Ask the PM, or add a detail' : 'Describe the goal, for example: add CSV export'}
-          className="max-h-[40vh] resize-y"
+          className="max-h-[40vh] resize-y focus-visible:outline-2 focus-visible:outline-(--focus) focus-visible:-outline-offset-2"
           value={text}
           disabled={expired}
           onChange={(e) => {
