@@ -567,3 +567,16 @@ test('RetroRail: a failed step is named with its status word', async () => {
   const v = await mount('crews/RetroRail', 'RetroRail', { state: s, now: NOW })
   assert.equal(find(v, 'listitem', /^Triage: failed/).length, 1)
 })
+
+// ---- CrewCard QC verdict (ADR-0018 section 10, ADR-0023, ADR-0028 section 9) ----
+for (const [verdict, words] of [['PASS', 'QC PASS'], ['FAIL', 'QC FAIL'], [null, 'QC none']] as const) {
+  test(`CrewCard: a running crew with QC ${verdict ?? 'none'} shows "${words}" beside the status${verdict === 'FAIL' ? ' and blocked: QC FAIL' : ''}`, async () => {
+    const base = rx('live').run.crews.find((c: any) => c.status === 'running' && !c.stuck && !/^\s*(QUESTION|BLOCKED|PROPOSAL)/.test(c.foreman?.detail ?? ''))
+    const crew = { ...base, qc: verdict ? { verdict, file: 'reports/x/x-qc.md', at: '2026-11-02T11:00:00.000Z' } : null }
+    const mod = await r.load('views/crews/CrewCard.tsx')
+    const v = parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW })))
+    const t = tidy(text(v))
+    assert.ok(t.includes(words), words)
+    assert.equal(t.includes('blocked: QC FAIL'), verdict === 'FAIL')
+  })
+}

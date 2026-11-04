@@ -42,7 +42,9 @@ export function agentStatus(member: Member): Status {
   return 'active'
 }
 
-const isWaiting = (s: RunState): boolean => s.session.status === 'waiting' || s.requests.some((q) => q.status === 'open')
+/** An open request always waits on the client; a waiting session with background tasks still running is Working. */
+const isWaiting = (s: RunState): boolean =>
+  s.requests.some((q) => q.status === 'open') || (s.session.status === 'waiting' && s.session.backgroundTasks.length === 0)
 const allCrewsDone = (s: RunState): boolean => {
   const crews = s.run?.crews ?? []
   return crews.length > 0 && crews.every((c) => c.status === 'merged' || c.status === 'dropped')

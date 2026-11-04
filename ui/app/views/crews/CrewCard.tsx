@@ -11,7 +11,7 @@ import { agentStatus, crewStatus } from '../status/status.ts'
 import { AgentCard } from './AgentCard.tsx'
 import { StuckCard } from './StuckCard.tsx'
 import { GutterLink, LIT_MS, Wire } from './Wire.tsx'
-import { detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
+import { blockedWords, detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
 
 export interface CrewCardProps {
   crew: Crew
@@ -80,6 +80,8 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
   const partial = (crew.eventsUnread ?? 0) > 0
   const fromPm = handoff ? `From PM ${hhmm(handoff.at)}: ${handoff.summary}` : null
   const stage = crew.stage
+  const qc = `QC ${crew.qc?.verdict ?? 'none'}`
+  const blocked = crew.status === 'running' && crew.qc?.verdict === 'FAIL' ? blockedWords(crew) : null
 
   return (
     <li id={`crew-${crew.slug}`} className="relative min-w-0 list-none pt-6">
@@ -103,6 +105,8 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
           <p className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted">
             <span className="tabular-nums">{stage === null ? 'No stage' : `Stage ${stage}`}</span>{' '}
             <span className="tabular-nums">{plural(agents.length, 'agent')}</span>{' '}
+            <span>{qc}</span>{' '}
+            {blocked && <span className="font-medium text-fail-text">{blocked}</span>}{' '}
             {crew.status === 'dropped' && <Badge size="sm">Dropped</Badge>}
           </p>{' '}
           {fromPm && (
