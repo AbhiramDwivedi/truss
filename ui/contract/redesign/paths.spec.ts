@@ -20,7 +20,7 @@ async function d2(page: Page, theme: Theme): Promise<void> {
 const unexpected = (lines: string[]) => lines.filter((l) => !/Failed to load resource/.test(l))
 
 test.describe('paths', () => {
-  test('loading: with the stream held and no snapshot, Session reads connecting, then the can\'t-reach copy and Retry', async ({ browser }) => {
+  test('loading: with the stream held and no snapshot, Session reads connecting, then the can\'t-reach copy and Reload', async ({ browser }) => {
     const s = await scenario('follow-up')
     const held: Route[] = []
     let hold = true
@@ -36,7 +36,8 @@ test.describe('paths', () => {
       const { page } = o
       await d2(page, 'light')
       const status = page.getByRole('status', { name: 'Session' })
-      await expect(status, 'before the first snapshot the session is connecting').toHaveText('connecting', T)
+      // rework page.spec.ts:178 (R-46): "connecting" gives way to "Still connecting to the session…" at 5 s.
+      await expect(status, 'before the first snapshot the session is connecting').toHaveText(/^(connecting|Still connecting to the session…)$/, T)
       await expect(page.getByRole('article'), 'no card before the first snapshot').toHaveCount(0, T)
       // placeholder blocks, not a spinner: Your move and Crews hold their final heights, busy, before any data
       await expect(page.getByRole('progressbar'), 'no spinner before the first snapshot').toHaveCount(0, T)
@@ -50,13 +51,14 @@ test.describe('paths', () => {
         expect(h, `${name} holds a non-zero height before the snapshot`).toBeGreaterThan(0)
       }
       // after 10 s with no snapshot
-      await expect(status).toHaveText("Can't reach the Truss session. Is truss ui still running?", { timeout: 15000 })
-      const retry = page.getByRole('button', { name: 'Retry' })
+      // rework page.spec.ts:178-190 (R-46): at 20 s the Banner reads the copy below with a Reload button (no Retry).
+      await expect(page.getByText("Can't reach the truss UI server. Check it is still running, then reload.")).toBeVisible({ timeout: 25000 })
+      const retry = page.getByRole('button', { name: 'Reload' })
       await expect(retry).toBeVisible(T)
       hold = false
       await retry.click()
-      await expect(page.getByRole('log', { name: 'Transcript' }), 'Retry opens the stream again').toContainText(s.fixture.transcript[0].text, LOAD)
-      await expect(status).not.toHaveText(/connecting|Can't reach/, T)
+      await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true }), 'Reload opens the stream again').toContainText(s.fixture.transcript[0].text, LOAD)
+      await expect(status).not.toHaveText(/connecting|Can't reach/i, T)
       expect(unexpected(await o.problems())).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
@@ -120,7 +122,9 @@ test.describe('paths', () => {
         const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
         await expect(line).toHaveCount(1, LOAD)
         await expect(line.getByText('Stuck', { exact: true }).first()).toBeVisible(T)
-        await expect(line.getByText(new RegExp(`foreman idle ${stuck.stuck.minutes} min`)).first()).toBeVisible(T)
+        // ruled as "Stuck, silent Nm" was (ADR-0028 section 9, views/crews StuckCard): the Stuck word plus Why / How long / Next
+        await expect(line.getByText('How long', { exact: true }).first()).toBeVisible(T)
+        await expect(line.getByText(new RegExp(`\\b${stuck.stuck.minutes} min\\b`)).first()).toBeVisible(T)
         await expect(crews.getByText(/stuck: stalled/), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
         const successor = crews.getByRole('button', { name: 'Start a successor foreman' })
         await expect(successor).toBeVisible(T)

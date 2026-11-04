@@ -40,8 +40,9 @@ function cardHolding(page: Page, ...texts: Array<RegExp | string>): Locator {
   for (const t of texts) l = l.filter({ hasText: typeof t === 'string' ? rx(t) : t })
   return l.first()
 }
-const APPROVE = /^Approve$/
-const DENY = /^Deny$/
+// ADR-0028 section 2: the reply card button names carry a hint ("Sends: Approved."), so anchor the start only.
+const APPROVE = /^Approve\b/
+const DENY = /^Deny\b/
 const SUBMIT = /^Submit answers$/
 const SEND_REPLY = /^Send reply$/ // ADR-0028 section 2
 const YOUR_REPLY = { name: 'Your reply', exact: true } as const // ADR-0028 section 2
@@ -337,8 +338,10 @@ test.describe('R-7 reply cards', () => {
   for (const [name, decision, button, message, sent] of [
     ['approve', 'allow', APPROVE, '', 'Approved.'],
     ['deny', 'deny', DENY, '', 'Not approved.'],
-    ['approve with a message', 'allow', APPROVE, 'but mind the tests', 'Approved.\n\nbut mind the tests'],
-    ['deny with a message', 'deny', DENY, 'use a smaller plan', 'Not approved.\n\nuse a smaller plan'],
+    // ADR-0028 section 2: with text in the box, "Send reply" sends the text instead of Approved. / Not approved.
+    // (ReplyCard hint "Sends your text instead of Approved. or Not approved."); Approve and Deny still send their own words.
+    ['approve with a message', 'message', SEND_REPLY, 'but mind the tests', 'but mind the tests'],
+    ['deny with a message', 'message', SEND_REPLY, 'use a smaller plan', 'use a smaller plan'],
   ] as const) {
     test(`R-7, R-15: reply card ${name} posts the decision and reaches SessionControl.answer within 1 s`, async ({ page }) => {
       await withIface({}, async (iface) => {
@@ -517,10 +520,14 @@ test.describe('header', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       iface.setSession({ model: 'claude-opus-5-5', status: 'running', sessionId: 'sess-1' })
-      await expect(banner(page)).toContainText('claude-opus-5-5', WITHIN)
-      iface.setSession({ model: 'claude-haiku-5-5' })
-      await expect(banner(page)).toContainText('claude-haiku-5-5', WITHIN)
+      // ADR-0028 section 8: the model is no longer in the banner; the rail's run context shows it below the lg
+      // breakpoint (views/rail/RunContext.tsx), so the viewport is narrowed.
+      await page.setViewportSize({ width: 800, height: 900 })
       await expect(banner(page)).not.toContainText('claude-opus-5-5')
+      await expect(page.getByText('claude-opus-5-5', { exact: true }).first()).toBeVisible(WITHIN)
+      iface.setSession({ model: 'claude-haiku-5-5' })
+      await expect(page.getByText('claude-haiku-5-5', { exact: true }).first()).toBeVisible(WITHIN)
+      await expect(page.getByText('claude-opus-5-5', { exact: true })).toHaveCount(0)
     })
   })
 
@@ -556,14 +563,17 @@ test.describe('header', () => {
       await open(page, iface)
       const u = usage()
       iface.setSession({ model: 'claude-opus-5-5', status: 'waiting', usage: u })
+      // ADR-0028 section 8: the model and token usage moved to Run metrics ("Tokens by model" table); the banner
+      // keeps a summary link "$<cost> · <time>" to #run-metrics.
       const b = banner(page)
-      await expect(b).toContainText('claude-haiku-5-5', WITHIN)
-      await expect(b).toContainText('claude-opus-5-5')
+      const tokens = page.getByRole('region', { name: 'Tokens by model', exact: true })
+      await expect(tokens).toContainText('claude-haiku-5-5', WITHIN)
+      await expect(tokens).toContainText('claude-opus-5-5')
       // 0.5544791 USD, however it is rounded.
-      await expect(b).toContainText(/\$?\s?0\.55/)
+      await expect(b.getByRole('link', { name: /\$0\.55/ })).toBeVisible()
       // Output tokens of the opus entry (2865), with or without a thousands separator or a k suffix.
-      await expect(b).toContainText(/2,?865|2\.9\s?k/i)
-      const text = (await b.innerText()).toLowerCase()
+      await expect(tokens).toContainText(/2,?865|2\.9\s?k/i)
+      const text = (await b.innerText()).toLowerCase() + (await tokens.innerText()).toLowerCase()
       for (const word of ['limit', 'ceiling', 'budget', 'remaining', 'quota', 'cap ']) expect(text, word).not.toContain(word)
       expect(text).not.toMatch(/\bof \$?\d/)
       // A later result replaces the totals; nothing is summed.

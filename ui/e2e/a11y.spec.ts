@@ -167,7 +167,9 @@ test('a11y: the decisions and ADRs timeline in the rail', async ({ page }) => {
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
   await expect(page.getByRole('tab')).toHaveCount(0)
   const timeline = adrTimeline(page)
-  await expect(timeline.getByRole('listitem').filter({ hasText: rx(`choose-${run}-store`) })).toBeVisible(LOAD)
+  // The rail timeline lists ADRs and events; a decisions.md line only raises the "N decisions" count
+  // (ADR-0028 section 3, as contract/redesign/states.spec.ts does).
+  await expect(page.getByText(/\b[1-9]\d* decisions?$/).first()).toBeVisible(LOAD)
   await expect(timeline.getByRole('listitem').filter({ hasText: /ADR-\d+/ }).first()).toBeVisible(LOAD)
   await expectNoViolations(page, 'decisions and ADRs timeline')
 })
@@ -180,6 +182,6 @@ test('a11y: the session error state', async ({ page }) => {
   iface.setSession({ status: 'error', error: message })
   iface.emit(null, [{ n: 1, role: 'error', text: message, ts: new Date().toISOString() }])
   await expect(sessionStatus(page)).toContainText(rx(`error: ${message}`), LOAD)
-  await expect(page.getByRole('log', { name: 'Transcript', exact: true }).getByText(rx(message)).first()).toBeVisible(LOAD)
+  await expect(page.getByRole('log', { name: 'Conversation with the PM', exact: true }).getByText(rx(message)).first()).toBeVisible(LOAD)
   await expectNoViolations(page, 'session error')
 })
