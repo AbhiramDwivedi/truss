@@ -242,7 +242,8 @@ test.describe('network', () => {
       expect(css.o, 'text-overflow: ellipsis').toBe('ellipsis')
       expect(css.ov).not.toBe('visible')
       await label.focus()
-      await expect(label).toBeVisible(T)
+      await expect(label, 'the element carrying the full slug takes focus (native control or tabindex=0)').toBeFocused(T)
+      await expect(label, 'the full slug is announced on focus').toHaveAccessibleName(new RegExp(slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
       expect(await noSidewaysScroll(o.page), 'no horizontal page scroll').toBe(true)
     } finally { await o.stop() }
   })
