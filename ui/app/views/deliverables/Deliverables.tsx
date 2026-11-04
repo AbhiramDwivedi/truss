@@ -163,6 +163,7 @@ function Preview({ item, onOpenDesign }: { item: Deliverable; onOpenDesign?: () 
         </p>
         {p.kind === 'text' && (
           <div
+            role="region"
             tabIndex={0}
             aria-label={item.type === 'plan' ? 'Plan document' : 'Architecture document'}
             className="mt-3 max-h-[70vh] overflow-y-auto rounded-card border border-border bg-bg p-4"
