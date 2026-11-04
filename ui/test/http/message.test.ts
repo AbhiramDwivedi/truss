@@ -122,7 +122,7 @@ test('message: a bad intent does not stop the next good message', async () => {
     assert.equal(r.status, 202);
     await until(() => (stub()?.sent.length ?? 0) >= 1, 'the good message to reach the session');
     assert.equal(stub()!.sent.length, 1);
-    assert.ok(stub()!.sent[0].endsWith('\n\nfine'));
+    assert.equal(stub()!.sent[0], '/truss:run fine');
   } finally { await w.close(); }
 });
 
