@@ -447,7 +447,24 @@
         "properties": {
           "file": { "type": "string" },
           "title": { "description": "The first `# ` line without `# `, else the file name.", "type": "string" },
-          "status": { "description": "The rest of the first line that starts with `Status: `, else null.", "type": ["string", "null"] }
+          "status": { "description": "The rest of the first line that starts with `Status: `, else null.", "type": ["string", "null"] },
+          "number": { "description": "The N of `ADR-NNNN` in the title, else the leading digits of the file name, else null. Optional: older fixtures omit it.", "type": ["integer", "null"] },
+          "date": { "description": "The first YYYY-MM-DD on the Status line, else null.", "type": ["string", "null"], "pattern": "^\\d{4}-\\d\\d-\\d\\d$" },
+          "decidedBy": { "description": "The text after a `Decided by:` line (at most 120 characters), else null.", "type": ["string", "null"] },
+          "links": {
+            "description": "ADR numbers named on `Amends:` and `Supersedes:` lines and after `superseded by` on the Status line.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "n"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["amends", "supersedes", "superseded-by"] },
+                "n": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "summary": { "description": "Plain text, about 220 characters, from the `## Decision` section, else `## Context`, else the first prose paragraph; null when there is none.", "type": ["string", "null"] }
         }
       }
     },

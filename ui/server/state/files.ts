@@ -39,10 +39,19 @@ export interface Decision {
   run: string | null
   text: string
 }
+export interface AdrLink {
+  kind: 'amends' | 'supersedes' | 'superseded-by'
+  n: number
+}
 export interface Adr {
   file: string
   title: string
   status: string | null
+  number: number | null
+  date: string | null
+  decidedBy: string | null
+  links: AdrLink[]
+  summary: string | null
 }
 export interface Config {
   architecture: string | null // the .claude/truss.json key, as written
@@ -129,14 +138,89 @@ function parsePlan(text: string): Plan | undefined {
   }
 }
 
+/** Markdown to plain text: links to their text, emphasis, code ticks and list or quote marks dropped. */
+function plain(md: string): string {
+  return md
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/(\*\*|__|\*)/g, '')
+    .replace(/^\s*(?:[-*+]|\d+[.)]|>)\s+/gm, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** About 220 characters, ending at a sentence end when one falls in the last stretch of that, else at a word. */
+function clip(text: string, max = 220): string {
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  const stop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '))
+  if (stop >= 60) return head.slice(0, stop + 1)
+  const sp = head.lastIndexOf(' ')
+  return `${(sp > 60 ? head.slice(0, sp) : head).replace(/[,;:\s]+$/, '')}…`
+}
+
+/** The body of the first `## <name>` section, to the next heading. */
+function section(lines: string[], name: string): string[] | null {
+  const i = lines.findIndex((l) => new RegExp(`^##\\s+${name}\\s*$`, 'i').test(l))
+  if (i < 0) return null
+  const rest = lines.slice(i + 1)
+  const end = rest.findIndex((l) => /^#{1,6}\s/.test(l))
+  return end < 0 ? rest : rest.slice(0, end)
+}
+
+function firstParagraph(lines: string[]): string {
+  const out: string[] = []
+  for (const l of lines) {
+    if (l.trim() === '') {
+      if (out.length > 0) break
+      continue
+    }
+    if (/^#{1,6}\s/.test(l) || /^(Status|Decided by|Amends|Supersedes|Date):/i.test(l)) {
+      if (out.length > 0) break
+      continue
+    }
+    out.push(l)
+  }
+  return plain(out.join(' '))
+}
+
+function nums(text: string): number[] {
+  return [...text.matchAll(/ADR-(\d+)|\b(\d{4})\b/g)].map((m) => Number(m[1] ?? m[2]))
+}
+
 function parseAdr(file: string, text: string): Adr {
-  const lines = text.split('\n')
+  const lines = text.replace(/\r/g, '').split('\n')
   const h = lines.find((l) => l.startsWith('# '))
   const s = lines.find((l) => l.startsWith('Status: '))
+  const status = s === undefined ? null : s.slice('Status: '.length).trimEnd()
+  const title = h === undefined ? file : h.slice(2).trimEnd()
+  const num = /ADR-(\d+)/.exec(title)?.[1] ?? /^(\d+)/.exec(file)?.[1]
+  const dm = status === null ? null : /\b\d{4}-\d\d-\d\d\b/.exec(status)
+  const by = lines.find((l) => /^Decided by:/i.test(l))
+  const decidedRaw = by === undefined ? '' : plain(by.replace(/^Decided by:/i, ''))
+  const decidedBy = decidedRaw === '' ? null : clip(decidedRaw, 120)
+  const links: AdrLink[] = []
+  const add = (kind: AdrLink['kind'], from: string): void => {
+    for (const n of nums(from)) if (!links.some((x) => x.kind === kind && x.n === n)) links.push({ kind, n })
+  }
+  for (const l of lines) {
+    const m = /^(Amends|Supersedes):\s*(.*)$/i.exec(l)
+    if (m) add(m[1]!.toLowerCase() as 'amends' | 'supersedes', m[2]!)
+  }
+  const sb = status === null ? null : /superseded by\s+(.*)/i.exec(status)
+  if (sb) add('superseded-by', sb[1]!.replace(/\b\d{4}-\d\d-\d\d\b/g, ''))
+  const body = section(lines, 'Decision') ?? section(lines, 'Context')
+  const raw = body !== null ? plain(body.join('\n')) : firstParagraph(lines.slice(lines.findIndex((l) => l.startsWith('# ')) + 1))
   return {
     file,
-    title: h === undefined ? file : h.slice(2).trimEnd(),
-    status: s === undefined ? null : s.slice('Status: '.length).trimEnd(),
+    title,
+    status,
+    number: num === undefined ? null : Number(num),
+    date: dm === null ? null : dm[0],
+    decidedBy,
+    links,
+    summary: raw === '' ? null : clip(raw),
   }
 }
 

@@ -238,6 +238,16 @@ export interface Adr {
   file: string
   title: string
   status: string | null
+  // Optional: older snapshots and fixtures lack them; the server always sends all five.
+  number?: number | null
+  date?: string | null
+  decidedBy?: string | null
+  links?: AdrLink[]
+  summary?: string | null
+}
+export interface AdrLink {
+  kind: 'amends' | 'supersedes' | 'superseded-by'
+  n: number
 }
 export type Adrs = Adr[]
 

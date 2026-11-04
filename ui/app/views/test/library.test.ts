@@ -174,9 +174,48 @@ test('DecisionsPanel: ADRs has titles with status words', async () => {
   const v = await mount('decisions/DecisionsPanel', 'DecisionsPanel', { state: s, now: NOW })
   const reg = find(v, 'region', 'ADRs')
   assert.equal(reg.length, 1)
-  const items = find(reg[0]!, 'listitem').map((i) => tidy(text(i)))
+  // Cards, not the legend's items: a card holds the expand button. Old ADRs (no number) sort by file name, newest first.
+  const items = find(reg[0]!, 'listitem').filter((i) => find(i, 'button', /./).length > 0).map((i) => tidy(text(i)))
   assert.equal(items.length, 3)
-  s.adrs.forEach((a: any, i: number) => { assert.ok(items[i]!.includes(a.title)); assert.ok(items[i]!.includes(a.status), `${a.title} shows ${a.status}`) })
+  const bare = (t: string) => t.replace(/^ADR-\d+:\s*/, '')
+  s.adrs.forEach((a: any) => {
+    const card = items.find((i) => i.includes(bare(a.title)))
+    assert.ok(card, a.title)
+    assert.ok(card!.toLowerCase().includes(String(a.status).toLowerCase()), `${a.title} shows ${a.status}`)
+  })
+})
+const richAdrs = [
+  { file: '0021-a.md', title: 'ADR-0021: Plugin deps', status: 'accepted, 2026-11-02', number: 21, date: '2026-11-02', decidedBy: 'client', links: [], summary: 'Depend on kit.' },
+  { file: '0030-b.md', title: 'ADR-0030: New view', status: 'proposed, 2026-11-04', number: 30, date: '2026-11-04', decidedBy: 'default', links: [{ kind: 'amends', n: 21 }], summary: 'Cards for ADRs.' },
+  { file: '0005-c.md', title: 'ADR-0005: Gone', status: 'superseded by ADR-0021, 2026-11-02', number: 5, date: '2026-11-02', decidedBy: null, links: [{ kind: 'superseded-by', n: 21 }], summary: null },
+  { file: 'notes.md', title: 'notes.md', status: null },
+]
+test('DecisionsPanel: ADR cards are newest first, with number, date, decided-by, link chips and an expand button', async () => {
+  const s = fx('decisions/state')
+  s.adrs = richAdrs
+  const v = await mount('decisions/DecisionsPanel', 'DecisionsPanel', { state: s, now: NOW })
+  const list = find(find(v, 'region', 'ADRs')[0]!, 'list', 'ADRs')[0]!
+  const cards = find(list, 'listitem').map((i) => tidy(text(i)))
+  assert.equal(cards.length, 4)
+  assert.ok(cards[0]!.includes('0030') && cards[0]!.includes('New view') && !cards[0]!.includes('ADR-0030'))
+  assert.ok(cards[0]!.includes('2026-11-04') && cards[0]!.includes('decided by default') && cards[0]!.includes('amends 0021'))
+  assert.ok(cards[0]!.includes('Cards for ADRs.'))
+  assert.ok(cards[1]!.includes('0021') && cards[2]!.includes('superseded by 0021') && cards[3]!.includes('Status not stated'))
+  const buttons = find(list, 'button', /./)
+  assert.equal(buttons.length, 4)
+  for (const b of buttons) assert.equal(b.a['aria-expanded'], 'false')
+})
+test('DecisionsPanel: the ADR strip counts each status and the filter offers the statuses present', async () => {
+  const s = fx('decisions/state')
+  s.adrs = richAdrs
+  const v = await mount('decisions/DecisionsPanel', 'DecisionsPanel', { state: s, now: NOW })
+  const reg = find(v, 'region', 'ADRs')[0]!
+  assert.equal(find(reg, 'img', 'ADR status: 1 accepted, 1 proposed, 1 superseded, 1 unstated').length, 1)
+  assert.equal(find(reg, 'list', 'ADR status counts').length, 1)
+  assert.match(tidy(text(find(reg, 'list', 'ADR status counts')[0]!)), /1 accepteds*1 proposeds*0 rejecteds*1 supersededs*1 unstated/)
+  const filter = find(reg, 'group', 'Filter ADRs by status')[0]!
+  assert.deepEqual(find(filter, 'button', /./).map((b) => tidy(text(b))), ['All', 'Accepted', 'Proposed', 'Superseded', 'Unstated'])
+  assert.equal(find(filter, 'button', 'All')[0]!.a['aria-pressed'], 'true')
 })
 
 // ---- Deliverables ----------------------------------------------------------------------------------------
