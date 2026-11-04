@@ -242,6 +242,7 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
       return
     }
     setNotice('')
+    setChosen('all')
     setAdrSel(found.file)
     if (narrow()) {
       setDialog(true)
@@ -289,13 +290,13 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
         )}
       </div>
 
-      <p role="status" className="mb-2 text-meta text-muted empty:hidden">
+      <p role="status" className={cn('text-meta text-muted', notice && 'mb-2')}>
         {notice}
       </p>
 
       {state === null ? (
         <Skeleton className="h-40 w-full" />
-      ) : all.length === 0 ? (
+      ) : all.length === 0 && !adrCurrent ? (
         <p className="rounded-card border border-dashed border-border-strong p-4 text-ui text-muted">
           Nothing built yet. Deliverables appear as crews finish.
         </p>
@@ -328,7 +329,7 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
             </div>
           </div>
 
-          {shown.length === 0 ? (
+          {shown.length === 0 && !adrCurrent ? (
             <div className="flex flex-wrap items-center gap-3 rounded-card border border-dashed border-border-strong p-4">
               <p className="text-ui text-muted">No deliverables of this type.</p>
               <Button size="sm" onClick={showAll}>
@@ -342,6 +343,7 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
                 docSelected ? 'lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]',
               )}
             >
+              {shown.length > 0 && (
               <ul aria-label="Deliverables" className="min-w-0 self-start rounded-card border border-border bg-surface px-1.5 pb-1.5 shadow-e1">
                 {groups.map((g) => {
                   const open_ = more.has(g.key)
@@ -372,6 +374,7 @@ export function Deliverables({ state, onOpenDesign }: DeliverablesProps) {
                   )
                 })}
               </ul>
+              )}
               {preview != null && (
                 <aside
                   ref={asideRef}
