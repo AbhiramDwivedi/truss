@@ -1,6 +1,5 @@
 // The run-level status (ADR-0028 section 9): Not started, Working, Waiting on you, Finished. Word and
 // icon share one element, as in StatusBadge.
-import * as React from 'react'
 import { CircleCheck, CircleDashed, Hand } from 'lucide-react'
 import { Badge, type BadgeTone } from '../../components/ui/badge.tsx'
 import { ActiveIcon } from './StatusBadge.tsx'

@@ -1,7 +1,6 @@
 // The one word-plus-icon status every view uses (ADR-0028 section 9, R-44). The icon and the word sit in
 // the same element, so colour is never the only cue. Active's icon is a LivePing-style dot drawn as an
 // svg, so it reads as a drawing like the others; reduced motion nulls its halo and leaves a static ring.
-import * as React from 'react'
 import { CircleCheck, CircleDashed, Hand, TriangleAlert } from 'lucide-react'
 import { Badge, type BadgeTone } from '../../components/ui/badge.tsx'
 import { STATUS_WORD, type Status } from './status.ts'
