@@ -14,6 +14,9 @@ export interface Member {
   state: MemberState
   detail: string | null
   ts: string
+  agentId: string | null // ADR-0028 section 6: the spawn line's agentId
+  purpose: string | null // set by the store from the agent files
+  task: string | null // set by the store from the session's task descriptions
 }
 export interface Activity {
   ts: string
@@ -184,7 +187,7 @@ export function createReducer(): Reducer {
       const isForeman = agent === slug
       let m = isForeman ? acc.foreman : (acc.members.get(agent) ?? null)
       if (m === null) {
-        m = { name: agent, type: null, model: null, effort: null, state: 'spawned', detail: null, ts }
+        m = { name: agent, type: null, model: null, effort: null, state: 'spawned', detail: null, ts, agentId: null, purpose: null, task: null }
         if (isForeman) acc.foreman = m
         else acc.members.set(agent, m)
       }
@@ -194,6 +197,7 @@ export function createReducer(): Reducer {
         m.type = str(obj.type)
         m.model = str(obj.model)
         m.effort = str(obj.effort)
+        m.agentId = str(obj.agentId)
         m.state = 'spawned'
         m.detail = null
         text = `${agent} spawned`
