@@ -1,22 +1,17 @@
 // The page banner (ADR-0023 section 4): the mark, the Session status, the model and what the session
 // has spent, and the notifications and theme toggles. It never shows the goal and never a limit.
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { Bell, BellRing, Moon, RotateCw, Sun } from 'lucide-react'
+import { Bell, BellRing, Moon, Sun } from 'lucide-react'
 import type { Connection, Request, RunState } from '../../store/types.ts'
 import { useTheme } from '../../lib/theme.ts'
 import { Button } from '../../components/ui/button.tsx'
-import { Notice } from '../../components/ui/notice.tsx'
 import { Dot, LivePing } from '../../components/ui/dot.tsx'
 import { sessionWords, usePageFlags } from '../move/format.ts'
 import { RunStatusBadge } from '../status/RunStatusBadge.tsx'
 import { formatRunTime, formatUsd, runTimeMs } from '../metrics/format.ts'
 import { runStatusOf } from './runStatus.ts'
 import { RunStatus } from './RunStatus.tsx'
-
-/** How long a link that is not live waits before the Session line says it is still connecting. */
-export const SLOW_MS = 5_000
-/** How long before the header says it can't reach the server and offers Reload. */
-export const UNREACHABLE_MS = 20_000
+import { useLinkTimers } from './useLinkTimers.ts'
 
 export interface BannerProps {
   state: RunState | null
@@ -34,24 +29,11 @@ const notifyTitle = (r: Request) =>
 export function Banner({ state, now, connection }: BannerProps) {
   const { dark, toggle } = useTheme()
   const flags = usePageFlags()
-  const [slow, setSlow] = useState(false)
-  const [unreachable, setUnreachable] = useState(false)
   const [notifyOn, setNotifyOn] = useState(false)
   const seen = useRef<Set<string> | null>(null)
   const live = connection === 'live'
-
-  // From mount, and again from each drop: 5 s of not being live changes the Session line, 20 s adds Reload.
-  useEffect(() => {
-    setSlow(false)
-    setUnreachable(false)
-    if (live) return
-    const a = setTimeout(() => setSlow(true), SLOW_MS)
-    const b = setTimeout(() => setUnreachable(true), UNREACHABLE_MS)
-    return () => {
-      clearTimeout(a)
-      clearTimeout(b)
-    }
-  }, [live, connection])
+  // 5 s of not being live changes the Session line; the 20 s Reload notice is App's, at the top of main.
+  const { slow, unreachable } = useLinkTimers(connection)
 
   useEffect(() => {
     if (notifySupported() && Notification.permission === 'granted') setNotifyOn(true)
@@ -144,10 +126,10 @@ export function Banner({ state, now, connection }: BannerProps) {
         </a>
       </div>
 
-      <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1 lg:flex-nowrap">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {working ? <LivePing tone="ok" /> : <Dot tone={bad ? 'fail' : session?.status === 'waiting' ? 'signal' : 'neutral'} />}
-          <p role="status" aria-label="Session" className={bad ? 'min-w-0 text-ui text-fail-text' : 'min-w-0 text-ui text-fg'}>
+          <p role="status" aria-label="Session" title={words} className={bad ? 'min-w-0 truncate text-ui text-fail-text' : 'min-w-0 truncate text-ui text-fg'}>
             {words}
           </p>
           {stillRunning && <p className="min-w-0 text-ui text-muted">Agents still running; nothing needed from you</p>}
@@ -169,21 +151,7 @@ export function Banner({ state, now, connection }: BannerProps) {
         </div>
       </div>
 
-      {unreachable && !live && (
-        <div role="alert" className="flex min-w-0 flex-col items-start gap-2">
-          <Notice tone="fail" live="off" className="w-full">
-            Can&apos;t reach the truss UI server. Check it is still running, then reload.
-          </Notice>
-          <Button size="sm" variant="secondary" className={btnTarget} icon={<RotateCw aria-hidden="true" />} onClick={() => location.reload()}>
-            Reload
-          </Button>
-        </div>
-      )}
-
-      {/* At 1024 px and up one notice's height is held back, so a notice that arrives with the state moves nothing below. */}
-      <div className="min-w-0 lg:min-h-13">
-        <RunStatus state={state} now={now} connection={connection} />
-      </div>
+      <RunStatus state={state} now={now} connection={connection} />
     </header>
   )
 }
