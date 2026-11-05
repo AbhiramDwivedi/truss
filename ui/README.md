@@ -105,10 +105,10 @@ This runs `node --test` on `ui/contract/*.check.ts` (state, session, http) and `
 
 ### Browser tests
 
-1. Install the Playwright browsers once. The tests use Chromium, Firefox and WebKit (`ui/e2e/browsers.spec.ts`):
+1. Install the Playwright browsers once. The tests use Chromium only (R-48: Chrome only) (`ui/e2e/browsers.spec.ts`):
 
    ```
-   npx --prefix ui playwright install chromium firefox webkit
+   npx --prefix ui playwright install chromium
    ```
 
 2. Run the tests:
