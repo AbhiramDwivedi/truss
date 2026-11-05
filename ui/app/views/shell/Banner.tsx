@@ -151,7 +151,10 @@ export function Banner({ state, now, connection }: BannerProps) {
         </div>
       </div>
 
-      <RunStatus state={state} now={now} connection={connection} />
+      {/* While loading, hold the room one server notice takes, so the composer does not move when state arrives. */}
+      <div className={state ? 'contents' : 'min-h-[3.25rem]'}>
+        <RunStatus state={state} now={now} connection={connection} />
+      </div>
     </header>
   )
 }
