@@ -15,8 +15,9 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const SEND = /^(Start run|Send to PM|Add as new goal|Send answer)$/
 
 // The shell every state has (ADR-0018 section 10, first table) plus ADR-0023's Dark theme toggle.
+// The skip link's name follows rework-page's UX review: Your move when a card is open, otherwise content.
 async function shell(page: Page, theme: Theme, state: string): Promise<void> {
-  await expect(page.getByRole('link', { name: 'Skip to Your move' })).toBeAttached(T)
+  await expect(page.getByRole('link', { name: /^Skip to (Your move|content)$/ })).toBeAttached(T)
   await expect(page.getByRole('banner')).toBeVisible(T)
   await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss' })).toBeVisible(T)
   await expect(page.getByRole('status', { name: 'Session' })).toBeVisible(T)

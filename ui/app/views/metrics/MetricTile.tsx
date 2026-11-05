@@ -20,7 +20,7 @@ export interface MetricTileProps {
 
 export function MetricTile({ label, value, title, aside, graphic, sub, subTone = 'muted', className }: MetricTileProps) {
   return (
-    <div className={cn('flex h-30 min-w-0 flex-col rounded-card border border-border bg-surface p-4 shadow-e1', className)}>
+    <div className={cn('flex h-30 min-w-0 flex-col rounded-card border border-border bg-sunken p-4 shadow-e1', className)}>
       <dt className="text-meta font-medium text-muted">{label}</dt>
       <dd className="flex min-w-0 flex-1 flex-col">
         <span className="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-title tabular-nums text-fg">
