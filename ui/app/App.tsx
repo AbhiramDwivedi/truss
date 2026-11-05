@@ -15,8 +15,6 @@ import { Timeline } from './views/rail/Timeline.tsx'
 import { Banner } from './views/shell/Banner.tsx'
 import { SkipLink } from './views/shell/SkipLink.tsx'
 import { useInstantThemeSwitch } from './views/shell/instantTheme.ts'
-import { UnreachableNotice } from './views/shell/UnreachableNotice.tsx'
-import { useLinkTimers } from './views/shell/useLinkTimers.ts'
 import { useWide } from './views/shell/useWide.ts'
 import { Transcript } from './views/transcript/Transcript.tsx'
 
@@ -46,7 +44,6 @@ export default function App() {
   const hasOpenRequest = state?.requests.some((r) => r.status === 'open') ?? false
   const skipTarget = hasOpenRequest ? '#your-move' : wide ? '#main' : '#conversation'
   const skipLabel = hasOpenRequest ? 'Skip to Your move' : 'Skip to content'
-  const { unreachable } = useLinkTimers(connection)
 
   // The thread is drawn above the composer. At 1024 px and up the composer is first in the DOM (tab order: header,
   // composer, thread), so the block is reversed; below 1024 px the thread is first.
@@ -115,7 +112,6 @@ export default function App() {
         </div>
         <main id="main" tabIndex={-1} className="flex min-w-0 flex-col gap-6 pt-6 outline-none lg:px-8 lg:py-6">
           <div className="flex min-w-0 max-w-[1200px] flex-col gap-6 lg:gap-12">
-            {unreachable ? <UnreachableNotice /> : null}
             {wide ? areas.move : null}
             {network}
             {deliverables}

@@ -12,6 +12,7 @@ import { formatRunTime, formatUsd, runTimeMs } from '../metrics/format.ts'
 import { runStatusOf } from './runStatus.ts'
 import { RunStatus } from './RunStatus.tsx'
 import { useLinkTimers } from './useLinkTimers.ts'
+import { UnreachableNotice } from './UnreachableNotice.tsx'
 
 export interface BannerProps {
   state: RunState | null
@@ -32,7 +33,7 @@ export function Banner({ state, now, connection }: BannerProps) {
   const [notifyOn, setNotifyOn] = useState(false)
   const seen = useRef<Set<string> | null>(null)
   const live = connection === 'live'
-  // 5 s of not being live changes the Session line; the 20 s Reload notice is App's, at the top of main.
+  // 5 s of not being live changes the Session line; at 20 s the Reload notice takes the header's notice room.
   const { slow, unreachable } = useLinkTimers(connection)
 
   useEffect(() => {
@@ -109,7 +110,22 @@ export function Banner({ state, now, connection }: BannerProps) {
       <div className="flex h-8 min-w-0 items-center gap-2">
         <img src="/favicon.svg" alt="" width={24} height={24} className="size-6 shrink-0" />
         <h1 className="text-title font-semibold text-fg">Truss</h1>
-        <p className="truncate text-meta text-muted">Software factory</p>
+        <p className="min-w-0 truncate text-meta text-muted">Software factory</p>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={btnTarget}
+            icon={notifyOn ? <BellRing aria-hidden="true" /> : <Bell aria-hidden="true" />}
+            aria-disabled={notifyOn || undefined}
+            onClick={turnOnNotifications}
+          >
+            {notifyOn ? 'Notifications on' : 'Turn on notifications'}
+          </Button>
+          <Button size="icon" variant="ghost" className={btnTarget} aria-label="Dark theme" aria-pressed={dark} onClick={toggle}>
+            {dark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
+          </Button>
+        </div>
       </div>
 
       <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -134,25 +150,11 @@ export function Banner({ state, now, connection }: BannerProps) {
           </p>
           {stillRunning && <p className="min-w-0 text-ui text-muted">Agents still running; nothing needed from you</p>}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className={btnTarget}
-            icon={notifyOn ? <BellRing aria-hidden="true" /> : <Bell aria-hidden="true" />}
-            aria-disabled={notifyOn || undefined}
-            onClick={turnOnNotifications}
-          >
-            {notifyOn ? 'Notifications on' : 'Turn on notifications'}
-          </Button>
-          <Button size="icon" variant="ghost" className={btnTarget} aria-label="Dark theme" aria-pressed={dark} onClick={toggle}>
-            {dark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
-          </Button>
-        </div>
       </div>
 
       {/* While loading, hold the room one server notice takes, so the composer does not move when state arrives. */}
       <div className={state ? 'contents' : 'min-h-[3.25rem]'}>
+        {unreachable ? <UnreachableNotice /> : null}
         <RunStatus state={state} now={now} connection={connection} />
       </div>
     </header>
