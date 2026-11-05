@@ -15,7 +15,7 @@ const COLS: { field: Field; label: string }[] = [
 const toneOf = (name: string): DotTone => (/opus/i.test(name) ? 'opus' : /sonnet/i.test(name) ? 'sonnet' : 'neutral')
 
 const TH = 'px-2 py-2 text-right text-meta font-medium text-muted xl:px-3'
-const TD = 'whitespace-nowrap px-2 py-2 xl:px-3text-right font-mono tabular-nums text-fg'
+const TD = 'whitespace-nowrap px-2 py-2 xl:px-3 text-right font-mono tabular-nums text-fg'
 
 export interface TokensTableProps {
   models: Record<string, Partial<Record<Field, number | null>>> | null | undefined
