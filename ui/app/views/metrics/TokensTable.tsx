@@ -14,8 +14,8 @@ const COLS: { field: Field; label: string }[] = [
 
 const toneOf = (name: string): DotTone => (/opus/i.test(name) ? 'opus' : /sonnet/i.test(name) ? 'sonnet' : 'neutral')
 
-const TH = 'px-3 py-2 text-right text-meta font-medium text-muted'
-const TD = 'whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums text-fg'
+const TH = 'px-2 py-2 text-right text-meta font-medium text-muted xl:px-3'
+const TD = 'whitespace-nowrap px-2 py-2 xl:px-3text-right font-mono tabular-nums text-fg'
 
 export interface TokensTableProps {
   models: Record<string, Partial<Record<Field, number | null>>> | null | undefined
@@ -27,7 +27,7 @@ export function TokensTable({ models }: TokensTableProps) {
   const total = (f: Field) => rows.reduce((sum, [, m]) => sum + (m[f] ?? 0), 0)
   return (
     <div role="region" aria-label="Tokens by model" tabIndex={0} className="overflow-x-auto rounded-card border border-border bg-surface">
-      <table className="w-full min-w-max border-collapse text-ui">
+      <table className="w-full min-w-max min-[30rem]:min-w-0 border-collapse text-ui">
         <caption className="sr-only">Tokens by model</caption>
         <thead className="bg-sunken">
           <tr>
@@ -44,7 +44,7 @@ export function TokensTable({ models }: TokensTableProps) {
         <tbody>
           {rows.map(([name, m]) => (
             <tr key={name} className="border-t border-border">
-              <th scope="row" className="px-3 py-2 text-left text-ui font-normal text-fg [overflow-wrap:anywhere]">
+              <th scope="row" className="px-2 py-2 text-left text-ui font-normal xl:px-3 text-fg [overflow-wrap:anywhere]">
                 <span className="inline-flex items-baseline gap-2">
                   <Dot tone={toneOf(name)} className="self-center" />
                   <span>{name}</span>
@@ -60,7 +60,7 @@ export function TokensTable({ models }: TokensTableProps) {
         </tbody>
         <tfoot>
           <tr className="border-t border-border-strong bg-sunken">
-            <th scope="row" className="px-3 py-2 text-left text-ui font-semibold text-fg">
+            <th scope="row" className="px-2 py-2 text-left text-ui font-semibold xl:px-3 text-fg">
               Total
             </th>
             {COLS.map((c) => (

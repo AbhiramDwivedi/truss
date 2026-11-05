@@ -15,6 +15,8 @@ import { Timeline } from './views/rail/Timeline.tsx'
 import { Banner } from './views/shell/Banner.tsx'
 import { SkipLink } from './views/shell/SkipLink.tsx'
 import { useInstantThemeSwitch } from './views/shell/instantTheme.ts'
+import { UnreachableNotice } from './views/shell/UnreachableNotice.tsx'
+import { useLinkTimers } from './views/shell/useLinkTimers.ts'
 import { useWide } from './views/shell/useWide.ts'
 import { Transcript } from './views/transcript/Transcript.tsx'
 
@@ -42,7 +44,9 @@ export default function App() {
   const gutter = wide ? 'min-w-0 empty:hidden' : 'mx-4 min-w-0 empty:hidden'
 
   const hasOpenRequest = state?.requests.some((r) => r.status === 'open') ?? false
-  const skipTarget = wide ? '#main' : hasOpenRequest ? '#your-move' : '#conversation'
+  const skipTarget = hasOpenRequest ? '#your-move' : wide ? '#main' : '#conversation'
+  const skipLabel = hasOpenRequest ? 'Skip to Your move' : 'Skip to content'
+  const { unreachable } = useLinkTimers(connection)
 
   // The thread is drawn above the composer. At 1024 px and up the composer is first in the DOM (tab order: header,
   // composer, thread), so the block is reversed; below 1024 px the thread is first.
@@ -69,7 +73,7 @@ export default function App() {
         key="conversation"
         id="conversation"
         tabIndex={-1}
-        className={`${wide ? 'flex flex-col-reverse lg:[&_[role=log]]:max-h-[calc(100vh-30rem)]' : 'flex flex-col'} mx-4 min-w-0 gap-3 outline-none`}
+        className={`${wide ? 'flex flex-col-reverse lg:[&_[role=log]]:max-h-[calc(100vh-35rem)]' : 'flex flex-col'} mx-4 min-w-0 gap-3 outline-none`}
       >
         {wide ? [composer, thread] : [thread, composer]}
       </div>
@@ -100,7 +104,7 @@ export default function App() {
 
   return (
     <>
-      <SkipLink href={skipTarget} />
+      <SkipLink href={skipTarget} label={skipLabel} />
       <div className="min-h-screen min-w-0 lg:grid lg:grid-cols-[400px_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-0 lg:h-screen lg:gap-4 lg:overflow-y-auto lg:border-r lg:border-border lg:bg-surface lg:pb-6">
           {areas.banner}
@@ -111,6 +115,7 @@ export default function App() {
         </div>
         <main id="main" tabIndex={-1} className="flex min-w-0 flex-col gap-6 pt-6 outline-none lg:px-8 lg:py-6">
           <div className="flex min-w-0 max-w-[1200px] flex-col gap-6 lg:gap-12">
+            {unreachable ? <UnreachableNotice /> : null}
             {wide ? areas.move : null}
             {network}
             {deliverables}
