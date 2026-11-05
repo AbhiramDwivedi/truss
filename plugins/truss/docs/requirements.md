@@ -116,7 +116,7 @@ Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives 
 Source: client
 
 ## R-17: Works on current desktop browsers
-Status: open
+Status: replaced by R-48
 Kind: constraint
 Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin
 Source: client
@@ -333,6 +333,13 @@ Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client'
 Source: client
 Example: Given a session turn that ends with "Nothing is waiting on approval ... Tell me which of these you want, or give me something new.", when the client looks at the card it opens, then the card offers a reply box whose send action delivers the typed text as the reply (decision message), it is not titled as an approval, and no button sends the bare word "Approved." to an open question.
 Example: Given a turn that asks to approve a plan or a push, when the card shows Approve and Deny, then each button states what it sends, and a typed reply can still be sent on its own.
+
+## R-48: Works on current desktop Chrome
+Status: open
+Kind: constraint
+Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
+Source: client
+Example: Current and previous major versions of desktop Chrome, at window widths down to 1024 px. No phone layout. Firefox and Safari are not targets, and the browser checks run in chromium only.
 
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
