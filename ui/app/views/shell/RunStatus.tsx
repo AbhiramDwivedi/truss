@@ -8,11 +8,13 @@ export interface RunStatusProps {
   now: number
   /** The stream link; reconnecting adds a "Reconnecting…" item until it recovers. */
   connection?: Connection
+  /** The Reload notice stands in for the "Reconnecting…" item, so the header keeps the height it had. */
+  replacesReconnecting?: boolean
 }
 
-export function RunStatus({ state, connection }: RunStatusProps) {
+export function RunStatus({ state, connection, replacesReconnecting }: RunStatusProps) {
   const items: { id: string; text: string }[] = []
-  if (connection === 'reconnecting') items.push({ id: 'stream-reconnecting', text: 'Reconnecting…' })
+  if (connection === 'reconnecting' && !replacesReconnecting) items.push({ id: 'stream-reconnecting', text: 'Reconnecting…' })
   for (const n of state?.notices ?? []) {
     if (connection === 'reconnecting' && n.text === 'Reconnecting…') continue
     items.push(n)

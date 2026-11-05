@@ -6,8 +6,8 @@ import { Notice } from '../../components/ui/notice.tsx'
 
 export function UnreachableNotice() {
   return (
-    <div role="alert" className="flex min-w-0 items-center gap-2">
-      <Notice tone="fail" live="off" className="min-w-0 flex-1 py-1 text-meta">
+    <div role="alert" className="flex min-h-9 min-w-0 items-center gap-2">
+      <Notice tone="fail" live="off" className="min-w-0 flex-1 py-0 text-meta">
         Can&apos;t reach the truss UI server. Check it is still running, then reload.
       </Notice>
       <Button
