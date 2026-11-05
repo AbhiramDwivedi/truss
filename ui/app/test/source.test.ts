@@ -97,6 +97,15 @@ test('App.tsx uses no CSS order, no display: contents and no z-20', () => {
   assert.doesNotMatch(src, /\bz-20\b/)
 })
 
+test('the rail header reserves no empty notice band (min-h-13) at any width', () => {
+  const src = fs.readFileSync(path.join(appDir, 'views', 'shell', 'Banner.tsx'), 'utf8')
+  assert.doesNotMatch(src, /min-h-13/)
+})
+
+test('the thread cap in App.tsx is no longer calc(100vh-30rem)', () => {
+  assert.doesNotMatch(appSrc(), /100vh-30rem/)
+})
+
 test('Tabs keep automatic activation', () => {
   const src = fs.readFileSync(path.join(compDir, 'ui', 'tabs.tsx'), 'utf8')
   assert.doesNotMatch(src, /activationMode\s*=\s*["{']*manual/)

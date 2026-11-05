@@ -139,6 +139,29 @@ test.describe('page', () => {
     } finally { await o.stop() }
   })
 
+  for (const state of ['live', 'thread'] as const) {
+    test(`R-45: ${state} at 1440x900: the rail header is 168 px or less and the Send button is in view on load`, async ({ browser }) => {
+      const o = await openFixture(browser, state, 'light', WIDTHS.wide)
+      try {
+        const { page } = o
+        await expect(thread(page)).toBeVisible(LOAD)
+        const hb = await box(page.getByRole('banner'))
+        expect(hb.height, 'the header has no empty reserved band').toBeLessThanOrEqual(168)
+        const send = page.getByRole('button', { name: SEND })
+        await expect(send).toBeVisible(LOAD)
+        const sb = await box(send)
+        expect(sb.y + sb.height, 'Send is above the fold').toBeLessThanOrEqual(900)
+        expect(await page.evaluate(() => window.scrollY)).toBe(0)
+        const msgs = thread(page).getByRole('article')
+        const n = await msgs.count()
+        for (let i = Math.max(0, n - 4); i < n; i++) {
+          const b = await box(msgs.nth(i))
+          expect(b.y + b.height, `newest message ${i} is in view`).toBeLessThanOrEqual(900)
+        }
+      } finally { await o.stop() }
+    })
+  }
+
   test('R-45: the four newest thread messages are in view on load', async ({ browser }) => {
     const o = await openFixture(browser, 'thread', 'light', WIDTHS.desktop)
     try {
