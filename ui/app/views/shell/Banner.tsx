@@ -155,7 +155,7 @@ export function Banner({ state, now, connection }: BannerProps) {
       {/* While loading, hold the room one server notice takes, so the composer does not move when state arrives. */}
       <div className={state ? 'contents' : 'min-h-[3.25rem]'}>
         {unreachable ? <UnreachableNotice /> : null}
-        <RunStatus state={state} now={now} connection={connection} />
+        <RunStatus state={state} now={now} connection={connection} replacesReconnecting={unreachable && !!state} />
       </div>
     </header>
   )
