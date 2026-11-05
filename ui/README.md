@@ -1,6 +1,6 @@
 # Truss local web UI
 
-`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live: brief questions and approvals as cards, one line per crew, decisions and ADRs, and a design panel. The design is in [ADR-0011](../plugins/truss/docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [plugins/truss/docs/architecture.md](../plugins/truss/docs/architecture.md).
+`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live in two columns. The left rail holds the conversation with the PM and the record (decisions and ADRs); the right side holds the crew network, deliverables and run metrics, with what needs you on top. The design is in [ADR-0011](../plugins/truss/docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [plugins/truss/docs/architecture.md](../plugins/truss/docs/architecture.md).
 
 The UI is not part of the plugin install: `claude plugin install truss@truss` installs only `plugins/truss/`. To get the UI, clone the repo:
 
