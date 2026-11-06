@@ -84,8 +84,8 @@ const crews = (s: any): any[] => s.run?.crews ?? []
 const agents = (c: any): any[] => [...(c.foreman ? [c.foreman] : []), ...c.members]
 const allAgents = (s: any): any[] => crews(s).flatMap(agents)
 
-test('the ADR names the eleven rework states', () => {
-  assert.deepEqual(STATES, ['no-run', 'planning', 'live', 'real-12', 'reply-open', 'approval-ask', 'architecture', 'long', 'thread', 'partial', 'finished'])
+test('the ADR names the twelve rework states', () => {
+  assert.deepEqual(STATES, ['no-run', 'planning', 'live', 'real-12', 'reply-open', 'approval-ask', 'architecture', 'long', 'thread', 'partial', 'finished', 'real-data'])
 })
 
 for (const name of STATES) {
