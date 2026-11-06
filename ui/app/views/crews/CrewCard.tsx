@@ -43,11 +43,12 @@ export function isRecent(handoff: FlowEntry | null | undefined, now: number): bo
 
 /** The agent's task line: a stall says so, otherwise the shared task rule. */
 function lineOf(m: Member, crew: Crew): string | null {
-  if (m.state === 'stalled') {
+  const done = crew.status === 'merged' || crew.status === 'dropped'
+  if (!done && m.state === 'stalled') {
     const min = detailMinutes(m.detail) ?? crew.stuck?.minutes ?? null
     return min !== null ? `Stalled ${min} min` : 'Stalled'
   }
-  if (m.state === 'allowance-spent') return 'Allowance spent'
+  if (!done && m.state === 'allowance-spent') return 'Allowance spent'
   return taskLine(m, crew)
 }
 
@@ -137,7 +138,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
           <>
             <ul id={listId} aria-label={`${crew.slug} agents`} className="mt-3 flex min-w-0 flex-col gap-2">
               {shown.map((m) => (
-                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} status={agentStatus(m)} step={stepOf(m)} />
+                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
               ))}
             </ul>
             {hidden > 0 && (
