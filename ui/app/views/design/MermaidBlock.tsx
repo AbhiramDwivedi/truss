@@ -1,8 +1,8 @@
 // One mermaid block of the architecture document (R-38, ADR-0028 section 5). It shows a placeholder while the
 // mermaid chunk loads, then the drawn SVG in a focusable figure, or the source with the reason when it can't draw.
 // mermaid is loaded by DesignPanel.tsx only; this file gets it through the `load` prop. The page CSP has no
-// style-src, so the returned SVG is parsed, its <style> elements are removed, and its style attributes are moved
-// into CSSOM writes (allowed under the CSP) that leave the colours to mermaid.css.
+// style-src, so while mermaid renders its <style> elements are kept out and its style attributes become
+// presentation attributes, and the returned SVG is parsed with no style attribute left (colours are mermaid.css).
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '../../components/ui/button.tsx'
 import { cn } from '../../lib/utils.ts'
@@ -34,26 +34,121 @@ type State =
   | { k: 'loading' }
   | { k: 'chunk' }
   | { k: 'error'; line: string }
-  | { k: 'drawn'; svg: Element; label: string }
+  | { k: 'drawn'; svg: Element; label: string; natural: number }
 
 let seq = 0
 
-// Colour and font are the token stylesheet's job (mermaid.css); layout properties are kept.
-const DROPPED = /^(fill|stroke|color|font(-.*)?|background(-.*)?)$/
+/** The config mermaid gets. `flowchart.htmlLabels: false` is what makes flowchart labels SVG text (a top-level
+ *  `htmlLabels` is not read by flowcharts), so the text is measured and drawn by the same font and fits its box. */
+export const MERMAID_CONFIG = {
+  startOnLoad: false,
+  securityLevel: 'strict',
+  htmlLabels: false,
+  flowchart: { htmlLabels: false },
+  suppressErrorRendering: true,
+  theme: 'base',
+} as const
 
-function moveStyle(el: Element): void {
-  const css = el.getAttribute('style')
-  if (css === null) return
-  el.removeAttribute('style')
-  const style = (el as unknown as ElementCSSInlineStyle).style
+// While mermaid renders, the two things the CSP counts as inline style are kept out of the document: a `style`
+// attribute set through setAttribute (what d3 does) becomes presentation attributes instead, and a
+// <style> element is not inserted (mermaid.css does its job, ADR-0028 section 5). toElement strips what is left.
+// Colour is the token stylesheet's job (mermaid.css), so those declarations are dropped. Font declarations stay so
+// mermaid measures its text in the font it asked for; mermaid.css rules beat presentation attributes when drawn.
+const DROPPED = /^(fill|stroke|color|background(-.*)?|max-.*|min-.*)$/
+
+/** The declarations of a style attribute worth keeping, as [name, value]. */
+export function keptDeclarations(css: string): Array<[string, string]> {
+  const out: Array<[string, string]> = []
   for (const decl of css.split(';')) {
     const i = decl.indexOf(':')
     if (i < 0) continue
     const name = decl.slice(0, i).trim().toLowerCase()
-    if (name === '' || DROPPED.test(name)) continue
-    const important = /\s*!important\s*$/i.test(decl)
-    style.setProperty(name, decl.slice(i + 1).replace(/\s*!important\s*$/i, '').trim(), important ? 'important' : '')
+    if (!/^[a-z-]+$/.test(name) || DROPPED.test(name)) continue
+    out.push([name, decl.slice(i + 1).replace(/\s*!important\s*$/i, '').trim()])
   }
+  return out
+}
+
+const STYLE_ATTR = /\sstyle=("[^"]*"|'[^']*')/g
+
+let guardDepth = 0
+let restore: (() => void) | null = null
+
+// The page's own elements and HTML elements (mermaid's measuring spans, never serialised) keep their normal style
+// handling; mermaid's SVG elements, in its temporary container or detached, don't.
+const inApp = (el: Element): boolean => !(el instanceof SVGElement) || el.closest('#root') !== null
+
+/** A stand-in for element.style that turns writes into presentation attributes (see keptDeclarations). */
+function styleSink(el: Element, setAttr: Element['setAttribute']): CSSStyleDeclaration {
+  const put = (name: string, value: string) => {
+    for (const [n, v] of keptDeclarations(`${name}:${value}`)) setAttr.call(el, n, v)
+  }
+  const kebab = (k: string) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+  return new Proxy({} as CSSStyleDeclaration, {
+    get: (_t, k) => {
+      if (k === 'setProperty') return (n: string, v: string) => put(n, v)
+      if (k === 'removeProperty') return (n: string) => (el.removeAttribute(n), '')
+      if (k === 'getPropertyValue') return (n: string) => el.getAttribute(n) ?? ''
+      return ''
+    },
+    set: (_t, k, v) => {
+      if (typeof k === 'string' && k !== 'cssText') put(kebab(k), String(v))
+      return true
+    },
+  })
+}
+
+const isStyleEl = (n: unknown): boolean => n instanceof Element && n.localName === 'style'
+
+function installGuard(): () => void {
+  const setAttr = Element.prototype.setAttribute
+  const append = Node.prototype.appendChild
+  const insert = Node.prototype.insertBefore
+  Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
+    if (name === 'style' && !inApp(this)) {
+      // The kept declarations become presentation attributes: those survive mermaid's own sanitising pass, and
+      // mermaid.css still wins over them.
+      for (const [n, v] of keptDeclarations(String(value))) setAttr.call(this, n, v)
+      return
+    }
+    return setAttr.call(this, name, value)
+  }
+  const styleOwners = [HTMLElement.prototype, SVGElement.prototype]
+  const styleProps = styleOwners.map((o) => Object.getOwnPropertyDescriptor(o, 'style'))
+  styleOwners.forEach((o, i) => {
+    const d = styleProps[i]
+    if (!d?.get) return
+    Object.defineProperty(o, 'style', {
+      ...d,
+      get(this: Element) {
+        return inApp(this) ? d.get!.call(this) : styleSink(this, setAttr)
+      },
+    })
+  })
+  Node.prototype.appendChild = function <T extends Node>(this: Node, node: T): T {
+    return isStyleEl(node) ? node : (append.call(this, node) as T)
+  }
+  Node.prototype.insertBefore = function <T extends Node>(this: Node, node: T, ref: Node | null): T {
+    return isStyleEl(node) ? node : (insert.call(this, node, ref) as T)
+  }
+  return () => {
+    Element.prototype.setAttribute = setAttr
+    Node.prototype.appendChild = append
+    Node.prototype.insertBefore = insert
+    styleOwners.forEach((o, i) => {
+      if (styleProps[i]) Object.defineProperty(o, 'style', styleProps[i]!)
+    })
+  }
+}
+
+export function withCssomStyles<T>(run: () => Promise<T>): Promise<T> {
+  if (guardDepth++ === 0) restore = installGuard()
+  return run().finally(() => {
+    if (--guardDepth === 0) {
+      restore?.()
+      restore = null
+    }
+  })
 }
 
 function firstLine(s: string): string {
@@ -61,27 +156,30 @@ function firstLine(s: string): string {
 }
 
 /** The SVG mermaid returned, made safe for a page with no style-src, and ready for the figure. */
-function toElement(svg: string, source: string): { el: Element; label: string } {
+function toElement(svg: string, source: string): { el: Element; label: string; natural: number } {
+  // A style attribute in the markup is an inline style to the CSP even when parsed, so none reaches the parser.
+  svg = svg.replace(STYLE_ATTR, '')
   const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml')
   let root: Element | null = parsed.querySelector('parsererror') ? null : parsed.documentElement
   if (root === null) root = new DOMParser().parseFromString(svg, 'text/html').querySelector('svg')
   if (root === null || root.tagName.toLowerCase() !== 'svg') throw new Error('mermaid returned no SVG')
   const el = document.importNode(root, true)
   for (const s of Array.from(el.querySelectorAll('style'))) s.remove()
-  for (const n of [el, ...Array.from(el.querySelectorAll('[style]'))]) moveStyle(n)
   const vb = (el.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number)
   const natural = vb.length === 4 && Number.isFinite(vb[2]) && vb[2]! > 0 ? Math.ceil(vb[2]!) : 0
-  if (natural > 0) {
-    el.setAttribute('width', String(natural))
-    el.removeAttribute('height')
-  }
-  ;(el as unknown as ElementCSSInlineStyle).style.setProperty('max-width', 'none')
-  ;(el as unknown as ElementCSSInlineStyle).style.setProperty('display', 'block')
+  // Scaled to fit: its natural width at most, never wider than the figure, height from the viewBox.
+  el.removeAttribute('width')
+  el.removeAttribute('height')
+  const st = (el as unknown as ElementCSSInlineStyle).style
+  st.setProperty('width', natural > 0 ? `${natural}px` : '100%')
+  st.setProperty('max-width', '100%')
+  st.setProperty('height', 'auto')
+  st.setProperty('display', 'block')
   const acc = el.querySelector('title')?.textContent?.trim()
   const label = `Diagram: ${acc || firstLine(source) || 'untitled'}`
   el.setAttribute('role', 'img')
   el.setAttribute('aria-label', label)
-  return { el, label }
+  return { el, label, natural }
 }
 
 function SourcePre({ source, id }: { source: string; id?: string }) {
@@ -106,11 +204,53 @@ function SourcePre({ source, id }: { source: string; id?: string }) {
   )
 }
 
+/** The drawing unscaled in a modal dialog: the browser traps focus in it, Esc closes it, and focus goes back. */
+function FullSize({ svg, natural, title, onClose }: { svg: Element; natural: number; title: string; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  useEffect(() => {
+    const d = ref.current
+    if (d && !d.open) d.showModal()
+    return () => d?.close()
+  }, [])
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby={titleId}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      className="m-auto max-h-[90vh] max-w-[95vw] overflow-auto rounded-card border border-border bg-surface p-4 text-fg backdrop:bg-black/40"
+    >
+      <div className="sticky top-0 left-0 mb-2 flex items-center justify-between gap-3">
+        <h2 id={titleId} className="text-lead font-semibold">
+          {title}
+        </h2>
+        <Button size="sm" variant="ghost" autoFocus onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <div
+        ref={(host) => {
+          if (!host || host.firstChild) return
+          const copy = svg.cloneNode(true) as Element
+          const st = (copy as unknown as ElementCSSInlineStyle).style
+          st.setProperty('max-width', 'none')
+          st.setProperty('width', natural > 0 ? `${natural}px` : 'auto')
+          host.replaceChildren(copy)
+        }}
+      />
+    </dialog>
+  )
+}
+
 export function MermaidBlock({ source, index, total, load, onDone }: MermaidBlockProps) {
   const [state, setState] = useState<State>({ k: 'loading' })
   const [slow, setSlow] = useState(false)
   const [open, setOpen] = useState(false)
   const [shown, setShown] = useState(false)
+  const [full, setFull] = useState(false)
   const done = useRef(onDone)
   done.current = onDone
   const sourceId = useId()
@@ -121,6 +261,7 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
     setSlow(false)
     setOpen(false)
     setShown(false)
+    setFull(false)
     const timer = setTimeout(() => {
       if (!dead) setSlow(true)
     }, SLOW_MS)
@@ -141,10 +282,12 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
       if (dead) return
       const id = `truss-mmd-${++seq}`
       try {
-        await api.parse(source)
-        const { svg } = await api.render(id, source)
-        const { el, label } = toElement(svg, source)
-        finish({ k: 'drawn', svg: el, label })
+        const { svg } = await withCssomStyles(async () => {
+          await api.parse(source)
+          return api.render(id, source)
+        })
+        const { el, label, natural } = toElement(svg, source)
+        finish({ k: 'drawn', svg: el, label, natural })
       } catch (e) {
         const msg = firstLine(String((e as { message?: unknown } | null)?.message ?? e ?? ''))
         finish({ k: 'error', line: (msg || 'unknown error').slice(0, 160) })
@@ -208,7 +351,7 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
       aria-label={`Diagram ${index + 1} of ${total}`}
       style={{ minHeight: DIAGRAM_MIN }}
       className={cn(
-        'my-3 overflow-x-auto rounded-card border border-border bg-surface p-3 transition-opacity duration-(--duration-quick) ease-out',
+        'my-3 rounded-card border border-border bg-surface p-3 transition-opacity duration-(--duration-quick) ease-out',
         shown ? 'opacity-100' : 'opacity-0',
       )}
     >
@@ -217,7 +360,14 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
           if (host && host.firstChild !== state.svg) host.replaceChildren(state.svg)
         }}
       />
-      <div className="sticky left-0 mt-2 max-w-full">
+      <div className="mt-2 max-w-full">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setFull(true)}
+        >
+          Open full size
+        </Button>
         <Button
           size="sm"
           variant="ghost"
@@ -229,6 +379,7 @@ export function MermaidBlock({ source, index, total, load, onDone }: MermaidBloc
         </Button>
         {open && <SourcePre source={source} id={sourceId} />}
       </div>
+      {full && <FullSize svg={state.svg} natural={state.natural} title={state.label} onClose={() => setFull(false)} />}
     </figure>
   )
 }

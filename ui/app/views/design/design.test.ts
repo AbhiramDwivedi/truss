@@ -182,3 +182,29 @@ test('mermaid.css themes svg[id^="truss-mmd-"] with token variables and no hex c
 test('DesignPanel.tsx imports mermaid.css', () => {
   assert.match(read(path.join(designDir, 'DesignPanel.tsx')), /import\s+['"]\.\/mermaid\.css['"]/)
 })
+
+// ---- Diagram config, style stripping and sizing (UX review: black shapes, overflow, CSP errors) -------------
+test('MERMAID_CONFIG puts htmlLabels false under flowchart too, and DesignPanel passes it to initialize()', async () => {
+  const mod = await r.load('views/design/MermaidBlock.tsx')
+  assert.equal(mod.MERMAID_CONFIG.flowchart.htmlLabels, false, 'flowchart.htmlLabels is what flowcharts read')
+  assert.equal(mod.MERMAID_CONFIG.securityLevel, 'strict')
+  assert.match(panelSrc(), /initialize\(\s*\{\s*\.\.\.MERMAID_CONFIG/, 'initialize gets the shared config')
+})
+
+test('keptDeclarations drops colour and size-limit declarations and keeps font and layout ones', async () => {
+  const mod = await r.load('views/design/MermaidBlock.tsx')
+  const kept = mod.keptDeclarations('fill: #fff !important; stroke:red; font-size: 12px; max-width: 99px; opacity: .5; stroke-width:2px; ;bad')
+  assert.deepEqual(kept, [['font-size', '12px'], ['opacity', '.5'], ['stroke-width', '2px']])
+})
+
+test('style attributes set during render go through the CSSOM, and the SVG is scaled to fit with an Open full size dialog', () => {
+  const s = blockSrc()
+  assert.match(s, /name === 'style'[\s\S]*?keptDeclarations/, 'setAttribute("style") is rerouted to presentation attributes while mermaid renders')
+  assert.match(s, /withCssomStyles\(/, 'render runs inside the guard')
+  assert.match(s, /setProperty\('max-width', '100%'\)/, 'the figure SVG is at most as wide as the figure')
+  assert.match(s, /setProperty\('height', 'auto'\)/, 'the figure SVG keeps its aspect ratio')
+  assert.doesNotMatch(s, /overflow-x-auto rounded-card border border-border bg-surface/, 'the figure no longer scrolls sideways')
+  assert.match(s, /Open full size/)
+  assert.match(s, /showModal\(\)/, 'the full-size view is a modal dialog (focus trap, Esc)')
+  assert.match(s, /aria-labelledby=\{titleId\}/, 'the dialog is labelled')
+})
