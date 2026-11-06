@@ -341,28 +341,65 @@ test('BuildNetwork: real-12 shows Done and a Dropped chip for a dropped crew and
   assert.ok(!hasWord(headText(merged), 'Waiting on you'))
   assert.doesNotMatch(headText(merged), /Your move/, 'no question notice on a merged crew')
 })
-test('BuildNetwork: real-12 shows 6 agent cards of 8 and a Show 2 more agents button, collapsed', async () => {
+test('BuildNetwork: real-12 shows 6 named agent cards, a Show n more agents button and a collapsed N check runs row', async () => {
   const s = rx('real-12')
+  const { isCheckRun } = await r.load('views/crews/format.ts')
   const reg = region(await network(s))
   assert.equal(find(reg, 'article').length, 12)
   for (const c of s.run.crews) {
     const art = articleOf(reg, c.slug)
-    const agents = (c.foreman ? 1 : 0) + c.members.length
-    assert.equal(agentCards(art).length, Math.min(6, agents), c.slug)
-    const more = find(art, 'button').filter((b) => b.a['aria-expanded'] !== undefined)
-    if (agents > 6) {
+    const agents = [...(c.foreman ? [c.foreman] : []), ...c.members]
+    const runs = agents.filter(isCheckRun).length
+    const named = agents.length - runs
+    assert.equal(agentCards(art).length, Math.min(6, named), c.slug)
+    const buttons = find(art, 'button').filter((b) => b.a['aria-expanded'] !== undefined)
+    const more = buttons.filter((b) => /^Show \d+ more agent/.test(nameOf(b)))
+    const runRow = buttons.filter((b) => /check runs?$/.test(nameOf(b)))
+    if (named > 6) {
       assert.equal(more.length, 1, c.slug)
-      assert.equal(nameOf(more[0]!), `Show ${agents - 6} more agents`)
+      assert.equal(nameOf(more[0]!), `Show ${named - 6} more agent${named - 6 === 1 ? '' : 's'}`)
       assert.equal(more[0]!.a['aria-expanded'], 'false')
     } else assert.equal(more.length, 0, c.slug)
+    assert.equal(runRow.length, runs > 0 ? 1 : 0, c.slug)
+    if (runs > 0) {
+      assert.equal(nameOf(runRow[0]!), `${runs} check run${runs === 1 ? '' : 's'}`)
+      assert.equal(runRow[0]!.a['aria-expanded'], 'false')
+    }
   }
 })
-test('BuildNetwork: a crew with 7 agents says Show 1 more agent', async () => {
+test('BuildNetwork: a crew with 7 named agents says Show 1 more agent', async () => {
   const s = rx('real-12')
-  mutate(s, 'ui-fixes5', (c) => { c.members = c.members.slice(0, 6) })
+  mutate(s, 'ui-fixes5', (c) => { c.members = Array.from({ length: 6 }, (_, i) => ({ ...c.foreman, name: `ui-fixes5-w${i}`, type: 'truss:writer', agentId: `w${i}` })) })
   const more = find(articleOf(region(await network(s)), 'ui-fixes5'), 'button').filter((b) => b.a['aria-expanded'] !== undefined)
   assert.equal(more.length, 1)
   assert.equal(nameOf(more[0]!), 'Show 1 more agent')
+})
+test('orderAgents: foreman first, then builder, tester, ux, qc, stress, planning, writer, resolver, then the rest', async () => {
+  const { orderAgents } = await r.load('views/crews/format.ts')
+  const m = (name: string, type: string | null) => member({ name, type })
+  const fm = m('c', 'truss:foreman')
+  const list = [m('c-x', 'general-purpose'), m('c-writer', 'truss:writer'), m('c-qc', 'truss:qc-engineer'), m('c-builder', 'general-purpose'), fm, m('c-tester', 'general-purpose'), m('c-ux', 'truss:ux-engineer'), m('c-resolver', 'truss:resolver')]
+  assert.deepEqual(orderAgents(list, fm).map((x: any) => x.name), ['c', 'c-builder', 'c-tester', 'c-ux', 'c-qc', 'c-writer', 'c-resolver', 'c-x'])
+})
+test('isCheckRun and the runner purpose: runners and unnamed general-purpose agents fold, truss roles never', async () => {
+  const { isCheckRun, RUNNER_PURPOSE } = await r.load('views/crews/format.ts')
+  assert.equal(isCheckRun({ type: 'general-purpose', name: 'build-crew-runner' }), true)
+  assert.equal(isCheckRun({ type: 'general-purpose', name: 'build-crew-builder' }), false)
+  assert.equal(isCheckRun({ type: 'truss:foreman', name: 'build-crew' }), false)
+  assert.equal(RUNNER_PURPOSE, 'Runs one check command for the crew.')
+  const v = await card({ member: member({ name: 'c-runner', purpose: null }), role: 'Runner', task: 'x', status: 'active', step: 2 })
+  assert.ok(tidy(text(v)).includes(RUNNER_PURPOSE))
+})
+test('BuildNetwork: a crew whose agents are all check runs shows the foreman card and one N check runs row, closed', async () => {
+  const base = rx('real-12')
+  const tpl = base.run.crews[0]
+  const m = (j: number) => ({ name: `crew-0-agent-${j}`, type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:00.000Z', agentId: `id-${j}`, purpose: null, task: null })
+  const crew = { ...tpl, slug: 'crew-0', stage: 0, status: 'running', members: Array.from({ length: 30 }, (_, j) => m(j)), stuck: null, qc: null }
+  const art = articleOf(region(await network({ ...base, run: { ...base.run, goals: undefined, crews: [crew] } })), 'crew-0')
+  assert.equal(agentCards(art).length, 1)
+  const row = find(art, 'button').filter((b) => nameOf(b) === '30 check runs')
+  assert.equal(row.length, 1)
+  assert.equal(row[0]!.a['aria-expanded'], 'false')
 })
 test('BuildNetwork: a 60 character slug is the whole h3, with title, tabindex 0 and the article named by it', async () => {
   const s = rx('long')
@@ -385,7 +422,7 @@ test('BuildNetwork: a 300 character task shows in full once per card, not twice'
   for (const task of [c.foreman.task, c.members[0].task] as string[]) assert.equal(all(art, (n) => own(n) === task).length, 1)
   assert.equal(all(art, (n) => n.a['aria-controls'] !== undefined).length, 0, 'no toggle before the line is measured')
 })
-test('BuildNetwork: 12 crews with 100 agents render at most 72 agent cards inside one second', async () => {
+test('BuildNetwork: 12 crews with 100 agents render only the 12 foreman cards inside one second (the check runs fold)', async () => {
   const base = rx('real-12')
   const mk = (i: number, n: number) => {
     const m = (j: number) => ({ name: `crew-${i}-agent-${j}`, type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:00.000Z', agentId: `id-${i}-${j}`, purpose: 'Builds one thing.', task: `Task ${i}-${j}` })
@@ -399,7 +436,7 @@ test('BuildNetwork: 12 crews with 100 agents render at most 72 agent cards insid
   const reg = region(await network(s))
   const ms = performance.now() - t0
   assert.equal(find(reg, 'article').length, 12)
-  assert.equal(find(reg, 'article').flatMap(agentCards).length, 72)
+  assert.equal(find(reg, 'article').flatMap(agentCards).length, 12)
   assert.ok(ms < 1000, `rendered in ${Math.round(ms)} ms`)
 })
 
@@ -574,7 +611,7 @@ for (const [verdict, words] of [['PASS', 'QC PASS'], ['FAIL', 'QC FAIL'], [null,
     const base = rx('live').run.crews.find((c: any) => c.status === 'running' && !c.stuck && !/^\s*(QUESTION|BLOCKED|PROPOSAL)/.test(c.foreman?.detail ?? ''))
     const crew = { ...base, qc: verdict ? { verdict, file: 'reports/x/x-qc.md', at: '2026-11-02T11:00:00.000Z' } : null }
     const mod = await r.load('views/crews/CrewCard.tsx')
-    const v = parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW })))
+    const v = parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW, checkRunsOpen: true })))
     const t = tidy(text(v))
     assert.ok(t.includes(words), words)
     assert.equal(t.includes('blocked: QC FAIL'), verdict === 'FAIL')
@@ -596,7 +633,7 @@ const cardOf = (art: N, name: string) => {
 }
 const crewCard = async (crew: any) => {
   const mod = await r.load('views/crews/CrewCard.tsx')
-  return parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW })))
+  return parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW, checkRunsOpen: true })))
 }
 const crewOfRd = (slug: string) => rd().run.crews.find((c: any) => c.slug === slug)
 const stepCurrent = (li: N) => {
@@ -806,8 +843,45 @@ test('CrewCard: a foreman of a merged crew with no goal and only a BLOCKED detai
 test('BuildNetwork: the real-data fixture says No activity yet exactly once and never says model unknown', async () => {
   const reg = region(await network(rd()))
   const t = tidy(text(reg))
-  assert.equal(t.split('No activity yet').length - 1, 1)
+  assert.equal(t.split('No activity yet').length - 1, 0, 'the one spawned agent is a folded runner')
   assert.ok(!/model unknown/i.test(t))
-  assert.ok(tidy(text(cardOf(articleOf(reg, 'build-crew'), 'build-crew-runner'))).includes('No activity yet'))
+  assert.ok(tidy(text(articleOf(reg, 'build-crew'))).includes('1 check run'), 'the spawned runner sits behind the check-runs row')
   assert.ok(!tidy(text(articleOf(reg, 'docs-crew'))).includes('No activity yet'))
+})
+
+// ---- goal grouping -------------------------------------------------------------------------------------------
+const twoGoalState = () => {
+  const s = rx('live')
+  s.session.status = 'idle'
+  s.requests = []
+  s.run.crews = s.run.crews.map((c: any) => ({ ...c, goal: null }))
+  const tpl = s.run.crews[0]
+  s.run.crews.push({ ...tpl, slug: 'later-a', goal: 'g2', stage: 0, status: 'merged' }, { ...tpl, slug: 'later-b', goal: 'g2', stage: 1, status: 'merged' })
+  s.run.goals = [
+    { id: 'run', goal: 'The first goal', approval: 'auto', approvedAt: '2026-11-02T08:00:00.000Z' },
+    { id: 'g2', goal: 'The second goal', approval: 'auto', approvedAt: '2026-11-02T11:00:00.000Z' },
+  ]
+  return s
+}
+test('BuildNetwork: two goals show the latest goal by default, with a PM count for it alone', async () => {
+  const reg = region(await network(twoGoalState()))
+  const slugs = find(reg, 'article').map(nameOf)
+  assert.deepEqual(slugs.sort(), ['later-a', 'later-b'])
+  assert.match(tidy(text(reg)), /Finished 2 crews in 2 stages/)
+})
+test('BuildNetwork: an earlier goal is a collapsed button named Earlier goal: <goal text>, with no crews until opened', async () => {
+  const reg = region(await network(twoGoalState()))
+  const b = find(reg, 'button').filter((x) => nameOf(x) === 'Earlier goal: The first goal')
+  assert.equal(b.length, 1)
+  assert.equal(b[0]!.a['aria-expanded'], 'false')
+  assert.ok(b[0]!.a['aria-controls'])
+})
+test('goalGroups: a crew goal that plan.json does not list stays with the first goal; no goals gives one run group', async () => {
+  const { goalGroups } = await r.load('views/crews/goals.ts')
+  const s = twoGoalState()
+  s.run.crews[0].goal = 'some goal text'
+  const g = goalGroups(s.run)
+  assert.deepEqual(g.map((x: any) => [x.id, x.crews.length]), [['run', s.run.crews.length - 2], ['g2', 2]])
+  const one = { ...s.run, goals: undefined, crews: s.run.crews.map((c: any) => ({ ...c, goal: 'x' })) }
+  assert.equal(goalGroups(one).length, 1)
 })

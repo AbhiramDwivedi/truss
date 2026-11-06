@@ -91,14 +91,51 @@ export const modelKey = (m: string | null): string | null => (m && /opus/i.test(
 const NAME_ROLES: ReadonlySet<string> = new Set(['builder', 'tester', 'writer', 'runner', 'planner', 'ux'])
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+/** The role word in an agent name: its last segment, else the last earlier segment that is a role (`quotas-builder-cf12108d`). */
+function nameRole(name: string): string | null {
+  const segs = name.split('-').filter(Boolean).map((x) => x.toLowerCase())
+  if (segs.length < 2) return null
+  const last = segs.at(-1)!
+  if (NAME_ROLES.has(last) || ROLE_ORDER.includes(last)) return last
+  return [...segs.slice(1)].reverse().find((x) => NAME_ROLES.has(x) || ROLE_ORDER.includes(x)) ?? null
+}
+
 /** The agent card's role word (ADR-0028 section 6). */
 export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
   const type = m.type ?? ''
   if (type === 'truss:foreman' || type === 'workflow-crew') return 'Foreman'
   if (type === 'truss:qc-engineer') return 'QC engineer'
   if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
-  const last = (m.name.split('-').filter(Boolean).at(-1) ?? '').toLowerCase()
-  return NAME_ROLES.has(last) && m.name.includes('-') ? sentence(last) : 'General purpose'
+  const role = nameRole(m.name)
+  return role !== null && NAME_ROLES.has(role) ? sentence(role) : 'General purpose'
+}
+
+export const RUNNER_PURPOSE = 'Runs one check command for the crew.'
+
+/** A runner or general-purpose agent: it runs one check command for the crew. */
+export function isCheckRun(m: Pick<Member, 'type' | 'name'>): boolean {
+  if (m.type === 'workflow-crew' || (m.type ?? '').startsWith('truss:')) return false
+  const role = nameRole(m.name)
+  if (role !== null && role !== 'runner' && ROLE_ORDER.includes(role)) return false
+  const r = roleWord(m)
+  return r === 'Runner' || r === 'General purpose'
+}
+
+const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writer', 'resolver']
+
+/**
+ * The member list order: foreman first, then the named truss roles (builder, tester, ux, qc, stress, planning,
+ * writer, resolver), then the rest; check runs last, split off by the caller.
+ */
+export function orderAgents(agents: readonly Member[], foreman: Member | null): Member[] {
+  const rank = (m: Member): number => {
+    if (foreman ? m === foreman || m.name === foreman.name : false) return 0
+    if (m.type === 'truss:foreman' || m.type === 'workflow-crew') return 0
+    const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (nameRole(m.name) ?? '')
+    const i = ROLE_ORDER.indexOf(key)
+    return i >= 0 ? i + 1 : ROLE_ORDER.length + 1
+  }
+  return agents.map((m, i) => ({ m, i, r: rank(m) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.m)
 }
 
 const MARKER_DETAILS: ReadonlySet<string> = new Set(['working', 'idle', 'spawned', 'tagged', 'fetched', 'reported', 'done'])

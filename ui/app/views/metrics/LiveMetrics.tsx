@@ -11,6 +11,7 @@ import { MetricTile } from './MetricTile.tsx'
 import { SegmentBar, type Segment } from './SegmentBar.tsx'
 import { Sparkline } from './Sparkline.tsx'
 import { DONE_STATES, FAILED_STATES, LIVE_STATES, ago, clock, dayTime, exact, hhmm, ms, plural, rate, tokens } from '../crews/format.ts'
+import { goalGroups } from '../crews/goals.ts'
 
 /** A live stamp older than this reads as not updating (ADR-0023 section 4). */
 const STALE_MS = 2 * 60_000
@@ -70,7 +71,7 @@ export function LiveMetrics({ state, now }: LiveMetricsProps) {
   if (!run) return null
 
   const usage = state.session.usage
-  const crews = run.crews
+  const crews = goalGroups(run).at(-1)?.crews ?? run.crews
 
   // Header chips: each shows only above zero.
   const stuck = crews.filter((c) => c.stuck)

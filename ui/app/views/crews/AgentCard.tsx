@@ -7,7 +7,7 @@ import { cn } from '../../lib/utils.ts'
 import { StatusBadge } from '../status/StatusBadge.tsx'
 import type { Status } from '../status/status.ts'
 import type { Member } from '../../store/types.ts'
-import { modelKey, NO_ACTIVITY, NO_TASK } from './format.ts'
+import { isCheckRun, modelKey, NO_ACTIVITY, NO_TASK, RUNNER_PURPOSE } from './format.ts'
 import { StepProgress } from './StepProgress.tsx'
 
 export interface AgentCardProps {
@@ -39,6 +39,7 @@ function AgentCardImpl({ member, role, task, activity, status, step }: AgentCard
   }, [task, open])
 
   const model = modelKey(member.model)
+  const purpose = member.purpose ?? (isCheckRun(member) ? RUNNER_PURPOSE : null)
   return (
     <li className="flex min-w-0 flex-col gap-2 rounded-ctl border border-border bg-surface p-3">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -57,9 +58,9 @@ function AgentCardImpl({ member, role, task, activity, status, step }: AgentCard
       <span title={member.name} className="min-w-0 truncate text-meta text-muted">
         {member.name}
       </span>{' '}
-      {member.purpose && (
-        <p title={member.purpose} className="line-clamp-2 min-w-0 break-words text-meta text-muted">
-          {member.purpose}
+      {purpose && (
+        <p title={purpose} className="line-clamp-2 min-w-0 break-words text-meta text-muted">
+          {purpose}
         </p>
       )}
       <div className="flex min-w-0 items-start gap-1">

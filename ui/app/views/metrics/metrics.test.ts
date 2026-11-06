@@ -395,3 +395,36 @@ test('TokensTable: no models says "No tokens used yet."', async () => {
   const t = await table({})
   assert.match(tidy(text(t)), /No tokens used yet\./)
 })
+
+// ---- goal grouping, token empty text, reported sub-line ----------------------------------------------------
+const twoGoals = () => {
+  const s = fx('live')
+  const first = s.run.crews.map((c: any) => ({ ...c, goal: null }))
+  const mk = (slug: string, ts: string) => ({ ...s.run.crews[0], slug, goal: 'g2', status: 'merged', stage: 0, foreman: { ...s.run.crews[0].foreman, ts }, members: [{ ...s.run.crews[0].foreman, name: slug + '-m', ts, state: 'reported' }], latest: { ts, agent: slug, event: 'report', text: 'done' } })
+  s.run.crews = [...first, mk('g2-a', '2026-11-02T11:40:00.000Z'), mk('g2-b', '2026-11-02T11:50:00.000Z')]
+  s.run.goals = [
+    { id: 'run', goal: 'First', approval: 'auto', approvedAt: '2026-10-30T10:00:00.000Z' },
+    { id: 'g2', goal: 'Second', approval: 'auto', approvedAt: '2026-11-02T11:30:00.000Z' },
+  ]
+  s.transcript = []
+  s.decisions = []
+  return s
+}
+test('RunMetrics: with two goals the tiles count the latest goal only: 2 crews done of 2, run time from its approval', async () => {
+  const t = tiles(await metrics(twoGoals()))
+  assert.match(t['Crews done']!, /2 of 2/)
+  assert.match(t['Agents started']!, /4/)
+  assert.doesNotMatch(t['Run time']!, /\dd /)
+  assert.match(t['Run time']!, /(30|20)m/)
+})
+test('RunMetrics: the agents sub-line counts missing reports, plain N reported when none are missing', async () => {
+  const { reportedSub } = await r.load('views/metrics/RunMetrics.tsx')
+  assert.equal(reportedSub(486, 475), '475 reported, 11 ended without a report')
+  assert.equal(reportedSub(3, 3), '3 reported')
+})
+test('TokensTable: the empty text says Not recorded for this run when Cost is not recorded, else No tokens used yet.', async () => {
+  const a = tidy(text(await mount('metrics/TokensTable', 'TokensTable', { models: {}, notRecorded: true })))
+  assert.equal(a, 'Not recorded for this run.')
+  const b = tidy(text(await mount('metrics/TokensTable', 'TokensTable', { models: {} })))
+  assert.equal(b, 'No tokens used yet.')
+})
