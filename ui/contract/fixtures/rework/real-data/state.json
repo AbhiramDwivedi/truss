@@ -1,0 +1,172 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/00000000-0000-4000-8000-000000000001",
+    "exists": true
+  },
+  "session": {
+    "status": "idle",
+    "sessionId": null,
+    "model": null,
+    "claudeCodeVersion": null,
+    "permissionMode": null,
+    "plugin": null,
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [],
+  "run": {
+    "goal": "Fix the fixture widget so it reads real data.",
+    "version": 2,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:02:00.000Z",
+    "crews": [
+      {
+        "slug": "docs-crew",
+        "stage": 0,
+        "verdict": "design",
+        "status": "merged",
+        "goal": "Write the design for the fixture widget.",
+        "owns": [
+          "docs/**"
+        ],
+        "foreman": {
+          "name": "docs-crew",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-02T11:26:00.000Z",
+          "agentId": "a000000000000010",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "docs-crew-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": null,
+            "ts": "2026-11-02T11:24:00.000Z",
+            "agentId": "a000000000000001",
+            "purpose": null,
+            "task": "Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else. Return the command's exit code as exit and its full standard output as stdo"
+          },
+          {
+            "name": "docs-crew-runner-2",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "reported",
+            "detail": "DONE",
+            "ts": "2026-11-02T11:25:00.000Z",
+            "agentId": "a000000000000002",
+            "purpose": null,
+            "task": "Write the design note for the fixture widget in docs/widget.md."
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T11:26:00.000Z",
+          "agent": "docs-crew",
+          "event": "tag",
+          "text": "docs-crew sent BLOCKED"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "build-crew",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": "Build the fixture widget.",
+        "owns": [
+          "src/widget/**"
+        ],
+        "foreman": {
+          "name": "build-crew",
+          "type": "workflow-crew",
+          "model": null,
+          "effort": null,
+          "state": "tagged",
+          "detail": "BLOCKED",
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agentId": "a000000000000011",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [
+          {
+            "name": "build-crew-builder",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "reported",
+            "detail": "DONE",
+            "ts": "2026-11-02T11:54:00.000Z",
+            "agentId": "a000000000000003",
+            "purpose": null,
+            "task": "Build the fixture widget in src/widget/ from the design note."
+          },
+          {
+            "name": "build-crew-runner",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "low",
+            "state": "spawned",
+            "detail": null,
+            "ts": "2026-11-02T11:40:00.000Z",
+            "agentId": "a000000000000004",
+            "purpose": null,
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agent": "build-crew",
+          "event": "tag",
+          "text": "build-crew sent BLOCKED"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Fix the fixture widget so it reads real data.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:02:00.000Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [
+    {
+      "n": 2,
+      "run": "2026-11-02T11:00:26Z | Fix the fixture widget so it reads real data.",
+      "text": "03:56 | altitude: goal is the end, not a step | client gave a concrete list | none | followed"
+    },
+    {
+      "n": 3,
+      "run": "2026-11-02T11:00:26Z | Fix the fixture widget so it reads real data.",
+      "text": "04:00 | Workflow path; the crews run as workflow-crew foremen | ADR-0009 standing ruling | none | followed"
+    }
+  ],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}

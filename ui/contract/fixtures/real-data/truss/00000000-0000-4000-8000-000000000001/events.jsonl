@@ -1,0 +1,11 @@
+{"v":1,"ts":"2026-11-04T09:00:00.000Z","event":"spawn","crew":"docs-crew","agent":"docs-crew","agentId":"a000000000000010","type":"workflow-crew","model":null,"effort":null,"by":"factory"}
+{"v":1,"ts":"2026-11-04T09:05:00.000Z","event":"spawn","crew":"docs-crew","agent":"docs-crew-runner","agentId":"a000000000000001","type":"general-purpose","model":"claude-sonnet-5-5","effort":"low","by":"workflow:wf_00000001-000"}
+{"v":1,"ts":"2026-11-04T09:05:00.003Z","event":"spawn","crew":"docs-crew","agent":"docs-crew-runner-2","agentId":"a000000000000002","type":"general-purpose","model":"claude-sonnet-5-5","effort":"low","by":"workflow:wf_00000001-000"}
+{"v":1,"ts":"2026-11-04T09:20:00.000Z","event":"report","crew":"docs-crew","agent":"docs-crew-runner","marker":null}
+{"v":1,"ts":"2026-11-04T09:21:00.000Z","event":"report","crew":"docs-crew","agent":"docs-crew-runner-2","marker":"DONE"}
+{"v":1,"ts":"2026-11-04T09:22:00.000Z","event":"tag","crew":"docs-crew","agent":"docs-crew","tag":"BLOCKED","run":"wf_00000001-000"}
+{"v":1,"ts":"2026-11-04T09:30:00.000Z","event":"spawn","crew":"build-crew","agent":"build-crew","agentId":"a000000000000011","type":"workflow-crew","model":null,"effort":null,"by":"factory"}
+{"v":1,"ts":"2026-11-04T09:35:00.000Z","event":"spawn","crew":"build-crew","agent":"build-crew-builder","agentId":"a000000000000003","type":"general-purpose","model":"claude-sonnet-5-5","effort":"medium","by":"build-crew"}
+{"v":1,"ts":"2026-11-04T09:36:00.000Z","event":"spawn","crew":"build-crew","agent":"build-crew-runner","agentId":"a000000000000004","type":"general-purpose","model":"claude-sonnet-5-5","effort":"low","by":"workflow:wf_00000001-000"}
+{"v":1,"ts":"2026-11-04T09:50:00.000Z","event":"report","crew":"build-crew","agent":"build-crew-builder","marker":"DONE"}
+{"v":1,"ts":"2026-11-04T09:55:00.000Z","event":"tag","crew":"build-crew","agent":"build-crew","tag":"BLOCKED","run":"wf_00000002-000"}
