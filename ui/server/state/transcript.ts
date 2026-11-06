@@ -81,24 +81,28 @@ function agentFile(sessionDir: string, agentId: string, by: string | null, ext: 
   }
 }
 
-// Claude Code's own description from agent-<id>.meta.json, unless it is a bare label (no whitespace).
-function metaDescription(sessionDir: string, agentId: string, by: string | null): string | null {
+// Claude Code's own description from agent-<id>.meta.json: `text` unless it is a bare label (no whitespace), in which
+// case `label` holds the bare label (a workflow agent's label, for which factory records a title).
+function metaDescription(sessionDir: string, agentId: string, by: string | null): { text: string | null; label: string | null } {
   try {
     const real = agentFile(sessionDir, agentId, by, '.meta.json')
-    if (real === null || fs.statSync(real).size > CAP) return null
+    if (real === null || fs.statSync(real).size > CAP) return { text: null, label: null }
     const o = JSON.parse(fs.readFileSync(real, 'utf8')) as { description?: unknown } | null
     const d = o !== null && typeof o === 'object' && typeof o.description === 'string' ? o.description.trim() : ''
-    return d === '' || !/\s/.test(d) ? null : d.slice(0, MAX_TASK)
+    if (d === '') return { text: null, label: null }
+    return /\s/.test(d) ? { text: d.slice(0, MAX_TASK), label: null } : { text: null, label: d }
   } catch {
-    return null
+    return { text: null, label: null }
   }
 }
 
-// Chain after the spawn line's task: the meta description, then the first brief line.
-export function readTranscriptTask(sessionDir: string, agentId: string, by: string | null): string | null {
+// Chain after the spawn line's task: the meta description, the title recorded for a bare-label description, then the first brief line.
+export function readTranscriptTask(sessionDir: string, agentId: string, by: string | null, titleOf: (label: string) => string | null = () => null): string | null {
   try {
     const meta = metaDescription(sessionDir, agentId, by)
-    if (meta !== null) return meta
+    if (meta.text !== null) return meta.text
+    const title = meta.label === null ? null : titleOf(meta.label)
+    if (title !== null) return title.slice(0, MAX_TASK)
     const real = agentFile(sessionDir, agentId, by, '.jsonl')
     if (real === null) return null
     const line = firstLine(real)

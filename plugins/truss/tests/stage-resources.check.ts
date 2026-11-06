@@ -356,3 +356,21 @@ st('case: runner calls get no admit', async () => {
     }
   }
 })
+
+st('case: admit carries the next label and a card title', async () => {
+  // ADR-0015 Decision 6: every admit before a spawn names the label that spawn gets, plus a short title; labels are unchanged
+  const r = await runStage([entry('a')], { labels: base('a') })
+  assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
+  const spawns = members(r.calls)
+  const admits = runnersOf(r.calls, 'admit', 'a')
+  assert.ok(spawns.length > 0, 'the crew spawned members')
+  assert.equal(admits.length, spawns.length)
+  admits.forEach((c, i) => {
+    const m = /--label (\S+) --title (.+)$/.exec(c.runner.line)
+    assert.ok(m, `admit line has --label and --title: ${c.runner.line}`)
+    assert.equal(m[1], spawns[i].label, 'the admit names the label the next spawn gets')
+    assert.ok(m[2].replace(/^'|'$/g, '').length <= 60 && m[2].length > 0, `title is short: ${m[2]}`)
+  })
+  assert.ok(admits.some((c) => /--title 'QC a'/.test(c.runner.line)), 'the QC admit titles the agent "QC a"')
+  assert.equal(runnersOf(r.calls, 'reap', 'a').every((c) => !/--title/.test(c.runner.line)), true)
+})

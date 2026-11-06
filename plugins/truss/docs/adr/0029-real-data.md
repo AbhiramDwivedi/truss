@@ -64,7 +64,7 @@ The card's task line is the first of these that holds:
 
 "No activity yet" shows only for a spawned agent with none of these. This replaces ADR-0028 section 6's fallback bullet.
 
-The `task` that item 1 reads is chosen in this order: the spawn line's task, then the `description` in Claude Code's `agent-<id>.meta.json` beside the transcript unless it is a bare label (no whitespace), then the first brief line, then null; a foreman with none of these reads the first non-empty line after the `# Goal:` heading of `goals/<slug>.md` in the Truss dir (read only, first 16 KiB, plain slug only). Each card also carries `activity`, the agent's latest tool call (`<Tool>: <short>`, at most 120 characters) from the last 64 KiB of its transcript, re-read when the file changes; the card shows it as a muted second line while the agent is not done.
+The `task` that item 1 reads is chosen in this order: the spawn line's task, then the `description` in Claude Code's `agent-<id>.meta.json` beside the transcript unless it is a bare label (no whitespace), then the first brief line, then null; a foreman with none of these reads the first non-empty line after the `# Goal:` heading of `goals/<slug>.md` in the Truss dir (read only, first 16 KiB, plain slug only). Each card also carries `activity`, the agent's latest tool call (`<Tool>: <short>`, at most 120 characters) from the last 64 KiB of its transcript, re-read when the file changes; the card shows it as a muted second line while the agent is not done. For a Workflow agent whose description is a bare label, a recorded `title` event for that label (ADR-0015 Decision 6, written by `admit --label --title`) comes after the meta description and before the brief's first line.
 
 ### 4. Run time and cost (defect 3; R-43)
 

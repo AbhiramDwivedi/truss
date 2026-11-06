@@ -243,7 +243,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     const hit = cache.get(agentId)
     const now = Date.now()
     if (hit !== undefined && (hit.task !== null || now - hit.at < MISS_MS)) return hit.task
-    const task = readTranscriptTask(sessionDir, agentId, reducer.spawnedBy(agentId))
+    const task = readTranscriptTask(sessionDir, agentId, reducer.spawnedBy(agentId), reducer.titleOf)
     cache.set(agentId, { task, at: now })
     return task
   }

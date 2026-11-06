@@ -264,3 +264,29 @@ test('a parallelism file never lifts a start that memory holds', () => {
   assert.equal(readPlan(w.dir).crews[0].status, 'planned')
   assert.ok(!existsSync(`${w.repo}/.claude/worktrees/truss-q`))
 })
+
+// ---------- admit --label --title (ADR-0015 Decision 6) ----------
+
+test('admit --label --title appends a schema-valid title event; without flags no event', () => {
+  const w = world([planned('q')])
+  const plain = w.run(['admit', ...fl(w, 'q')])
+  assert.equal(plain.json?.admitted, true, say(plain))
+  assert.equal(readEvents(w.dir).filter((e) => e.event === 'title').length, 0)
+  const r = w.run(['admit', ...fl(w, 'q'), '--label', 'q-builder-2', '--title', '  Build   the thing  '])
+  assert.equal(r.json?.admitted, true, say(r))
+  const ev = readEvents(w.dir).filter((e) => e.event === 'title')
+  assert.equal(ev.length, 1)
+  assert.deepEqual([ev[0].crew, ev[0].agent, ev[0].label, ev[0].title], ['q', 'q-builder-2', 'q-builder-2', 'Build the thing'])
+  assert.deepEqual(validateEvent(ev[0]), [])
+})
+
+test('admit with a bad label, a lone flag or an empty title is refused and writes no event; a long title is cut to 120', () => {
+  const w = world([planned('q')])
+  for (const extra of [['--label', 'nolabel', '--title', 'T'], ['--label', 'q-qc'], ['--title', 'T'], ['--label', 'q-qc', '--title', '   ']]) {
+    const r = w.run(['admit', ...fl(w, 'q'), ...extra])
+    assert.equal(r.status, 2, say(r))
+  }
+  assert.equal(readEvents(w.dir).filter((e) => e.event === 'title').length, 0)
+  w.run(['admit', ...fl(w, 'q'), '--label', 'q-qc', '--title', 'x'.repeat(300)])
+  assert.equal(readEvents(w.dir).find((e) => e.event === 'title').title.length, 120)
+})

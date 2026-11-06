@@ -148,6 +148,7 @@ export interface Reducer {
   skip(file: string, line: number, reason: 'json' | 'version'): void
   build(plan: Plan | null, qcFor: (slug: string) => Qc | null): Run
   spawnedBy(agentId: string): string | null // the spawn line's `by` for an agentId; internal to ui-state
+  titleOf(label: string): string | null // the card title a `title` event recorded for a workflow label; internal to ui-state
 }
 
 export function createReducer(): Reducer {
@@ -160,6 +161,7 @@ export function createReducer(): Reducer {
   // the crew accumulators; a crew's stall reads the names that follow it (see follows) once the plan is known.
   const successorLatest = new Map<string, Stamped>()
   const spawnBy = new Map<string, string | null>() // agentId -> the spawn line's `by`; read by the store, not published
+  const titles = new Map<string, string>() // workflow label -> card title from a `title` event; read by the store, not published
   let seq = 0
 
   function crewOf(slug: string): CrewAcc {
@@ -177,6 +179,12 @@ export function createReducer(): Reducer {
     const slug = str(obj.crew)
     const agent = str(obj.agent)
     const ts = str(obj.ts)
+    if (kind === 'title') {
+      const label = str(obj.label)
+      const title = str(obj.title)
+      if (label !== null && title !== null && title.trim() !== '') titles.set(label, title.trim())
+      return undefined
+    }
     if (kind === null || !EVENTS.has(kind) || slug === null || slug === '' || agent === null || agent === '' || ts === null) return undefined
     if (slug === 'main') return undefined // crew main is never a crew
     const acc = crewOf(slug)
@@ -350,5 +358,5 @@ export function createReducer(): Reducer {
     }
   }
 
-  return { event, message, skip, build, spawnedBy: (id) => spawnBy.get(id) ?? null }
+  return { event, message, skip, build, spawnedBy: (id) => spawnBy.get(id) ?? null, titleOf: (l) => titles.get(l) ?? null }
 }

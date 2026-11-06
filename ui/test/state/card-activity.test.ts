@@ -79,6 +79,29 @@ test('title: a bare-label description is ignored and the brief line is used', as
   })
 })
 
+const titleEv = (env: Env, label: string, title: string) =>
+  fs.appendFileSync(path.join(env.trussDir, 'events.jsonl'), JSON.stringify({ v: 1, ts: '2026-11-04T09:39:00.000Z', event: 'title', crew: 'docs-crew', agent: label, label, title }) + '\n')
+
+test('title: a bare-label description with a recorded title takes the title, ahead of the brief line', async () => {
+  await withEnv((env, open) => {
+    transcript(env, brief('Brief line.'))
+    meta(env, 'arch-current-qc')
+    titleEv(env, 'arch-current-qc', 'QC arch-current')
+    assert.equal(members(open())[AGENT].task, 'QC arch-current')
+  })
+})
+
+test('title: a descriptive meta description beats a recorded title; a title for another label is ignored', async () => {
+  await withEnv((env, open) => {
+    transcript(env, brief('Brief line.'))
+    titleEv(env, 'arch-current-qc', 'QC arch-current')
+    meta(env, 'Apply ruled old-spec updates')
+    assert.equal(members(open())[AGENT].task, 'Apply ruled old-spec updates')
+    meta(env, 'other-label')
+    assert.equal(members(open())[AGENT].task, 'Brief line.')
+  })
+})
+
 test('title: without a meta file the brief line is used as before', async () => {
   await withEnv((env, open) => {
     transcript(env, brief('Brief line.'))
