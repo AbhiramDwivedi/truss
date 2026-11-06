@@ -4,15 +4,15 @@ Truss is three kinds of file. The protocol lives in prompts: the PM's (project m
 
 The prompts decide what agents should do. The hooks refuse the calls that break the chain of command, save reports to disk, and wake the PM when something needs it.
 
-Foundry 0.3.0 adds a design phase: a design engineer, principle packs, a plan file and stages. [ADR-0001](adr/0001-design-phase.md) decides it. The parts are `agents/design-engineer.md`, the `skills/principles/` and `skills/init/` skills, and the plan gates in `hooks/register.ts`, which read `plan.json`. The plan file's contract is [`plan.schema.json`](plan.schema.json), with an example in [`plan.example.json`](plan.example.json).
+Truss has a design phase: a design engineer, principle packs, a plan file and stages. [ADR-0001](adr/0001-design-phase.md) decides it. The parts are `agents/design-engineer.md`, the `skills/principles/` and `skills/init/` skills, and the plan gates in `hooks/register.ts`, which read `plan.json`. The plan file's contract is [`plan.schema.json`](plan.schema.json), with an example in [`plan.example.json`](plan.example.json).
 
-Foundry 0.4.0 (designed in foundry run 2, ADRs accepted 2026-10-27) builds on kit and records what a run did. [ADR-0002](adr/0002-kit-manifest-and-config.md): Truss init reads kit's manifest, has kit declare `truss:qc-engineer` and `truss:checking-engineer` read-only, and proposes the new `.claude/truss.json` keys ([`truss-config.schema.json`](truss-config.schema.json)); crews take ports from worktrees' slots. [ADR-0003](adr/0003-event-log-and-retro.md): the hooks append `events.jsonl` ([`events.schema.json`](events.schema.json)), `decisions.md` gets a grammar, and `scripts/retro.py` with the `truss:retro` skill counts both. Both apply the repo's extension rules, [repo ADR-0012](adr/claude-ops/0012-extension-framework.md). Run 2's stage 1 merged; the sections marked 0.4.0 describe the code.
+Truss builds on kit and records what a run did (designed in foundry run 2, ADRs accepted 2026-10-27). [ADR-0002](adr/0002-kit-manifest-and-config.md): Truss init reads kit's manifest, has kit declare `truss:qc-engineer` and `truss:checking-engineer` read-only, and proposes the new `.claude/truss.json` keys ([`truss-config.schema.json`](truss-config.schema.json)); crews take ports from worktrees' slots. [ADR-0003](adr/0003-event-log-and-retro.md): the hooks append `events.jsonl` ([`events.schema.json`](events.schema.json)), `decisions.md` gets a grammar, and `scripts/retro.py` with the `truss:retro` skill counts both. Both apply the repo's extension rules, [repo ADR-0012](adr/claude-ops/0012-extension-framework.md). Run 2's stage 1 merged; the sections on kit, the config keys, the event log and `decisions.md` describe the code.
 
-Foundry 0.5.0 (designed in foundry run 3, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), accepted 2026-10-28 with the client's approval of the run-3 plan) makes the quality gates evidence-based for scope, repair and cost. Plan v2 carries a `reworkAllowance`. The foreman's report gains Examined and Not examined sections, and the QC engineer FAILs an absence claim that states no scope. The QC engineer writes fixed head and patch lines, so a hook can tell which head a PASS belongs to, and a PASS survives a merge of the target (a rebase, before 0.6.0) that leaves the patch id unchanged. The hooks refuse the QC engineer spawn that would exceed the allowance, and record the spent allowance in `events.jsonl`. They also refuse main-session `truss:*` calls that set no model or effort. Every new rule applies only to plans with `version >= 2` and fails open on v1. The effort ladder itself is a repo-level principle, in the amendment to repo [ADR-0011](adr/claude-ops/0011-agents-pin-their-model.md). Run 3 merged as 0.5.0 and 0.5.1; the sections marked 0.5.0 describe the code.
+The quality gates (designed in foundry run 3, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), accepted 2026-10-28 with the client's approval of the run-3 plan) are evidence-based for scope, repair and cost. Plan v2 carries a `reworkAllowance`. The foreman's report gains Examined and Not examined sections, and the QC engineer FAILs an absence claim that states no scope. The QC engineer writes fixed head and patch lines, so a hook can tell which head a PASS belongs to, and a PASS survives a merge of the target that leaves the patch id unchanged. The hooks refuse the QC engineer spawn that would exceed the allowance, and record the spent allowance in `events.jsonl`. They also refuse main-session `truss:*` calls that set no model or effort. Every new rule applies only to plans with `version >= 2` and fails open on v1. The effort ladder itself is a repo-level principle, in the amendment to repo [ADR-0011](adr/claude-ops/0011-agents-pin-their-model.md). Run 3 merged; the sections on the rework allowance and head guard describe the code.
 
-Foundry 0.8.0 ([ADR-0005](adr/0005-growth-model.md), accepted 2026-10-29) grows the project's architecture doc instead of the plugin. The plugin keeps the seven generic packs and ships no domain content. A design engineer that finds a domain no pack or doc section covers reports it, and an init-mode extend pass writes a domain section into the project's doc, committed on its own. The design engineer and the writer gain `WebFetch` and `WebSearch`. Every web fetch in the session passes one hook function, `fetchVerdict`, which allows every call today and logs a `fetch` line to `events.jsonl`, so a guardrail added later changes that function alone. The sections marked 0.8.0 are the design; stage 1 of the 0.8.0 run builds them.
+Growth ([ADR-0005](adr/0005-growth-model.md), accepted 2026-10-29) is in the project's architecture doc instead of the plugin. The plugin keeps the seven generic packs and ships no domain content. A design engineer that finds a domain no pack or doc section covers reports it, and an init-mode extend pass writes a domain section into the project's doc, committed on its own. The design engineer and the writer gain `WebFetch` and `WebSearch`. Every web fetch in the session passes one hook function, `fetchVerdict`, which allows every call today and logs a `fetch` line to `events.jsonl`, so a guardrail added later changes that function alone. The extend pass and fetch gate sections are the design; stage 1 of the growth run builds them.
 
-Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by the `leftover-design` crew) says why each leftover worktree stayed. retro gains one top-level key, `leftoverDetails`, with `leftovers` and every other key unchanged. The stress test resets its own branch to the crew head instead of detaching, and leaves its worktree clean. The retro skill gains a root-cause step that writes one `CAUSE:` line per anomaly. Details are in "retro's leftover details (0.9.0)" below.
+Leftover causes ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by the `leftover-design` crew) say why each leftover worktree stayed. retro gains one top-level key, `leftoverDetails`, with `leftovers` and every other key unchanged. The stress test resets its own branch to the crew head instead of detaching, and leaves its worktree clean. The retro skill gains a root-cause step that writes one `CAUSE:` line per anomaly. Details are in "retro's leftover details" below.
 
 [ADR-0012](adr/0012-self-improving-retro.md) (proposed 2026-10-31 by the `retro-design` crew) makes the retro improve truss from each run. `factory.ts finish` saves a mechanical extract of the session's transcripts in the truss dir, and a committed catalog of known problems names each one `check`, `stage.js`, the extract and a new `factory.ts doctor` meet again. `doctor` probes each crew's host `needs` before any crew starts and gives the client one approval bundle. At the end of every run the PM starts `truss:retro-judge` agents that cite transcript lines, a checking engineer triages their findings, and the fix-now findings become a goal that truss builds with QC. The next retro reports a fixed problem that came back. The retro now reads transcripts, so P24 no longer binds it; the event log still holds no message, prompt or report text (P8). Details are in "The self-improving retro (ADR-0012)" below.
 
@@ -32,7 +32,7 @@ Foundry 0.9.0 ([ADR-0006](adr/0006-leftover-causes.md), proposed 2026-10-29 by t
 
 [ADR-0027](adr/0027-retro-fixes2.md) (proposed 2026-11-03 by the `retro-fixes2-design` crew, goal `retro-fixes2`) fixes retro 2's findings F-67, F-70, F-72, F-73 and F-74. `admit` in `stage.js` fails closed, and every factory command but `start` refuses a relative `--dir`. A green fix builder that stops naming a tester file hands over to a tester. The QC prompt carries the foreground rule. `factory.ts decide` writes `decisions.md`, and a main-session `Bash` hook refuses a push or merge that scrub doesn't gate with `&&` (R-32). It also narrows two retro catalog patterns.
 
-The container view below shows which part writes and which reads each stored file. Nodes marked 0.4.0 name the version that added them, and are built.
+The container view below shows which part writes and which reads each stored file. Every node shown is built.
 
 ```mermaid
 flowchart TB
@@ -41,19 +41,19 @@ flowchart TB
   arch["truss:design-engineer<br/>[agent: agents/design-engineer.md]<br/>Writes the doc, ADRs and draft plan"]
   crew["Crew agents<br/>[agents: foreman, QC engineer, checking engineer, writer, commissioning engineer]<br/>Do and check the work"]
   hooks["Hooks module<br/>[hooks/register.ts]<br/>Gates, report capture, wakes"]
-  retro["retro, 0.4.0<br/>[scripts/retro.py, truss:retro]<br/>Counts what a run did"]
+  retro["retro<br/>[scripts/retro.py, truss:retro]<br/>Counts what a run did"]
   fjson[(".claude/truss.json<br/>[project config]")]
-  kitman[("kit's .claude/kit/manifest.json<br/>[kit's store, read from 0.4.0]")]
+  kitman[("kit's .claude/kit/manifest.json<br/>[kit's store, read by init]")]
   plan[("plan.json, plan.md<br/>[Truss dir]")]
   dec[("decisions.md<br/>[Truss dir]")]
-  events[("events.jsonl, 0.4.0<br/>[Truss dir]")]
+  events[("events.jsonl<br/>[Truss dir]")]
   reports[("reports/, messages.jsonl<br/>[Truss dir]")]
 
   run -->|"Skill call when the doc is missing"| init
   init -->|"reads read-only declarations"| kitman
   init -->|"starts in init mode"| arch
   arch -->|"writes architecture, adr keys"| fjson
-  fjson -->|"doc path, merge, target, caps; roles from 0.4.0"| run
+  fjson -->|"doc path, merge, target, caps, roles"| run
   run -->|"starts in plan mode"| arch
   arch -->|"writes the draft"| plan
   run -->|"sets approvedAt, status"| plan
@@ -61,9 +61,9 @@ flowchart TB
   run -->|"writes decision lines"| dec
   crew -.->|"Agent, SendMessage, stops"| hooks
   hooks -->|"reads, gates foreman starts"| plan
-  hooks -->|"saves reports, logs foreman messages, 0.5.0: reads this run's QC files"| reports
+  hooks -->|"saves reports, logs foreman messages, reads this run's QC files"| reports
   hooks -->|"stamps HH:MM"| dec
-  hooks -->|"appends spawn, stall, tag, report, 0.5.0: spent allowance"| events
+  hooks -->|"appends spawn, stall, tag, report, spent allowance"| events
   retro -->|"reads"| events
   retro -->|"reads"| dec
 ```
@@ -80,7 +80,7 @@ flowchart TD
   client(["Client<br/>[person]<br/>Approves, rules, pushes"])
   PM["PM<br/>[main session]<br/>Plans, settles, merges"]
   checker["Checking engineer<br/>[agent: truss:checking-engineer]<br/>Reviews items bound for the client"]
-  arch["Design engineer<br/>[agent: truss:design-engineer, 0.3.0]<br/>Drafts the plan"]
+  arch["Design engineer<br/>[agent: truss:design-engineer]<br/>Drafts the plan"]
   integ["Integrator<br/>[agent, single mode]<br/>Merges every crew branch"]
   ijudge["Integration QC engineer<br/>[agent, single mode]<br/>Rules on the integration branch"]
   foremanA["Foreman, crew A<br/>[agent: truss:foreman]"]
@@ -128,32 +128,32 @@ flowchart TD
 *Inside one crew: the foreman's members, its QC engineer and stress test, and where their reports land.*
 Traces to: `agents/foreman.md`, `agents/qc-engineer.md`, `hooks/register.ts`.
 
-Only the PM talks to the client. Only foremen message the PM, so a member's question reaches the PM through its foreman. Foremen message each other only when their work collides: a file another crew owns, a shared interface that changes, or the merge order. The hooks enforce the message rules for everything inside a crew (see [Hooks](#hooks)). The checking engineer, the integrator, the integration QC engineer and (0.3.0) the design engineer in `plan` mode are started by the PM, so they sit outside every crew. The hooks don't police them and don't save their reports.
+Only the PM talks to the client. Only foremen message the PM, so a member's question reaches the PM through its foreman. Foremen message each other only when their work collides: a file another crew owns, a shared interface that changes, or the merge order. The hooks enforce the message rules for everything inside a crew (see [Hooks](#hooks)). The checking engineer, the integrator, the integration QC engineer and the design engineer in `plan` mode are started by the PM, so they sit outside every crew. The hooks don't police them and don't save their reports.
 
 | Agent | Started by | Model and effort | Edits files |
 | --- | --- | --- | --- |
-| PM | You, with `/truss:run` | The session's | Only `decisions.md`, `plan.md`, goal files, and the fast-forward in `sequential` mode; from 0.3.0, `plan.json` and `plan.md` once the design engineer has drafted them: it sets `approvedAt` and each crew's `status`, and for a mid-run design slice adds the crew, moves its dependants a stage later and sets `clientApproval`. From [ADR-0014](adr/0014-retro-fixes.md) (proposed), `mainEditVerdict` refuses its Edit and Write calls on any other repo file while a run is active |
-| Design engineer, 0.3.0 | `init`: the `truss:init` skill, run by you as `/truss:init` or by the PM when a run finds no architecture doc. `plan`: the PM, at the start of every run. `design`: the design crew's foreman | Opus, `medium` (0.4.3) | Only the architecture doc and the ADR directory, plus `.claude/truss.json` in `init` mode, `plan.json`, `plan.md` and `<truss dir>/scratch/` in `plan` mode, and a contract artifact at a path the design crew owns in `design` mode; never source or tests |
-| Checking engineer, `checker-<n>` | PM, fresh for each batch | Opus, `medium` (0.4.3) | No |
-| Foreman, `<slug>` | PM, in the background, in a worktree | Opus, `medium` | Merges members and the target into the crew branch, never rebases (0.6.0); writes code only for conflicts and small fixes the checks demand |
+| PM | You, with `/truss:run` | The session's | Only `decisions.md`, `plan.md`, goal files, and the fast-forward in `sequential` mode; also `plan.json` and `plan.md` once the design engineer has drafted them: it sets `approvedAt` and each crew's `status`, and for a mid-run design slice adds the crew, moves its dependants a stage later and sets `clientApproval`. From [ADR-0014](adr/0014-retro-fixes.md) (proposed), `mainEditVerdict` refuses its Edit and Write calls on any other repo file while a run is active |
+| Design engineer | `init`: the `truss:init` skill, run by you as `/truss:init` or by the PM when a run finds no architecture doc. `plan`: the PM, at the start of every run. `design`: the design crew's foreman | Opus, `medium` | Only the architecture doc and the ADR directory, plus `.claude/truss.json` in `init` mode, `plan.json`, `plan.md` and `<truss dir>/scratch/` in `plan` mode, and a contract artifact at a path the design crew owns in `design` mode; never source or tests |
+| Checking engineer, `checker-<n>` | PM, fresh for each batch | Opus, `medium` | No |
+| Foreman, `<slug>` | PM, in the background, in a worktree | Opus, `medium` | Merges members and the target into the crew branch, never rebases; writes code only for conflicts and small fixes the checks demand |
 | Members, named after their foreman | Foreman | Set on every call; Sonnet for mechanical work, Opus for judgment | Yes, each in its own worktree |
-| QC engineer, `<crew>-qc`, then `-2`, `-3` | Foreman | Opus, `medium` (0.4.3); `high` or `xhigh` only on the client's call (repo ADR-0011 amendment). From 0.5.0, on a v2 plan, at most `reworkAllowance` QC engineers after FAILs ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 5) | No |
+| QC engineer, `<crew>-qc`, then `-2`, `-3` | Foreman | Opus, `medium`; `high` or `xhigh` only on the client's call (repo ADR-0011 amendment). On a v2 plan, at most `reworkAllowance` QC engineers after FAILs ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 5) | No |
 | Stress test, `<crew>-stress` | Foreman, when the plan says yes | Opus, `medium` (repo ADR-0011 amendment) | Only inside its own worktree and temp dirs; never commits. It runs as `truss:stress-engineer` (`agents/stress-engineer.md`), with Write and Edit for those dirs only |
 | Integrator | PM, `single` mode | `general-purpose`, Opus, `high` | Yes, the integration branch |
-| Integration QC engineer | PM, `single` mode | Opus, `xhigh` in 0.4.3 (`skills/run/SKILL.md:315`); `medium` from 0.5.0, like every QC engineer (repo ADR-0011 amendment) | No |
+| Integration QC engineer | PM, `single` mode | Opus, `medium`, like every QC engineer (repo ADR-0011 amendment) | No |
 | Planning engineer, `<slug>-planner`, then `-2` (ADR-0009) | `stage.js`, on the Workflow path only | Opus, `medium`, in its front matter and in `workflows/roles.json` | No; read-only, starts no agent |
 
 **Workflow crews have no foreman ([ADR-0009](adr/0009-workflow-factory.md), Decisions 2, 4 and 5).** On the Workflow path a crew is a chain inside the `stage.js` script, not a `truss:foreman`. The script plays the foreman's orchestration role and makes every member, QC engineer and stress-test `agent()` call itself, because a workflow agent has no Agent tool and can't delegate (ADR-0009, Probe, probe 2; that `truss:foreman` in particular has none is inferred from `kit:builder`, not run). Every agent's type, model, effort and isolation come from one table, `workflows/roles.json`, through the script's one `spawn()` function: `designer`, `checker`, `planner` (`truss:planning-engineer`) and `writer` on Opus at `medium`; `tester` and `builder` (the project's agent type, default `general-purpose`) and `resolver` on Sonnet at `medium`, a builder at `low` when its task says so; `rca`, `stress` and `qc` on Opus at `medium` (`stress` as `truss:stress-engineer`, `qc` as `truss:qc-engineer`); and `runner` (`general-purpose`, Sonnet, `low`), which runs one `factory.ts` command the script wrote out in full and relays its output. The table has no `foreman`, `commissioning` or `integrator` role, and `workflowRoleVerdict` refuses one (ADR-0009, Decision 2). The planning engineer (`agents/planning-engineer.md`, Decision 5) does the foreman's depth pass and split, `agents/foreman.md` sections 2 and 3, for one crew and returns the tasks in a schema; it writes nothing. A tester's commits still carry `Truss-Role: test-writer`, and a resolver's carry `Truss-Role: resolver`, a value defined in the member and QC engineer briefs `stage.js` writes, not in `agents/foreman.md` (Decision 8). Crews with a `commissioning-engineer` member, crews whose members the client raised to `high` or `xhigh`, every crew of a `single`-mode run, and every crew in a session without the Workflow tool keep the foreman path, and the table above, unchanged (Decision 1, "start, engine split"). Whether the Workflow path is the default is an open client decision (ADR-0009, Client decisions, item 2; the ADR recommends yes).
 
-The design engineer (0.3.0) is `agents/design-engineer.md`. It loads the principle packs the work touches from the `skills/principles/` skill and runs in three modes ([ADR-0001](adr/0001-design-phase.md), sections 2 and 3):
+The design engineer is `agents/design-engineer.md`. It loads the principle packs the work touches from the `skills/principles/` skill and runs in three modes ([ADR-0001](adr/0001-design-phase.md), sections 2 and 3):
 
-- `init`: started by the `truss:init` skill. Writes the project's architecture doc (principles, module map, ADRs for decisions already in the code) and `.claude/truss.json`. From 0.8.0 the PM also starts it in `init` mode with an extend brief, to add domain sections to an existing doc (the extend pass, below).
+- `init`: started by the `truss:init` skill. Writes the project's architecture doc (principles, module map, ADRs for decisions already in the code) and `.claude/truss.json`. The PM also starts it in `init` mode with an extend brief, to add domain sections to an existing doc (the extend pass, below).
 - `plan`: started by the PM at the start of every run, outside every crew, like the checking engineer. For a goal, gives each touched module an `extend` or `change` verdict and splits the work into crews and stages by the leaf test, as a draft `plan.json` plus a readable `plan.md`. The PM owns both files after that.
 - `design`: a member of a design crew, in stage 0 or a mid-run slice, started by that crew's foreman. Writes the ADR and architecture-doc change for each `change` verdict, and names the seams the crew's test-writer must pin with contract tests.
 
-Its tools are Read, Grep, Glob, Bash (read-only git and read-only inspection, plus the acceptance test commands it proves and a schema validator fetched by `npx -y`, both in `plan` mode), Skill, and Write and Edit for the files in the table above. From 0.8.0 it also has `WebFetch` and `WebSearch`, and so does the writer ([ADR-0005](adr/0005-growth-model.md), section 3). Foremen and members already have every tool, and commissioning engineer keeps `WebFetch`. The QC engineer and the checking engineer get no web tools: a QC engineer that needs an outside fact to rule has found a gap in the doc and reports it as a finding. Every agent prompt, and the PM's, carries ADR-0005's fetch rule word for word, and the foreman puts it in every member brief (section 2). Crews never edit the architecture doc or ADRs; a design change they need goes to the PM as `PROPOSAL:`, which the PM can take up as a mid-run design slice (lifecycle step 8).
+Its tools are Read, Grep, Glob, Bash (read-only git and read-only inspection, plus the acceptance test commands it proves and a schema validator fetched by `npx -y`, both in `plan` mode), Skill, and Write and Edit for the files in the table above. It also has `WebFetch` and `WebSearch`, and so does the writer ([ADR-0005](adr/0005-growth-model.md), section 3). Foremen and members already have every tool, and commissioning engineer keeps `WebFetch`. The QC engineer and the checking engineer get no web tools: a QC engineer that needs an outside fact to rule has found a gap in the doc and reports it as a finding. Every agent prompt, and the PM's, carries ADR-0005's fetch rule word for word, and the foreman puts it in every member brief (section 2). Crews never edit the architecture doc or ADRs; a design change they need goes to the PM as `PROPOSAL:`, which the PM can take up as a mid-run design slice (lifecycle step 8).
 
-**The extend pass (0.8.0).** Truss extends a project's doc only on evidence from the work ([ADR-0005](adr/0005-growth-model.md), section 4):
+**The extend pass.** Truss extends a project's doc only on evidence from the work ([ADR-0005](adr/0005-growth-model.md), section 4):
 
 - At init, a goal given with `/truss:init` is passed to the design engineer, which covers the domains the goal names as well as the code, so a greenfield repo gets a doc.
 - At plan time, a domain is uncovered when the goal touches a platform, product type or tool that neither a loaded pack nor a section of the doc covers. The plan-mode design engineer stays read-only: it hands back one `UNCOVERED: <domain> | <why the goal touches it>` line per domain and no plan blocks, so the plan-file route writes nothing. The PM then starts the design engineer in `init` mode with an extend brief naming those domains.
@@ -180,14 +180,14 @@ sequenceDiagram
   P-->>F: plan.json and plan.md blocks
 ```
 
-*The plan-time extend flow, 0.8.0, as designed; it runs once, on the first run that touches the domain.*
+*The plan-time extend flow, as designed; it runs once, on the first run that touches the domain.*
 Traces to: `docs/adr/0005-growth-model.md` (sections 4, 5 and 8, and its literals table), `hooks/register.ts:861-864` (`routePlanFiles` writes nothing for a hand-back with no fenced blocks).
 
 A crew, as the hooks see it, is a `truss:foreman` with no parent (the main thread started it) and every agent whose parent chain reaches it. A `truss:foreman` started by some other agent is not a crew.
 
 ## The run lifecycle
 
-The 0.3.0 additions are marked. The diagram shows steps 4 to 11 for one crew; the numbered steps below it are the full story.
+The diagram shows steps 4 to 11 for one crew; the numbered steps below it are the full story.
 
 ```mermaid
 sequenceDiagram
@@ -226,17 +226,17 @@ sequenceDiagram
 *One run, from goal to merge, for a single crew per stage.*
 Traces to: `skills/run/SKILL.md`, `agents/design-engineer.md`, `agents/foreman.md`, `agents/qc-engineer.md`, `docs/adr/0001-design-phase.md` (sections 3, 6 and 9).
 
-0. Init (0.3.0): When a run finds no architecture doc, the PM runs the `truss:init` skill, which starts the design engineer in `init` mode; the client can also run `/truss:init`. If the repo already has an architecture doc of its own, `init` extends it rather than replacing it; otherwise it writes `docs/architecture.md`, with ADRs in `docs/adr/`. It records the doc's path in `.claude/truss.json`. From 0.4.0, init then reads kit's manifest, runs `kit:init` when it is missing and kit is installed, and proposes the new `truss.json` keys ([ADR-0002](adr/0002-kit-manifest-and-config.md)).
+0. Init: When a run finds no architecture doc, the PM runs the `truss:init` skill, which starts the design engineer in `init` mode; the client can also run `/truss:init`. If the repo already has an architecture doc of its own, `init` extends it rather than replacing it; otherwise it writes `docs/architecture.md`, with ADRs in `docs/adr/`. It records the doc's path in `.claude/truss.json`. Init then reads kit's manifest, runs `kit:init` when it is missing and kit is installed, and proposes the new `truss.json` keys ([ADR-0002](adr/0002-kit-manifest-and-config.md)).
 1. Altitude: The PM asks the client once whether the goal is the end or a step toward a bigger outcome, and describes the bigger version.
 2. Depth pass: The PM answers four questions (what a top practitioner would add, the rawest material, the practitioner's tools, what besides a model verifies the result). The answers decide which crews exist.
-3. Inventory: The PM lists the agent types and skills the session can use. From 0.4.0 it starts from `roles` in `.claude/truss.json`, where set.
-4. Split: Crews own disjoint files, each with an acceptance test it can't game, its high-impact paths, a stress test yes or no, and a resource slice (port range, database or temp directory). From 0.3.0, the PM starts the design engineer in `plan` mode for this, at the start of every run. It gives one verdict per touched module, `extend` by default, splits the work into crews and stages by the leaf test, runs each crew's acceptance test once to prove it, and estimates agents per crew. The design engineer drafts `plan.json` and `plan.md`; the PM owns both after that. A checking engineer reviews the verdicts on its own; a disagreement doesn't send the plan back; only a gameable acceptance test does. The client is asked only when the checking engineer disagrees and the design engineer's reason doesn't settle it, or a change breaks a declared principle, adds an external service or recurring cost, or changes a stored data shape in a way that's hard to undo. `plan.json` has no fields for a crew's high-impact paths, stress test or resource slice, which the 0.2.1 PM sets in its plan table and each foreman's brief (`skills/run/SKILL.md`); ADR-0001 doesn't say who sets them from 0.3.0. From 0.4.0 the slice names no invented port range: a crew uses its worktree slot's `PORT_BASE` when the repo has a `.claude/worktree-setup.*`, and the plan says `ports: none (no .claude/worktree-setup.*; worktrees gives no PORT_BASE)` when it hasn't ([ADR-0002](adr/0002-kit-manifest-and-config.md), section 4).
-5. Approval and freeze: The PM shows the plan table and asks for the merge mode and target branch. On approval it writes `plan.md`. From here the scope is frozen, and only the client can change it. From 0.3.0, the pause depends on the plan. An extend-only run, with no stage 0, doesn't pause: the design engineer's draft sets `approval: "auto"`, and the PM logs the plan, overwrites `approvedAt` with its own log time, and starts the crews without asking. Its merge mode and target come from `.claude/truss.json` (`merge`, `target`); without them the merge mode is `sequential` and the target is the current branch, and the PM logs which it used. The client sees the plan in the end-of-run report. A run with a stage 0 gets `approval: "client"` and `approvedAt: null` from the design engineer's draft: the PM checks it, shows the plan table with the ADRs, asks for the merge mode and target as in 0.2.1, and sets `approvedAt` when the client approves. Later stages start as earlier ones merge, with no further pause. `approvedAt` is null only while a run waits for the client. In either case, questions still reach the client through the checking engineer's escalation rules.
-6. Foremen start: The PM writes `goals/<slug>.md` for each crew and starts all foremen in one message. From 0.3.0, foremen start by stage. Stage 0 holds the `change` work (ADRs, the architecture-doc change, the contract tests) and merges before any other stage starts; each stage merges before the next starts. Within a stage, at most `maxParallelCrews` crews run at once; the rest queue and start as running ones merge. The queue order is the order of the `crews` array within the stage. The PM sets each crew's `status` in `plan.json` as it starts and merges.
-7. Inside each crew: The foreman runs its checks to prove its environment works, runs a full depth pass, splits the work into member tasks, and delegates. Members report with proof. The foreman merges the members' branches with `git merge --no-ff`, runs the checks, then runs the stress test (when there is one) and a fresh QC engineer. Before the QC engineer it compares its diff with the files it owns and asks the PM for any extension. Every member commit carries `Truss-Crew: <slug>` and `Truss-Role: <role>` trailers. The QC engineer reads the role with `git log --format='%H %(trailers:key=Truss-Role,valueonly)'` and fails the crew if a `builder` commit touched the acceptance test tests. A file outside the crew's ownership is a `QUESTION:` for the PM in the QC engineer's findings, not a FAIL by itself. From 0.3.0, the QC engineer also asks whether the diff conforms to the architecture doc's principles and module map, and to the run's ADRs. A violation that doesn't affect the acceptance test is a QUESTION. One that breaks a declared principle is a FAIL.
-8. Messages: Foremen send the PM `QUESTION:`, `BLOCKED:` or `PROPOSAL:`. The PM settles what it can and logs it. Items for the client go through a checking engineer first. From 0.3.0, when the PM takes up a design proposal, it runs a mid-run design slice. It adds a design crew (`verdict: "design"`) to the earliest stage whose crews it doesn't depend on, first in that stage's queue and ahead of the crews that need it; a running crew isn't moved (`skills/run/SKILL.md:278`). A new stage after the last would deadlock when a running crew needs the slice, since a later-stage foreman is refused while a running crew's stage is unmerged. The PM then moves only the crews that depend on the slice, and haven't started, one stage later; running crews and crews that don't depend on it keep their stage. The run-level `approval` and `approvedAt` don't change. The slice waits for the client only when one of the client triggers in step 4 applies: the PM then sets the crew's `clientApproval` to `"pending"`, and to `"approved"` when the client answers. Otherwise the slice starts like any crew.
+3. Inventory: The PM lists the agent types and skills the session can use. It starts from `roles` in `.claude/truss.json`, where set.
+4. Split: Crews own disjoint files, each with an acceptance test it can't game, its high-impact paths, a stress test yes or no, and a resource slice (port range, database or temp directory). The PM starts the design engineer in `plan` mode for this, at the start of every run. It gives one verdict per touched module, `extend` by default, splits the work into crews and stages by the leaf test, runs each crew's acceptance test once to prove it, and estimates agents per crew. The design engineer drafts `plan.json` and `plan.md`; the PM owns both after that. A checking engineer reviews the verdicts on its own; a disagreement doesn't send the plan back; only a gameable acceptance test does. The client is asked only when the checking engineer disagrees and the design engineer's reason doesn't settle it, or a change breaks a declared principle, adds an external service or recurring cost, or changes a stored data shape in a way that's hard to undo. `plan.json` has no fields for a crew's high-impact paths, stress test or resource slice, which the PM sets in its plan table and each foreman's brief (`skills/run/SKILL.md`); ADR-0001 doesn't say who sets them. The slice names no invented port range: a crew uses its worktree slot's `PORT_BASE` when the repo has a `.claude/worktree-setup.*`, and the plan says `ports: none (no .claude/worktree-setup.*; worktrees gives no PORT_BASE)` when it hasn't ([ADR-0002](adr/0002-kit-manifest-and-config.md), section 4).
+5. Approval and freeze: The PM shows the plan table and asks for the merge mode and target branch. On approval it writes `plan.md`. From here the scope is frozen, and only the client can change it. The pause depends on the plan. An extend-only run, with no stage 0, doesn't pause: the design engineer's draft sets `approval: "auto"`, and the PM logs the plan, overwrites `approvedAt` with its own log time, and starts the crews without asking. Its merge mode and target come from `.claude/truss.json` (`merge`, `target`); without them the merge mode is `sequential` and the target is the current branch, and the PM logs which it used. The client sees the plan in the end-of-run report. A run with a stage 0 gets `approval: "client"` and `approvedAt: null` from the design engineer's draft: the PM checks it, shows the plan table with the ADRs, asks for the merge mode and target, and sets `approvedAt` when the client approves. Later stages start as earlier ones merge, with no further pause. `approvedAt` is null only while a run waits for the client. In either case, questions still reach the client through the checking engineer's escalation rules.
+6. Foremen start: The PM writes `goals/<slug>.md` for each crew and starts all foremen in one message. Foremen start by stage. Stage 0 holds the `change` work (ADRs, the architecture-doc change, the contract tests) and merges before any other stage starts; each stage merges before the next starts. Within a stage, at most `maxParallelCrews` crews run at once; the rest queue and start as running ones merge. The queue order is the order of the `crews` array within the stage. The PM sets each crew's `status` in `plan.json` as it starts and merges.
+7. Inside each crew: The foreman runs its checks to prove its environment works, runs a full depth pass, splits the work into member tasks, and delegates. Members report with proof. The foreman merges the members' branches with `git merge --no-ff`, runs the checks, then runs the stress test (when there is one) and a fresh QC engineer. Before the QC engineer it compares its diff with the files it owns and asks the PM for any extension. Every member commit carries `Truss-Crew: <slug>` and `Truss-Role: <role>` trailers. The QC engineer reads the role with `git log --format='%H %(trailers:key=Truss-Role,valueonly)'` and fails the crew if a `builder` commit touched the acceptance test tests. A file outside the crew's ownership is a `QUESTION:` for the PM in the QC engineer's findings, not a FAIL by itself. The QC engineer also asks whether the diff conforms to the architecture doc's principles and module map, and to the run's ADRs. A violation that doesn't affect the acceptance test is a QUESTION. One that breaks a declared principle is a FAIL.
+8. Messages: Foremen send the PM `QUESTION:`, `BLOCKED:` or `PROPOSAL:`. The PM settles what it can and logs it. Items for the client go through a checking engineer first. When the PM takes up a design proposal, it runs a mid-run design slice. It adds a design crew (`verdict: "design"`) to the earliest stage whose crews it doesn't depend on, first in that stage's queue and ahead of the crews that need it; a running crew isn't moved (`skills/run/SKILL.md:278`). A new stage after the last would deadlock when a running crew needs the slice, since a later-stage foreman is refused while a running crew's stage is unmerged. The PM then moves only the crews that depend on the slice, and haven't started, one stage later; running crews and crews that don't depend on it keep their stage. The run-level `approval` and `approvedAt` don't change. The slice waits for the client only when one of the client triggers in step 4 applies: the PM then sets the crew's `clientApproval` to `"pending"`, and to `"approved"` when the client answers. Otherwise the slice starts like any crew.
 9. Pre-merge review: A checking engineer reads each crew's final report and the plan, and checks for drift and overlap between crews.
-10. QC-gated merge: The PM reads the crew's newest QC file modified at or after `approvedAt` itself, under the folder of the crew's newest foreman (`<slug>` or its latest successor `<slug>-<n>`), and merges only on a `VERDICT: PASS` with no `- UNSCOPED: ` finding whose `## Proof checked` `Head: ` matches the crew branch head, or whose `Patch: ` matches the branch's patch id with the foreman's checks re-run green on the merged head (`skills/run/SKILL.md:310-313`). In `sequential` mode each foreman in turn merges the target into its crew branch (`git merge <target>`, a real merge; from 0.6.0, ADR-0015 item 11; before that it rebased), a fresh QC engineer rules if the head moved and the patch id changed, and the PM fast-forwards with `git merge --ff-only`. In `single` mode an integrator merges every crew branch into `truss-<short goal>` and an integration QC engineer rules on it.
+10. QC-gated merge: The PM reads the crew's newest QC file modified at or after `approvedAt` itself, under the folder of the crew's newest foreman (`<slug>` or its latest successor `<slug>-<n>`), and merges only on a `VERDICT: PASS` with no `- UNSCOPED: ` finding whose `## Proof checked` `Head: ` matches the crew branch head, or whose `Patch: ` matches the branch's patch id with the foreman's checks re-run green on the merged head (`skills/run/SKILL.md:310-313`). In `sequential` mode each foreman in turn merges the target into its crew branch (`git merge <target>`, a real merge, never a rebase; ADR-0015 item 11), a fresh QC engineer rules if the head moved and the patch id changed, and the PM fast-forwards with `git merge --ff-only`. In `single` mode an integrator merges every crew branch into `truss-<short goal>` and an integration QC engineer rules on it.
 11. End-of-run report: Crew summaries and what merged where, checks and verdicts, decisions and checking engineer overrules, the items the end-of-run sweep kept (a checking engineer drops the rest), and the high-impact files that changed. The PM then asks before every push and PR, unless the project grants it merge ownership. Production deploys always go to the client.
 
 ### The Workflow path (ADR-0009)
@@ -419,23 +419,23 @@ Everything for a session lives under one folder:
 ```
 <git common dir>/truss/<session id>/
   decisions.md               PM: one line per decision, `- HH:MM | decision | reason | checker | followed`
-                             (0.4.0: a `## Run <start> | <goal>` heading per run; grammar below)
-  events.jsonl               0.4.0, plugin: one line per spawn, stall, tag and final report
-                             (0.8.0: and one per WebFetch or WebSearch call, while plan.json exists)
-  events.<n>.jsonl           0.4.0, plugin: the event log rolled over, past 3 MiB
+                             (a `## Run <start> | <goal>` heading per run; grammar below)
+  events.jsonl               plugin: one line per spawn, stall, tag and final report
+                             (and one per WebFetch or WebSearch call, while plan.json exists)
+  events.<n>.jsonl           plugin: the event log rolled over, past 3 MiB
   plan.md                    PM: the approved plan, written once the client approves
-                             (0.3.0: the design engineer drafts it with plan.json; the PM owns it after that.
-                             0.6.0: the plugin writes the draft from the plan-mode design engineer's hand-back, ADR-0015 item 9)
-  plan.json                  0.3.0: the design engineer drafts it; the PM owns it after that; hooks only read it.
-                             0.6.0: the plugin writes the draft, with approvedAt null, from the plan-mode
+                             (the design engineer drafts it with plan.json; the PM owns it after that.
+                             The plugin writes the draft from the plan-mode design engineer's hand-back, ADR-0015 item 9)
+  plan.json                  the design engineer drafts it; the PM owns it after that; hooks only read it.
+                             The plugin writes the draft, with approvedAt null, from the plan-mode
                              design engineer's hand-back, and never over a plan that is already approved (ADR-0015 item 9)
   goals/<slug>.md            PM: each crew's goal, acceptance test, owned files, high-impact paths
   reports/<crew>/<agent>.md  plugin: each crew agent's last report, QC engineers' included
   reports/<crew>/<agent>.interim.md  plugin: a foreman's interim stop, or a QC engineer's follow-up
   messages.jsonl             plugin: foreman-to-foreman messages
   messages.<n>.jsonl         plugin: the log rolled over, past 3 MiB
-  scratch/                   0.3.0, design engineer: plan-mode scratch output
-  scratch/truss.candidate.json  0.4.0, init: the config it would write, validated before the write (ADR-0002)
+  scratch/                   design engineer: plan-mode scratch output
+  scratch/truss.candidate.json  init: the config it would write, validated before the write (ADR-0002)
   brief.json                 ADR-0008, PM: the client brief's state for the run's first goal
   checks/<slug>-<n>.json     factory.ts check (ADR-0009): one record per acceptance-test run on the Workflow path
                              (ADR-0012: and a catalog key when the output hits a known problem)
@@ -458,7 +458,7 @@ Everything for a session lives under one folder:
 
 `retro/extract.json`, `retro/findings.json` and `retro/state.json` follow [`extract.schema.json`](extract.schema.json), [`findings.schema.json`](findings.schema.json) and [`retro-state.schema.json`](retro-state.schema.json). The extract and the findings quote transcript lines, so they stay inside `.git` with the truss dir and are never committed ([ADR-0012](adr/0012-self-improving-retro.md), R-32).
 
-The plugin writes only `reports/`, the message logs, (0.4.0) the event logs and (0.6.0) the draft `plan.json` and `plan.md` it takes from the plan-mode design engineer's hand-back ([ADR-0015](adr/claude-ops/0015-agent-worktree-cleanup.md) item 9). The PM writes `decisions.md`, `plan.md` and `goals/`, as `skills/run/SKILL.md` tells it to; the plugin only stamps the time on new `decisions.md` lines (see Decision times).
+The plugin writes only `reports/`, the message logs, the event logs and the draft `plan.json` and `plan.md` it takes from the plan-mode design engineer's hand-back ([ADR-0015](adr/claude-ops/0015-agent-worktree-cleanup.md) item 9). The PM writes `decisions.md`, `plan.md` and `goals/`, as `skills/run/SKILL.md` tells it to; the plugin only stamps the time on new `decisions.md` lines (see Decision times).
 
 The folder is `git rev-parse --path-format=absolute --git-common-dir` run in the session's working directory, plus `truss/<session id>`. Every worktree of a repo shares one git common dir, so all crews write to the same place. Outside git the base is `$HOME/.claude` (or `%USERPROFILE%\.claude`). The path is worked out once per session and cached; a `/clear` works it out again. Session ids, crew names and agent names pass through `safeName` in `register.ts`: each run of characters other than letters, digits, `.`, `_` and `-`, and each run of two or more dots, becomes `-`; runs of `-` collapse to one; leading and trailing `-` and `.` are dropped; the result is cut to 100 characters, and an empty result becomes `agent`.
 
@@ -466,13 +466,13 @@ A report file is named after the agent's spawn name, else its id, under its crew
 
 Each line of `messages.jsonl` is `{ "ts", "from", "to", "summary" }`, where `from` and `to` are crew names and `summary` is the `SendMessage` summary. Only messages between two foremen of different crews are logged. When the log is 3 MiB or more, the next append first copies it to `messages.<n>.jsonl` at the first free `n` and starts a new log.
 
-### `events.jsonl` (0.4.0)
+### `events.jsonl`
 
 Each line is one JSON object under [`events.schema.json`](events.schema.json): `{ "v": 1, "ts", "event", "crew", "agent" }` plus the event's own fields. `spawn` (a crew agent's or a foreman's `Agent` call that went through) adds `agentId`, `type`, `model`, `effort` and `by`; `stall` (a stall or idle-foreman wake) adds `kind` and `minutes`; `tag` (a foreman's tagged message to `main`) adds `tag`; `report` (a final report saved) adds `marker`, the report's leading marker or null. No line holds message, prompt or report text. Appends are serialized like the message log's and roll at 3 MiB the same way; a failed append is logged and changes nothing else ([ADR-0003](adr/0003-event-log-and-retro.md), section 1).
 
-From 0.5.0 one more event kind records a spent rework allowance: `{ "v": 1, "ts", "event", "crew", "agent" }` and nothing else, with `agent` the QC engineer whose FAIL spent it. It is appended after that QC engineer's `report` line, on a v2 or later plan, whenever a saved QC engineer FAIL leaves the crew's this-run FAIL count above `reworkAllowance`. `v` stays 1, because a new event kind isn't a renamed or retyped field. A crew can get the line more than once, so readers count distinct crews. The event name is fixed in [ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 3. Spawn lines gain no keys.
+One more event kind records a spent rework allowance: `{ "v": 1, "ts", "event", "crew", "agent" }` and nothing else, with `agent` the QC engineer whose FAIL spent it. It is appended after that QC engineer's `report` line, on a v2 or later plan, whenever a saved QC engineer FAIL leaves the crew's this-run FAIL count above `reworkAllowance`. `v` stays 1, because a new event kind isn't a renamed or retyped field. A crew can get the line more than once, so readers count distinct crews. The event name is fixed in [ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 3. Spawn lines gain no keys.
 
-From 0.8.0 the `fetch` event records one `WebFetch` or `WebSearch` call ([ADR-0005](adr/0005-growth-model.md), section 11): `{ "v": 1, "ts", "event": "fetch", "crew", "agent", "tool" }` plus `url` when `tool` is `"WebFetch"` or `query` when it is `"WebSearch"`, never both. `crew` is the caller's crew slug, or `"main"` for a caller outside every crew (a `truss:*` agent the PM started, or the main session). `agent` is the agent's name, or `"main"` for the main session. The `url` keeps scheme, host, port and path; userinfo is removed, each query value becomes an empty string with its key kept, and the fragment is dropped (P8). The `query` is cut to its first 200 characters. The line is written only when the Truss dir resolves and holds `plan.json`, so a session that never ran Truss gets no event log from its fetches. `v` stays 1, as for the spent-allowance line. The schema branch is in [`events.schema.json`](events.schema.json). Examples:
+The `fetch` event records one `WebFetch` or `WebSearch` call ([ADR-0005](adr/0005-growth-model.md), section 11): `{ "v": 1, "ts", "event": "fetch", "crew", "agent", "tool" }` plus `url` when `tool` is `"WebFetch"` or `query` when it is `"WebSearch"`, never both. `crew` is the caller's crew slug, or `"main"` for a caller outside every crew (a `truss:*` agent the PM started, or the main session). `agent` is the agent's name, or `"main"` for the main session. The `url` keeps scheme, host, port and path; userinfo is removed, each query value becomes an empty string with its key kept, and the fragment is dropped (P8). The `query` is cut to its first 200 characters. The line is written only when the Truss dir resolves and holds `plan.json`, so a session that never ran Truss gets no event log from its fetches. `v` stays 1, as for the spent-allowance line. The schema branch is in [`events.schema.json`](events.schema.json). Examples:
 
 ```json
 {"v":1,"ts":"2026-10-29T08:12:03.512Z","event":"fetch","crew":"growth-contract","agent":"growth-contract-designer","tool":"WebFetch","url":"https://example.com:8443/docs/api?version=&lang="}
@@ -495,7 +495,7 @@ On the Workflow path ([ADR-0009](adr/0009-workflow-factory.md)), `factory.ts` wr
 {"v":1,"ts":"2026-10-31T12:00:00.000Z","event":"sampler-error","crew":"q","agent":"q","command":"admit","error":"TRUSS_SAMPLE=error"}
 ```
 
-### `decisions.md` grammar (0.4.0)
+### `decisions.md` grammar
 
 ```
 # <optional title>
@@ -512,7 +512,7 @@ The PM writes every line through `factory.ts decide --dir <absolute truss dir>` 
 
 ### `plan.json`
 
-`plan.json` (0.3.0) is the seam between the design engineer, the PM and the hooks: the goal, the architecture doc's path, `approval`, `approvedAt`, `maxParallelCrews`, and one entry per crew with its stage, verdict, modules, owned paths, acceptance test, whether that check was proved, estimated agents, an optional `clientApproval`, optional host `needs` ([ADR-0012](adr/0012-self-improving-retro.md), Decision 9) and status. [`plan.schema.json`](plan.schema.json) is the contract; [ADR-0001](adr/0001-design-phase.md), section 8, is the source. The rules it adds:
+`plan.json` is the seam between the design engineer, the PM and the hooks: the goal, the architecture doc's path, `approval`, `approvedAt`, `maxParallelCrews`, and one entry per crew with its stage, verdict, modules, owned paths, acceptance test, whether that check was proved, estimated agents, an optional `clientApproval`, optional host `needs` ([ADR-0012](adr/0012-self-improving-retro.md), Decision 9) and status. [`plan.schema.json`](plan.schema.json) is the contract; [ADR-0001](adr/0001-design-phase.md), section 8, is the source. The rules it adds:
 
 - `approval` (`auto` or `client`) is set once, at plan time. It's `client` exactly when the plan has a stage-0 crew; mid-run slices never change it.
 - `approvedAt` is null only while a run waits for the client, so an `auto` run always has it. Otherwise it is an RFC 3339 date-time with a time-zone offset, such as `2026-10-26T14:03:00+01:00` or `2026-10-26T13:03:00Z`.
@@ -533,14 +533,14 @@ Validating a plan against the schema checks these constraints of its own:
 - `crews`, and each crew's `modules` and `owns`, hold at least one item; `modules` and `owns` items are unique non-empty strings.
 - `stage` is an integer of 0 or more; `maxParallelCrews` and `estAgents` are integers of 1 or more; `goal`, `architecture` and `acceptanceTest` are non-empty strings.
 
-**Plan v2 (0.5.0, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 1).** The schema describes versions 1 and 2. `version` is `1` or `2`. A v2 plan requires the top-level `reworkAllowance`, an integer of 0 or more: how many fresh QC engineers a crew may start after QC engineer FAILs in this run. The design engineer copies it from `.claude/truss.json` (default 2). A v1 plan may not carry it, and every v1 plan that was valid stays valid. There is no per-crew allowance. The hooks never validate the version. `parsePlan` passes `version` and `reworkAllowance` through unchecked, and each 0.5.0 rule asks `planAtLeastV2` (an integer `version` of 2 or more) first. So a v3 plan inherits the v2 rules, and a v1 plan, or one with no version, gets 0.4.3 behaviour.
+**Plan v2 ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 1).** The schema describes versions 1 and 2. `version` is `1` or `2`. A v2 plan requires the top-level `reworkAllowance`, an integer of 0 or more: how many fresh QC engineers a crew may start after QC engineer FAILs in this run. The design engineer copies it from `.claude/truss.json` (default 2). A v1 plan may not carry it, and every v1 plan that was valid stays valid. There is no per-crew allowance. The hooks never validate the version. `parsePlan` passes `version` and `reworkAllowance` through unchecked, and each v2 rule asks `planAtLeastV2` (an integer `version` of 2 or more) first. So a v3 plan inherits the v2 rules, and a v1 plan, or one with no version, gets v1 behaviour.
 
 **Plan v3: several goals in one run ([ADR-0010](adr/0010-mid-run-intake.md), sections 1 and 2).** Before v3 a plan held one goal, and the plan-file route never writes over an approved plan, so a goal the client added mid-run had no way in but a hand edit (ADR-0010, Context, items 1, 2 and 4). Now one `plan.json` per session holds the run's goal, and added goals are appended under the approved plan. The schema has version `3` (enum `[1, 2, 3]`; v3 requires `reworkAllowance` like v2) and two fields, both v3 only:
 
 - `goals`, top level, optional: the goals added after the run's approval, in the order they were added, each `{ "id", "goal", "addedAt", "approval", "approvedAt" }`. `id` follows the crew-slug pattern and is never `run`; `approval` is `client` only when a client trigger applies to the goal, else `auto` (ADR-0010, amended 2026-10-30); `approvedAt` is null until the PM logs an `auto` goal or the client approves a `client` one, with the same conditional as the top level. The run's first goal stays in the top-level `goal`, `approval` and `approvedAt`, and its id is the reserved word `run`.
 - `crews[].goal`, optional: the goal id the crew serves. Absent means `run`, and `"run"` written out means the same.
 
-A conditional forbids both below version 3, so every v1 and v2 plan validates unchanged and every crew of one belongs to `run`. Stages are numbered per goal: an added goal's first stage is its stage 0, and the stage-0 and `clientApproval` rules apply within each goal. The schema can't check that a crew's `goal` names an entry; the hooks do (see [Plan gates](#plan-gates-030)).
+A conditional forbids both below version 3, so every v1 and v2 plan validates unchanged and every crew of one belongs to `run`. Stages are numbered per goal: an added goal's first stage is its stage 0, and the stage-0 and `clientApproval` rules apply within each goal. The schema can't check that a crew's `goal` names an entry; the hooks do (see [Plan gates](#plan-gates)).
 
 Goals reach the plan through a new design engineer mode and a new hook route (ADR-0010, section 2). A main-session `truss:design-engineer` call whose prompt's first line is `Mode: amend` is tracked like a plan call, and its hand-back carries a ```` ````json plan-amend.json ```` block, `{ "goal": { "id", "goal", "approval" }, "crews": [ ... ] }`, and a ```` ````markdown plan.md ```` block. The plan-amend route calls `amendPlan(existing, amend, now)`, a pure function in the new `hooks/intake.ts`, inside the same chain as the plan-file route, writes the result to `plan.json`, and writes the markdown block to `<truss dir>/plan-<id>.md`, never to `plan.md`. `amendPlan` refuses, and the route writes nothing and logs `plan-amend route wrote nothing: <reason>`, when the plan isn't approved yet (the PM then re-plans in plan mode), when its `version` is below 2, when a block or field is malformed (`goal.id` not a slug or `run`, empty goal text, `approval` neither `auto` nor `client`, `crews` not a non-empty array), when a slug repeats or collides with another goal's crew, or when the goal already exists and is approved or has started crews (`hooks/intake.ts:24-60`). On success it changes only what it adds: the amend's crews get `goal` and `status: "planned"`, `version` becomes 3, and a new goal and its crews go at the end (add path), or a still-unapproved goal's crews are swapped in place keeping its `addedAt` and queue position (replace path, a send-back's). Every other field and every other goal's crew deep-equals its value before, which is what keeps existing crews' approval intact, and the same amend sent twice leaves the file byte-identical. `routePlanFiles` and `keepReason` don't change: a `Mode: plan` hand-back over an approved plan is still kept.
 
@@ -601,10 +601,10 @@ The PM's side is a new `### Take a new goal mid-run` in `skills/run/SKILL.md` se
 One file lives in the project repo, not the Truss folder:
 
 ```
-<repo>/.claude/truss.json  0.3.0: the project's truss config
+<repo>/.claude/truss.json  the project's truss config
 ```
 
-`init` writes `architecture` and `adr`; from 0.4.0 it also proposes `roles`, `deploy`, `writingSkill` and `promptOverrides`, and writes those the client approves. The client can add any key by hand; each but the first two has a default. The contract is [`truss-config.schema.json`](truss-config.schema.json) ([ADR-0002](adr/0002-kit-manifest-and-config.md)). A key it doesn't declare is reported and ignored; a declared value it rejects is reported and unset. Inside `roles` and `promptOverrides` that unsets only the bad entry. `deploy` fails closed: any error inside it, an undeclared key included, unsets the whole key, so commissioning engineer asks its foreman. When init writes, errors in what the client wrote are reported by path and kept; a client value of the wrong shape to hold a key init would add, such as `roles: "x"`, is kept and that key is skipped; and only an error at a path init itself is writing stops the write:
+`init` writes `architecture` and `adr`; it also proposes `roles`, `deploy`, `writingSkill` and `promptOverrides`, and writes those the client approves. The client can add any key by hand; each but the first two has a default. The contract is [`truss-config.schema.json`](truss-config.schema.json) ([ADR-0002](adr/0002-kit-manifest-and-config.md)). A key it doesn't declare is reported and ignored; a declared value it rejects is reported and unset. Inside `roles` and `promptOverrides` that unsets only the bad entry. `deploy` fails closed: any error inside it, an undeclared key included, unsets the whole key, so commissioning engineer asks its foreman. When init writes, errors in what the client wrote are reported by path and kept; a client value of the wrong shape to hold a key init would add, such as `roles: "x"`, is kept and that key is skipped; and only an error at a path init itself is writing stops the write:
 
 | Key | Written by | Default | Used for |
 | --- | --- | --- | --- |
@@ -613,13 +613,13 @@ One file lives in the project repo, not the Truss folder:
 | `maxParallelCrews` | the client | 4 | The most crews running at once |
 | `merge` | the client | `sequential` | Merge mode of auto-started runs |
 | `target` | the client | the current branch | Target branch of auto-started runs |
-| `roles`, 0.4.0 | `init` on approval, or the client | the inventory, as 0.3.0 | Agent type per job: `build`, `test`, `review`, `search`, `docs`, `deploy` |
-| `deploy`, 0.4.0 | `init` on approval, or the client | none | `{target, command, production}` for commissioning engineer; `production: true` always goes to the client |
-| `writingSkill`, 0.4.0 | `init` on approval, or the client | none | The skill the writer loads, when listed |
-| `reworkAllowance`, 0.5.0 | `init` on approval, or the client | 2 | The integer of 0 or more the design engineer copies into a v2 `plan.json` ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 2) |
-| `promptOverrides`, 0.4.0 | `init` on approval, or the client | none | Per role (`foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`), a file under `.claude/truss/prompts/` the role reads in addition to its prompt; never prompt text. The key is proposed like the others; the prompt files themselves are the client's |
+| `roles` | `init` on approval, or the client | the inventory | Agent type per job: `build`, `test`, `review`, `search`, `docs`, `deploy` |
+| `deploy` | `init` on approval, or the client | none | `{target, command, production}` for commissioning engineer; `production: true` always goes to the client |
+| `writingSkill` | `init` on approval, or the client | none | The skill the writer loads, when listed |
+| `reworkAllowance` | `init` on approval, or the client | 2 | The integer of 0 or more the design engineer copies into a v2 `plan.json` ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 2) |
+| `promptOverrides` | `init` on approval, or the client | none | Per role (`foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`), a file under `.claude/truss/prompts/` the role reads in addition to its prompt; never prompt text. The key is proposed like the others; the prompt files themselves are the client's |
 
-From 0.4.0 init also reads `<repo>/.claude/kit/manifest.json`, kit's record of what it set up (contract `docs/vendor/kit-manifest.schema.json`, repo ADR-0013). It runs `kit:init` through the Skill tool when that skill is listed and the manifest is missing or lacks Truss's read-only declarations, and otherwise carries on as 0.3.0 and says so ([ADR-0002](adr/0002-kit-manifest-and-config.md), section 1). The sequence, as designed:
+Init also reads `<repo>/.claude/kit/manifest.json`, kit's record of what it set up (contract `docs/vendor/kit-manifest.schema.json`, repo ADR-0013). It runs `kit:init` through the Skill tool when that skill is listed and the manifest is missing or lacks Truss's read-only declarations, and otherwise carries on without it and says so ([ADR-0002](adr/0002-kit-manifest-and-config.md), section 1). The sequence, as designed:
 
 ```mermaid
 sequenceDiagram
@@ -651,8 +651,8 @@ sequenceDiagram
   I->>FJ: write the approved keys
 ```
 
-*Truss init extending kit init, 0.4.0: the four manifest cases and what each writes.*
-Traces to: `docs/adr/0002-kit-manifest-and-config.md` (sections 1 and 2), `docs/adr/claude-ops/0013-kit-manifest.md`, `docs/vendor/kit-manifest.schema.json`, `skills/init/SKILL.md` (0.3.0 doc check).
+*Truss init extending kit init: the four manifest cases and what each writes.*
+Traces to: `docs/adr/0002-kit-manifest-and-config.md` (sections 1 and 2), `docs/adr/claude-ops/0013-kit-manifest.md`, `docs/vendor/kit-manifest.schema.json`, `skills/init/SKILL.md` (doc check).
 
 Two kinds of state don't go to the Truss folder:
 
@@ -669,19 +669,19 @@ All of these are in `hooks/register.ts`.
 | `session.start` | Registers `/truss`, starts the one-minute heartbeat, and re-arms a pending limit-reset wake from plugin state. |
 | `session.end` with reason `clear` | Clears the module's memory. |
 | `agent.spawn` | Records each agent's spawn name, type, parent, model and start time, and counts the spawn as activity. |
-| `tool.call` on `Agent`, 0.4.0 | After a crew agent's or a foreman's call goes through, appends a `spawn` line to `events.jsonl`. |
-| `tool.call` on `SendMessage` | Enforces who a crew agent may message, logs foreman-to-foreman messages, and tracks each foreman's tag for `/truss`. From 0.4.0, appends a `tag` line to `events.jsonl` for each tag set. |
+| `tool.call` on `Agent`, after the call | After a crew agent's or a foreman's call goes through, appends a `spawn` line to `events.jsonl`. |
+| `tool.call` on `SendMessage` | Enforces who a crew agent may message, logs foreman-to-foreman messages, and tracks each foreman's tag for `/truss`. It also appends a `tag` line to `events.jsonl` for each tag set. |
 | `tool.call` on `Agent` | Refuses crew agents' calls without `model` or `effort`, or with `effort: "max"`. Adds the report-path note to calls that start a foreman or a crew member. |
-| `tool.call` on `Agent`, 0.3.0 | Refuses starting a foreman that `plan.json` holds back: the run-level and crew-level approval gates, the stage gate and the parallel cap (see [Plan gates](#plan-gates-030)). |
-| `tool.call` on `Agent`, 0.5.0 | On a v2 or later plan: refuses a main-session `truss:*` call with no `model` or a missing or unknown `effort`, and refuses a crew's QC-named spawn once its rework allowance is spent (see [Rework allowance and head guard](#rework-allowance-and-head-guard-050)). |
+| `tool.call` on `Agent`, plan gates | Refuses starting a foreman that `plan.json` holds back: the run-level and crew-level approval gates, the stage gate and the parallel cap (see [Plan gates](#plan-gates)). |
+| `tool.call` on `Agent`, model check | On a v2 or later plan: refuses a main-session `truss:*` call with no `model` or a missing or unknown `effort`, and refuses a crew's QC-named spawn once its rework allowance is spent (see [Rework allowance and head guard](#rework-allowance-and-head-guard)). |
 | `tool.call` on `Workflow`, ADR-0009 | For a main-session `Workflow` call only: refuses a script that isn't Truss's `plan.js` or `stage.js` but names a `truss:` type, a Truss script with a bad `args.truss` or roles table, a plan script on an approved plan, and a stage script whose crews aren't `running` or fail `planVerdict` (see [Workflow calls](#workflow-calls-adr-0009)). |
 | `tool.call` on `Bash`, [ADR-0027](adr/0027-retro-fixes2.md), proposed | The push and merge gate (R-32), for a main-session call only: refuses a command that runs `retro/cli.ts scrub` and then `git push` or `git merge` (with or without `-C <path>`) unless every operator from scrub to it is `&&` and scrub's output isn't piped. A pipe after the push, a plain `git push`, and `git merge-base` or `git log` after a scrub are allowed. A scrub run in an earlier call isn't seen. It fails open. |
-| `tool.call` on `WebFetch`, `WebSearch`, 0.8.0 | The fetch gate: runs `fetchVerdict` on every call in the session, whoever makes it, and appends its `fetch` line to `events.jsonl` when there is one. Allows every call today (see [Fetch gate](#fetch-gate-080)). |
-| `tool.call` on `Write`, `Edit` | Stamps the clock's time on new lines of this session's `decisions.md`; from 0.4.0, on every literal `HH:MM` too. |
+| `tool.call` on `WebFetch`, `WebSearch` | The fetch gate: runs `fetchVerdict` on every call in the session, whoever makes it, and appends its `fetch` line to `events.jsonl` when there is one. Allows every call today (see [Fetch gate](#fetch-gate)). |
+| `tool.call` on `Write`, `Edit` | Stamps the clock's time on new lines of this session's `decisions.md`; also on every literal `HH:MM`. |
 | `tool.call` on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, [ADR-0014](adr/0014-retro-fixes.md), proposed | For a main-session call only: `mainEditVerdict` refuses an edit to a file in the repo or one of its worktrees while this session's `plan.json` has a crew neither `merged` nor `dropped`, and tells the PM to delegate it to a crew or agent. The truss dir, the requirements path and `.claude/settings.json` are exempt, and it fails open. Bash writes are not gated; F-7's rule covers them (ADR-0014, Decision 2). |
 | `tool.call`, any tool | Records activity, the main session's too. On `SubagentHandback`, refuses an empty hand-back from a crew agent and captures the report. |
 | `turn.step` | Records activity for each model request, the main session's too. |
-| `classic.SubagentStop` | Runs the foreman stop gate and saves the stopping agent's report. From 0.4.0, each final report saved (here or from `SubagentHandback`) appends a `report` line to `events.jsonl`. From 0.5.0, on a v2 or later plan, the gate also sends back a final report that lacks the Examined and Not examined sections, or that the head guard rejects. A QC engineer FAIL that spends the allowance appends the spent-allowance line. |
+| `classic.SubagentStop` | Runs the foreman stop gate and saves the stopping agent's report. Each final report saved (here or from `SubagentHandback`) appends a `report` line to `events.jsonl`. On a v2 or later plan, the gate also sends back a final report that lacks the Examined and Not examined sections, or that the head guard rejects. A QC engineer FAIL that spends the allowance appends the spent-allowance line. |
 | `session.measure`, `classic.StopFailure` | Arm the limit-reset wake. |
 | `command.run` for `truss` | Prints the crew status. |
 
@@ -707,7 +707,7 @@ From inside a crew, every Agent call needs `model`, and `effort` set to `low`, `
 - No effort, or an unknown one: ``[truss] Refused: inside a crew, every Agent call sets `effort` to one of "low", "medium", "high" or "xhigh": "low" for lookups and mechanical edits, "medium" for well-specified work, "high" or "xhigh" for hard design, debugging or review. Call Agent again with effort set.``
 - `effort: "max"`: `[truss] Refused: effort "max" is not allowed inside a crew; "xhigh" is the top. Call Agent again with effort set to "low", "medium", "high" or "xhigh".`
 
-The model check runs first. In 0.4.3 the PM's own Agent calls aren't checked, though the skill tells it to set both. From 0.5.0, on a v2 or later plan, a main-session call whose `subagent_type` starts with `truss:` must set `model` and one of the four efforts (`mainCallVerdict`, refusals `MAIN_MODEL_REFUSAL` and `MAIN_EFFORT_REFUSAL`, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 7). It runs before the plan gates. With no plan file, such as the plan-mode design engineer's start, it lets the call through. The hooks refuse `high` and `xhigh` nowhere. Whether the client asked for them is a prompt rule, and retro's target share for them is zero.
+The model check runs first. On a v1 plan, or with no plan, the PM's own Agent calls aren't checked, though the skill tells it to set both. On a v2 or later plan, a main-session call whose `subagent_type` starts with `truss:` must set `model` and one of the four efforts (`mainCallVerdict`, refusals `MAIN_MODEL_REFUSAL` and `MAIN_EFFORT_REFUSAL`, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 7). It runs before the plan gates. With no plan file, such as the plan-mode design engineer's start, it lets the call through. The hooks refuse `high` and `xhigh` nowhere. Whether the client asked for them is a prompt rule, and retro's target share for them is zero.
 
 A call that starts a foreman from the main thread, or any agent from inside a crew, gets this note in its result: `[truss] If <name>'s report does not reach you, read <path> once it stops.`
 
@@ -735,7 +735,7 @@ Seams (ADR-0009, Seams to pin; none of these tests exists yet):
 | `plan.js` and `stage.js` control flow, `roles.json` | `workflows/` | the Workflow tool | ADR-0009 Decisions 2 to 4 | `tests/workflows.check.ts`, with stubbed `agent()` |
 | `settings` on this repo's `.claude/truss.json` | `factory.ts` | the PM | `{"merge":"sequential","target":"main","source":".claude/truss.json"}` | `tests/run-procedure.check.ts` |
 
-### Plan gates (0.3.0)
+### Plan gates
 
 The gates apply to an Agent call from the main thread that starts a `truss:foreman` with a non-empty `name` ([ADR-0001](adr/0001-design-phase.md), section 9). A foreman started by another agent, or with no name, is never gated. On every such call the hook reads `<truss dir>/plan.json` fresh, so the PM's edits count at once, and it never writes the file. A leading UTF-8 BOM is stripped before parsing.
 
@@ -750,7 +750,7 @@ The gates run in this order, and the first match refuses the call with `[truss] 
 
 In each reason, `<slug>` is the plan slug, so a successor's refusal names its base. Entries with the target's slug are left out of the stage and cap checks, so a crew can't hold itself back, and a restart or a successor whose base already says `running` doesn't count against the cap.
 
-With no Truss dir, no plan file, a file that is empty, not JSON, not an object or without a `crews` array, or a name the plan doesn't hold, no gate applies, so 0.2.1 runs keep working. Any error while reading or checking the plan is logged and lets the call through, like every other Truss hook. The gates trust the PM's `status` field: a crew marked `merged` too early gets past the stage gate. The QC-gated merge is still the real control.
+With no Truss dir, no plan file, a file that is empty, not JSON, not an object or without a `crews` array, or a name the plan doesn't hold, no gate applies, so runs without a plan keep working. Any error while reading or checking the plan is logged and lets the call through, like every other Truss hook. The gates trust the PM's `status` field: a crew marked `merged` too early gets past the stage gate. The QC-gated merge is still the real control.
 
 **Goal-aware gates ([ADR-0010](adr/0010-mid-run-intake.md), section 3).** For plan v3, `planVerdict` keeps its signature and prefix and is built on `register.ts` `gateOf` (`:330`), `gateOf(plan, name): { deny, waits } | undefined`, which gives each refusal a `/truss` wait text too. A crew's goal is `goalOf(crew)`, exported from `hooks/intake.ts`: its `goal` when that is a string, else `run`. The checks, first match wins:
 
@@ -766,7 +766,7 @@ With no Truss dir, no plan file, a file that is empty, not JSON, not an object o
 
 So each goal runs its own stage sequence, and a new goal's stage 0 can start while the run goal is mid-stage; only the shared cap and queue couple the goals. All goals share one `maxParallelCrews` and one queue, the `crews` array, with added goals' crews at its end, so at equal readiness older goals' crews start first. The PM starts the planned crews whose wait text is `ready to start`, in array order, up to the free slots. Disjoint ownership across goals stays a plan-time rule that the amend design engineer and the PM enforce; the hooks never compare `owns`. The successor and duplicate-slug rules don't change, and on a v2 plan every crew is in `run`, so the gates behave as above.
 
-The idle-foreman prompt also reads the plan, to name a successor the gates map back to the same crew: a plan slug `C` gets `C-2`, a successor `B-<n>` gets `B-<n+1>`, counting past any name that is itself a plan slug (plan `[auth, auth-2]` gives `auth-3`). It waits at most 2 seconds for that read, on the engine clock. A read that hasn't settled by then, or one that fails, gives the 0.2.1 name (`auth` to `auth-2`, `gateway-3` to `gateway-4`), and the prompt still goes out.
+The idle-foreman prompt also reads the plan, to name a successor the gates map back to the same crew: a plan slug `C` gets `C-2`, a successor `B-<n>` gets `B-<n+1>`, counting past any name that is itself a plan slug (plan `[auth, auth-2]` gives `auth-3`). It waits at most 2 seconds for that read, on the engine clock. A read that hasn't settled by then, or one that fails, gives the plain name (`auth` to `auth-2`, `gateway-3` to `gateway-4`), and the prompt still goes out.
 
 ### Report capture
 
@@ -784,14 +784,14 @@ The gate sends a stop back at most twice in a row (`FOREMAN_STOP_BLOCKS`), then 
 
 A report that already holds a ruling (its first line starts `VERDICT: PASS`, `VERDICT: FAIL` or `STRESSTEST`) is never overwritten by a later stop of the same agent that has no ruling of its own: that text goes to `<agent>.interim.md`, logs no `report` event and spends no rework allowance. A resumed QC engineer that rules again replaces the file. The merge gate and `/truss` read the ruling from the report file, so a QC engineer answering a follow-up question can no longer erase its verdict.
 
-From 0.5.0, on a v2 or later plan, an untagged text that passes by its `## Proof` section gets two more checks, in this order:
+On a v2 or later plan, an untagged text that passes by its `## Proof` section gets two more checks, in this order:
 
 1. `examinedVerdict`: both the Examined and the Not examined headings must be present, as fixed in ADR-0004, section 3.
 2. `headVerdict`: the head guard, below.
 
 Their send-backs count in the same streak, so the two-block bound still holds. An unanswered tag doesn't excuse them. A hand-back is saved as the report only if it passes the first check. The head guard runs only at the stop, because it calls git.
 
-### Rework allowance and head guard (0.5.0)
+### Rework allowance and head guard
 
 Designed in [ADR-0004](adr/0004-scope-repair-and-head-gates.md), sections 5 and 6; the literals are in its section 3, and the exported functions in section 9. Both rules read the crew's **this-run QC files**: `reports/<crew>/<crew>-qc*.md`, not interim, modified at or after `plan.json`'s `approvedAt`. This session dir already holds `design-judge.md` to `-qc-7.md` from earlier runs that reused the crew name, so counting by name alone would be wrong.
 
@@ -830,10 +830,10 @@ sequenceDiagram
   end
 ```
 
-*The bounded repair loop and the head guard on a v2 plan, 0.5.0, as designed.*
+*The bounded repair loop and the head guard on a v2 plan, as designed.*
 Traces to: `docs/adr/0004-scope-repair-and-head-gates.md` (sections 5 and 6), `hooks/register.ts:1662` (the `Agent` handler the gate joins), `:1837` (the stop gate, `classic.SubagentStop`), `:1028-1037` (`writeReport`, where the spent-allowance line is appended), `:1174` (`qcFilesOf`), `:475` (`latestQc`) and `:506` (`qcRuling`), which pick the crew's newest QC file this run and rule it (line numbers at `da17861`), `agents/foreman.md:101-105`, `:153-155`.
 
-### Seams (0.5.0)
+### Seams
 
 Each row is a seam inside Truss that ADR-0004 adds or changes. The contract tests read only `tests/fixtures/contract-050/**` or inline data.
 
@@ -848,7 +848,7 @@ Each row is a seam inside Truss that ADR-0004 adds or changes. The contract test
 | retro's per-run `allowancesSpent` | `scripts/retro.py` | the `truss:retro` skill | ADR-0004 section 8 (`retro` stays 1) | `tests/test_contract_retro.py` `RUN_KEYS`, `tests/test_contract_retro_050.py` |
 | Main-session `truss:*` calls on a v2 plan | PM | hooks (`mainCallVerdict`) | ADR-0004 section 7 | `tests/contract-gates.test.ts` |
 
-### Fetch gate (0.8.0)
+### Fetch gate
 
 Designed in [ADR-0005](adr/0005-growth-model.md), section 11. Every `WebFetch` and `WebSearch` call in the session, whoever makes it, passes one exported pure function. A guardrail added later (an allowlist, a deny list, a client prompt, a size or count cap) is a change to this function and its tests alone; no prompt names a source, a domain or a limit.
 
@@ -885,10 +885,10 @@ sequenceDiagram
   H->>T: next(e), the call goes through
 ```
 
-*The fetch gate, 0.8.0, as designed: every call is allowed, and a line is logged while a plan exists.*
+*The fetch gate, as designed: every call is allowed, and a line is logged while a plan exists.*
 Traces to: `docs/adr/0005-growth-model.md` (section 11), `hooks/register.ts:166-171` (`TrussEvent`), `:1027-1033` (`appendEvent`, which adds `v` and `ts`), `:1064-1083` (`logEvent`'s queue, wait cap and failure log), `:1694` (the awaited `spawn` line), `:1587-1588` (how a handler reads its input), `:1768-1779` (the `Write`/`Edit` handler the fetch handler follows).
 
-### Seams (0.8.0)
+### Seams
 
 Each row is a seam inside Truss that ADR-0005 adds or changes. The contract tests read only `tests/fixtures/contract-080/**` or inline data.
 
@@ -901,7 +901,7 @@ Each row is a seam inside Truss that ADR-0005 adds or changes. The contract test
 | A foreman report's optional `## Learned` section | foreman | PM's run-end extend pass; `foremanStopPasses`, which neither needs nor refuses it | ADR-0005 section 7 | `tests/contract-fetch.test.ts` (regression guard), `tests/gates.check.ts` |
 | The fetch rule, the literals and the web tools in the prompts | `agents/*.md`, `skills/run/SKILL.md` | every agent and the PM | ADR-0005 sections 2, 3 and the literals table | `tests/gates.check.ts` |
 
-### retro's leftover details (0.9.0)
+### retro's leftover details
 
 Designed in [ADR-0006](adr/0006-leftover-causes.md). retro's top-level keys are now `retro`, `dir`, `split`, `runs`, `qcFiles`, `plan`, `eventsSkipped`, `eventsOutsideRuns`, `leftovers` and `leftoverDetails`. `leftoverDetails` is `"not recorded"` whenever `leftovers` is (and when `git worktree list --porcelain` fails), else an array sorted by `id`, one entry per agent `leftovers` counts, each with exactly the keys `id`, `branch`, `folder`, `head`, `dirty`, `inMain` and `skip` (null where absent). `skip` is the reason worktrees' `decideSelfClean` would give, checked in its order for the checks retro can see, or `passes every check retro can see`. retro copies those rules from `plugins/worktrees/hooks/register.ts:734-752` without importing them (repo ADR-0001), so they can drift; ADR-0006 section 1 records the source and what retro can't see.
 
@@ -1018,7 +1018,7 @@ Every 60 seconds the module checks each crew agent listed as `running`. An agent
 
 `[truss] stalled: <agent> in crew <crew>, no activity for <n>m. Check /truss and message the <crew> foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.`
 
-From 0.4.0 each stall wake, and each idle-foreman wake below, appends a `stall` line to `events.jsonl` (`kind` `agent` or `idle-foreman`).
+Each stall wake, and each idle-foreman wake below, appends a `stall` line to `events.jsonl` (`kind` `agent` or `idle-foreman`).
 
 ### Idle foremen
 
@@ -1038,15 +1038,15 @@ The wake goes out once per `resetsAt`. A hot reload cancels the timer with the o
 
 ### Decision times
 
-A `Write` or `Edit` of `<truss dir>/decisions.md` for this session has each new line that starts `- HH:MM |` rewritten with the clock's local time. A line keeps its time when that `HH:MM` is already on a decision line of the text the call replaces: the file on disk for a `Write`, `old_string` for an `Edit`. So a reworded line keeps its time, and only new lines are stamped. 0.3.0's pattern, `^- (\d{1,2}:\d{2}) \|`, misses the literal `HH:MM` the run skill tells the PM to type, so those lines kept no time; from 0.4.0 the pattern is `^- (\d{1,2}:\d{2}|HH:MM) \|`, and a literal `HH:MM` is always stamped, since it marks no time ([ADR-0003](adr/0003-event-log-and-retro.md), section 2). An `Edit` changes only `new_string`. A log written through Bash isn't seen. Line endings are kept. Any other file, and another session's log, is left alone.
+A `Write` or `Edit` of `<truss dir>/decisions.md` for this session has each new line that starts `- HH:MM |` rewritten with the clock's local time. A line keeps its time when that `HH:MM` is already on a decision line of the text the call replaces: the file on disk for a `Write`, `old_string` for an `Edit`. So a reworded line keeps its time, and only new lines are stamped. A pattern of just `^- (\d{1,2}:\d{2}) \|`, misses the literal `HH:MM` the run skill tells the PM to type, so those lines would keep no time; the pattern is `^- (\d{1,2}:\d{2}|HH:MM) \|`, and a literal `HH:MM` is always stamped, since it marks no time ([ADR-0003](adr/0003-event-log-and-retro.md), section 2). An `Edit` changes only `new_string`. A log written through Bash isn't seen. Line endings are kept. Any other file, and another session's log, is left alone.
 
 ### `/truss`
 
-Prints `Crews (<n>):` and one line per foreman: name, status (`ended` once the agent list drops it), live members by model family, then one of `waiting on you: <question>`, `blocked: <text>`, `proposal: <text>`, `waiting on members`, `no report yet` or `last report <time> ago`, then `last active <time> ago`. Under each foreman it lists stalled agents, the verdict in the crew's newest QC file this run and the report folder. That verdict is read the way the merge gate reads it: `qcFilesOf` (`register.ts:1174`) lists the crew's QC files, `latestQc` (`:475`) picks the newest one modified at or after `approvedAt`, and `qcRuling` (`:506`) rules it, so a `VERDICT:PASS` with no space is no PASS here either. (Foundry 0.10.0, built by the `hooks-cleanup` crew; until then status kept a parser of its own that picked the file by its `-qc-<k>` number.) Then it lists one line per member: `<name> <status> <n>m (<family>), last activity <time> ago` (or `no activity seen`), timed from its spawn or first sighting. The last lines name the message log, when there is one, and `Truss dir: <path>`. With no crews it prints `No truss crews in this session. Start them with /truss:run.` If reading the crews fails: `truss could not read the crews; see the debug log.`
+Prints `Crews (<n>):` and one line per foreman: name, status (`ended` once the agent list drops it), live members by model family, then one of `waiting on you: <question>`, `blocked: <text>`, `proposal: <text>`, `waiting on members`, `no report yet` or `last report <time> ago`, then `last active <time> ago`. Under each foreman it lists stalled agents, the verdict in the crew's newest QC file this run and the report folder. That verdict is read the way the merge gate reads it: `qcFilesOf` (`register.ts:1174`) lists the crew's QC files, `latestQc` (`:475`) picks the newest one modified at or after `approvedAt`, and `qcRuling` (`:506`) rules it, so a `VERDICT:PASS` with no space is no PASS here either. (Built by the `hooks-cleanup` crew; status once kept a parser of its own that picked the file by its `-qc-<k>` number.) Then it lists one line per member: `<name> <status> <n>m (<family>), last activity <time> ago` (or `no activity seen`), timed from its spawn or first sighting. The last lines name the message log, when there is one, and `Truss dir: <path>`. With no crews it prints `No truss crews in this session. Start them with /truss:run.` If reading the crews fails: `truss could not read the crews; see the debug log.`
 
-From 0.3.0, `/truss` first shows the plan, read through the same guard as the gates: `Plan (<n> crews, approval <approval>):`, with `, waiting for the client` added while `approval` is `client` and `approvedAt` is null, then one line per crew sorted by stage, ties in `crews` order: `- stage <stage>: <slug>, <verdict>, <status>`, with `, waits for the client's approval` when `clientApproval` is `pending`. A missing field prints as `?`. Then come the lines above. With no plan, or one it can't read, the output is the 0.2.1 output.
+`/truss` first shows the plan, read through the same guard as the gates: `Plan (<n> crews, approval <approval>):`, with `, waiting for the client` added while `approval` is `client` and `approvedAt` is null, then one line per crew sorted by stage, ties in `crews` order: `- stage <stage>: <slug>, <verdict>, <status>`, with `, waits for the client's approval` when `clientApproval` is `pending`. A missing field prints as `?`. Then come the lines above. With no plan, or one it can't read, the output is just the lines above.
 
-**Goals and wait reasons ([ADR-0010](adr/0010-mid-run-intake.md), section 5).** `planLines` changes in two ways. Every `planned` crew gets `, ` plus its wait text from `gateOf` (see [Plan gates](#plan-gates-030)), or `, ready to start` when no gate refuses it; other statuses get no suffix, and a pending crew's line reads as before. When `goals` is a non-empty array, the header becomes `Plan (<n> crews, <k> goals, approval <a><waiting>):` with `k = 1 + goals.length`, and each goal gets a line, `Goal <id> (approval <a>[, waiting for the client][, done]): <text>`, with its crews under it in today's order: `run` first, then `goals` in array order, then any unknown ids crews name, as `Goal <id> (not in the plan):`. `<text>` has each whitespace run collapsed to one space and is cut to its first 99 characters plus `…` when longer than 100. Without `goals` there are no goal lines and the header is today's. ADR-0010's example, a plan with the run's four crews and one added goal `intake`:
+**Goals and wait reasons ([ADR-0010](adr/0010-mid-run-intake.md), section 5).** `planLines` changes in two ways. Every `planned` crew gets `, ` plus its wait text from `gateOf` (see [Plan gates](#plan-gates)), or `, ready to start` when no gate refuses it; other statuses get no suffix, and a pending crew's line reads as before. When `goals` is a non-empty array, the header becomes `Plan (<n> crews, <k> goals, approval <a><waiting>):` with `k = 1 + goals.length`, and each goal gets a line, `Goal <id> (approval <a>[, waiting for the client][, done]): <text>`, with its crews under it in today's order: `run` first, then `goals` in array order, then any unknown ids crews name, as `Goal <id> (not in the plan):`. `<text>` has each whitespace run collapsed to one space and is cut to its first 99 characters plus `…` when longer than 100. Without `goals` there are no goal lines and the header is today's. ADR-0010's example, a plan with the run's four crews and one added goal `intake`:
 
 ```
 Plan (7 crews, 2 goals, approval client):
@@ -1339,7 +1339,7 @@ truss uses kit, worktrees and subagent-limits where they live, in the claude-ops
 | Dependency | Range | What truss uses it for |
 | --- | --- | --- |
 | kit | `^0.3.1` | The project manifest init builds on, `kit:init` when the manifest is missing, and the `kit:builder` and `kit:test-writer` member types when kit is loaded |
-| worktrees | `^0.8.4` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); from 0.8.4 it also cleans merged, clean `wf_*` worktrees |
+| worktrees | `^0.8.4` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); it also cleans merged, clean `wf_*` worktrees |
 | subagent-limits | `^0.3.1` | The context budget in every subagent's brief, the `nudgeAtK` checkpoint and `stopAtK` stop, and the `split-work` skill the foreman and planner load |
 
 Every entry names `marketplace: "claude-ops"`. The truss catalog allows it with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. A user installs with the claude-ops marketplace added first:
@@ -1391,9 +1391,9 @@ What changes at run time (ADR-0021 Decisions 2 to 7):
 
 **A QC engineer FAIL.** The foreman sends the findings to a builder. Each later QC engineer is a fresh agent under the next unused name, never a resume, and any fix after a FAIL or a stress-test break needs a fresh QC engineer. When two fix attempts at one level end with the same check failing, the foreman climbs the ladder: Sonnet, then Opus at `medium`, `high`, `xhigh`, each step a fresh agent whose first deliverable is a root-cause analysis with evidence. When `xhigh` fails twice, the foreman sends `BLOCKED:` with the failing check, its output and the theories ruled out, and the PM takes it to the client. In `single` mode an integration-qc FAIL goes back to the integrator, and a fresh `integration-qc-2` rules next.
 
-From 0.5.0, on a v2 plan, the QC engineer FAILs a crew may repair are bounded. Once a crew's this-run FAIL count is greater than `reworkAllowance`, the hooks refuse its next QC engineer, and the foreman sends the allowance-blocked message to `main` with the last findings. A spent allowance goes to the PM, never up an effort level. The PM takes it to the client, or re-plans; a successor foreman starts a fresh count ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 5).
+On a v2 plan, the QC engineer FAILs a crew may repair are bounded. Once a crew's this-run FAIL count is greater than `reworkAllowance`, the hooks refuse its next QC engineer, and the foreman sends the allowance-blocked message to `main` with the last findings. A spent allowance goes to the PM, never up an effort level. The PM takes it to the client, or re-plans; a successor foreman starts a fresh count ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 5).
 
-**A verdict on the wrong commit.** The PM merges only when the QC file's `## Proof checked` SHA equals `git rev-parse <crew branch>`. After a merge of the target (a rebase before 0.6.0) that moved the head, the old PASS doesn't count. From 0.5.0 the SHA is the QC engineer's head line, and a PASS also stands for a moved head when the patch line equals the merged branch's `PATCH_COMMAND` id, with `<base>` the target head last merged in, and the foreman's checks passed again after the merge. The foreman stop gate enforces the same rule as a send-back ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 6).
+**A verdict on the wrong commit.** The PM merges only when the QC file's `## Proof checked` SHA equals `git rev-parse <crew branch>`. After a merge of the target that moved the head, the old PASS doesn't count. The SHA is the QC engineer's head line, and a PASS also stands for a moved head when the patch line equals the merged branch's `PATCH_COMMAND` id, with `<base>` the target head last merged in, and the foreman's checks passed again after the merge. The foreman stop gate enforces the same rule as a send-back ([ADR-0004](adr/0004-scope-repair-and-head-gates.md), section 6).
 
 **A start held by admission** ([ADR-0015](adr/0015-resource-aware.md), proposed). `start` lists the crew under `held` and leaves it `planned`; a member held inside a stage stops its crew `BLOCKED` with text `held by admission: ...`. The PM starts `truss:resource-monitor`, writes `resources/parallelism.json` if it lowers the parallelism, and re-runs `start` or resumes the crew with `start --slug <s> --resume answers` once memory recovers.
 
@@ -1403,11 +1403,11 @@ From 0.5.0, on a v2 plan, the QC engineer FAILs a crew may repair are bounded. O
 
 ## Not verified yet
 
-- The 0.5.0 rules are a design until run 3's stage 1 merges. One thing was checked at design time: `PATCH_COMMAND` gives the same id, `a40f2083…`, for `edeb6ef...80d4ccd` (a merge commit) and for `9ab68c0^...9ab68c0` (the single commit it merged), and prints nothing for an empty range (`80d4ccd...80d4ccd`). The hook's two-step form feeds the diff to `git patch-id` through `$.process.run`'s `stdin`, which worktrees' hooks already use (`plugins/worktrees/hooks/register.ts:843`). It hasn't been run from Truss's hooks.
+- The rework allowance and head guard rules were designed before run 3's stage 1 merged. One thing was checked at design time: `PATCH_COMMAND` gives the same id, `a40f2083…`, for `edeb6ef...80d4ccd` (a merge commit) and for `9ab68c0^...9ab68c0` (the single commit it merged), and prints nothing for an empty range (`80d4ccd...80d4ccd`). The hook's two-step form feeds the diff to `git patch-id` through `$.process.run`'s `stdin`, which worktrees' hooks already use (`plugins/worktrees/hooks/register.ts:843`). It hasn't been run from Truss's hooks.
 
-- The 0.3.0 plan gates, `/truss` plan lines and idle-prompt successor name are covered by `tests/v03.test.ts`, run against the mock engine, not observed in a live run. [`plan.example.json`](plan.example.json) validates against [`plan.schema.json`](plan.schema.json).
+- The plan gates, `/truss` plan lines and idle-prompt successor name are covered by `tests/v03.test.ts`, run against the mock engine, not observed in a live run. [`plan.example.json`](plan.example.json) validates against [`plan.schema.json`](plan.schema.json).
 
-- No prompt in 0.2.0, neither the skill nor any of the five agents, has run as a live agent in a 0.2 run. The hooks are covered by `tests/crew.test.ts`, `tests/hooks.test.ts` and `tests/v02.test.ts`, which run `register.ts` against the mock engine from `claude-code/testing`.
+- No prompt, neither the skill nor any of the five original agents, has run as a live agent in a run of the original protocol. The hooks are covered by `tests/crew.test.ts`, `tests/hooks.test.ts` and `tests/v02.test.ts`, which run `register.ts` against the mock engine from `claude-code/testing`.
 - A foreman's status after it ends a turn while its members still run is unobserved. `/truss` shows `waiting on members` for a foreman that isn't `running` and has live descendants, and the stall check skips any agent that isn't `running`; both rest on that status.
 - Capturing a report from `SubagentHandback` is covered by tests, not observed live.
 - The limit-reset wake rests on three things a probe confirmed: `$.clock` timers run from `session.start`, a hot reload cancels them (so the wake is re-armed from plugin state), and `$.prompt.submit` wakes an idle session. Nobody has yet seen the wake fire after a real usage-limit stop.
