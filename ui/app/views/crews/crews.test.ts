@@ -735,6 +735,17 @@ test('CrewCard: a stalled member of a merged crew takes its line from the task c
   const none = tidy(text(cardOf(art, 'docs-crew-writer')))
   assert.ok(none.includes('No task recorded') && !none.includes('No activity yet') && !/Stalled/.test(none), none)
 })
+test('CrewCard: a stalled member of a merged crew with no task and detail "14 min" reads No task recorded, never the minutes', async () => {
+  for (const status of ['merged', 'dropped']) {
+    const c = crewOfRd('docs-crew')
+    c.status = status
+    c.members.push(member({ name: 'docs-crew-writer', state: 'stalled', detail: '14 min', task: null, purpose: null }))
+    const t = tidy(text(cardOf(await crewCard(c), 'docs-crew-writer')))
+    assert.ok(t.includes('No task recorded'), `${status}: ${t}`)
+    assert.ok(!/min/.test(t), `${status}: ${t}`)
+    assert.ok(hasWord(t, 'Done'), `${status}: ${t}`)
+  }
+})
 test('CrewCard: a running crew still shows Stalled N min on its stalled member', async () => {
   const c = crewOfRd('build-crew')
   c.members.push(member({ name: 'build-crew-tester', state: 'stalled', detail: '14 min', task: 'Test it.', purpose: null }))
