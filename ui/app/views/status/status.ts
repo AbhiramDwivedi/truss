@@ -35,7 +35,9 @@ export function crewStatus(crew: Crew): Status {
   return 'active'
 }
 
-export function agentStatus(member: Member): Status {
+/** An agent never contradicts its crew: a merged or dropped crew makes every agent Done, then the member's own state. */
+export function agentStatus(member: Member, crew: Pick<Crew, 'status'>): Status {
+  if (crew.status === 'merged' || crew.status === 'dropped') return 'done'
   if (member.state === 'reported') return 'done'
   if (member.state === 'stalled' || member.state === 'allowance-spent') return 'stuck'
   if (asks(member.detail)) return 'waiting'
