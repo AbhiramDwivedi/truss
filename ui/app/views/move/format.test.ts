@@ -18,6 +18,19 @@ const reply = (extra: Record<string, unknown> = {}): any => ({
   text: 'Done.', isError: false, backgroundTasks: 0, decision: null, message: null, ...extra,
 })
 
+test('stripMarkdown: emphasis, code, headings, list markers, quotes and links lose their syntax', () => {
+  const out = m.stripMarkdown('# Done\n\n**`greet.sh`:** now *runs*.\n\n- one\n- two\n1. three\n> quote\n[docs](https://x.y)')
+  assert.equal(out, 'Done\n\ngreet.sh: now runs.\n\none\ntwo\nthree\nquote\ndocs')
+  assert.doesNotMatch(out, /\*|`|^- /m)
+})
+test('previewText: short text is kept whole; long text is cut at a word with an ellipsis', () => {
+  assert.equal(m.previewText('**Hi** there'), 'Hi there')
+  const out = m.previewText('word '.repeat(100).trim(), 50)
+  assert.ok(out.endsWith('…'))
+  assert.ok(out.length <= 51)
+  assert.match(out, /^(word )*word…$/)
+  assert.equal(m.previewText(null), '')
+})
 test('cardName: a reply is Approval needed only when approvalAsk is true', () => {
   assert.equal(m.cardName(reply({ approvalAsk: true })), 'Approval needed')
 })
