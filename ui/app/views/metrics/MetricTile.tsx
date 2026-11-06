@@ -13,12 +13,14 @@ export interface MetricTileProps {
   /** A decorative bar or line under the value. */
   graphic?: React.ReactNode
   sub?: React.ReactNode
+  /** Hover text for the sub-line, when it needs more than its own words. */
+  subTitle?: string
   /** The sub-line reads as a warning. */
   subTone?: 'muted' | 'signal'
   className?: string
 }
 
-export function MetricTile({ label, value, title, aside, graphic, sub, subTone = 'muted', className }: MetricTileProps) {
+export function MetricTile({ label, value, title, aside, graphic, sub, subTitle, subTone = 'muted', className }: MetricTileProps) {
   return (
     <div className={cn('flex h-30 min-w-0 flex-col rounded-card border border-border bg-sunken p-4 shadow-e1', className)}>
       <dt className="text-meta font-medium text-muted">{label}</dt>
@@ -33,7 +35,7 @@ export function MetricTile({ label, value, title, aside, graphic, sub, subTone =
         {sub != null && ' '}
         {sub != null && (
           <span
-            title={typeof sub === 'string' ? sub : undefined}
+            title={subTitle ?? (typeof sub === 'string' ? sub : undefined)}
             className={cn('mt-auto line-clamp-2 break-words text-meta', subTone === 'signal' ? 'text-signal-text' : 'text-muted')}
           >
             {sub}

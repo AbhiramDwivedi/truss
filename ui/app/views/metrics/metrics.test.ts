@@ -100,6 +100,78 @@ test('runTimeMs: a finished run stops at the last entry and ignores now', async 
   assert.equal(runTimeMs(fin, NOW + 24 * 60 * MIN), want)
 })
 
+// ---- ADR-0029 section 4: real data (run time fallback, Cost "Not recorded", Banner summary) ---------------
+const RUN_START = Date.parse('2026-11-02T11:00:26Z')
+const LAST_TS = Date.parse('2026-11-02T11:59:00.000Z')
+const realData = () => fx('real-data')
+const hosted = (s: any, status = 'running') => ({ ...s, session: { ...s.session, sessionId: 'sess-1', status } })
+
+test('runTimeMs: empty transcript starts at the first decisions[].run heading and ends at the latest foreman or member ts when no session is hosted', async () => {
+  const { runTimeMs } = await fmt()
+  const s = realData()
+  assert.equal(s.session.sessionId, null)
+  assert.equal(s.transcript.length, 0)
+  assert.equal(runTimeMs(s, NOW), LAST_TS - RUN_START)
+  assert.equal(runTimeMs(s, NOW + 600 * MIN), LAST_TS - RUN_START, 'ignores now when not hosted')
+})
+
+test('runTimeMs: the latest ts counts members as well as foremen', async () => {
+  const { runTimeMs } = await fmt()
+  const s = realData()
+  s.run.crews[1].members[0].ts = '2026-11-02T11:59:30.000Z'
+  assert.equal(runTimeMs(s, NOW), Date.parse('2026-11-02T11:59:30.000Z') - RUN_START)
+})
+
+test('runTimeMs: empty transcript, hosted and working ends at now', async () => {
+  const { runTimeMs } = await fmt()
+  const s = hosted(realData())
+  assert.equal(runTimeMs(s, NOW), NOW - RUN_START)
+  assert.equal(runTimeMs(s, NOW + 5 * MIN), NOW + 5 * MIN - RUN_START)
+})
+
+test('runTimeMs: a malformed run heading gives null, never NaN', async () => {
+  const { runTimeMs } = await fmt()
+  for (const heading of ['not a date | goal', '', ' | goal']) {
+    const s = realData()
+    for (const d of s.decisions) d.run = heading
+    assert.equal(runTimeMs(s, NOW), null, JSON.stringify(heading))
+  }
+})
+
+test('runTimeMs: no parseable ts anywhere ends at the start (0m)', async () => {
+  const { runTimeMs } = await fmt()
+  const s = realData()
+  for (const c of s.run.crews) { c.foreman.ts = 'nope'; for (const m of c.members) m.ts = null }
+  assert.equal(runTimeMs(s, NOW), 0)
+})
+
+test('costState: usage when costUsd is a number', async () => {
+  const { costState } = await fmt()
+  assert.equal(costState(fx('live')), 'usage')
+})
+
+test('costState: not-recorded for a run with no usage cost and no transcript (real-data)', async () => {
+  const { costState } = await fmt()
+  assert.equal(costState(realData()), 'not-recorded')
+})
+
+test('costState: none for first use with no run', async () => {
+  const { costState } = await fmt()
+  assert.equal(costState(fx('no-run')), 'none')
+})
+
+test('costState: none for a run that has a transcript and no usage (partial)', async () => {
+  const { costState } = await fmt()
+  const p = fx('partial')
+  assert.ok(p.transcript.length > 0)
+  assert.equal(costState(p), 'none')
+})
+
+test('costState: a run known only by a decisions[].run heading still counts as a run', async () => {
+  const { costState } = await fmt()
+  assert.equal(costState({ ...realData(), run: null }), 'not-recorded')
+})
+
 test('formatUsd: $0.00, $23.48 and $12,345.67', async () => {
   const { formatUsd } = await fmt()
   assert.equal(formatUsd(0), '$0.00')
@@ -164,6 +236,46 @@ test('RunMetrics: a run with no usage shows a dash and "No usage yet" for Cost, 
   assert.match(t['Crews done']!, /1 of 3/)
 })
 
+test('RunMetrics real-data: Run time reads 58m with a "hh:mm to hh:mm" sub line and no dash', async () => {
+  const t = tiles(await metrics(realData()))['Run time']!
+  assert.match(t, /Run time\s*58m/)
+  assert.match(t, /\d\d:\d\d to \d\d:\d\d/)
+  assert.doesNotMatch(t, /—|No run yet/)
+})
+
+test('RunMetrics real-data: Cost reads Not recorded, no $, no dash, and "No usage yet" appears nowhere', async () => {
+  const m = await metrics(realData())
+  const t = tiles(m)['Cost']!
+  assert.match(t, /Not recorded/)
+  assert.match(t, /No session usage for this run/)
+  assert.doesNotMatch(t, /\$|—/)
+  assert.doesNotMatch(tidy(text(m)), /No usage yet/)
+})
+
+test('RunMetrics real-data: the Not recorded words are sans and text-muted, not mono or text-subtle', async () => {
+  const m = await metrics(realData())
+  const el = [...walk(m)].find((n) => n.k.some((c) => typeof c === 'string' && tidy(c) === 'Not recorded'))
+  assert.ok(el, 'an element holds exactly "Not recorded"')
+  const c = (el.a.class ?? '').split(/\s+/)
+  assert.ok(c.includes('text-muted'), `class: ${el.a.class}`)
+  assert.ok(!c.includes('text-subtle') && !c.includes('font-mono'), `class: ${el.a.class}`)
+})
+
+test('RunMetrics: hosted and working with an empty transcript says Since hh:mm', async () => {
+  const s = hosted(realData())
+  const t = tiles(await metrics(s))['Run time']!
+  assert.match(t, /Run time\s*59m/)
+  assert.match(t, atTime('Since ', '2026-11-02T11:00:26Z'))
+})
+
+test('RunMetrics: a malformed run heading falls back to No run yet, never NaN', async () => {
+  const s = realData()
+  for (const d of s.decisions) d.run = 'garbage | x'
+  const m = await metrics(s)
+  assert.doesNotMatch(tidy(text(m)), /NaN/)
+  assert.match(tiles(m)['Run time']!, /No run yet/)
+})
+
 test('RunMetrics: usage with no run gives dashes and "No crews yet" for crews', async () => {
   const t = tiles(await metrics({ ...fx('live'), run: null }))
   assert.match(t['Cost']!, /\$23\.48/)
@@ -195,6 +307,40 @@ test('RunMetrics: holds the Tokens by model table with a row per model', async (
   assert.equal(rows.length, 2)
   assert.match(tidy(text(m)), /Tokens by model/)
 })
+
+// ---- Banner summary (ADR-0029 section 4) -----------------------------------------------------------------
+const banner = (state: any) => mount('shell/Banner', 'Banner', { state, now: NOW, connection: 'live' })
+const summaryLink = (b: N) => {
+  const a = tags(b, 'a').find((x) => x.a.href === '#run-metrics')
+  assert.ok(a, 'the header has a link to #run-metrics')
+  return a
+}
+
+test('Banner real-data: the summary shows the run time with no $, and a title naming the missing cost', async () => {
+  const a = summaryLink(await banner(realData()))
+  const shown = tidy(text(a))
+  assert.doesNotMatch(shown, /\$/)
+  assert.match(shown, /58m/)
+  assert.equal(a.a.title, 'Run time 58m · cost not recorded')
+})
+
+test('Banner real-data: the accessible name starts with "Run time" and contains the visible text', async () => {
+  const a = summaryLink(await banner(realData()))
+  assert.match(nameWithSrOnly(a), /^Run time\s*58m/)
+})
+
+test('Banner: first use (no run) still reads $0.00 · 0m', async () => {
+  const a = summaryLink(await banner(fx('no-run')))
+  assert.equal(tidy(text(a)), '$0.00 · 0m')
+})
+
+test('Banner: usage still reads $x.xx · time', async () => {
+  const a = summaryLink(await banner(fx('live')))
+  assert.match(tidy(text(a)), /^\$23\.48 · 53m$/)
+})
+
+/** The link's text including sr-only children (text() skips only aria-hidden). */
+function nameWithSrOnly(n: N): string { return tidy(text(n)) }
 
 // ---- TokensTable -----------------------------------------------------------------------------------------
 const table = (models: unknown) => mount('metrics/TokensTable', 'TokensTable', { models })
