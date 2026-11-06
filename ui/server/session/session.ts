@@ -7,6 +7,9 @@ import { addUserEntry, endView, errorView, foldMessage, initialView, setRunning 
 import type { Intent, QueueItem, SessionView } from './fold.ts'
 import { replyStep } from './reply.ts'
 import type { ReplyState } from './reply.ts'
+import { resolvePlugins } from './plugins.ts'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 export interface SessionControl {
   // intent: 'goal', 'add', null or absent (ADR-0023 gap a); any other value is { error: 'intent' }.
@@ -44,6 +47,7 @@ export interface Session extends SessionControl {
 export function createSession(opts: {
   repo: string
   pluginPath: string
+  claudeDir?: string // where installed_plugins.json lives; defaults to CLAUDE_CONFIG_DIR or ~/.claude
   hasPlan?: () => boolean // read when each message is sent (ADR-0028 section 1)
   crewSlugs?: () => string[] // the crew slugs a flow entry's `to` is matched against (ADR-0028 section 7)
 }): Session {
@@ -170,7 +174,7 @@ export function createSession(opts: {
         prompt: input(),
         options: {
           cwd: opts.repo,
-          plugins: [{ type: 'local', path: opts.pluginPath }],
+          plugins: resolvePlugins(opts.pluginPath, opts.claudeDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')).plugins,
           canUseTool: (toolName: string, toolInput: Record<string, unknown>, o: unknown) =>
             canUseTool(toolName, toolInput, o),
           hooks: { PreToolUse: [{ hooks: [async () => ({})] }] },
