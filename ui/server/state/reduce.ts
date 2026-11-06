@@ -146,6 +146,7 @@ export interface Reducer {
   message(obj: Record<string, unknown>): 'version' | undefined
   skip(file: string, line: number, reason: 'json' | 'version'): void
   build(plan: Plan | null, qcFor: (slug: string) => Qc | null): Run
+  spawnedBy(agentId: string): string | null // the spawn line's `by` for an agentId; internal to ui-state
 }
 
 export function createReducer(): Reducer {
@@ -157,6 +158,7 @@ export function createReducer(): Reducer {
   // foreman's lines under its own crew <b>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept outside
   // the crew accumulators; a crew's stall reads the names that follow it (see follows) once the plan is known.
   const successorLatest = new Map<string, Stamped>()
+  const spawnBy = new Map<string, string | null>() // agentId -> the spawn line's `by`; read by the store, not published
   let seq = 0
 
   function crewOf(slug: string): CrewAcc {
@@ -198,6 +200,7 @@ export function createReducer(): Reducer {
         m.model = str(obj.model)
         m.effort = str(obj.effort)
         m.agentId = str(obj.agentId)
+        if (m.agentId !== null) spawnBy.set(m.agentId, str(obj.by)) // internal: never on Member (ADR-0029)
         m.state = 'spawned'
         m.detail = null
         text = `${agent} spawned`
@@ -346,5 +349,5 @@ export function createReducer(): Reducer {
     }
   }
 
-  return { event, message, skip, build }
+  return { event, message, skip, build, spawnedBy: (id) => spawnBy.get(id) ?? null }
 }
