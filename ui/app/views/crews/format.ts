@@ -100,25 +100,37 @@ function nameRole(name: string): string | null {
   return [...segs.slice(1)].reverse().find((x) => NAME_ROLES.has(x) || ROLE_ORDER.includes(x)) ?? null
 }
 
+/** The role a non-truss agent type names by its last segment (`kit:builder`, `kit:test-writer`), else null. */
+const TYPE_ROLES: Readonly<Record<string, string>> = { builder: 'builder', tester: 'tester', 'test-writer': 'tester', writer: 'writer', reviewer: 'reviewer', scout: 'scout' }
+function typeRole(type: string | null | undefined): string | null {
+  if (!type || type.startsWith('truss:')) return null
+  return TYPE_ROLES[type.split(':').at(-1)!.toLowerCase()] ?? null
+}
+
 /** The agent card's role word (ADR-0028 section 6). */
 export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
   const type = m.type ?? ''
   if (type === 'truss:foreman' || type === 'workflow-crew') return 'Foreman'
   if (type === 'truss:qc-engineer') return 'QC engineer'
   if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
+  const typed = typeRole(m.type)
+  if (typed !== null) return sentence(typed)
   const role = nameRole(m.name)
   return role !== null && NAME_ROLES.has(role) ? sentence(role) : 'General purpose'
 }
 
 export const RUNNER_PURPOSE = 'Runs one check command for the crew.'
 
-/** A runner or general-purpose agent: it runs one check command for the crew. */
+/**
+ * A runner or an untyped general-purpose agent: it runs one check command for the crew. An agent with a real type
+ * (`kit:builder`, `truss:*`) is never a check run.
+ */
 export function isCheckRun(m: Pick<Member, 'type' | 'name'>): boolean {
-  if (m.type === 'workflow-crew' || (m.type ?? '').startsWith('truss:')) return false
+  const type = m.type ?? ''
+  if (type === 'workflow-crew' || type.startsWith('truss:') || typeRole(type) !== null) return false
   const role = nameRole(m.name)
-  if (role !== null && role !== 'runner' && ROLE_ORDER.includes(role)) return false
-  const r = roleWord(m)
-  return r === 'Runner' || r === 'General purpose'
+  if (role === 'runner') return true
+  return (type === '' || type === 'general-purpose') && (role === null || !(NAME_ROLES.has(role) || ROLE_ORDER.includes(role)))
 }
 
 const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writer', 'resolver']
@@ -131,7 +143,7 @@ export function orderAgents(agents: readonly Member[], foreman: Member | null): 
   const rank = (m: Member): number => {
     if (foreman ? m === foreman || m.name === foreman.name : false) return 0
     if (m.type === 'truss:foreman' || m.type === 'workflow-crew') return 0
-    const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (nameRole(m.name) ?? '')
+    const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (typeRole(m.type) ?? nameRole(m.name) ?? '')
     const i = ROLE_ORDER.indexOf(key)
     return i >= 0 ? i + 1 : ROLE_ORDER.length + 1
   }

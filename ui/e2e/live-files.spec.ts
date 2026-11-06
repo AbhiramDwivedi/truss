@@ -181,14 +181,12 @@ test('R-14, R-15: a plan of 12 crews with 100 agents renders, opens, and a chang
   expect(Date.now() - t0, 'first render of 12 crews, ms').toBeLessThan(10000)
   for (const slug of slugs) await expect(page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') })).toHaveCount(1)
 
-  // Generic (non-truss, no named role) agents fold into one "N check runs" row; opening it lists every one of them.
+  // A crew with more than 6 named agents (kit:builder members read Builder) shows the first 6 and a "Show n more agents" button (UX direction, Build network, Long).
   const last = slugs[11]!
   const names = members.get(last)!
   expect(names.length).toBeGreaterThanOrEqual(7)
-  const runs = crewLine(page, last).getByRole('button', { name: `${names.length} check runs` })
-  await expect(runs).toHaveAttribute('aria-expanded', 'false')
-  await runs.click()
-  await expect(runs).toHaveAttribute('aria-expanded', 'true')
+  await expect(crewLine(page, last).getByRole('button', { name: /check runs?$/ }), 'typed builders are not check runs').toHaveCount(0)
+  await crewLine(page, last).getByRole('button', { name: /^Show \d+ more agents$/ }).click()
   for (const n of names) await expect(member(page, last, n)).toBeVisible()
 
   // A change in the busy run still shows within 2 s.

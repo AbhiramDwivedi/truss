@@ -381,6 +381,23 @@ test('orderAgents: foreman first, then builder, tester, ux, qc, stress, planning
   const list = [m('c-x', 'general-purpose'), m('c-writer', 'truss:writer'), m('c-qc', 'truss:qc-engineer'), m('c-builder', 'general-purpose'), fm, m('c-tester', 'general-purpose'), m('c-ux', 'truss:ux-engineer'), m('c-resolver', 'truss:resolver')]
   assert.deepEqual(orderAgents(list, fm).map((x: any) => x.name), ['c', 'c-builder', 'c-tester', 'c-ux', 'c-qc', 'c-writer', 'c-resolver', 'c-x'])
 })
+test('typed agents: kit:builder reads Builder and is not a check run; untyped runners and unnamed general-purpose agents fold', async () => {
+  const { isCheckRun, roleWord, orderAgents } = await r.load('views/crews/format.ts')
+  const b = { type: 'kit:builder', name: 'crew-m001-ab12' }
+  assert.equal(roleWord(b), 'Builder')
+  assert.equal(isCheckRun(b), false)
+  assert.equal(roleWord({ type: 'kit:test-writer', name: 'crew-m002' }), 'Tester')
+  assert.equal(isCheckRun({ type: 'kit:test-writer', name: 'crew-m002' }), false)
+  assert.equal(roleWord({ type: 'kit:reviewer', name: 'crew-m003' }), 'Reviewer')
+  assert.equal(roleWord({ type: 'kit:scout', name: 'crew-m004' }), 'Scout')
+  assert.equal(isCheckRun({ type: 'general-purpose', name: 'crew-runner-2' }), true)
+  assert.equal(isCheckRun({ type: null, name: 'crew-runner-2' }), true)
+  assert.equal(isCheckRun({ type: 'general-purpose', name: 'crew-agent-3' }), true)
+  assert.equal(roleWord({ type: 'general-purpose', name: 'crew-agent-3' }), 'General purpose')
+  const fm = { name: 'c', type: 'truss:foreman' }
+  const list = [fm, { name: 'c-x', type: 'Explore' }, { name: 'c-m1', type: 'kit:test-writer' }, { name: 'c-m2', type: 'kit:builder' }]
+  assert.deepEqual(orderAgents(list as any, fm as any).map((x: any) => x.name), ['c', 'c-m2', 'c-m1', 'c-x'])
+})
 test('isCheckRun and the runner purpose: runners and unnamed general-purpose agents fold, truss roles never', async () => {
   const { isCheckRun, RUNNER_PURPOSE } = await r.load('views/crews/format.ts')
   assert.equal(isCheckRun({ type: 'general-purpose', name: 'build-crew-runner' }), true)
