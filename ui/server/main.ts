@@ -60,6 +60,7 @@ const liveRun = () => (store.snapshot().state as { run?: { version: number | nul
 const session = createSession({
   repo,
   pluginPath,
+  claudeDir,
   hasPlan: () => { const r = liveRun(); return r !== null && r.version !== null; },
   crewSlugs: () => liveRun()?.crews.map((c) => c.slug) ?? [],
 });

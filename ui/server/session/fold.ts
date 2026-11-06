@@ -53,6 +53,8 @@ export interface TranscriptEntry {
 export interface SessionView { session: SessionState; requests: Request[]; transcript: TranscriptEntry[]; tally: Tally
   // ADR-0028 section 6: the latest description per task_id, oldest first, at most KEEP. Beside `session`, so the snapshot is unchanged.
   taskDescriptions?: Map<string, string>
+  // The SDK's own plugin_errors messages from init, beside `session` so the snapshot is unchanged. Feeds the "did not load the Truss plugin" warning.
+  pluginErrors?: string[]
 }
 
 const KEEP = 500
@@ -110,7 +112,11 @@ function foldInit(view: SessionView, msg: Record<string, unknown>): SessionView 
       break
     }
   }
-  return withSession(view, {
+  const pluginErrors: string[] = []
+  for (const e of Array.isArray(msg.plugin_errors) ? msg.plugin_errors : []) {
+    if (isObj(e) && typeof e.message === 'string') pluginErrors.push(e.message.slice(0, 500))
+  }
+  return withSession({ ...view, pluginErrors }, {
     status: 'running',
     sessionId: str(msg.session_id),
     model: str(msg.model),

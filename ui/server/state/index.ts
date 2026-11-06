@@ -88,6 +88,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
   let requests: unknown[] = []
   let transcript: { n: number }[] = []
   let sessionNoPlugin = false
+  let pluginErrors: string[] = []
   const cloned = new WeakMap<object, any>()
   // JSON text of a published object, kept by identity so an unchanged value is serialised once.
   const jsonOf = new WeakMap<object, string>()
@@ -291,7 +292,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
 
   function compute(): Record<string, unknown> {
     const all = [...notices]
-    if (sessionNoPlugin) all.push({ id: 'no-plugin', text: 'The session did not load the Truss plugin.' })
+    if (sessionNoPlugin) all.push({ id: 'no-plugin', text: ['The session did not load the Truss plugin.', ...pluginErrors].join(' ') })
     if (gitImages.failed()) all.push({ id: 'git-error', text: 'git could not be read; the images shown are the last good ones.' })
     return {
       trussDir: { path: trussDir, exists },
@@ -366,6 +367,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     session = v.session
     taskOf = (view as { taskDescriptions?: Map<string, string> }).taskDescriptions ?? new Map()
     requests = v.requests
+    pluginErrors = (view as { pluginErrors?: string[] }).pluginErrors ?? []
     sessionNoPlugin = v.session.sessionId != null && v.session.plugin == null
     const lastN = transcript.length === 0 ? 0 : transcript[transcript.length - 1].n
     const fresh = kept.filter((e) => e.n > lastN)
