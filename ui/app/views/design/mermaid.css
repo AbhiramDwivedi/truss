@@ -79,3 +79,10 @@ svg[id^="truss-mmd-"] .edgeLabel rect {
   stroke: none;
   opacity: 1;
 }
+
+/* Mermaid centres label text with a rule in the removed <style> element (CSP), so the rule lives here. */
+svg[id^="truss-mmd-"] .node .label text,
+svg[id^="truss-mmd-"] .cluster-label text,
+svg[id^="truss-mmd-"] .edgeLabel text {
+  text-anchor: middle;
+}

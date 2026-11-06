@@ -192,7 +192,7 @@ test.describe('R-38 mermaid diagrams', () => {
     } finally { await o.stop() }
   })
 
-  test('R-38: at 360 px a wide diagram scrolls inside its figure, not the page', async ({ browser }) => {
+  test('R-38: at 360 px a wide diagram is scaled to fit its figure (no sideways scroll) and Open full size shows it unscaled in a dialog', async ({ browser }) => {
     const wide = 'flowchart LR\n' + Array.from({ length: 24 }, (_, i) => `  N${i}[Step number ${i}] --> N${i + 1}[Step number ${i + 1}]`).join('\n')
     const o = await openArchitecture(browser, PHONE, {
       edit: (s) => { s.design.architecture.markdown = `# Architecture\n\n## Overview\n\n\`\`\`mermaid\n${wide}\n\`\`\`\n` },
@@ -200,11 +200,17 @@ test.describe('R-38 mermaid diagrams', () => {
     try {
       const { page } = o
       const fig = page.getByRole('figure', { name: 'Diagram 1 of 1' })
-      await expect(fig).toBeVisible(LOAD)
-      const m = await fig.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, ox: getComputedStyle(el).overflowX }))
-      expect(m.sw, 'the diagram is wider than the figure').toBeGreaterThan(m.cw)
-      expect(['auto', 'scroll']).toContain(m.ox)
+      await expect(fig).toBeVisible({ timeout: 40000 })
+      const m = await fig.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, svg: el.querySelector('svg')!.getBoundingClientRect().width }))
+      expect(m.sw, 'the figure does not scroll sideways').toBeLessThanOrEqual(m.cw)
+      expect(m.svg, 'the SVG fits the figure').toBeLessThanOrEqual(m.cw)
       expect(await page.evaluate(() => document.scrollingElement!.scrollWidth <= window.innerWidth), 'no horizontal page scroll').toBe(true)
+      await fig.getByRole('button', { name: 'Open full size' }).click()
+      const dlg = page.getByRole('dialog', { name: /^Diagram: / })
+      await expect(dlg).toBeVisible(T)
+      expect(await dlg.locator('svg').evaluate((el) => el.getBoundingClientRect().width), 'unscaled it is wider than the figure').toBeGreaterThan(m.cw)
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0, T)
     } finally { await o.stop() }
   })
 })

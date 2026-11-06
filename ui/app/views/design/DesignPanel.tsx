@@ -12,7 +12,7 @@ import { ImageOff, RotateCw } from 'lucide-react'
 import { Button } from '../../components/ui/button.tsx'
 import type { DesignImage, RunState } from '../../store/types.ts'
 import { imageUrl } from '../rail/format.ts'
-import { MermaidBlock, type MermaidApi } from './MermaidBlock.tsx'
+import { MERMAID_CONFIG, MermaidBlock, type MermaidApi } from './MermaidBlock.tsx'
 import './mermaid.css'
 
 export interface DesignPanelProps {
@@ -97,7 +97,7 @@ function loadMermaid(): Promise<MermaidApi> {
     mermaidLoad = import('mermaid')
       .then((mod) => {
         const m = mod.default
-        m.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, suppressErrorRendering: true, theme: 'base' })
+        m.initialize({ ...MERMAID_CONFIG, flowchart: { ...MERMAID_CONFIG.flowchart } })
         return m as MermaidApi
       })
       .catch((e: unknown) => {
