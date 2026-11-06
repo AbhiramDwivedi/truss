@@ -20,6 +20,7 @@ export interface TranscriptProps {
   now: number
 }
 
+const OUTSIDE_RUN = "This run was started outside the page, so its messages aren't shown here. Send a message to the PM to continue."
 const FIRST_USE = 'Tell the PM what to build. Sending your goal starts a truss run.'
 const WORKING = 'Working on it…'
 const STILL_WORKING = 'Still working. Crews may be running; their progress shows in Build network.'
@@ -255,7 +256,7 @@ export function Transcript({ state, now }: TranscriptProps) {
               {shown.length === 0 && !ended ? (
                 <ol>
                   <Bubble id="msg-first-use" who="pm" time="" grouped={false} hint>
-                    {FIRST_USE}
+                    {state.run ? OUTSIDE_RUN : FIRST_USE}
                   </Bubble>
                 </ol>
               ) : (
