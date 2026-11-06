@@ -46,6 +46,8 @@ The rail's "Decisions and ADRs" timeline is the one list (`views/rail/Timeline.t
 
 The design panel drops each Markdown section whose heading text matches `/\b(change ?log|history|versions?)\b/i`, from that heading up to the next heading of the same or a higher level. It drops nothing else. The page already shows one file, `design.architecture` (`types.ts`), so no older version is listed.
 
+Amended by [ADR-0029](0029-real-data.md) section 6: the architecture doc itself states the current design only.
+
 ### 5. Mermaid (R-38)
 
 - Dependency: `mermaid` at exactly `12.2.0` in `ui/package.json` `dependencies`, with no range. `12.3.0` was published on 2026-11-03, one day before this ADR, and `13.0.0-alpha.0` is a prerelease (`npm view mermaid time`). The pin is the newest release at least seven days old.
@@ -80,6 +82,8 @@ task?: string | null     // see below
 - `purpose`: the first sentence of the `description:` line in `<pluginPath>/agents/<name>.md`. The name is the member's `type` with `truss:` stripped. Type `workflow-crew`, and the crew's foreman, map to `foreman`. Unknown types, and `general-purpose` (1,566 of the real dir's spawns), get null, and the card shows the type only. ui-state reads the files once at start; it writes nothing (R-9).
 - Progress: three steps, Spawned, Working and Reported. Spawned is a spawn line with no later activity. Reported is `state === 'reported'`. Everything else is Working. There is no percentage.
 
+Amended by [ADR-0029](0029-real-data.md) sections 2 and 3: the transcript task for Workflow members, and the client task chain.
+
 ### 7. The flow (R-40)
 
 `Session` gains `flow?: FlowEntry[]`, oldest first, holding at most the last 200 entries:
@@ -109,6 +113,8 @@ One section, h2 "Run metrics", `#run-metrics`, at the end of main. Every value i
 
 There is no limit, budget, ceiling or "of $X" anywhere. The UI sets no spending limit (`live.check.ts:22` keeps none).
 
+Amended by [ADR-0029](0029-real-data.md) section 4: run time with no transcript, Cost "Not recorded", and the header summary.
+
 ### 9. Status vocabulary (R-44)
 
 `ui/app/views/status/` holds `StatusBadge` and `RunStatusBadge`, owned by rework-network and used by every view. Every status shows a word and an icon, never colour alone.
@@ -127,6 +133,8 @@ Run status (`RunStatusBadge`):
 - `waiting` ("Waiting on you"): an open request, or `session.status === 'waiting'`;
 - `finished` ("Finished"): every crew merged or dropped, and the session isn't running;
 - `working` ("Working"): otherwise.
+
+Amended by [ADR-0029](0029-real-data.md) section 1: an agent of a merged or dropped crew is `done`, and a null model shows no badge.
 
 ### 10. Layout, thread and design (R-36, R-45, R-46)
 
@@ -151,7 +159,7 @@ This follows the UX direction.
 - Each stage-1 spec must pass with today's App.tsx layout plus its own area. A `rework` project in `ui/playwright.config.ts` runs them.
 - **Fixtures.** Fixtures go in `ui/contract/fixtures/rework/<state>/`. `real-12` is trimmed from the real truss dir `361b2630-4123-451d-98e0-e36681a3c70c` (3,905 event lines) to 12 crews and at most 100 agents. `partial` adds a crew with a `v: 2` line, and `finished` has every crew merged.
 
-Rework fixture states: no-run, planning, live, real-12, reply-open, approval-ask, architecture, long, thread, partial, finished
+Rework fixture states: no-run, planning, live, real-12, reply-open, approval-ask, architecture, long, thread, partial, finished, real-data
 
 rework-design rewrites the existing specs this ADR changes, in `ui/e2e/**`, `ui/contract/redesign/**` and `ui/contract/e2e/**`:
 
