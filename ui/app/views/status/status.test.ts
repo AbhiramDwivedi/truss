@@ -164,46 +164,68 @@ test('crewStatus: real-12 ui-fixes5 (running, QUESTION) is waiting and start-fix
 })
 
 // ---- agentStatus -----------------------------------------------------------------------------------------
+// agentStatus(member, crew: Pick<Crew,'status'>): a merged or dropped crew reads done for every agent (ADR-0029 point 1).
+const RUN = { status: 'running' }
+for (const crewState of ['merged', 'dropped']) {
+  test(`agentStatus: every agent of a ${crewState} crew is done, whatever its state or marker`, async () => {
+    const { agentStatus } = await status()
+    const C = { status: crewState }
+    assert.equal(agentStatus(member({ state: 'tagged', detail: 'BLOCKED' }), C), 'done')
+    assert.equal(agentStatus(member({ state: 'tagged', detail: 'QUESTION: x' }), C), 'done')
+    assert.equal(agentStatus(member({ state: 'stalled', detail: '14 min' }), C), 'done')
+    assert.equal(agentStatus(member({ state: 'allowance-spent' }), C), 'done')
+    assert.equal(agentStatus(member({ state: 'spawned', detail: null }), C), 'done')
+    assert.equal(agentStatus(member({ state: 'reported' }), C), 'done')
+  })
+}
+test('agentStatus: a running crew with a BLOCKED foreman detail is waiting, not done', async () => {
+  const { agentStatus } = await status()
+  assert.equal(agentStatus(member({ type: 'workflow-crew', state: 'tagged', detail: 'BLOCKED' }), RUN), 'waiting')
+})
+test('agentStatus: a running crew with a stalled member is stuck', async () => {
+  const { agentStatus } = await status()
+  assert.equal(agentStatus(member({ state: 'stalled', detail: '14 min' }), RUN), 'stuck')
+})
 test('agentStatus: reported is done', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ state: 'reported' })), 'done')
+  assert.equal(agentStatus(member({ state: 'reported' }), RUN), 'done')
 })
 test('agentStatus: stalled is stuck', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ state: 'stalled' })), 'stuck')
+  assert.equal(agentStatus(member({ state: 'stalled' }), RUN), 'stuck')
 })
 test('agentStatus: allowance-spent is stuck', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ state: 'allowance-spent' })), 'stuck')
+  assert.equal(agentStatus(member({ state: 'allowance-spent' }), RUN), 'stuck')
 })
 for (const marker of ['QUESTION', 'BLOCKED', 'PROPOSAL']) {
   test(`agentStatus: a ${marker} detail is waiting`, async () => {
     const { agentStatus } = await status()
-    assert.equal(agentStatus(member({ state: 'tagged', detail: `${marker}: need input` })), 'waiting')
+    assert.equal(agentStatus(member({ state: 'tagged', detail: `${marker}: need input` }), RUN), 'waiting')
   })
 }
 for (const state of ['spawned', 'tagged', 'fetched']) {
   test(`agentStatus: state ${state} with no marker is active`, async () => {
     const { agentStatus } = await status()
-    assert.equal(agentStatus(member({ state, detail: 'working' })), 'active')
+    assert.equal(agentStatus(member({ state, detail: 'working' }), RUN), 'active')
   })
 }
 test('agentStatus: a null detail is active', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ detail: null })), 'active')
+  assert.equal(agentStatus(member({ detail: null }), RUN), 'active')
 })
 test('agentStatus: a reported agent with a BLOCKED detail is still done', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ state: 'reported', detail: 'BLOCKED: x' })), 'done')
+  assert.equal(agentStatus(member({ state: 'reported', detail: 'BLOCKED: x' }), RUN), 'done')
 })
 test('agentStatus: a stalled agent with a QUESTION detail is stuck', async () => {
   const { agentStatus } = await status()
-  assert.equal(agentStatus(member({ state: 'stalled', detail: 'QUESTION: x' })), 'stuck')
+  assert.equal(agentStatus(member({ state: 'stalled', detail: 'QUESTION: x' }), RUN), 'stuck')
 })
 test('agentStatus: a planned status never comes back for a member', async () => {
   const { agentStatus } = await status()
   for (const state of ['spawned', 'stalled', 'tagged', 'reported', 'allowance-spent', 'fetched']) {
-    assert.notEqual(agentStatus(member({ state })), 'planned', state)
+    assert.notEqual(agentStatus(member({ state }), RUN), 'planned', state)
   }
 })
 
