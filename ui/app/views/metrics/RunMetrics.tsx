@@ -2,6 +2,7 @@
 // and crews done as four tiles, then tokens by model. No limit and no budget: only what has been used.
 import type { Crew, RunState } from '../../store/types.ts'
 import { Skeleton } from '../../components/ui/skeleton.tsx'
+import { goalGroups } from '../crews/goals.ts'
 import { crewStatus, runStatus } from '../status/status.ts'
 import { MetricTile } from './MetricTile.tsx'
 import { TokensTable } from './TokensTable.tsx'
@@ -13,11 +14,16 @@ export interface RunMetricsProps {
 }
 
 const Dash = () => <span className="text-subtle">—</span>
+/** `475 reported, 11 ended without a report`, or plain `N reported` when none are missing. */
+export function reportedSub(started: number, reported: number): string {
+  const missing = started - reported
+  return missing > 0 ? `${reported} reported, ${missing} ended without a report` : `${reported} reported`
+}
 const agentsOf = (c: Crew) => (c.foreman ? [c.foreman, ...c.members] : c.members)
 
 export function RunMetrics({ state, now }: RunMetricsProps) {
   const usage = state?.session.usage
-  const crews = state?.run?.crews ?? null
+  const crews = state?.run ? (goalGroups(state.run).at(-1)?.crews ?? []) : null
   const ms = state ? runTimeMs(state, now) : null
   const finished = state != null && runStatus(state) === 'finished'
 
@@ -85,7 +91,7 @@ export function RunMetrics({ state, now }: RunMetricsProps) {
           <MetricTile
             label="Agents started"
             value={noCrews ? <Dash /> : agents!.length}
-            sub={noCrews ? 'No crews yet' : `${agents!.filter((a) => a.state === 'reported').length} reported`}
+            sub={noCrews ? 'No crews yet' : reportedSub(agents!.length, agents!.filter((a) => a.state === 'reported').length)}
           />
           <MetricTile
             label="Crews done"
@@ -96,7 +102,7 @@ export function RunMetrics({ state, now }: RunMetricsProps) {
       )}
       <h3 className="mt-6 text-body font-semibold text-fg">Tokens by model</h3>
       <div className="mt-3">
-        {state === null ? <Skeleton className="h-10 w-full rounded-card" /> : <TokensTable models={usage?.models} />}
+        {state === null ? <Skeleton className="h-10 w-full rounded-card" /> : <TokensTable models={usage?.models} notRecorded={cost === 'not-recorded'} />}
       </div>
     </section>
   )

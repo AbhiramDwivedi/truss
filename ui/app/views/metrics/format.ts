@@ -1,6 +1,7 @@
 // Formatters for Run metrics (ADR-0028 section 8). Pure, no React.
 import type { RunState } from '../../store/types.ts'
 import { runStatus } from '../status/status.ts'
+import { goalGroups, goalLastMs, goalStartMs } from '../crews/goals.ts'
 
 const MIN = 60_000
 const NUM = new Intl.NumberFormat('en-US')
@@ -38,9 +39,24 @@ function lastActivityMs(state: RunState): number | null {
   return latest
 }
 
+/** With more than one goal, the latest goal's own span: its approval (else its first agent) to now while it works,
+ *  else to its last agent activity. Null for a single-goal run or a goal with no usable start. */
+function goalSpan(state: RunState, now: number): { start: number; end: number; live: boolean } | null {
+  const groups = goalGroups(state.run)
+  if (groups.length < 2) return null
+  const g = groups[groups.length - 1]!
+  const start = goalStartMs(g)
+  if (start === null) return null
+  const last = goalLastMs(g) ?? start
+  const live = runStatus(state) !== 'finished' && g.crews.some((c) => c.status === 'running')
+  return { start, end: Math.max(start, live ? now : last), live }
+}
+
 /** Run time in ms. With a transcript: first entry to now, or to the last entry once finished. With none: the first
  *  run heading to now (hosted and working) or to the latest crew ts (ADR-0029 section 4). Null with neither. */
 export function runTimeMs(state: RunState, now: number): number | null {
+  const span = goalSpan(state, now)
+  if (span) return Math.max(0, span.end - span.start)
   const first = Date.parse(state.transcript[0]?.ts ?? '')
   if (!Number.isNaN(first)) {
     let end = now
@@ -60,6 +76,8 @@ export function runTimeMs(state: RunState, now: number): number | null {
 
 /** Start and end stamps (ms) of the heading fallback, for the tile sub-line; null when the transcript is used or absent. */
 export function headingSpan(state: RunState): { start: number; end: number | null; live: boolean } | null {
+  const g = goalSpan(state, Date.now())
+  if (g) return { start: g.start, end: g.end, live: g.live }
   if (state.transcript.length > 0) return null
   const start = headingStartMs(state)
   if (start === null) return null

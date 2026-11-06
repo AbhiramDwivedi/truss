@@ -11,7 +11,7 @@ import { agentStatus, crewStatus } from '../status/status.ts'
 import { AgentCard } from './AgentCard.tsx'
 import { StuckCard } from './StuckCard.tsx'
 import { GutterLink, LIT_MS, Wire } from './Wire.tsx'
-import { FAILED_STATES, blockedWords, detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
+import { FAILED_STATES, blockedWords, detailMinutes, hhmm, isCheckRun, orderAgents, plural, roleWord, stepOf, taskLine } from './format.ts'
 
 export interface CrewCardProps {
   crew: Crew
@@ -23,6 +23,8 @@ export interface CrewCardProps {
   trunkLit?: boolean
   /** Draw the gutter link only in the last stage; other stages have a full-height trunk. */
   gutterLink?: boolean
+  /** The check-runs row starts open (a test seam; the row is closed on first sight). */
+  checkRunsOpen?: boolean
 }
 
 /** Agent cards shown before "Show n more agents". */
@@ -64,7 +66,7 @@ function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React
   )
 }
 
-export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false, gutterLink = true }: CrewCardProps) {
+export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false, gutterLink = true, checkRunsOpen = false }: CrewCardProps) {
   const slugId = React.useId()
   const listId = `${slugId}-agents`
   const [expanded, setExpanded] = React.useState(false)
@@ -75,8 +77,13 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
   const agents: Member[] = []
   if (crew.foreman) agents.push(crew.foreman)
   for (const m of crew.members) if (!crew.foreman || m.name !== crew.foreman.name) agents.push(m)
-  const shown = expanded ? agents : agents.slice(0, FOLD)
-  const hidden = agents.length - FOLD
+  // Foreman, then the named truss roles, then the rest; the runner and general-purpose check runs fold into one row.
+  const checkRuns = agents.filter(isCheckRun)
+  const named = orderAgents(agents.filter((m) => !isCheckRun(m)), crew.foreman)
+  const [runsOpen, setRunsOpen] = React.useState(checkRunsOpen)
+  const runsId = `${slugId}-runs`
+  const shown = expanded ? named : named.slice(0, FOLD)
+  const hidden = named.length - FOLD
 
   const ask = status === 'waiting' ? /^\s*(QUESTION|BLOCKED|PROPOSAL)\b/.exec(crew.foreman?.detail ?? '')?.[1] : undefined
   const partial = (crew.eventsUnread ?? 0) > 0
@@ -142,6 +149,25 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
                 <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
               ))}
             </ul>
+            {checkRuns.length > 0 && (
+              <div className="mt-2 min-w-0">
+                <button
+                  type="button"
+                  aria-expanded={runsOpen}
+                  aria-controls={runsId}
+                  onClick={() => setRunsOpen((v) => !v)}
+                  className="inline-flex min-h-6 items-center rounded-ctl px-2 text-meta font-medium text-fg underline underline-offset-2 hover:bg-sunken pointer-coarse:min-h-11"
+                >
+                  {plural(checkRuns.length, 'check run')}
+                </button>
+                <ul id={runsId} aria-label={`${crew.slug} check runs`} hidden={!runsOpen} className="mt-2 flex min-w-0 flex-col gap-2">
+                  {runsOpen &&
+                    checkRuns.map((m) => (
+                      <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
+                    ))}
+                </ul>
+              </div>
+            )}
             {hidden > 0 && (
               <button
                 type="button"

@@ -9,6 +9,8 @@ import { PmNode, type PmNodeProps } from './PmNode.tsx'
 import { StageGroup, type StagePhase } from './StageGroup.tsx'
 import { isRecent } from './CrewCard.tsx'
 import { crewEnd, crewStart, short } from './format.ts'
+import { goalGroups, goalLabel, type GoalGroup } from './goals.ts'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 export interface BuildNetworkProps {
   state: RunState | null
@@ -82,16 +84,64 @@ function pmState(crewCount: number, status: Status): PmNodeProps['state'] {
   return status === 'planned' ? 'waiting-goal' : 'planning'
 }
 
+function renderStages(stages: Stage[], now: number, handoffs: ReadonlyMap<string, FlowEntry>, trunkAnimated: boolean, trunkLit: boolean) {
+  return stages.map((s, i) => (
+    <StageGroup
+      key={s.key}
+      label={s.label}
+      phase={s.phase}
+      took={s.took}
+      crews={s.crews}
+      now={now}
+      handoffs={handoffs}
+      first={i === 0}
+      last={i === stages.length - 1}
+      trunkAnimated={trunkAnimated}
+      trunkLit={trunkLit}
+    />
+  ))
+}
+
+/** An earlier goal of the run: collapsed to one button, its own stages once opened. */
+function EarlierGoal({ group, now, handoffs, trunkAnimated, trunkLit }: { group: GoalGroup; now: number; handoffs: ReadonlyMap<string, FlowEntry>; trunkAnimated: boolean; trunkLit: boolean }) {
+  const [open, setOpen] = React.useState(false)
+  const id = React.useId()
+  const label = `Earlier goal: ${goalLabel(group)}`
+  return (
+    <section aria-label={label} className="mt-6 min-w-0 border-t border-border pt-4">
+      <h3 className="min-w-0 text-body font-semibold text-fg">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-h-6 w-full min-w-0 items-start gap-2 rounded-ctl px-1 text-left hover:bg-sunken pointer-coarse:min-h-11"
+        >
+          {open ? <ChevronDown aria-hidden="true" className="mt-0.5 size-4 shrink-0" /> : <ChevronRight aria-hidden="true" className="mt-0.5 size-4 shrink-0" />}
+          <span className={open ? 'min-w-0 break-words' : 'min-w-0 truncate'}>{label}</span>
+        </button>
+      </h3>
+      <div id={id} hidden={!open} className="mt-4">
+        {open && renderStages(stagesOf(group.crews), now, handoffs, trunkAnimated, trunkLit)}
+      </div>
+    </section>
+  )
+}
+
 export function BuildNetwork({ state, now }: BuildNetworkProps) {
   const loaded = state !== null
-  const crews = state?.run?.crews ?? []
-  const statusKey = crews.map((c) => `${c.slug}:${crewStatus(c)}`).join('|')
+  const allCrews = state?.run?.crews ?? []
+  const groups = goalGroups(state?.run)
+  const shown = groups.at(-1) ?? null
+  const earlier = groups.slice(0, -1).reverse()
+  const crews = shown?.crews ?? []
+  const statusKey = allCrews.map((c) => `${c.slug}:${crewStatus(c)}`).join('|')
   const prev = React.useRef<Map<string, Status> | null>(null)
   const [announce, setAnnounce] = React.useState('')
 
   // One polite message for the latest crew whose status changed since the last snapshot; none on the first.
   React.useEffect(() => {
-    const cur = new Map<string, Status>(crews.map((c) => [c.slug, crewStatus(c)]))
+    const cur = new Map<string, Status>(allCrews.map((c) => [c.slug, crewStatus(c)]))
     const before = prev.current
     prev.current = cur
     if (!loaded || before === null) return
@@ -124,7 +174,8 @@ export function BuildNetwork({ state, now }: BuildNetworkProps) {
     )
   }
 
-  const status = pmStatus(state)
+  // The PM node speaks for the shown goal alone.
+  const status = pmStatus(earlier.length > 0 && state.run ? { ...state, run: { ...state.run, crews } } : state)
   const stages = stagesOf(crews)
   const flow = state.session.flow ?? []
   const handoffs = handoffsOf(flow)
@@ -154,20 +205,9 @@ export function BuildNetwork({ state, now }: BuildNetworkProps) {
         </p>
       ) : (
         <div className="mt-6">
-          {stages.map((s, i) => (
-            <StageGroup
-              key={s.key}
-              label={s.label}
-              phase={s.phase}
-              took={s.took}
-              crews={s.crews}
-              now={now}
-              handoffs={handoffs}
-              first={i === 0}
-              last={i === stages.length - 1}
-              trunkAnimated={trunkAnimated}
-              trunkLit={trunkLit}
-            />
+          {renderStages(stages, now, handoffs, trunkAnimated, trunkLit)}
+          {earlier.map((g) => (
+            <EarlierGoal key={g.id} group={g} now={now} handoffs={handoffs} trunkAnimated={trunkAnimated} trunkLit={trunkLit} />
           ))}
         </div>
       )}

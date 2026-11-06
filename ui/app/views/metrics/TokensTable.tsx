@@ -19,11 +19,13 @@ const TD = 'whitespace-nowrap px-2 py-2 xl:px-3 text-right font-mono tabular-num
 
 export interface TokensTableProps {
   models: Record<string, Partial<Record<Field, number | null>>> | null | undefined
+  /** Cost reads Not recorded: the empty text says so too. */
+  notRecorded?: boolean
 }
 
-export function TokensTable({ models }: TokensTableProps) {
+export function TokensTable({ models, notRecorded = false }: TokensTableProps) {
   const rows = Object.entries(models ?? {})
-  if (rows.length === 0) return <p className="px-3 py-2 text-ui text-muted">No tokens used yet.</p>
+  if (rows.length === 0) return <p className="px-3 py-2 text-ui text-muted">{notRecorded ? 'Not recorded for this run.' : 'No tokens used yet.'}</p>
   const total = (f: Field) => rows.reduce((sum, [, m]) => sum + (m[f] ?? 0), 0)
   return (
     <div role="region" aria-label="Tokens by model" tabIndex={0} className="overflow-x-auto rounded-card border border-border bg-surface">
