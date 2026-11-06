@@ -180,10 +180,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
     for (const name of ['Restart builder', 'Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
     for (const label of ['Why', 'How long', 'Next']) await expect(crews.getByText(label, { exact: true }).first(), `the StuckCard names ${label}`).toBeVisible(T)
     // Stuck is not colour alone: the visible "Stuck" word asserted above carries it (ADR-0028:121).
-    const pause = page.getByRole('button', { name: 'Pause build' })
-    await expect(pause).toHaveAttribute('aria-disabled', 'true', T)
-    await expect(pause).toHaveAccessibleDescription("Pausing needs a server endpoint that doesn't exist yet.", T)
-    await expect(page.getByRole('tooltip'), 'the Pause tip is a description, not a tooltip').toHaveCount(0, T)
+    // The Pause button and its Hint moved to the real-data 4 case at the end of this file (ADR-0029 point 5).
     await expect(move.getByRole('article')).toHaveCount(0, T)
   } else if (state === 'artifacts') {
     const filter = page.getByRole('group', { name: 'Filter by type' })
@@ -337,3 +334,18 @@ for (const state of STATES) {
     }
   })
 }
+
+// ADR-0029 point 5: Pause build and its Hint are gone (they supersede ADR-0023 gap h's Pause bullet). Split out of the Stuck content check.
+test('real-data 4: the Run region has no Pause build button or Hint in the stuck-crew state', async ({ browser }) => {
+  const s = await scenario('stuck-crew')
+  const { page, close } = await openState(browser, s, 'light', WIDTHS[2]![1])
+  try {
+    await expect(page.getByRole('region', { name: 'Build network' })).toBeVisible(LOAD)
+    await expect(page.getByRole('button', { name: 'Pause build' })).toHaveCount(0, T)
+    await expect(page.getByText("Pausing needs a server endpoint that doesn't exist yet.")).toHaveCount(0, T)
+    await expect(page.getByRole('tooltip')).toHaveCount(0, T)
+  } finally {
+    await close()
+    await s.stop()
+  }
+})
