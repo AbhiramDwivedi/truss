@@ -497,13 +497,13 @@ test('AgentCard: a long name and purpose carry the full text in title', async ()
 
 // ---- format.ts helpers -----------------------------------------------------------------------------------
 const fmt = () => r.load('views/crews/format.ts')
-test('AgentCard helpers: modelKey names opus, sonnet, the raw model, or model unknown', async () => {
+test('AgentCard helpers: modelKey names opus, sonnet, the raw model, and is null for a null model (no "model unknown")', async () => {
   const { modelKey } = await fmt()
   assert.equal(typeof modelKey, 'function', 'format.ts exports modelKey')
   assert.equal(modelKey('claude-opus-5-5'), 'opus')
   assert.equal(modelKey('Claude-Sonnet-5-5'), 'sonnet')
   assert.equal(modelKey('haiku-9'), 'haiku-9')
-  assert.equal(modelKey(null), 'model unknown')
+  assert.equal(modelKey(null), null)
 })
 test('AgentCard helpers: roleWord names the foreman, QC engineer, other truss types and general-purpose by its name', async () => {
   const { roleWord } = await fmt()
@@ -580,3 +580,234 @@ for (const [verdict, words] of [['PASS', 'QC PASS'], ['FAIL', 'QC FAIL'], [null,
     assert.equal(t.includes('blocked: QC FAIL'), verdict === 'FAIL')
   })
 }
+
+// ---- real-data-network (ADR-0029 points 1 and 3, R-42, R-44) ----
+// Decision on the empty-line split: taskLine keeps returning null when it has nothing (the existing cases above stay as they
+// are), and the card decides the words: a spawned agent shows "No activity yet", any other agent "No task recorded".
+// So these cases pin the split on rendered cards, and the taskLine rules that do return text on taskLine itself.
+const rd = () => rx('real-data')
+/** Agent cards that do not hold another list item (the crew card may wrap each card in an outer li). */
+const leafCards = (art: N) => { const a = agentCards(art); return a.filter((li) => !a.some((o) => o !== li && ancestors(o).includes(li))) }
+const cardOf = (art: N, name: string) => {
+  const hits = agentCards(art).filter((li) => all(li, (n) => n.a.title === name).length > 0)
+  const c = hits.filter((li) => !hits.some((o) => o !== li && ancestors(o).includes(li)))
+  assert.equal(c.length, 1, `exactly one agent card named ${name} (${hits.length} list items hold it)`)
+  return c[0]!
+}
+const crewCard = async (crew: any) => {
+  const mod = await r.load('views/crews/CrewCard.tsx')
+  return parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW })))
+}
+const crewOfRd = (slug: string) => rd().run.crews.find((c: any) => c.slug === slug)
+const stepCurrent = (li: N) => {
+  const cur = all(li, (n) => n.a['aria-current'] === 'step')
+  assert.equal(cur.length, 1, 'one current step')
+  return tidy(text(cur[0]!))
+}
+const mergedWithStalled = () => {
+  const c = crewOfRd('docs-crew')
+  c.members.push(
+    member({ name: 'docs-crew-tester', state: 'stalled', detail: '14 min', task: 'Test the widget.', purpose: null }),
+    member({ name: 'docs-crew-writer', state: 'stalled', detail: null, task: null, purpose: null }),
+  )
+  return c
+}
+
+test('taskLine: a detail with text after its marker shows whole, a bare marker never shows (any case, padded)', async () => {
+  const { taskLine } = await fmt()
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  const line = (detail: string) => taskLine(member({ task: null, state: 'tagged', detail }), crew)
+  assert.equal(line('BLOCKED: need the API key'), 'BLOCKED: need the API key')
+  assert.equal(line('QUESTION: which port?'), 'QUESTION: which port?')
+  for (const d of ['BLOCKED', 'QUESTION', 'PROPOSAL', 'DONE', ' blocked ', 'Question', 'proposal']) {
+    const got = line(d)
+    assert.ok(got === null || !/^(blocked|question|proposal|done)$/i.test(got.trim()), `bare "${d}" never shows as a task line, got ${JSON.stringify(got)}`)
+  }
+})
+test('taskLine: a foreman with no task shows the crew goal, never its raw BLOCKED marker', async () => {
+  const { taskLine } = await fmt()
+  const fm = member({ name: 'build-crew', type: 'workflow-crew', task: null, state: 'tagged', detail: 'BLOCKED' })
+  const crew = { slug: 'build-crew', goal: 'Build the fixture widget.', foreman: fm, members: [] }
+  assert.equal(taskLine(fm, crew), 'Build the fixture widget.')
+  assert.equal(taskLine({ ...fm, task: 'Own task.' }, crew), 'Own task.')
+})
+test('taskLine: a reported agent with a bare-marker detail and no task reads exactly "Reported: DONE"', async () => {
+  const { taskLine } = await fmt()
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE' }), crew), 'Reported: DONE')
+  assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'done' }), crew), 'Reported: DONE')
+  assert.equal(taskLine(member({ state: 'reported', task: null, detail: ' DONE ' }), crew), 'Reported: DONE')
+})
+test('taskLine: a reported agent with no task and no detail reads exactly "Reported"', async () => {
+  const { taskLine } = await fmt()
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  assert.equal(taskLine(member({ state: 'reported', task: null, detail: null }), crew), 'Reported')
+})
+test('taskLine: a reported agent keeps its task, and a reported detail that carries text shows whole, over Reported', async () => {
+  const { taskLine } = await fmt()
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  assert.equal(taskLine(member({ state: 'reported', task: 'Write the note.', detail: 'DONE' }), crew), 'Write the note.')
+  assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE: all green' }), crew), 'DONE: all green')
+})
+test('AgentCard helpers: stepOf with a merged or dropped crew is Reported (3) for a tagged foreman and a stalled member', async () => {
+  const { stepOf } = await fmt()
+  for (const status of ['merged', 'dropped']) {
+    const c = { status }
+    assert.equal(stepOf(member({ state: 'tagged', detail: 'BLOCKED', task: null }), c), 3, `${status} tagged`)
+    assert.equal(stepOf(member({ state: 'stalled', detail: '14 min', task: null }), c), 3, `${status} stalled`)
+    assert.equal(stepOf(member({ state: 'spawned', detail: null, task: null }), c), 3, `${status} spawned`)
+  }
+})
+test('AgentCard helpers: stepOf with a running crew behaves as without one', async () => {
+  const { stepOf } = await fmt()
+  const c = { status: 'running' }
+  assert.equal(stepOf(member({ state: 'reported' }), c), 3)
+  assert.equal(stepOf(member({ state: 'spawned', detail: null, task: null }), c), 1)
+  assert.equal(stepOf(member({ state: 'tagged', detail: null, task: null }), c), 2)
+  assert.equal(stepOf(member({ state: 'stalled', detail: '14 min', task: null }), c), 2)
+})
+test('AgentCard helpers: the new strings Reported, "Reported: " and No task recorded live in format.ts', async () => {
+  const src = fs.readFileSync(path.join(uiDir, 'app', 'views', 'crews', 'format.ts'), 'utf8')
+  for (const s of ['Reported', 'Reported: ', 'No task recorded']) assert.ok(src.includes(s), s)
+})
+
+test('AgentCard: a null model renders no model badge, no "unknown" and no model text, and the status badge still renders', async () => {
+  const withModel = await card({ member: member({ model: 'claude-sonnet-5-5' }), role: 'Builder', task: 'x', status: 'done', step: 3 })
+  const v = await card({ member: member({ model: null }), role: 'Foreman', task: 'x', status: 'done', step: 3 })
+  const chips = (root: N) => all(root, (n) => cls(n, 'bg-transparent')).length
+  assert.ok(chips(withModel) >= 1, 'a known model shows the ModelBadge')
+  assert.equal(chips(v), chips(withModel) - 1, 'a null model removes exactly the ModelBadge element')
+  const t = tidy(text(v))
+  assert.doesNotMatch(t, /unknown|opus|sonnet|haiku/i)
+  assert.equal(all(v, (n) => n.a.title === '' || n.a.title === 'null').length, 0, 'no orphan title')
+  assert.ok(hasWordAndIcon(v, 'Done'))
+})
+test('AgentCard: a known model still shows its badge', async () => {
+  const v = await card({ member: member({ model: 'claude-sonnet-5-5' }), role: 'Builder', task: 'x', status: 'active', step: 2 })
+  assert.match(tidy(text(v)), /sonnet/)
+})
+test('AgentCard: a non-spawned agent with no task says No task recorded in text-subtle, never No activity yet', async () => {
+  const v = await card({ member: member({ purpose: null, task: null, detail: 'BLOCKED', state: 'tagged' }), role: 'Foreman', task: null, status: 'done', step: 3 })
+  const t = tidy(text(v))
+  assert.ok(t.includes('No task recorded'))
+  assert.ok(!t.includes('No activity yet'))
+  const p = all(v, (n) => n.tag === 'p' && tidy(text(n)) === 'No task recorded')
+  assert.equal(p.length, 1)
+  assert.ok(cls(p[0]!, 'text-subtle'))
+  assert.equal(find(v, 'button').length, 0)
+})
+test('PmNode: a null model renders no model badge, and a known model still does', async () => {
+  const props = { state: 'running', status: 'active', crewCount: 2, stageCount: 1 }
+  const none = await mount('crews/PmNode', 'PmNode', { ...props, model: null })
+  assert.equal(all(none, (n) => cls(n, 'bg-transparent')).length, 0)
+  assert.doesNotMatch(tidy(text(none)), /unknown/i)
+  const some = await mount('crews/PmNode', 'PmNode', { ...props, model: 'claude-opus-5-5' })
+  assert.match(tidy(text(some)), /opus/)
+})
+
+test('CrewCard: a merged crew shows Done on every agent card, no Waiting on you, and Reported current on each', async () => {
+  const c = mergedWithStalled()
+  const art = await crewCard(c)
+  const cards = leafCards(art)
+  assert.ok(cards.length >= 1 + c.members.length)
+  for (const li of cards) {
+    const t = tidy(text(li))
+    assert.ok(hasWordAndIcon(li, 'Done'), `Done in: ${t}`)
+    for (const w of ['Waiting on you', 'Stuck', 'Active']) assert.ok(!hasWord(t, w), `${w} in: ${t}`)
+    assert.ok(!/Stalled|Allowance spent|unknown/.test(t), t)
+    assert.equal(stepCurrent(li), 'Reported', t)
+  }
+})
+test('CrewCard: a dropped crew reads Done on every agent card too', async () => {
+  const c = mergedWithStalled()
+  c.status = 'dropped'
+  const art = await crewCard(c)
+  for (const li of leafCards(art)) {
+    assert.ok(hasWordAndIcon(li, 'Done'))
+    assert.equal(stepCurrent(li), 'Reported')
+  }
+})
+test('CrewCard: a stalled member of a merged crew takes its line from the task chain, not Stalled N min', async () => {
+  const art = await crewCard(mergedWithStalled())
+  const withTask = tidy(text(cardOf(art, 'docs-crew-tester')))
+  assert.ok(withTask.includes('Test the widget.'), withTask)
+  assert.ok(!/Stalled/.test(withTask), withTask)
+  const none = tidy(text(cardOf(art, 'docs-crew-writer')))
+  assert.ok(none.includes('No task recorded') && !none.includes('No activity yet') && !/Stalled/.test(none), none)
+})
+test('CrewCard: a stalled member of a merged crew with no task and detail "14 min" reads No task recorded, never the minutes', async () => {
+  for (const status of ['merged', 'dropped']) {
+    const c = crewOfRd('docs-crew')
+    c.status = status
+    c.members.push(member({ name: 'docs-crew-writer', state: 'stalled', detail: '14 min', task: null, purpose: null }))
+    const t = tidy(text(cardOf(await crewCard(c), 'docs-crew-writer')))
+    assert.ok(t.includes('No task recorded'), `${status}: ${t}`)
+    assert.ok(!/min/.test(t), `${status}: ${t}`)
+    assert.ok(hasWord(t, 'Done'), `${status}: ${t}`)
+  }
+})
+test('CrewCard: a running crew still shows Stalled N min on its stalled member', async () => {
+  const c = crewOfRd('build-crew')
+  c.members.push(member({ name: 'build-crew-tester', state: 'stalled', detail: '14 min', task: 'Test it.', purpose: null }))
+  const t = tidy(text(cardOf(await crewCard(c), 'build-crew-tester')))
+  assert.ok(t.includes('Stalled 14 min') && hasWord(t, 'Stuck'), t)
+})
+test('CrewCard: real-data docs-crew lines: the foreman reads the crew goal, runner-2 its task, no BLOCKED and no model text', async () => {
+  const art = await crewCard(crewOfRd('docs-crew'))
+  const fm = tidy(text(cardOf(art, 'docs-crew')))
+  assert.ok(fm.includes('Write the design for the fixture widget.'), fm)
+  assert.ok(!/BLOCKED|No activity yet|unknown|opus|sonnet|haiku/i.test(fm), fm)
+  assert.ok(tidy(text(cardOf(art, 'docs-crew-runner-2'))).includes('Write the design note for the fixture widget in docs/widget.md.'))
+  assert.ok(!tidy(text(art)).includes('No activity yet'))
+  assert.ok(tidy(text(cardOf(art, 'docs-crew-runner'))).includes('sonnet'))
+})
+test('CrewCard: a running crew with a BLOCKED foreman keeps Waiting on you and the foreman Notice, and shows the goal', async () => {
+  const art = await crewCard(crewOfRd('build-crew'))
+  const fm = cardOf(art, 'build-crew')
+  const t = tidy(text(fm))
+  assert.ok(hasWordAndIcon(fm, 'Waiting on you'), t)
+  assert.ok(!hasWord(t, 'Done'), t)
+  assert.ok(t.includes('Build the fixture widget.') && !t.includes('BLOCKED') && !t.includes('No activity yet'), t)
+  assert.ok(tidy(text(art)).includes("The foreman is blocked. You'll answer it in Your move."))
+})
+test('CrewCard: real-data build-crew lines: builder reads exactly Reported: DONE, runner (spawned) says No activity yet once', async () => {
+  const art = await crewCard(crewOfRd('build-crew'))
+  const b = cardOf(art, 'build-crew-builder')
+  assert.equal(all(b, (n) => n.tag === 'p' && tidy(text(n)) === 'Reported: DONE').length, 0, 'the builder has a task, so it shows that, not Reported: DONE')
+  assert.ok(tidy(text(b)).includes('Build the fixture widget in src/widget/ from the design note.'))
+  assert.equal(tidy(text(art)).split('No activity yet').length - 1, 1)
+  assert.ok(tidy(text(cardOf(art, 'build-crew-runner'))).includes('No activity yet'))
+})
+test('CrewCard: a reported agent with no task and detail DONE shows exactly Reported: DONE, with no detail shows Reported', async () => {
+  const c = crewOfRd('build-crew')
+  c.members[0].task = null
+  c.members.push(member({ name: 'build-crew-writer', state: 'reported', detail: null, task: null, purpose: null }))
+  const art = await crewCard(c)
+  const lineOf = (name: string) => all(cardOf(art, name), (n) => n.tag === 'p' && /^Reported/.test(tidy(text(n)))).map((n) => tidy(text(n)))
+  assert.deepEqual(lineOf('build-crew-builder'), ['Reported: DONE'])
+  assert.deepEqual(lineOf('build-crew-writer'), ['Reported'])
+})
+test('CrewCard: a detail that is not a bare marker shows as the line, with text after a marker whole', async () => {
+  const c = crewOfRd('build-crew')
+  c.members.push(
+    member({ name: 'build-crew-reader', state: 'tagged', detail: 'Reading the design note', task: null, purpose: null }),
+    member({ name: 'build-crew-asker', state: 'tagged', detail: 'BLOCKED: need the API key', task: null, purpose: null }),
+  )
+  const art = await crewCard(c)
+  assert.ok(tidy(text(cardOf(art, 'build-crew-reader'))).includes('Reading the design note'))
+  assert.ok(tidy(text(cardOf(art, 'build-crew-asker'))).includes('BLOCKED: need the API key'))
+})
+test('CrewCard: a foreman of a merged crew with no goal and only a BLOCKED detail says No task recorded', async () => {
+  const c = crewOfRd('docs-crew')
+  c.goal = null
+  const fm = tidy(text(cardOf(await crewCard(c), 'docs-crew')))
+  assert.ok(fm.includes('No task recorded') && !fm.includes('No activity yet') && !/BLOCKED/.test(fm), fm)
+})
+test('BuildNetwork: the real-data fixture says No activity yet exactly once and never says model unknown', async () => {
+  const reg = region(await network(rd()))
+  const t = tidy(text(reg))
+  assert.equal(t.split('No activity yet').length - 1, 1)
+  assert.ok(!/model unknown/i.test(t))
+  assert.ok(tidy(text(cardOf(articleOf(reg, 'build-crew'), 'build-crew-runner'))).includes('No activity yet'))
+  assert.ok(!tidy(text(articleOf(reg, 'docs-crew'))).includes('No activity yet'))
+})

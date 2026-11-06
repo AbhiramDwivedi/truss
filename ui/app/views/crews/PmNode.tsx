@@ -39,7 +39,7 @@ export function PmNode({ state, status, crewCount, stageCount, lastFlow, model }
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {model && (
-          <ModelBadge model={modelKey(model)} title={model}>
+          <ModelBadge model={modelKey(model) ?? model} title={model}>
             {modelKey(model)}
           </ModelBadge>
         )}
