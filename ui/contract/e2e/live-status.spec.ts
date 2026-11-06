@@ -42,7 +42,10 @@ test.beforeAll(async () => {
   cpSync(join(root, 'tests', 'fixtures', 'retro-040'), trussDir, { recursive: true })
   cpSync(join(root, 'docs', 'plan.example.json'), join(trussDir, 'plan.json'))
   const args = [join(uiDir, 'server', 'main.ts'), '--repo', repo, '--plugin', root, '--truss-dir', trussDir, '--port', '0']
-  const child = spawn(process.execPath, args)
+  // an empty Claude dir of its own, through the env (ADR-0029): the server never reads the host's ~/.claude
+  const claudeDir = join(dir, 'claude')
+  mkdirSync(claudeDir, { recursive: true })
+  const child = spawn(process.execPath, args, { env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } })
   server = child
   child.stderr.on('data', (d) => { stderr += String(d) })
   url = await new Promise<string>((ok, fail) => {

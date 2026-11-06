@@ -170,7 +170,11 @@ export async function startReal(opts: RealOpts = {}): Promise<Real> {
 
   let stderr = ''
   const args = [join(uiDir, 'server', 'main.ts'), '--repo', repo, '--plugin', root, '--truss-dir', trussDir, '--port', '0']
-  const child: ChildProcess = spawn(process.execPath, args)
+  // The Claude dir is explicit and empty (ADR-0029): the server never reads the host's ~/.claude. It is the env, not the flag,
+  // so a main.ts that does not know --claude-dir yet still starts.
+  const claudeDir = join(dir, 'claude')
+  mkdirSync(claudeDir, { recursive: true })
+  const child: ChildProcess = spawn(process.execPath, args, { env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } })
   child.stderr?.on('data', (d) => { stderr += String(d) })
   try {
     real.url = await new Promise<string>((ok, fail) => {
