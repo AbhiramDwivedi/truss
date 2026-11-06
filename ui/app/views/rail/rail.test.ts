@@ -101,7 +101,7 @@ function typeCounts(f: any): Record<string, number> {
 }
 
 // ---- RunContext ------------------------------------------------------------------------------------------
-test('RunContext: repo, the idea and the approval time, with Pause build disabled and explained', async () => {
+test('RunContext: repo, the idea and the approval time, with no Pause build, tooltip, pause-tip id or pausing text (ADR-0029 section 5)', async () => {
   const s = fx('stuck-crew/state')
   const v = await mount('rail/RunContext', 'RunContext', { state: s, now: NOW })
   const reg = find(v, 'region', 'Run')
@@ -112,15 +112,22 @@ test('RunContext: repo, the idea and the approval time, with Pause build disable
   assert.match(body, /The idea/)
   assert.ok(body.includes(s.run.goal))
   assert.match(body, atTime('Approved by you at ', s.run.goals[0].approvedAt))
-  const pause = find(reg[0]!, 'button', 'Pause build')
-  assert.equal(pause.length, 1)
-  assert.equal(pause[0]!.a['aria-disabled'], 'true')
-  const tip = 'Pausing needs a server endpoint that doesn\'t exist yet.'
-  const ref = pause[0]!.a['aria-describedby']
-  assert.ok(ref, 'Pause build is described')
-  const target = all(v, (n) => n.a.id === ref.split(/\s+/)[0])[0]
-  assert.equal(tidy(text(target!)), tip)
+  assert.equal(find(reg[0]!, 'button', /pause/i).length, 0, 'no Pause build button')
+  assert.equal(find(reg[0]!, 'button').length, 0, 'the Run region has no button of its own')
+  assert.equal(all(v, (n) => n.a.role === 'tooltip').length, 0, 'no tooltip')
+  assert.equal(all(v, (n) => n.a.id === 'pause-tip').length, 0, 'no pause-tip id')
+  assert.equal(all(v, (n) => /pause-tip/.test(n.a['aria-describedby'] ?? '')).length, 0)
+  assert.doesNotMatch(body, /Pausing needs a server endpoint/)
   nothingBanned(v)
+})
+test('RunContext: below lg the cost line reads Cost not recorded with a known model and a run that has no usage cost', async () => {
+  const s = JSON.parse(fs.readFileSync(path.join(uiDir, 'contract', 'fixtures', 'rework', 'real-data', 'state.json'), 'utf8'))
+  s.session.model = 'claude-opus-5-5'
+  const v = await mount('rail/RunContext', 'RunContext', { state: s, now: NOW })
+  const body = tidy(text(v))
+  assert.match(body, /Cost not recorded/)
+  assert.doesNotMatch(body, /No cost yet/)
+  assert.match(body, /claude-opus-5-5/)
 })
 test('RunContext: an automatic approval reads Approved automatically', async () => {
   const s = fx('decisions/state')
