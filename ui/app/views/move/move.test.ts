@@ -324,6 +324,14 @@ test('Transcript: no state still renders the log', async () => {
   const v = await mount('transcript/Transcript', 'Transcript', { state: null, now: NOW })
   assert.equal(find(v, 'log', 'Conversation with the PM').length, 1)
 })
+test('Transcript: a run with no hosted messages says it started outside the page', async () => {
+  const base = fx('empty/state')
+  const s = { ...base, run: { ...(fx('approval/state').run ?? {}), id: 'r1' } }
+  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
+  const log = find(v, 'log', 'Conversation with the PM')[0]!
+  assert.match(tidy(text(log)), /This run was started outside the page, so its messages aren't shown here\. Send a message to the PM to continue\./)
+  assert.doesNotMatch(tidy(text(log)), /Tell the PM what to build/)
+})
 test('Transcript: no run and no transcript shows the PM-side first-use line, never Nothing said yet.', async () => {
   const v = await mount('transcript/Transcript', 'Transcript', { state: fx('empty/state'), now: NOW })
   const log = find(v, 'log', 'Conversation with the PM')[0]!
