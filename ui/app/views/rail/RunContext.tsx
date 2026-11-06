@@ -1,10 +1,9 @@
 // The rail's "Run" section (ADR-0023 section 4, D2 :466-488): where Truss runs, what the idea is and when it
-// was approved, and the Pause build button that has no server endpoint yet (gap h).
-import { FolderGit2, Lock, Pause } from 'lucide-react'
-import { Button } from '../../components/ui/button.tsx'
+// was approved.
+import { FolderGit2, Lock } from 'lucide-react'
 import { ModelBadge } from '../../components/ui/badge.tsx'
-import { Hint } from '../../components/ui/hint.tsx'
 import type { RunState } from '../../store/types.ts'
+import { costState } from '../metrics/format.ts'
 import { approvalLine, family, firstGoal, money } from './format.ts'
 
 export interface RunContextProps {
@@ -38,25 +37,8 @@ export function RunContext({ state }: RunContextProps) {
 
       <div className="flex flex-wrap items-center gap-y-1.5">
         <h2 className="min-w-0 flex-1 text-meta font-medium text-muted">The idea</h2>
-        {goal && (
-          <div className="order-3 mt-3.5 w-full lg:order-2 lg:mt-0 lg:w-auto">
-            <Button
-              variant="secondary"
-              size="lg"
-              aria-disabled="true"
-              aria-describedby="pause-tip"
-              className="w-full lg:h-8 lg:w-auto"
-              icon={<Pause aria-hidden="true" />}
-            >
-              Pause build
-            </Button>
-            <Hint id="pause-tip" className="mt-1.5 lg:sr-only">
-              Pausing needs a server endpoint that doesn't exist yet.
-            </Hint>
-          </div>
-        )}
         {goal ? (
-          <div className="order-2 w-full rounded-ctl border border-brand-line bg-brand-soft p-3.5 lg:order-3 lg:px-3 lg:py-2">
+          <div className="order-2 w-full rounded-ctl border border-brand-line bg-brand-soft p-3.5 lg:px-3 lg:py-2">
             <p title={goal.goal ?? undefined} className="text-body font-medium break-words text-fg lg:text-ui lg:leading-snug lg:line-clamp-2">
               {goal.goal ?? 'A run with no goal text.'}
             </p>
@@ -72,7 +54,7 @@ export function RunContext({ state }: RunContextProps) {
       {(model || cost) && (
         <div className="flex flex-wrap items-center gap-2 lg:hidden">
           {model && <ModelBadge model={family(model)} size="md">{model}</ModelBadge>}
-          <span className="font-mono text-meta tabular-nums text-muted">{cost ?? 'No cost yet'}</span>
+          <span className="font-mono text-meta tabular-nums text-muted">{cost ?? (state && costState(state) === 'not-recorded' ? 'Cost not recorded' : 'No cost yet')}</span>
         </div>
       )}
     </section>
