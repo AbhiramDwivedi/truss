@@ -165,6 +165,38 @@ export function noteResult(status: number, error: string | null): boolean {
   return false
 }
 
+// ---- Reply preview -------------------------------------------------------------------------------------------
+export const PREVIEW_MAX = 280
+
+/** `text` as plain words: markdown syntax (emphasis, backticks, headings, list markers, quotes, link and image wrappers) removed. */
+export function stripMarkdown(text: string | null | undefined): string {
+  return (text ?? '')
+    .replace(/```[^\n]*\n?([\s\S]*?)(```|$)/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\(([^)]*)\)/g, '$1')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/^[ \t]{0,3}>[ \t]?/gm, '')
+    .replace(/^[ \t]*([-*+]|\d+[.)])[ \t]+/gm, '')
+    .replace(/^[ \t]*([-*_][ \t]*){3,}$/gm, '')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, '$2')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`+([^`]*)`+/g, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/** A plain-text preview of a PM message: markdown stripped, cut at a word boundary within `max` characters, with an ellipsis when cut. */
+export function previewText(text: string | null | undefined, max = PREVIEW_MAX): string {
+  const plain = stripMarkdown(text)
+  if (plain.length <= max) return plain
+  const head = plain.slice(0, max)
+  const space = head.search(/\s\S*$/)
+  const cut = space > max / 2 ? head.slice(0, space) : head
+  return cut.replace(/[\s,;:.\-–]+$/, '') + '…'
+}
+
 // ---- send state (R-41, R-47): the 10 s and 30 s marks the composer and the cards share ------------------
 
 export const STILL_SENDING = 'Still sending…'

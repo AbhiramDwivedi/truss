@@ -11,6 +11,7 @@ import type { RunState } from '../../store/types.ts'
 import { hhmm } from '../rail/format.ts'
 import { REVEAL_EVENT } from '../move/format.ts'
 import { Bubble } from './Bubble.tsx'
+import { Markdown } from './Markdown.tsx'
 import { PmAvatar } from './PmAvatar.tsx'
 import { SystemLine } from './SystemLine.tsx'
 import { isGrouped, mergeThread, PAGE, type ThreadItem } from './thread.ts'
@@ -212,7 +213,7 @@ export function Transcript({ state, now }: TranscriptProps) {
     const who = e.role === 'user' ? 'you' : e.role === 'error' ? 'error' : 'pm'
     return (
       <Bubble key={it.key} id={`msg-${e.n}`} who={who} time={hhmm(e.ts)} grouped={isGrouped(prev, it)} lit={lit === e.n}>
-        <Body text={e.text} />
+        {who === 'pm' ? <Markdown text={e.text} /> : <Body text={e.text} />}
       </Bubble>
     )
   }

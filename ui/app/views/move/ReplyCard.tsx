@@ -8,7 +8,7 @@ import { Card } from '../../components/ui/card.tsx'
 import { Button } from '../../components/ui/button.tsx'
 import { Label } from '../../components/ui/label.tsx'
 import { Textarea } from '../../components/ui/textarea.tsx'
-import { ago, cardName, NOT_TAKEN, plural, replyTarget, revealMessage, STILL_SENDING, useSendState } from './format.ts'
+import { ago, cardName, previewText, NOT_TAKEN, plural, replyTarget, revealMessage, STILL_SENDING, useSendState } from './format.ts'
 import { DecisionButton } from './ReplyActions.tsx'
 
 type Body = { decision: 'allow' | 'deny' } | { decision: 'message'; message: string }
@@ -71,7 +71,7 @@ export function ReplyCard({ request, hero, now, busy, error, onAnswer, transcrip
             The PM's turn ended with an error.
           </p>
         )}
-        <p className="line-clamp-6 min-w-0 text-body break-words whitespace-pre-wrap">{request.text}</p>
+        <p className="min-w-0 text-body break-words whitespace-pre-wrap">{previewText(request.text)}</p>
         {request.backgroundTasks > 0 && (
           <p className={cn('text-meta', muted)}>
             {plural(request.backgroundTasks, 'background task')} running when the turn ended; the session may start a turn on its own.
