@@ -35,17 +35,17 @@ export function RunContext({ state }: RunContextProps) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-y-1.5">
-        <h2 className="min-w-0 flex-1 text-meta font-medium text-muted">The idea</h2>
+      <div className="space-y-1.5">
+        <h2 className="text-meta font-medium text-muted">The idea</h2>
         {goal ? (
-          <div className="order-2 w-full rounded-ctl border border-brand-line bg-brand-soft p-3.5 lg:px-3 lg:py-2">
+          <div className="w-full rounded-ctl border border-brand-line bg-brand-soft p-3.5 lg:px-3 lg:py-2">
             <p title={goal.goal ?? undefined} className="text-body font-medium break-words text-fg lg:text-ui lg:leading-snug lg:line-clamp-2">
               {goal.goal ?? 'A run with no goal text.'}
             </p>
             <p className="mt-2 text-meta text-muted lg:mt-0.5">{approved ?? 'Waiting for your approval.'}</p>
           </div>
         ) : (
-          <p className="order-2 w-full rounded-ctl border border-dashed border-border-strong p-3.5 text-ui text-muted">
+          <p className="w-full rounded-ctl border border-dashed border-border-strong p-3.5 text-ui text-muted">
             No goal yet. Type one in the box to start.
           </p>
         )}
