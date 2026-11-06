@@ -17,7 +17,7 @@ mkdirSync(join(halfPlugin, '.claude-plugin'), { recursive: true });
 after(() => { rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 
 function run(args: string[]) {
-  const r = spawnSync(process.execPath, [main, ...args], { encoding: 'utf8', timeout: 15000, cwd: tmp, env: { ...process.env, INIT_CWD: tmp } });
+  const r = spawnSync(process.execPath, [main, ...args], { encoding: 'utf8', timeout: 15000, cwd: tmp, env: { ...process.env, INIT_CWD: tmp, CLAUDE_CONFIG_DIR: join(tmp, 'claude') } });
   return { code: r.status, signal: r.signal, out: r.stdout, err: r.stderr };
 }
 function oneLine(err: string) {
@@ -58,6 +58,32 @@ describe('main.ts refuses bad input with exit 2 (Decision 8)', () => {
     assert.equal(r.code, 2, r.err);
     assert.equal(r.out, '');
     oneLine(r.err);
+  });
+  it('real-data 2: --claude-dir with no value exits 2, one line on stderr, nothing on stdout', () => {
+    const r = run(['--claude-dir']);
+    assert.equal(r.code, 2, r.err);
+    assert.equal(r.out, '');
+    assert.match(oneLine(r.err), /claude-dir|usage/i);
+  });
+  it('real-data 2: --claude-dir followed by another flag exits 2 (--claude-dir --port 0)', () => {
+    const r = run(['--claude-dir', '--port', '0']);
+    assert.equal(r.code, 2, r.err);
+    assert.equal(r.out, '');
+    assert.match(oneLine(r.err), /claude-dir|usage/i);
+  });
+  it('real-data 2: --claude-dir is a known flag: a bad --port after it is refused for the port, not for the flag', () => {
+    const r = run(['--claude-dir', join(tmp, 'claude'), '--port', 'abc']);
+    assert.equal(r.code, 2, r.err);
+    assert.equal(r.out, '');
+    assert.match(oneLine(r.err), /port/i);
+    assert.doesNotMatch(r.err, /unknown argument/i);
+  });
+  it('real-data 2: --claude-dir is a known flag: a bad --plugin after it is refused for the plugin, not for the flag', () => {
+    const r = run(['--claude-dir', join(tmp, 'claude'), '--repo', tmp, '--plugin', join(tmp, 'does-not-exist'), '--port', '0']);
+    assert.equal(r.code, 2, r.err);
+    assert.equal(r.out, '');
+    assert.match(oneLine(r.err), /plugin/i);
+    assert.doesNotMatch(r.err, /unknown argument/i);
   });
   it('Decision 8: --plugin without .claude-plugin/plugin.json exits 2 with an error naming it, nothing on stdout', () => {
     for (const dir of [emptyPlugin, halfPlugin, join(tmp, 'does-not-exist')]) {
