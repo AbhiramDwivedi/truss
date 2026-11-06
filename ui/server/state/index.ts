@@ -6,7 +6,9 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
-import { readTranscriptTask, projectKeyOf } from './transcript.ts'
+import { readTranscriptTask, readTranscriptActivity, projectKeyOf } from './transcript.ts'
+import type { ActivityRead } from './transcript.ts'
+import { readGoalTask } from './goal-task.ts'
 import type { SessionView } from '../session/index.ts'
 import { createJsonlReader } from './jsonl.ts'
 import type { JsonlReader } from './jsonl.ts'
@@ -245,16 +247,32 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     cache.set(agentId, { task, at: now })
     return task
   }
-  function taskFor(m: Member): string | null {
-    if (m.agentId === null) return null
-    return taskOf.get(m.agentId) ?? transcriptTask(m.agentId)
+  // The latest tool call, re-read whenever the transcript's size or mtime changes (it is live).
+  const activityCache = new Map<string, ActivityRead | null>()
+  function activityFor(m: Member): string | null {
+    if (m.agentId === null || opts.claudeDir === undefined || trussDir === null || reducer === null) return null
+    const sessionDir = path.join(opts.claudeDir, 'projects', projectKeyOf(repo), path.basename(trussDir))
+    const key = `${sessionDir}|${m.agentId}`
+    const prev = activityCache.get(key) ?? undefined
+    const next = readTranscriptActivity(sessionDir, m.agentId, reducer.spawnedBy(m.agentId), prev)
+    activityCache.set(key, next)
+    return next === null ? null : next.value
+  }
+  // `foremanOf` is the crew slug for a foreman, else null: a foreman with no other task falls back to its goal file.
+  function taskFor(m: Member, foremanOf: string | null): string | null {
+    const t = m.agentId === null ? null : (taskOf.get(m.agentId) ?? transcriptTask(m.agentId))
+    if (t !== null || foremanOf === null || trussDir === null) return t
+    return readGoalTask(trussDir, foremanOf)
   }
 
   let decoratedMemo: { run: Run; key: string; value: Run } | null = null
   function decorated(r: Run | null): Run | null {
     if (r === null) return null
     const ids: (string | null)[] = []
-    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(taskFor(m))
+    for (const c of r.crews) {
+      if (c.foreman) ids.push(taskFor(c.foreman, c.slug), activityFor(c.foreman))
+      for (const m of c.members) ids.push(taskFor(m, null), activityFor(m))
+    }
     const key = JSON.stringify(ids)
     if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
     const value = decorate(r)
@@ -262,12 +280,13 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     return value
   }
   function decorate(r: Run): Run {
-    const fill = (m: Member, isForeman: boolean): Member => ({
+    const fill = (m: Member, foremanOf: string | null): Member => ({
       ...m,
-      purpose: purposeOf(purposes, m.type, isForeman),
-      task: taskFor(m),
+      purpose: purposeOf(purposes, m.type, foremanOf !== null),
+      task: taskFor(m, foremanOf),
+      activity: activityFor(m),
     })
-    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, true), members: c.members.map((m) => fill(m, false)) })) }
+    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, c.slug), members: c.members.map((m) => fill(m, null)) })) }
   }
 
   function compute(): Record<string, unknown> {

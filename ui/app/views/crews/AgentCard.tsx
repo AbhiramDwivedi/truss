@@ -14,11 +14,13 @@ export interface AgentCardProps {
   member: Member
   role: string
   task: string | null
+  /** The agent's latest tool call; shown only while the agent is not done (step below 3). */
+  activity?: string | null
   status: Status
   step: 1 | 2 | 3
 }
 
-function AgentCardImpl({ member, role, task, status, step }: AgentCardProps) {
+function AgentCardImpl({ member, role, task, activity, status, step }: AgentCardProps) {
   const id = React.useId()
   const taskId = `${id}-task`
   const taskRef = React.useRef<HTMLParagraphElement>(null)
@@ -87,6 +89,11 @@ function AgentCardImpl({ member, role, task, status, step }: AgentCardProps) {
           <p className="min-w-0 text-meta text-subtle">{member.state === 'spawned' ? NO_ACTIVITY : NO_TASK}</p>
         )}
       </div>
+      {activity && step < 3 && (
+        <p title={activity} data-testid="agent-activity" className="min-w-0 truncate text-meta text-muted">
+          {activity}
+        </p>
+      )}
       <StepProgress step={step} />
     </li>
   )
