@@ -15,7 +15,7 @@ const lockDir = join(tmp, 'tmpdir');
 const repo = join(tmp, 'repo');
 mkdirSync(lockDir);
 mkdirSync(repo);
-const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo };
+const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo, CLAUDE_CONFIG_DIR: join(tmp, 'claude') };
 const lockFor = (port: number) => join(lockDir, `truss-ui-${port}.json`);
 const children: ChildProcess[] = [];
 after(() => {

@@ -193,7 +193,7 @@ describe('real chain', { skip: process.platform !== 'linux' ? 'needs /proc and P
     const repo = join(tmp, 'repo');
     mkdirSync(lockDir);
     mkdirSync(repo);
-    const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo };
+    const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo, CLAUDE_CONFIG_DIR: join(tmp, 'claude') };
     const pidFile = join(tmp, 'main.pid');
     const midPidFile = join(tmp, 'middle.pid');
     const middleJs = join(tmp, 'middle.mjs');
