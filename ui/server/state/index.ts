@@ -5,6 +5,8 @@
 // Node built-ins only; erasable TypeScript. `SessionView` is another module's type, erased at run time.
 import fs from 'node:fs'
 import crypto from 'node:crypto'
+import path from 'node:path'
+import { readTranscriptTask, projectKeyOf } from './transcript.ts'
 import type { SessionView } from '../session/index.ts'
 import { createJsonlReader } from './jsonl.ts'
 import type { JsonlReader } from './jsonl.ts'
@@ -70,7 +72,7 @@ function isDir(p: string): boolean {
   }
 }
 
-export function createStore(opts: { repo: string; trussDir?: string; pluginPath?: string; pollMs?: number }): Store {
+export function createStore(opts: { repo: string; trussDir?: string; pluginPath?: string; pollMs?: number; claudeDir?: string }): Store {
   const repo = opts.repo
   const purposes = readPurposes(opts.pluginPath) // once at start; nothing is written (R-9)
   let taskOf: Map<string, string> = new Map() // the session view's task map; never published
@@ -224,11 +226,35 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
 
   // The run with each member's purpose (agent files) and task (the session's task map, by agentId).
   // Memoised on the run and the tasks of its members, so a session message that changes neither reuses the object.
+  // The session's task wins; without one, the agent's Claude Code transcript (ADR-0029), only when claudeDir was given.
+  // Cached per agentId for the current session dir; a miss is retried after MISS_MS (the file may not exist yet).
+  const MISS_MS = 2000
+  let cacheDir: string | null = null
+  const cache = new Map<string, { task: string | null; at: number }>()
+  function transcriptTask(agentId: string): string | null {
+    if (opts.claudeDir === undefined || trussDir === null || reducer === null) return null
+    const sessionDir = path.join(opts.claudeDir, 'projects', projectKeyOf(repo), path.basename(trussDir))
+    if (cacheDir !== sessionDir) {
+      cacheDir = sessionDir
+      cache.clear()
+    }
+    const hit = cache.get(agentId)
+    const now = Date.now()
+    if (hit !== undefined && (hit.task !== null || now - hit.at < MISS_MS)) return hit.task
+    const task = readTranscriptTask(sessionDir, agentId, reducer.spawnedBy(agentId))
+    cache.set(agentId, { task, at: now })
+    return task
+  }
+  function taskFor(m: Member): string | null {
+    if (m.agentId === null) return null
+    return taskOf.get(m.agentId) ?? transcriptTask(m.agentId)
+  }
+
   let decoratedMemo: { run: Run; key: string; value: Run } | null = null
   function decorated(r: Run | null): Run | null {
     if (r === null) return null
     const ids: (string | null)[] = []
-    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(m.agentId !== null ? (taskOf.get(m.agentId) ?? null) : null)
+    for (const c of r.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) ids.push(taskFor(m))
     const key = JSON.stringify(ids)
     if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
     const value = decorate(r)
@@ -239,7 +265,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     const fill = (m: Member, isForeman: boolean): Member => ({
       ...m,
       purpose: purposeOf(purposes, m.type, isForeman),
-      task: m.agentId !== null ? (taskOf.get(m.agentId) ?? null) : null,
+      task: taskFor(m),
     })
     return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, true), members: c.members.map((m) => fill(m, false)) })) }
   }
