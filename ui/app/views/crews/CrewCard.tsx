@@ -139,7 +139,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
           <>
             <ul id={listId} aria-label={`${crew.slug} agents`} className="mt-3 flex min-w-0 flex-col gap-2">
               {shown.map((m) => (
-                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
+                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
               ))}
             </ul>
             {hidden > 0 && (

@@ -251,7 +251,7 @@ test("transcript: snapshot members carry exactly today's Member keys and no `by`
     fs.writeFileSync(path.join(env.subagents, 'workflows', 'wf_x1', 'agent-a0000000000000f1.jsonl'), brief('keys probe'))
     const store = open()
     const snap = store.snapshot()
-    const expected = ['agentId', 'detail', 'effort', 'model', 'name', 'purpose', 'state', 'task', 'ts', 'type']
+    const expected = ['activity', 'agentId', 'detail', 'effort', 'model', 'name', 'purpose', 'state', 'task', 'ts', 'type']
     let seen = 0
     for (const c of snap.state.run.crews) {
       for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) {

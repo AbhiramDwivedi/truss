@@ -17,6 +17,7 @@ export interface Member {
   agentId: string | null // ADR-0028 section 6: the spawn line's agentId
   purpose: string | null // set by the store from the agent files
   task: string | null // set by the store from the session's task descriptions
+  activity?: string | null // set by the store from the agent's transcript tail
 }
 export interface Activity {
   ts: string

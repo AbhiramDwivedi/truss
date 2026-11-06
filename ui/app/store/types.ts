@@ -171,6 +171,8 @@ export interface Member {
   purpose?: string | null
   /** ADR-0028 section 6: the latest task description for this agent. */
   task?: string | null
+  /** ADR-0029 section 3: the agent's latest tool call, `<Tool>: <short>`. */
+  activity?: string | null
 }
 
 export type ActivityEvent =

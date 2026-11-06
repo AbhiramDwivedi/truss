@@ -426,7 +426,8 @@
         "ts": { "type": "string" },
         "agentId": { "description": "ADR-0028 section 6: the spawn line's agentId; null for factory crew lines.", "type": ["string", "null"] },
         "purpose": { "description": "ADR-0028 section 6: the first sentence of the description line in agents/<name>.md, else null.", "type": ["string", "null"] },
-        "task": { "description": "ADR-0028 section 6: the latest task_started or task_progress description whose task_id equals agentId, else null.", "type": ["string", "null"] }
+        "task": { "description": "ADR-0028 section 6: the latest task_started or task_progress description whose task_id equals agentId, else null.", "type": ["string", "null"] },
+        "activity": { "description": "ADR-0029 section 3: the agent's latest tool call from its transcript tail, `<Tool>: <short>` cut to 120 characters, else null. Optional so older snapshots stay valid.", "type": ["string", "null"] }
       }
     },
     "activity": {
