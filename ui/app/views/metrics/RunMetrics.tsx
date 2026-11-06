@@ -55,6 +55,7 @@ export function RunMetrics({ state, now }: RunMetricsProps) {
         <dl className="mt-4 grid grid-cols-1 gap-4 min-[30rem]:grid-cols-2 xl:grid-cols-4">
           <MetricTile
             label="Cost"
+            title={cost === 'usage' ? formatUsd(usage!.costUsd!) : undefined}
             value={
               cost === 'usage' ? (
                 formatUsd(usage!.costUsd!)
@@ -76,6 +77,7 @@ export function RunMetrics({ state, now }: RunMetricsProps) {
           />
           <MetricTile
             label="Run time"
+            title={ms != null ? formatRunTime(ms) : undefined}
             value={ms != null ? formatRunTime(ms) : <Dash />}
             sub={runSub}
             subTitle={span && !finished && !span.live ? "From the run's start to the last agent activity" : undefined}
