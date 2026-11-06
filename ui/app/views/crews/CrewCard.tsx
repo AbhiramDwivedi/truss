@@ -11,7 +11,7 @@ import { agentStatus, crewStatus } from '../status/status.ts'
 import { AgentCard } from './AgentCard.tsx'
 import { StuckCard } from './StuckCard.tsx'
 import { GutterLink, LIT_MS, Wire } from './Wire.tsx'
-import { blockedWords, detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
+import { FAILED_STATES, blockedWords, detailMinutes, hhmm, plural, roleWord, stepOf, taskLine } from './format.ts'
 
 export interface CrewCardProps {
   crew: Crew
@@ -49,7 +49,8 @@ function lineOf(m: Member, crew: Crew): string | null {
     return min !== null ? `Stalled ${min} min` : 'Stalled'
   }
   if (!done && m.state === 'allowance-spent') return 'Allowance spent'
-  return taskLine(m, crew)
+  // A stalled member's detail is its stall minutes: in a done crew that is stall text, not a task.
+  return taskLine(done && FAILED_STATES.has(m.state) ? { ...m, detail: null } : m, crew)
 }
 
 function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React.ReactNode; children: React.ReactNode }) {
