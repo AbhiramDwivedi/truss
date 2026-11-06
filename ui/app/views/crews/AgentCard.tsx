@@ -7,7 +7,7 @@ import { cn } from '../../lib/utils.ts'
 import { StatusBadge } from '../status/StatusBadge.tsx'
 import type { Status } from '../status/status.ts'
 import type { Member } from '../../store/types.ts'
-import { modelKey } from './format.ts'
+import { modelKey, NO_ACTIVITY, NO_TASK } from './format.ts'
 import { StepProgress } from './StepProgress.tsx'
 
 export interface AgentCardProps {
@@ -42,9 +42,13 @@ function AgentCardImpl({ member, role, task, status, step }: AgentCardProps) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 truncate text-ui font-semibold text-fg">{role}</span>{' '}
         <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
-          <ModelBadge model={model} title={member.model ?? undefined}>
-            {model}
-          </ModelBadge>{' '}
+          {model && (
+            <>
+              <ModelBadge model={model} title={member.model ?? undefined}>
+                {model}
+              </ModelBadge>{' '}
+            </>
+          )}
           <StatusBadge status={status} size="sm" />
         </span>
       </div>{' '}
@@ -80,7 +84,7 @@ function AgentCardImpl({ member, role, task, status, step }: AgentCardProps) {
             )}
           </>
         ) : (
-          <p className="min-w-0 text-meta text-subtle">No activity yet</p>
+          <p className="min-w-0 text-meta text-subtle">{member.state === 'spawned' ? NO_ACTIVITY : NO_TASK}</p>
         )}
       </div>
       <StepProgress step={step} />

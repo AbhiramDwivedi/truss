@@ -85,8 +85,8 @@ export const LIVE_STATES: ReadonlySet<Member['state']> = new Set(['spawned', 'ta
 export const DONE_STATES: ReadonlySet<Member['state']> = new Set(['reported'])
 export const FAILED_STATES: ReadonlySet<Member['state']> = new Set(['stalled', 'allowance-spent'])
 
-/** `opus`, `sonnet`, the raw model id, or `model unknown`. */
-export const modelKey = (m: string | null): string => (m && /opus/i.test(m) ? 'opus' : m && /sonnet/i.test(m) ? 'sonnet' : (m ?? 'model unknown'))
+/** `opus`, `sonnet`, the raw model id, or null when the model is unknown (the card then shows no badge). */
+export const modelKey = (m: string | null): string | null => (m && /opus/i.test(m) ? 'opus' : m && /sonnet/i.test(m) ? 'sonnet' : m || null)
 
 const NAME_ROLES: ReadonlySet<string> = new Set(['builder', 'tester', 'writer', 'runner', 'planner', 'ux'])
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -103,17 +103,30 @@ export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
 
 const MARKER_DETAILS: ReadonlySet<string> = new Set(['working', 'idle', 'spawned', 'tagged', 'fetched', 'reported', 'done'])
 
-/** The one task line: the task, else the foreman's crew goal, else a detail that is not a bare marker, else null. */
+const BARE_MARKERS: ReadonlySet<string> = new Set([...MARKER_DETAILS, 'question', 'blocked', 'proposal'])
+
+export const REPORTED = 'Reported'
+export const REPORTED_PREFIX = 'Reported: '
+export const NO_TASK = 'No task recorded'
+export const NO_ACTIVITY = 'No activity yet'
+
+/**
+ * The one task line: the task, else the foreman's crew goal, else a detail that is not a bare marker, else for a
+ * reported agent `Reported: <MARKER>` or `Reported`, else null (the card words the empty case).
+ */
 export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>): string | null {
   if (m.task) return m.task
   const isForeman = m.type === 'truss:foreman' || m.type === 'workflow-crew' || crew.foreman === m
   if (isForeman && crew.goal) return crew.goal
   const d = m.detail?.trim()
-  return d && !MARKER_DETAILS.has(d.toLowerCase()) ? d : null
+  if (d && !BARE_MARKERS.has(d.toLowerCase())) return d
+  if (m.state === 'reported') return d ? REPORTED_PREFIX + d.toUpperCase() : REPORTED
+  return null
 }
 
-/** 3 once reported, 1 while spawned with no detail and no task, else 2. */
-export function stepOf(m: Member): 1 | 2 | 3 {
+/** 3 once reported or in a merged or dropped crew, 1 while spawned with no detail and no task, else 2. */
+export function stepOf(m: Member, crew?: Pick<Crew, 'status'>): 1 | 2 | 3 {
+  if (crew && (crew.status === 'merged' || crew.status === 'dropped')) return 3
   if (m.state === 'reported') return 3
   if (m.state === 'spawned' && !m.detail && !m.task) return 1
   return 2
