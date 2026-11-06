@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/button.tsx'
 import { Dot, LivePing } from '../../components/ui/dot.tsx'
 import { sessionWords, usePageFlags } from '../move/format.ts'
 import { RunStatusBadge } from '../status/RunStatusBadge.tsx'
-import { formatRunTime, formatUsd, runTimeMs } from '../metrics/format.ts'
+import { costState, formatRunTime, formatUsd, runTimeMs } from '../metrics/format.ts'
 import { runStatusOf } from './runStatus.ts'
 import { RunStatus } from './RunStatus.tsx'
 import { useLinkTimers } from './useLinkTimers.ts'
@@ -81,8 +81,13 @@ export function Banner({ state, now, connection }: BannerProps) {
 
   const session = state?.session ?? null
   const status = runStatusOf(state, connection)
+  const runMs = state ? runTimeMs(state, now) : null
+  const notRecorded = state !== null && costState(state) === 'not-recorded'
   const cost = typeof session?.usage?.costUsd === 'number' ? session.usage.costUsd : 0
-  const summary = `${formatUsd(cost)} · ${formatRunTime((state ? runTimeMs(state, now) : null) ?? 0)}`
+  const runTime = runMs != null ? formatRunTime(runMs) : null
+  // Agrees with the Cost tile: no $ when Cost reads "Not recorded", only the run time.
+  const summary = notRecorded ? (runTime ?? 'Run metrics') : `${formatUsd(cost)} · ${runTime ?? formatRunTime(0)}`
+  const summaryTitle = notRecorded && runTime ? `Run time ${runTime} · cost not recorded` : summary
   const words = slow && !live ? 'Still connecting to the session…' : sessionWords(state, false, flags.expired)
   const working = session !== null && (session.status === 'running' || session.backgroundTasks.length > 0)
   // Same reading as views/status/status.ts: a waiting session with background tasks and no open request.
@@ -134,10 +139,11 @@ export function Banner({ state, now, connection }: BannerProps) {
         </p>
         <a
           href="#run-metrics"
-          title={summary}
+          title={summaryTitle}
           onClick={toMetrics}
           className={`ml-auto inline-flex min-w-0 items-center truncate whitespace-nowrap rounded-ctl font-mono text-ui tabular-nums text-fg hover:underline ${btnTarget}`}
         >
+          {notRecorded && runTime && <span className="sr-only">Run time </span>}
           {summary}
         </a>
       </div>
