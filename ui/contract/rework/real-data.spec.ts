@@ -13,6 +13,13 @@ const NOW = Date.parse(FIXTURE_ANCHOR)
 const network = (page: Page) => page.getByRole('region', { name: 'Build network' })
 const crewCard = (page: Page, slug: string) => network(page).getByRole('article', { name: new RegExp(`\\b${slug}\\b`) })
 const agent = (page: Page, slug: string, name: string) => crewCard(page, slug).getByRole('listitem').filter({ has: page.getByText(name, { exact: true }) })
+// Runner and general-purpose agents sit in a collapsed "N check runs" row; open it before reading their cards.
+const openRuns = async (page: Page, slug: string) => {
+  const btn = crewCard(page, slug).getByRole('button', { name: /^\d+ check runs?$/ })
+  await expect(btn).toBeVisible(T)
+  if ((await btn.getAttribute('aria-expanded')) !== 'true') await btn.click()
+  await expect(btn).toHaveAttribute('aria-expanded', 'true')
+}
 const metrics = (page: Page) => page.getByRole('region', { name: 'Run metrics', exact: true })
 const tile = (page: Page, label: string) => metrics(page).getByText(label, { exact: true }).locator('..')
 
@@ -31,6 +38,7 @@ test.describe('real-data design', () => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
+      await openRuns(o.page, 'docs-crew')
       for (const name of ['docs-crew', 'docs-crew-runner', 'docs-crew-runner-2']) {
         const card = agent(o.page, 'docs-crew', name)
         await expect(card.getByText('Done', { exact: true }), `${name} reads Done`).toHaveCount(1, T)
@@ -43,6 +51,7 @@ test.describe('real-data design', () => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
+      for (const slug of ['docs-crew', 'build-crew']) await openRuns(o.page, slug)
       for (const slug of ['docs-crew', 'build-crew']) {
         await expect(agent(o.page, slug, slug), `${slug} foreman has a null model, so no badge`).not.toContainText(/opus|sonnet|haiku|unknown/i)
         await expect(agent(o.page, slug, `${slug}-runner`), `${slug} member keeps its model badge`).toContainText(/sonnet/i)
@@ -65,6 +74,7 @@ test.describe('real-data design', () => {
     })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
+      await openRuns(o.page, 'docs-crew'); await openRuns(o.page, 'build-crew')
       // task first
       await expect(agent(o.page, 'docs-crew', 'docs-crew-runner-2').getByText('Write the design note for the fixture widget in docs/widget.md.')).toBeVisible(T)
       // a foreman with no task shows its crew goal, not "No activity yet" and not the BLOCKED marker
@@ -87,6 +97,7 @@ test.describe('real-data design', () => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
+      await openRuns(o.page, 'docs-crew'); await openRuns(o.page, 'build-crew')
       await expect(network(o.page).getByText('No activity yet')).toHaveCount(1, T)
       await expect(agent(o.page, 'build-crew', 'build-crew-runner').getByText('No activity yet')).toHaveCount(1, T)
       // a reported agent with a null detail and a task shows the task, never the fallback

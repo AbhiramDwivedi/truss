@@ -79,8 +79,10 @@ test.describe('network', () => {
         const net = network(o.page)
         await expect(net).toBeVisible(LOAD)
         await expect(net.getByRole('article')).toHaveCount(12, T)
-        const more = net.getByRole('button', { name: /^Show \d+ more agents?$/ })
-        expect(await more.count(), `crews with 8 agents show "Show n more agents" at ${width}`).toBeGreaterThan(0)
+        // real-12 crews have 7 generic members: they fold into a collapsed "N check runs" row (fewer than 7 named members, so no "Show n more agents").
+        const runs = net.getByRole('button', { name: /^\d+ check runs?$/ })
+        expect(await runs.count(), `crews with generic members fold them into a "N check runs" row at ${width}`).toBeGreaterThan(0)
+        await expect(runs.first(), `check runs start collapsed at ${width}`).toHaveAttribute('aria-expanded', 'false')
         expect(await noSidewaysScroll(o.page), `no horizontal page scroll at ${width}`).toBe(true)
       } finally { await o.stop() }
     }
