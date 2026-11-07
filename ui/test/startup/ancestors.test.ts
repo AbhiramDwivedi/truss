@@ -214,6 +214,12 @@ describe('real chain', { skip: process.platform !== 'linux' ? 'needs /proc and P
 
     const grand = spawn(process.execPath, [grandJs], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     children.push(grand);
+    // Lazily read the pid files so after() kills middle.mjs and main.ts even if the wait below times out.
+    children.push({ kill: (s: NodeJS.Signals) => {
+      for (const f of [midPidFile, pidFile]) {
+        try { process.kill(Number(readFileSync(f, 'utf8')), s); } catch {}
+      }
+    } } as ChildProcess);
     let out = '';
     let err = '';
     grand.stdout!.on('data', (d) => { out += String(d); });
