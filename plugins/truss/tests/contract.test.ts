@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 
 import { HEARTBEAT_MS, MODEL_REFUSAL, STALL_MS } from '../hooks/register'
-import { NOW, ROOT, startSession, world, test } from './harness'
+import { ROOT, startSession, world, test } from './harness'
 
 // Contract test for truss ADR-0003 "Seams" 1 and 3: the event log at <truss dir>/events.jsonl
 // (shape: docs/events.schema.json) and the HH:MM stamp. Written by truss run 2's design crew before
@@ -10,11 +10,8 @@ import { NOW, ROOT, startSession, world, test } from './harness'
 type W = ReturnType<typeof world>
 
 const EVENTS = `${ROOT}/events.jsonl`
-const LOG = `${ROOT}/decisions.md`
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 const FAILED = 'truss: event log failed, letting the call through:'
-const pad = (n: number) => String(n).padStart(2, '0')
-const at = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`
 
 // appends go through a promise chain: let it drain before reading
 const settle = async () => {
@@ -111,19 +108,4 @@ test('with fs.write failing for events.jsonl, the Agent call still goes through 
   expect(w.ran.filter(c => c.tool === 'Agent').length).toBe(before + 1)
   expect(r.context).toEqual([`[truss] If auth-tester's report does not reach you, read ${ROOT}/reports/auth/auth-tester.md once it stops.`])
   expect(w.logs.filter(l => l.startsWith(FAILED)).length).toBe(1)
-})
-
-// ---------- stamp hook: the literal HH:MM ----------
-
-test('a Write of decisions.md with a new "- HH:MM |" line reaches disk with the clock time', async ($, on) => {
-  const w = world($, on)
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: '- HH:MM | x | y | z | followed\n' } as never)
-  expect(w.ran.filter(c => c.tool === 'Write').at(-1)?.content).toBe(`- ${at(NOW)} | x | y | z | followed\n`)
-})
-
-test('a literal HH:MM already in the log is stamped too, since it marks no time', async ($, on) => {
-  const w = world($, on)
-  w.files.set(LOG, '- HH:MM | a | b | c | followed\n')
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: '- HH:MM | a | b | c | followed\n' } as never)
-  expect(w.ran.filter(c => c.tool === 'Write').at(-1)?.content).toBe(`- ${at(NOW)} | a | b | c | followed\n`)
 })

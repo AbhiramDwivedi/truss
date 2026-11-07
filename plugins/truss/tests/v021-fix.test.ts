@@ -155,37 +155,3 @@ test('fix 5: a tag with nothing after it is denied', async ($, on) => {
   }
   expect(w.ran.filter(c => c.tool === 'SubagentHandback').length).toBe(0)
 })
-
-// ---------- 6. edited decision-log lines keep their time ----------
-
-const LOG = `${ROOT}/decisions.md`
-const pad = (n: number) => String(n).padStart(2, '0')
-const at = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`
-const ran = (w: W, tool: string) => w.ran.filter(c => c.tool === tool).at(-1)
-
-test('fix 6: an Edit that changes a logged line keeps its time', async ($, on) => {
-  const w = world($, on)
-  w.files.set(LOG, '- 10:40 | merged auth\n')
-  await $.tool.call({ tool: 'Edit', file_path: LOG, old_string: '- 10:40 | merged auth', new_string: '- 10:40 | merged auth (squash)' } as never)
-  expect(ran(w, 'Edit')?.new_string).toBe('- 10:40 | merged auth (squash)')
-})
-
-test('fix 6: a Write keeps the time of an old line left as it is or with trailing whitespace', async ($, on) => {
-  const w = world($, on)
-  w.files.set(LOG, '- 09:05 | start two crews\n- 09:10 | merge auth\n')
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: '- 09:05 | start two crews\n- 09:10 | merge auth   \n' } as never)
-  expect(ran(w, 'Write')?.content).toBe('- 09:05 | start two crews\n- 09:10 | merge auth   \n')
-})
-
-test('fix 6: a brand-new line whose typed time is not in the old text is stamped, beside an edited line that keeps its time', async ($, on) => {
-  const w = world($, on)
-  w.files.set(LOG, '- 10:40 | merged auth\n')
-  expect(at(NOW)).not.toBe('10:41')
-  await $.tool.call({
-    tool: 'Edit',
-    file_path: LOG,
-    old_string: '- 10:40 | merged auth\n',
-    new_string: '- 10:40 | merged auth (squash)\n- 10:41 | defer docs\n',
-  } as never)
-  expect(ran(w, 'Edit')?.new_string).toBe(`- 10:40 | merged auth (squash)\n- ${at(NOW)} | defer docs\n`)
-})

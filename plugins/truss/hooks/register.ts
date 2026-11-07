@@ -929,31 +929,22 @@ export function isEmptyHandBack(message: string): boolean {
   return trimmed.length < HANDBACK_MIN || STAND_INS.has(trimmed.toLowerCase())
 }
 
-// `- HH:MM |` at the start of a decision-log line: the time the PM typed, or the literal HH:MM placeholder,
-// which the clock's replaces (ADR-0003 s2)
-const DECISION_TIME = /^- (\d{1,2}:\d{2}|HH:MM) \|/
-// the placeholder the run skill tells the PM to type: it marks no time, so it is always stamped
-const UNSTAMPED = 'HH:MM'
+// What the decision-log deny says. Rewriting the input of an Edit/Write made auto mode give "classifier gave no verdict"
+// (retro F-9), so the log is written only by `factory.ts decide`, which stamps the clock's time itself.
+export const DECISION_LOG_REFUSAL = `${MARK} Refused: decisions.md is written only by the decide command, which stamps the time. Run: node <plugin>/bin/factory.ts decide --dir <truss dir> --line "<decision> | <reason> | <recommendation> | <outcome>"`
 
-// 10:04 for a clock reading, in the machine's local time
-export function localTime(ms: number): string {
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+// The shell rules every brief for an Agent in a worktree carries, word for word. skills/run/SKILL.md quotes the same text
+// (a test pins the two together).
+export const SHELL_RULES =
+  "Your worktree is guarded by Claude Code: it refuses a Bash command it can't show stays inside the worktree, and each refusal costs a turn. Write and change files with the Write and Edit tools, never a shell heredoc (`cat > f <<'EOF'`). Run one plain command per Bash call: no `&&`, `;`, `cd`, for-loop or `$VAR` argument; give paths in full. Put a script in a file and run that, rather than feeding python or node inline text that names git. Quote a git format that holds parentheses. Never cd into the main checkout. Run tests and builds in the foreground with an explicit Bash timeout up to 600000; never sleep-poll a background task or misuse Monitor (pass its documented arguments only). Stop only a process you started, by its pid; never pkill or kill by pattern."
 
-// Every decision line of `text` whose time is on no decision line of `logged` gets `time`. A time `logged` already has
-// marks a line that was there before, perhaps reworded or with trailing space, and it keeps that time. A literal
-// HH:MM is always stamped, whether or not `logged` holds the same line.
-export function stampDecisions(text: string, logged: string, time: string): string {
-  const old = new Set(logged.split('\n').flatMap(l => DECISION_TIME.exec(l)?.[1] ?? []))
-  return text
-    .split('\n')
-    .map(line => {
-      const typed = DECISION_TIME.exec(line)?.[1]
-      if (typed === undefined || (typed !== UNSTAMPED && old.has(typed))) return line
-      return line.replace(DECISION_TIME, `- ${time} |`)
-    })
-    .join('\n')
+// Retro F-10. An Agent call with isolation "worktree" whose prompt lacks the shell rules is refused, with the block quoted.
+// Refused, not rewritten: a rewritten input gets no auto-mode verdict (F-9), and neither do the Agent calls beside it.
+// A prompt that opens the rules with their first sentence (the Workflow scripts' own copy) passes.
+export function worktreeBriefVerdict(input: { isolation?: unknown; prompt?: unknown }): { deny: string } | undefined {
+  if (input.isolation !== 'worktree' || typeof input.prompt !== 'string') return undefined
+  if (input.prompt.includes(SHELL_RULES.slice(0, SHELL_RULES.indexOf(':') + 1))) return undefined
+  return { deny: `${MARK} Refused: an Agent in a worktree needs the shell rules in its brief. Call Agent again with this block added to the prompt, word for word: "${SHELL_RULES}"` }
 }
 
 // the decision log of session `sessionId`, wherever its truss folder is
@@ -2209,6 +2200,8 @@ export const register: Register = on => {
       })
       if (refused !== undefined) return refuse($, state, refusalsLogged, e, refused)
     }
+    const unguarded = worktreeBriefVerdict(e as unknown as { isolation?: unknown; prompt?: unknown })
+    if (unguarded !== undefined) return refuse($, state, refusalsLogged, e, unguarded)
     // a plan-mode design engineer from the main session (ADR-0015 s9): its hand-back is the plan to write. Marked before the
     // call runs, since a foreground agent spawns and hands back inside it; agent.spawn binds the id by this tool_use_id.
     const first = e.agentId === undefined && e.subagent_type === 'truss:design-engineer' && typeof e.prompt === 'string' ? e.prompt.split('\n')[0].replace(/[\r ]+$/, '') : undefined
@@ -2399,19 +2392,12 @@ export const register: Register = on => {
     return yield* next(e)
   })
 
-  // The decision log's times come from the clock: a `- HH:MM |` the PM typed on a new line is replaced with the
-  // real local time before the write lands. Lines the log already holds keep theirs, unless still a literal HH:MM.
+  // The decision log is written only by `factory.ts decide`, which stamps the clock's time. An Edit or Write of this
+  // session's decisions.md is refused, never rewritten: a rewritten input gets no auto-mode verdict (retro F-9).
   on('tool.call', { tool: ['Write', 'Edit'] }, async ($, e, next) => {
-    const stamped = await safely($, 'decision time', async () => {
-      if (!isDecisionLog(e.file_path, await $.session.id())) return undefined
-      const text = e.tool === 'Write' ? e.content : e.new_string
-      // what the call replaces: an Edit's old_string, a Write's file on disk
-      const logged = e.tool === 'Edit' ? e.old_string : (await $.fs.exists(e.file_path)) ? String(await $.fs.read(e.file_path)) : ''
-      const out = stampDecisions(text, logged, localTime(await $.clock.now()))
-      return out === text ? undefined : out
-    })
-    if (stamped === undefined) return next(e)
-    return e.tool === 'Write' ? next({ ...e, content: stamped }) : next({ ...e, new_string: stamped })
+    const isLog = await safely($, 'decision log', async () => isDecisionLog(e.file_path, await $.session.id()))
+    if (isLog === true) return refuse($, state, refusalsLogged, e, { deny: DECISION_LOG_REFUSAL })
+    return next(e)
   }).catch(failOpen)
 
   // The main-thread edit gate (ADR-0014 Decision 2, P-8): refuses a main-thread Edit, Write, MultiEdit or NotebookEdit on
