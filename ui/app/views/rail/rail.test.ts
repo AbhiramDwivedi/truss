@@ -1,4 +1,4 @@
-// Spec-first checks for the library views: RunContext, Timeline, DecisionsPanel, Deliverables, Transcript.
+// Spec-first checks for the rail views: RunContext, Timeline, DecisionsPanel, Deliverables.
 // Pins roles, names and copy from ADR-0023 section 4 and ADR-0018 section 10. Interactions are the e2e specs' job.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -94,14 +94,14 @@ const nothingBanned = (root: N) => assert.doesNotMatch(tidy(text(root)), /In the
 /** The deliverable count per type chip, as ADR-0023 section 4 derives it from the state. */
 function typeCounts(f: any): Record<string, number> {
   const Plan = f.design?.planMd != null ? 1 : 0
-  const Docs = (f.design?.architecture != null ? 1 : 0) + (f.adrs ?? []).length
+  const Docs = f.design?.architecture != null ? 1 : 0 // ADRs moved to the rail list (R-37)
   const Code = (f.run?.crews ?? []).filter((c: any) => c.status === 'merged').length
   const Images = (f.design?.images ?? []).length
   return { All: Plan + Docs + Code + Images, Docs, Code, Plan, Images }
 }
 
 // ---- RunContext ------------------------------------------------------------------------------------------
-test('RunContext: repo, the idea and the approval time, with Pause build disabled and explained', async () => {
+test('RunContext: repo, the idea and the approval time, with no Pause build, tooltip, pause-tip id or pausing text (ADR-0029 section 5)', async () => {
   const s = fx('stuck-crew/state')
   const v = await mount('rail/RunContext', 'RunContext', { state: s, now: NOW })
   const reg = find(v, 'region', 'Run')
@@ -112,15 +112,22 @@ test('RunContext: repo, the idea and the approval time, with Pause build disable
   assert.match(body, /The idea/)
   assert.ok(body.includes(s.run.goal))
   assert.match(body, atTime('Approved by you at ', s.run.goals[0].approvedAt))
-  const pause = find(reg[0]!, 'button', 'Pause build')
-  assert.equal(pause.length, 1)
-  assert.equal(pause[0]!.a['aria-disabled'], 'true')
-  const tip = 'Pausing needs a server endpoint that doesn\'t exist yet.'
-  const ref = pause[0]!.a['aria-describedby']
-  assert.ok(ref, 'Pause build is described')
-  const target = all(v, (n) => n.a.id === ref.split(/\s+/)[0])[0]
-  assert.equal(tidy(text(target!)), tip)
+  assert.equal(find(reg[0]!, 'button', /pause/i).length, 0, 'no Pause build button')
+  assert.equal(find(reg[0]!, 'button').length, 0, 'the Run region has no button of its own')
+  assert.equal(all(v, (n) => n.a.role === 'tooltip').length, 0, 'no tooltip')
+  assert.equal(all(v, (n) => n.a.id === 'pause-tip').length, 0, 'no pause-tip id')
+  assert.equal(all(v, (n) => /pause-tip/.test(n.a['aria-describedby'] ?? '')).length, 0)
+  assert.doesNotMatch(body, /Pausing needs a server endpoint/)
   nothingBanned(v)
+})
+test('RunContext: below lg the cost line reads Cost not recorded with a known model and a run that has no usage cost', async () => {
+  const s = JSON.parse(fs.readFileSync(path.join(uiDir, 'contract', 'fixtures', 'rework', 'real-data', 'state.json'), 'utf8'))
+  s.session.model = 'claude-opus-5-5'
+  const v = await mount('rail/RunContext', 'RunContext', { state: s, now: NOW })
+  const body = tidy(text(v))
+  assert.match(body, /Cost not recorded/)
+  assert.doesNotMatch(body, /No cost yet/)
+  assert.match(body, /claude-opus-5-5/)
 })
 test('RunContext: an automatic approval reads Approved automatically', async () => {
   const s = fx('decisions/state')
@@ -140,8 +147,8 @@ test('RunContext: empty state shows the repo, No goal yet. and no Pause build', 
 // ---- Timeline --------------------------------------------------------------------------------------------
 test('Timeline: ADR timeline region with Open log, ADRs and crews newest first', async () => {
   const s = fx('stuck-crew/state')
-  const v = await mount('rail/Timeline', 'Timeline', { state: s, now: NOW })
-  const reg = find(v, 'region', 'ADR timeline')
+  const v = await mount('rail/Timeline', 'Timeline', { state: s, now: NOW, onOpenLog: () => {} })
+  const reg = find(v, 'region', 'Decisions and ADRs')
   assert.equal(reg.length, 1)
   assert.equal(find(reg[0]!, 'link', 'Open log').length + find(reg[0]!, 'button', 'Open log').length, 1)
   const body = tidy(text(reg[0]!))
@@ -151,7 +158,7 @@ test('Timeline: ADR timeline region with Open log, ADRs and crews newest first',
 })
 test('Timeline: lists the ADR titles', async () => {
   const s = fx('decisions/state')
-  const reg = find(await mount('rail/Timeline', 'Timeline', { state: s, now: NOW }), 'region', 'ADR timeline')[0]!
+  const reg = find(await mount('rail/Timeline', 'Timeline', { state: s, now: NOW }), 'region', 'Decisions and ADRs')[0]!
   for (const a of s.adrs) assert.ok(tidy(text(reg)).includes(a.title), a.title)
 })
 
@@ -219,10 +226,10 @@ test('DecisionsPanel: the ADR strip counts each status and the filter offers the
 })
 
 // ---- Deliverables ----------------------------------------------------------------------------------------
-const deliv = async (state: any) => mount('deliverables/Deliverables', 'Deliverables', { state, now: NOW })
+const deliv = async (state: any) => mount('deliverables/Deliverables', 'Deliverables', { state, now: NOW, onOpenDesign: () => {} })
 test('Deliverables: empty state reads Nothing built yet. with no filter group', async () => {
   const v = await deliv(fx('empty/state'))
-  assert.match(tidy(text(v)), /Nothing built yet\. Plans, ADRs and screenshots appear here as crews finish\./)
+  assert.match(tidy(text(v)), /Nothing built yet\. Deliverables appear as crews finish\./)
   assert.equal(find(v, 'group', 'Filter by type').length, 0)
 })
 test('Deliverables: the region is labelled by its h2 and offers the type filter and Group by toggles', async () => {
@@ -282,34 +289,4 @@ test('Deliverables: the desktop preview is an aside with Open in Design tab and 
   assert.equal(find(pv[0]!, 'button', 'Copy path').length, 1)
   assert.equal(find(v, 'dialog').length + all(v, (n) => n.a.role === 'dialog').length, 0, 'no dialog until an item is opened')
   nothingBanned(v)
-})
-
-// ---- Transcript ------------------------------------------------------------------------------------------
-test('Transcript: a log named Transcript with an h2 and every entry in order', async () => {
-  const s = fx('follow-up/state')
-  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
-  const log = find(v, 'log', 'Transcript')
-  assert.equal(log.length, 1)
-  assert.equal(find(v, 'heading', 'Transcript').filter((h) => h.tag === 'h2').length, 1)
-  const body = tidy(text(log[0]!))
-  let at = -1
-  for (const e of s.transcript) {
-    const i = body.indexOf(tidy(e.text), at + 1)
-    assert.ok(i > at, `entry ${e.n} follows the one before it`)
-    at = i
-  }
-  nothingBanned(v)
-})
-test('Transcript: an error entry uses fail-soft and the word Error', async () => {
-  const s = fx('follow-up/state')
-  s.transcript[1].role = 'error'
-  s.transcript[1].text = 'The model call failed.'
-  const v = await mount('transcript/Transcript', 'Transcript', { state: s, now: NOW })
-  const hit = all(v, (n) => cls(n, 'bg-fail-soft') && tidy(text(n)).includes('The model call failed.'))
-  assert.ok(hit.length > 0, 'the error entry sits on fail-soft')
-  assert.match(tidy(text(hit[hit.length - 1]!)), /Error/)
-})
-test('Transcript: no state renders without an entry', async () => {
-  const v = await mount('transcript/Transcript', 'Transcript', { state: null, now: NOW })
-  assert.equal(find(v, 'log', 'Transcript').length, 1)
 })

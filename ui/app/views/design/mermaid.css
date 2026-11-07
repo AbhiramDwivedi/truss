@@ -1,0 +1,88 @@
+/* The architecture's mermaid diagrams in the D2 tokens (ADR-0028 section 5). The page CSP has no style-src, so
+   mermaid's own <style> element and its colour style attributes are removed before the SVG is inserted
+   (MermaidBlock.tsx); this stylesheet is what colours the drawing. Dark mode follows because the tokens switch. */
+svg[id^="truss-mmd-"] {
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  color: var(--fg);
+}
+
+svg[id^="truss-mmd-"] text,
+svg[id^="truss-mmd-"] tspan,
+svg[id^="truss-mmd-"] .label,
+svg[id^="truss-mmd-"] .nodeLabel,
+svg[id^="truss-mmd-"] .edgeLabel,
+svg[id^="truss-mmd-"] .messageText,
+svg[id^="truss-mmd-"] .actor,
+svg[id^="truss-mmd-"] .labelText,
+svg[id^="truss-mmd-"] .loopText {
+  fill: var(--fg);
+  stroke: none;
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+}
+
+/* Nodes, actors, notes and other filled shapes. */
+svg[id^="truss-mmd-"] .node rect,
+svg[id^="truss-mmd-"] .node circle,
+svg[id^="truss-mmd-"] .node ellipse,
+svg[id^="truss-mmd-"] .node polygon,
+svg[id^="truss-mmd-"] .node path,
+svg[id^="truss-mmd-"] rect.actor,
+svg[id^="truss-mmd-"] rect.note,
+svg[id^="truss-mmd-"] .labelBox,
+svg[id^="truss-mmd-"] .state-start,
+svg[id^="truss-mmd-"] .statediagram-state rect {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1px;
+}
+
+/* Subgraphs. */
+svg[id^="truss-mmd-"] .cluster rect,
+svg[id^="truss-mmd-"] .cluster polygon,
+svg[id^="truss-mmd-"] .statediagram-cluster rect {
+  fill: var(--sunken);
+  stroke: var(--border-strong);
+}
+
+/* Edges, message lines and arrowheads. */
+svg[id^="truss-mmd-"] .edgePath .path,
+svg[id^="truss-mmd-"] .flowchart-link,
+svg[id^="truss-mmd-"] .transition,
+svg[id^="truss-mmd-"] .messageLine0,
+svg[id^="truss-mmd-"] .messageLine1,
+svg[id^="truss-mmd-"] .actor-line,
+svg[id^="truss-mmd-"] .relation,
+svg[id^="truss-mmd-"] path.path {
+  stroke: var(--muted);
+  fill: none;
+}
+
+svg[id^="truss-mmd-"] marker,
+svg[id^="truss-mmd-"] marker path,
+svg[id^="truss-mmd-"] .arrowheadPath,
+svg[id^="truss-mmd-"] .marker {
+  fill: var(--muted);
+  stroke: var(--muted);
+}
+
+/* Edge labels sit on the surface, so a line never runs through the text. */
+svg[id^="truss-mmd-"] .edgeLabel,
+svg[id^="truss-mmd-"] .edgeLabel rect,
+svg[id^="truss-mmd-"] .labelBkg {
+  background-color: var(--surface);
+}
+
+svg[id^="truss-mmd-"] .edgeLabel rect {
+  fill: var(--surface);
+  stroke: none;
+  opacity: 1;
+}
+
+/* Mermaid centres label text with a rule in the removed <style> element (CSP), so the rule lives here. */
+svg[id^="truss-mmd-"] .node .label text,
+svg[id^="truss-mmd-"] .cluster-label text,
+svg[id^="truss-mmd-"] .edgeLabel text {
+  text-anchor: middle;
+}

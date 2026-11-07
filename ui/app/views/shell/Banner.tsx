@@ -1,49 +1,40 @@
 // The page banner (ADR-0023 section 4): the mark, the Session status, the model and what the session
 // has spent, and the notifications and theme toggles. It never shows the goal and never a limit.
-import { useEffect, useRef, useState } from 'react'
-import { Bell, BellRing, Moon, RotateCw, Sun } from 'lucide-react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { Bell, BellRing, Moon, Sun } from 'lucide-react'
 import type { Connection, Request, RunState } from '../../store/types.ts'
-import { pageStore } from '../../store/store.ts'
 import { useTheme } from '../../lib/theme.ts'
 import { Button } from '../../components/ui/button.tsx'
-import { ModelBadge } from '../../components/ui/badge.tsx'
 import { Dot, LivePing } from '../../components/ui/dot.tsx'
-import { costText, num, sessionWords, usePageFlags } from '../move/format.ts'
-
-/** How long the page waits for a first snapshot before it says it can't reach the session. */
-export const STALL_MS = 10_000
+import { sessionWords, usePageFlags } from '../move/format.ts'
+import { RunStatusBadge } from '../status/RunStatusBadge.tsx'
+import { costState, formatRunTime, formatUsd, runTimeMs } from '../metrics/format.ts'
+import { runStatusOf } from './runStatus.ts'
+import { RunStatus } from './RunStatus.tsx'
+import { useLinkTimers } from './useLinkTimers.ts'
+import { UnreachableNotice } from './UnreachableNotice.tsx'
 
 export interface BannerProps {
   state: RunState | null
   now: number
   connection: Connection
-  /** Reopens the stream; the default restarts the page store. */
-  onRetry?: () => void
 }
+
+const btnTarget = 'min-h-6 pointer-coarse:min-h-11 pointer-coarse:min-w-11'
 
 const notifySupported = () => typeof window !== 'undefined' && 'Notification' in window
 
 const notifyTitle = (r: Request) =>
   r.kind === 'question' ? 'Truss: Question from Claude' : r.kind === 'permission' ? `Truss: Approval needed: ${r.toolName}` : null
 
-export function Banner({ state, onRetry }: BannerProps) {
+export function Banner({ state, now, connection }: BannerProps) {
   const { dark, toggle } = useTheme()
   const flags = usePageFlags()
-  const [stalled, setStalled] = useState(false)
-  const [attempt, setAttempt] = useState(0)
   const [notifyOn, setNotifyOn] = useState(false)
   const seen = useRef<Set<string> | null>(null)
-  const waiting = state === null
-
-  // No snapshot after STALL_MS: say so, and offer Retry.
-  useEffect(() => {
-    if (!waiting) {
-      setStalled(false)
-      return
-    }
-    const t = setTimeout(() => setStalled(true), STALL_MS)
-    return () => clearTimeout(t)
-  }, [waiting, attempt])
+  const live = connection === 'live'
+  // 5 s of not being live changes the Session line; at 20 s the Reload notice takes the header's notice room.
+  const { slow, unreachable } = useLinkTimers(connection)
 
   useEffect(() => {
     if (notifySupported() && Notification.permission === 'granted') setNotifyOn(true)
@@ -88,82 +79,91 @@ export function Banner({ state, onRetry }: BannerProps) {
     }
   }
 
-  const retry = () => {
-    setStalled(false)
-    setAttempt((n) => n + 1)
-    if (onRetry) onRetry()
-    else {
-      const store = pageStore()
-      store.stop()
-      store.start()
-    }
+  const session = state?.session ?? null
+  const status = runStatusOf(state, connection)
+  const runMs = state ? runTimeMs(state, now) : null
+  const notRecorded = state !== null && costState(state) === 'not-recorded'
+  const cost = typeof session?.usage?.costUsd === 'number' ? session.usage.costUsd : 0
+  const runTime = runMs != null ? formatRunTime(runMs) : null
+  // Agrees with the Cost tile: no $ when Cost reads "Not recorded", only the run time.
+  const summary = notRecorded ? (runTime ?? 'Run metrics') : `${formatUsd(cost)} · ${runTime ?? formatRunTime(0)}`
+  const summaryTitle = notRecorded && runTime ? `Run time ${runTime} · cost not recorded` : summary
+  const words = slow && !live ? 'Still connecting to the session…' : sessionWords(state, false, flags.expired)
+  const working = session !== null && (session.status === 'running' || session.backgroundTasks.length > 0)
+  // Same reading as views/status/status.ts: a waiting session with background tasks and no open request.
+  const stillRunning =
+    session?.status === 'waiting' && session.backgroundTasks.length > 0 && !(state?.requests ?? []).some((q) => q.status === 'open')
+  const bad = flags.expired || unreachable || session?.status === 'error'
+
+  // Scroll Run metrics into view and move focus to its heading (the link's own jump leaves focus on the link).
+  const toMetrics = (e: MouseEvent<HTMLAnchorElement>) => {
+    const section = document.getElementById('run-metrics')
+    if (!section) return
+    e.preventDefault()
+    const h = section.querySelector<HTMLElement>('h2')
+    section.scrollIntoView({ block: 'start' })
+    h?.focus({ preventScroll: true })
+    // Sections above it can still grow after a load (deliverables, the network): keep the target in view while
+    // the layout settles, for a short time only.
+    const keep = new ResizeObserver(() => section.scrollIntoView({ block: 'start', behavior: 'instant' }))
+    keep.observe(document.body)
+    window.setTimeout(() => keep.disconnect(), 1500)
   }
 
-  const session = state?.session ?? null
-  const usage = session?.usage ?? null
-  const models = usage ? Object.entries(usage.models) : []
-  const words = sessionWords(state, stalled, flags.expired)
-  const live = session !== null && (session.status === 'running' || session.backgroundTasks.length > 0)
-  const bad = flags.expired || stalled || session?.status === 'error'
-
   return (
-    <header role="banner" className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-3 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2">
+    <header role="banner" className="flex min-w-0 flex-col gap-2 border-b border-border bg-surface px-4 py-3 lg:px-6">
+      <div className="flex h-8 min-w-0 items-center gap-2">
         <img src="/favicon.svg" alt="" width={24} height={24} className="size-6 shrink-0" />
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="text-title font-semibold text-fg">Truss</h1>
-          <p className="truncate text-meta text-muted max-sm:hidden">Software factory</p>
-        </div>
-      </div>
-
-      <div className="flex min-w-0 items-center gap-2">
-        {live ? <LivePing tone="ok" /> : <Dot tone={bad ? 'fail' : session?.status === 'waiting' ? 'signal' : 'neutral'} />}
-        <p role="status" aria-label="Session" className={bad ? 'min-w-0 text-ui text-fail-text' : 'min-w-0 text-ui text-fg'}>
-          {words}
-        </p>
-        {stalled && !flags.expired && (
-          <Button size="sm" variant="secondary" icon={<RotateCw aria-hidden="true" />} onClick={retry}>
-            Retry
+        <h1 className="text-title font-semibold text-fg">Truss</h1>
+        {/* Two lines inside the 32 px row when the rail is narrow, never cut off. */}
+        <p className="min-w-0 text-meta leading-4 text-muted">Software factory</p>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={btnTarget}
+            icon={notifyOn ? <BellRing aria-hidden="true" /> : <Bell aria-hidden="true" />}
+            aria-disabled={notifyOn || undefined}
+            onClick={turnOnNotifications}
+          >
+            {notifyOn ? 'Notifications on' : 'Turn on notifications'}
           </Button>
-        )}
+          <Button size="icon" variant="ghost" className={btnTarget} aria-label="Dark theme" aria-pressed={dark} onClick={toggle}>
+            {dark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
+          </Button>
+        </div>
       </div>
 
-      {(session?.model || usage) && (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-meta text-muted">
-          {session?.model && <ModelBadge model={session.model} />}
-          {usage && typeof usage.costUsd === 'number' && (
-            <span className="font-mono tabular-nums text-fg" title="Cost so far">
-              <span className="sr-only">Cost so far: </span>
-              {costText(usage.costUsd)}
-              <span className="sr-only">. </span>
-            </span>
-          )}
-          {models.length > 0 && (
-            <ul aria-label="Tokens by model" className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-              {models.map(([m, u]) => (
-                <li key={m} className="min-w-0 break-words tabular-nums">
-                  {m}: {num(u.inputTokens)} in, {num(u.outputTokens)} out, {num(u.cacheReadInputTokens)} cache read,{' '}
-                  {num(u.cacheCreationInputTokens)} cache write
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          icon={notifyOn ? <BellRing aria-hidden="true" /> : <Bell aria-hidden="true" />}
-          aria-disabled={notifyOn || undefined}
-          onClick={turnOnNotifications}
+      <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+        <p role="status" aria-label="Run status" className="shrink-0">
+          <RunStatusBadge status={status} />
+        </p>
+        <a
+          href="#run-metrics"
+          title={summaryTitle}
+          onClick={toMetrics}
+          className={`ml-auto inline-flex min-w-0 items-center truncate whitespace-nowrap rounded-ctl font-mono text-ui tabular-nums text-fg hover:underline ${btnTarget}`}
         >
-          {notifyOn ? 'Notifications on' : 'Turn on notifications'}
-        </Button>
-        <Button size="icon" variant="ghost" aria-label="Dark theme" aria-pressed={dark} onClick={toggle}>
-          {dark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
-        </Button>
+          {notRecorded && runTime && <span className="sr-only">Run time </span>}
+          {summary}
+        </a>
+      </div>
+
+      <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1 lg:flex-nowrap">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {working ? <LivePing tone="ok" /> : <Dot tone={bad ? 'fail' : session?.status === 'waiting' ? 'signal' : 'neutral'} />}
+          <span className="shrink-0 text-ui text-muted">PM session:</span>
+          <p role="status" aria-label="Session" title={words} className={bad ? 'min-w-0 truncate text-ui text-fail-text' : 'min-w-0 truncate text-ui text-fg'}>
+            {words}
+          </p>
+          {stillRunning && <p className="min-w-0 text-ui text-muted">Agents still running; nothing needed from you</p>}
+        </div>
+      </div>
+
+      {/* While loading, hold the room one server notice takes, so the composer does not move when state arrives. */}
+      <div className={state ? 'contents' : 'min-h-[3.25rem]'}>
+        {unreachable ? <UnreachableNotice /> : null}
+        <RunStatus state={state} now={now} connection={connection} replacesReconnecting={unreachable && !!state} />
       </div>
     </header>
   )

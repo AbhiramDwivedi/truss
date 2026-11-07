@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "goal": "Fix the fixture widget so it reads real data.",
+  "architecture": "docs/architecture.md",
+  "approval": "client",
+  "approvedAt": "2026-11-04T08:58:00.000Z",
+  "maxParallelCrews": 2,
+  "reworkAllowance": 2,
+  "goals": [],
+  "crews": [
+    {
+      "slug": "docs-crew",
+      "stage": 0,
+      "verdict": "design",
+      "modules": ["docs"],
+      "owns": ["docs/**"],
+      "goal": "Write the design for the fixture widget.",
+      "estAgents": 3,
+      "status": "merged"
+    },
+    {
+      "slug": "build-crew",
+      "stage": 1,
+      "verdict": "change",
+      "modules": ["widget"],
+      "owns": ["src/widget/**"],
+      "goal": "Build the fixture widget.",
+      "estAgents": 3,
+      "status": "running"
+    }
+  ]
+}

@@ -49,7 +49,10 @@ test.beforeAll(async () => {
   cpSync(join(root, 'tests', 'fixtures', 'retro-040'), trussDir, { recursive: true })
   cpSync(join(root, 'docs', 'plan.example.json'), join(trussDir, 'plan.json'))
   const args = [join(uiDir, 'server', 'main.ts'), '--repo', repo, '--plugin', root, '--truss-dir', trussDir, '--port', '0']
-  const child = spawn(process.execPath, args)
+  // an empty Claude dir of its own, through the env (ADR-0029): the server never reads the host's ~/.claude
+  const claudeDir = join(dir, 'claude')
+  mkdirSync(claudeDir, { recursive: true })
+  const child = spawn(process.execPath, args, { env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } })
   server = child
   child.stderr.on('data', (d) => { stderr += String(d) })
   url = await new Promise<string>((ok, fail) => {
@@ -69,16 +72,16 @@ test.afterAll(() => {
 // ADR-0023 checklist item 22: the page paints the tokens.json colours.
 test('D2 colours: the page with crew lanes paints body with tokens.json bg and the move surface with move', async ({ page }) => {
   await page.goto(url)
-  const crews = page.getByRole('region', { name: 'Crews', exact: true })
-  await expect(crews.getByRole('button', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
+  const crews = page.getByRole('region', { name: 'Build network', exact: true })
+  await expect(crews.getByRole('article', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
   await expectD2Colours(page, 'light')
 })
 
 test('R-23: the retro lane shows running and then fixes applied within 2 s without a reload', async ({ page }) => {
   await page.goto(url)
   // The work lanes are on the page first; the retro lane is not there while no retro state file exists.
-  const crews = page.getByRole('region', { name: 'Crews', exact: true })
-  await expect(crews.getByRole('group', { name: /^Stage \d+$/ }).getByRole('listitem').getByRole('button', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
+  const crews = page.getByRole('region', { name: 'Build network', exact: true })
+  await expect(crews.getByRole('article', { name: /\bquotas\b/i }).first()).toBeVisible({ timeout: 10000 })
   const lane = page.getByRole('region', { name: 'Retro stage', exact: true })
   await expect(lane).toHaveCount(0)
 

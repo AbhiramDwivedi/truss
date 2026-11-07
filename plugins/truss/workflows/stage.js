@@ -153,11 +153,23 @@ function stopResult(crew, err) {
 }
 
 // the label of the crew's next agent of a role: <slug>-<role>, then -2, -3 ... (numbering starts at labelFrom[role])
-function nextLabel(crew, role) {
+function peekLabel(crew, role) {
   const n = crew.counters[role] ?? (crew.e.labelFrom && crew.e.labelFrom[role]) ?? 1
-  crew.counters[role] = n + 1
   return n === 1 ? `${crew.slug}-${role}` : `${crew.slug}-${role}-${n}`
 }
+function nextLabel(crew, role) {
+  const label = peekLabel(crew, role)
+  crew.counters[role] = (crew.counters[role] ?? (crew.e.labelFrom && crew.e.labelFrom[role]) ?? 1) + 1
+  return label
+}
+
+// the card title admit records for a label (ADR-0015 Decision 6): 3-8 plain words, cut to 60 characters. A runner gets none.
+const TITLES = {
+  planner: (s) => `Plan ${s} tasks`, resolver: (s) => `Resolve merge for ${s}`, qc: (s) => `QC ${s}`, stress: (s) => `Stress test ${s}`,
+  rca: (s) => `Find root cause for ${s}`, writer: (s) => `Write docs for ${s}`, designer: (s) => `Design ${s}`,
+  builder: (s) => `Build ${s}`, tester: (s) => `Write tests for ${s}`, ux: (s) => `UX direction ${s}`,
+}
+const titleOf = (crew, role, title) => String(title || (TITLES[role] || ((s) => `${role} ${s}`))(crew.slug)).replace(/\s+/g, ' ').trim().slice(0, 60)
 
 // ADR-0022 U6: the entry's ## Members value for a role ({model, effort}), or null. Builder and tester take their own line;
 // a resolver follows the builder line, and a fix member takes the line of its role. A missing members is {}.
@@ -174,8 +186,8 @@ function memberFor(crew, role) {
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
   if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
-  const { at, labelOut, ...rest } = opts
-  await admit(crew, at ?? crew.step)
+  const { at, labelOut, title, ...rest } = opts
+  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title))
   try {
     const label = nextLabel(crew, role)
     if (labelOut) labelOut.label = label
@@ -189,8 +201,9 @@ async function ask(crew, role, prompt, opts = {}) {
 // admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
-async function admit(crew, at) {
-  const r = await runFactory(crew, `admit --slug ${sh(crew.slug)}`, 'admitted')
+// label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
+async function admit(crew, at, label, title) {
+  const r = await runFactory(crew, `admit --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}` : ''}`, 'admitted')
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
@@ -523,7 +536,7 @@ async function runMember(crew, role, makePrompt, opts, at) {
 }
 
 async function resolveConflicts(crew, what, conflicts, at) {
-  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA, at })
+  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA, at, title: `Resolve merge for ${crew.slug}` })
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish ${what}: ${report ? report.text : 'no report'}`, at)
 }
 
@@ -550,7 +563,7 @@ async function integrateNow(crew, branch, at) {
 
 async function runTask(crew, task) {
   const at = task.name
-  const opts = task.role === 'builder' ? { effort: task.effort } : {}
+  const opts = { title: task.name, ...(task.role === 'builder' ? { effort: task.effort } : {}) }
   const report = await runMember(crew, task.role, (note) => taskPrompt(crew, task, note), opts, at)
   report.task = task.name
   crew.proofs.push(`${task.name}: ${report.proof}`)
@@ -586,7 +599,7 @@ async function runMembers(crew, tasks) {
 async function fixBuilder(crew, what, detail, role = 'builder') {
   const at = crew.step
   guardAllowance(crew, at)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), {}, at)
+  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), { title: `Fix ${what}` }, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -656,7 +669,7 @@ async function testsBackstop(crew, what) {
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
   const at = crew.step
   const label = `${what}, builder commits on tester files`
-  const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at })
+  const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at, title: `Resolve backstop for ${crew.slug}` })
   // ADR-0026 item 51 3: a resolver's QUESTION, PROPOSAL or CHECKPOINT stops the crew with that tag, as runMember does
   if (report && ['QUESTION', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker)) throw new Stop(report.marker, report.text, at)
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish the tests backstop (${label}): ${report ? report.text : 'no report'}`, at)
@@ -1047,7 +1060,7 @@ function qcPrompt(crew) {
 
 async function runQc(crew) {
   const label = nextLabel(crew, 'qc')
-  await admit(crew, 'qc')
+  await admit(crew, 'qc', label, titleOf(crew, 'qc'))
   let text
   try {
     text = await spawn('qc', label, qcPrompt(crew))
@@ -1109,7 +1122,7 @@ async function uxDirection(crew) {
   let text = ''
   for (let n = 0; n < 2; n++) {
     const got = {}
-    text = replyOf(await ask(crew, 'ux', uxDirectionPrompt(crew), { at: 'ux-direction', labelOut: got }))
+    text = replyOf(await ask(crew, 'ux', uxDirectionPrompt(crew), { at: 'ux-direction', labelOut: got, title: `UX direction ${crew.slug}` }))
     const first = firstLineOf(text)
     if (first.startsWith('UX: DIRECTION')) {
       crew.direction = { label: got.label, text }
@@ -1191,7 +1204,7 @@ async function runUxReview(crew, previous) {
   let text = ''
   for (let n = 0; n < 2; n++) {
     const got = {}
-    text = replyOf(await ask(crew, 'ux', uxReviewPrompt(crew, previous), { at: 'ux-review', labelOut: got }))
+    text = replyOf(await ask(crew, 'ux', uxReviewPrompt(crew, previous), { at: 'ux-review', labelOut: got, title: `UX review ${crew.slug}` }))
     const first = firstLineOf(text)
     const verdict = first.startsWith('UX: PASS') ? 'PASS' : first.startsWith('UX: REWORK') ? 'REWORK' : null
     if (verdict) return { label: got.label, text, verdict, findings: verdict === 'REWORK' ? uxFindingsOf(text) : [] }

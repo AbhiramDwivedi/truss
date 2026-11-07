@@ -7,6 +7,9 @@ import { addUserEntry, endView, errorView, foldMessage, initialView, setRunning 
 import type { Intent, QueueItem, SessionView } from './fold.ts'
 import { replyStep } from './reply.ts'
 import type { ReplyState } from './reply.ts'
+import { resolvePlugins } from './plugins.ts'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 export interface SessionControl {
   // intent: 'goal', 'add', null or absent (ADR-0023 gap a); any other value is { error: 'intent' }.
@@ -19,7 +22,18 @@ export const INTENT_LINES: Record<'goal' | 'add', string> = {
   goal: '[Truss UI: new goal] Plan this as a new goal for the run.',
   add: '[Truss UI: detail] Add this to the current goal.',
 }
-const toSdk = (m: QueueItem) => (m.intent ? `${INTENT_LINES[m.intent]}\n\n${m.text}` : m.text)
+// ADR-0028 section 1: the first goal of a session, with no plan yet, starts the run itself.
+const toSdk = (m: QueueItem, startsRun = false) =>
+  m.intent === 'goal' && startsRun ? `/truss:run ${m.text}` : m.intent ? `${INTENT_LINES[m.intent]}\n\n${m.text}` : m.text
+
+// An injected reader that throws counts as its default: a bad reader must not stop the session.
+function safe<T>(fn: (() => T) | undefined, fallback: T): T {
+  try {
+    return fn ? fn() : fallback
+  } catch {
+    return fallback
+  }
+}
 
 // Message ids are unique within one server process; clients compare them and never parse them.
 let lastId = 0
@@ -30,7 +44,13 @@ export interface Session extends SessionControl {
   close(): Promise<void>
 }
 
-export function createSession(opts: { repo: string; pluginPath: string }): Session {
+export function createSession(opts: {
+  repo: string
+  pluginPath: string
+  claudeDir?: string // where installed_plugins.json lives; defaults to CLAUDE_CONFIG_DIR or ~/.claude
+  hasPlan?: () => boolean // read when each message is sent (ADR-0028 section 1)
+  crewSlugs?: () => string[] // the crew slugs a flow entry's `to` is matched against (ADR-0028 section 7)
+}): Session {
   let base: SessionView = initialView()
   const subs = new Set<(v: SessionView) => void>()
   const registry: Registry = createRegistry(() => notify())
@@ -60,6 +80,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
   }
 
   let started = false
+  let goalSent = false
   let closed = false
   let reply: ReplyState = { turnRunning: false, held: null }
   let wake: (() => void) | undefined
@@ -74,7 +95,12 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
       }
       const m = outbox.shift()!
       notify() // the message leaves session.queue as the SDK takes it
-      yield { type: 'user' as const, message: { role: 'user' as const, content: toSdk(m) }, parent_tool_use_id: null }
+      let startsRun = false
+      if (m.intent === 'goal') {
+        startsRun = !goalSent && !safe(opts.hasPlan, false)
+        goalSent = true
+      }
+      yield { type: 'user' as const, message: { role: 'user' as const, content: toSdk(m, startsRun) }, parent_tool_use_id: null }
     }
   }
 
@@ -114,7 +140,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
   }
 
   function onMessage(msg: unknown) {
-    base = foldMessage(base, msg)
+    base = foldMessage(base, msg, safe(opts.crewSlugs, []))
     const step = replyStep(reply, msg, base.session.backgroundTasks.length)
     reply = step.state
     if (isObj(msg) && msg.type === 'system' && msg.subtype === 'init') {
@@ -148,7 +174,7 @@ export function createSession(opts: { repo: string; pluginPath: string }): Sessi
         prompt: input(),
         options: {
           cwd: opts.repo,
-          plugins: [{ type: 'local', path: opts.pluginPath }],
+          plugins: resolvePlugins(opts.pluginPath, opts.claudeDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')).plugins,
           canUseTool: (toolName: string, toolInput: Record<string, unknown>, o: unknown) =>
             canUseTool(toolName, toolInput, o),
           hooks: { PreToolUse: [{ hooks: [async () => ({})] }] },

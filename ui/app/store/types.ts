@@ -71,6 +71,19 @@ export interface Session {
   error: string | null
   /** ADR-0023 gap b: accepted messages the SDK has not yet taken, oldest first. */
   queue?: QueuedMessage[]
+  /** ADR-0028 section 7: the PM's hand-offs, oldest first, at most the last 200. */
+  flow?: FlowEntry[]
+}
+
+/** ADR-0028 section 7. */
+export interface FlowEntry {
+  /** ISO time the tool call was seen. */
+  at: string
+  tool: 'Agent' | 'SendMessage' | 'Workflow'
+  /** A crew slug, or null. */
+  to: string | null
+  /** At most 200 characters. */
+  summary: string
 }
 
 export type TranscriptRole = 'user' | 'assistant' | 'error'
@@ -135,6 +148,8 @@ export interface ReplyRequest extends RequestBase {
   backgroundTasks: number
   decision: 'allow' | 'deny' | 'message' | null
   message: string | null
+  /** ADR-0028 section 2: true when the turn asks for approval; absent or false means it does not. */
+  approvalAsk?: boolean
 }
 
 export type Request = QuestionRequest | PermissionRequest | ReplyRequest
@@ -150,6 +165,14 @@ export interface Member {
   state: MemberState
   detail: string | null
   ts: string
+  /** ADR-0028 section 6: the spawn line's agentId. */
+  agentId?: string | null
+  /** ADR-0028 section 6: the first sentence of the agent file's description. */
+  purpose?: string | null
+  /** ADR-0028 section 6: the latest task description for this agent. */
+  task?: string | null
+  /** ADR-0029 section 3: the agent's latest tool call, `<Tool>: <short>`. */
+  activity?: string | null
 }
 
 export type ActivityEvent =
@@ -191,6 +214,8 @@ export interface Crew {
   estAgents?: number | null
   /** ADR-0023 gap g: null, or the crew's latest stall while it lasts. */
   stuck?: CrewStuck | null
+  /** ADR-0028 section 10: the count of this crew's event lines skipped for version. */
+  eventsUnread?: number
 }
 
 export interface CrewStuck {

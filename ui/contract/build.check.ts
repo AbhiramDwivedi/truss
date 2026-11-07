@@ -50,7 +50,10 @@ async function start(ui: string): Promise<Started> {
   mkdirSync(repo, { recursive: true });
   const lockDir = join(tmp, 'lock-' + Math.random().toString(36).slice(2));
   mkdirSync(lockDir);
-  const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo };
+  // an empty Claude dir of its own, through the env (ADR-0029): the server never reads the host's ~/.claude
+  const claudeDir = join(tmp, 'claude-' + Math.random().toString(36).slice(2));
+  mkdirSync(claudeDir);
+  const env = { ...process.env, TMPDIR: lockDir, TMP: lockDir, TEMP: lockDir, INIT_CWD: repo, CLAUDE_CONFIG_DIR: claudeDir };
   const child = spawn(process.execPath, [join(ui, 'server', 'main.ts'), '--repo', repo, '--plugin', plugin, '--port', '0'], { env, cwd: repo });
   children.push(child);
   let out = '';

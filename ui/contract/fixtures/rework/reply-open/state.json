@@ -1,0 +1,128 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/rework",
+    "exists": true
+  },
+  "session": {
+    "status": "waiting",
+    "sessionId": "session-rework",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": {
+      "costUsd": 8.1,
+      "models": {
+        "claude-opus-5-5": {
+          "inputTokens": 100200,
+          "outputTokens": 40100,
+          "cacheReadInputTokens": 2210000,
+          "cacheCreationInputTokens": 120000
+        }
+      },
+      "results": 3,
+      "at": "2026-11-02T11:59:30.000Z"
+    },
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [
+    {
+      "id": "req-reply-1",
+      "kind": "reply",
+      "status": "open",
+      "createdAt": "2026-11-02T11:59:00.000Z",
+      "answeredAt": null,
+      "cancelReason": null,
+      "text": "All crews are merged and the checks pass.\n\nNothing is waiting on approval. If you want more, give me something new.",
+      "isError": false,
+      "backgroundTasks": 0,
+      "decision": null,
+      "message": null,
+      "approvalAsk": false
+    }
+  ],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Rework the UI to the client design reference.",
+      "ts": "2026-11-02T10:00:00.000Z",
+      "id": "msg-1",
+      "intent": "goal"
+    },
+    {
+      "n": 2,
+      "role": "assistant",
+      "text": "All crews are merged. Nothing is waiting on approval. Anything else you want, give me something new.",
+      "ts": "2026-11-02T11:59:00.000Z",
+      "id": null,
+      "intent": null
+    }
+  ],
+  "run": {
+    "goal": "Rework the UI to the client design reference.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:10:00.000Z",
+    "crews": [
+      {
+        "slug": "rework-server",
+        "stage": 0,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "rework-server/**"
+        ],
+        "foreman": {
+          "name": "rework-server",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "reported",
+          "detail": "DONE",
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agentId": "a1b2c3d4e5f60010",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agent": "rework-server",
+          "event": "report",
+          "text": "rework-server reported DONE"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Rework the UI to the client design reference.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:10:00.000Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}

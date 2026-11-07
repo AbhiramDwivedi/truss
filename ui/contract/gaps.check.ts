@@ -146,7 +146,8 @@ async function boot() {
   ;(globalThis as any).__trussStub = undefined
   const repo = tmpDir('repo')
   const store = createStore({ repo, pollMs: 50 })
-  const session = createSession({ repo, pluginPath: path.join(path.dirname(uiDir), 'plugins', 'truss') })
+  // ADR-0028 section 1: createSession takes hasPlan(); these cases run with no plan.json.
+  const session = createSession({ repo, pluginPath: path.join(path.dirname(uiDir), 'plugins', 'truss'), hasPlan: () => false })
   session.subscribe((v: unknown) => store.setSession(v))
   const server = createServer({ state: store, session, webDir: tmpDir('web') })
   const { port, token } = await server.listen(0)
@@ -257,7 +258,8 @@ test('gap a: an intent prepends the fixed line, a blank line, then the text as t
     const r = await w.post('/api/message', { text: 'the quota plan', intent: 'goal' })
     assert.equal(r.status, 202)
     await until(() => (stub()?.sent.length ?? 0) >= 1, 'the session to take the first message')
-    assert.equal(stub()!.sent[0], `${GOAL_LINE}\n\nthe quota plan`)
+    // ADR-0028 section 1: with no plan.json and no earlier goal, intent goal starts the run (R-41).
+    assert.equal(stub()!.sent[0], '/truss:run the quota plan')
     stub()!.emit({ type: 'result', subtype: 'success', total_cost_usd: 0.01, modelUsage: {} })
     await until(() => w.state().session.status === 'waiting', 'the turn to end')
     const r2 = await w.post('/api/message', { text: 'also per key', intent: 'add' })

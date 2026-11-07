@@ -11,6 +11,7 @@ import { MetricTile } from './MetricTile.tsx'
 import { SegmentBar, type Segment } from './SegmentBar.tsx'
 import { Sparkline } from './Sparkline.tsx'
 import { DONE_STATES, FAILED_STATES, LIVE_STATES, ago, clock, dayTime, exact, hhmm, ms, plural, rate, tokens } from '../crews/format.ts'
+import { goalGroups } from '../crews/goals.ts'
 
 /** A live stamp older than this reads as not updating (ADR-0023 section 4). */
 const STALE_MS = 2 * 60_000
@@ -63,12 +64,14 @@ export function LiveMetrics({ state, now }: LiveMetricsProps) {
   const live = state?.session.usage?.live
   const series = useStamps(live?.at, live?.totalTokens, now)
 
+  // The old bar keeps its sunken tiles; the page's tiles (RunMetrics) are bordered surface tiles.
+  const OLD_TILE = 'border-0 bg-sunken px-3.5 py-3 shadow-none'
   if (state === null) return <Skeleton className="h-43 w-full rounded-panel" />
   const run = state.run
   if (!run) return null
 
   const usage = state.session.usage
-  const crews = run.crews
+  const crews = goalGroups(run).at(-1)?.crews ?? run.crews
 
   // Header chips: each shows only above zero.
   const stuck = crews.filter((c) => c.stuck)
@@ -142,11 +145,13 @@ export function LiveMetrics({ state, now }: LiveMetricsProps) {
       </div>
       <dl className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
         <MetricTile
+          className={OLD_TILE}
           label="Elapsed"
           value={approvedMs === null ? '0s' : clock(now - approvedMs)}
           sub={approvedMs === null ? 'Not approved yet' : `since you approved, ${dayTime(approvedAt)}`}
         />
         <MetricTile
+          className={OLD_TILE}
           label="Tokens"
           value={live ? tokens(live.totalTokens) : '0'}
           title={live ? exact(live.totalTokens) : undefined}
@@ -156,11 +161,13 @@ export function LiveMetrics({ state, now }: LiveMetricsProps) {
           subTone={stale ? 'signal' : 'muted'}
         />
         <MetricTile
+          className={OLD_TILE}
           label="Spend"
           value={usage?.costUsd != null ? `$${usage.costUsd.toFixed(2)}` : '$0.00'}
           sub={usage?.costUsd != null ? `as of turn end ${hhmm(usage.at)}` : 'No cost yet'}
         />
         <MetricTile
+          className={OLD_TILE}
           label="Agents"
           value={running}
           aside="running"
@@ -168,12 +175,13 @@ export function LiveMetrics({ state, now }: LiveMetricsProps) {
           sub={`${stalled} stalled, ${done} done, plus ${planned} planned`}
         />
         <MetricTile
+          className={OLD_TILE}
           label="Crews merged"
           value={`${merged} / ${crews.length}`}
           graphic={<SegmentBar segments={crewBar} className="mt-2" />}
           sub={`${runningCrews} running`}
         />
-        <MetricTile label="Tasks done" value={tasks} sub={plural(tasks, 'report') + ' in'} />
+        <MetricTile className={OLD_TILE} label="Tasks done" value={tasks} sub={plural(tasks, 'report') + ' in'} />
       </dl>
     </section>
   )

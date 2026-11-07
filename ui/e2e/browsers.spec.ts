@@ -1,15 +1,15 @@
-// R-17: current desktop browsers at 1024 px and up. The same checks run in chromium, firefox and webkit
-// (Safari's engine) at widths 1024 and 1440. Edge is Chromium: it has no engine of its own to test, so the
-// chromium run stands for Edge too. ui/playwright.config.ts is not ours, and Playwright refuses
-// test.use({ browserName }) inside a describe, so each test launches its own browser from the chromium,
-// firefox or webkit launcher and opens its own page at the width. Status and verdict are asserted as visible text, so color alone
+// R-48: current and previous major versions of desktop Chrome at 1024 px and up. Chrome only: Firefox and Safari
+// are not targets. The checks run in chromium at widths 1024 and 1440. Edge is not a target either, so the
+// "(also Edge)" describe label is dropped. ui/playwright.config.ts is not ours, and Playwright refuses
+// test.use({ browserName }) inside a describe, so each test launches its own browser from the chromium
+// launcher and opens its own page at the width. Status and verdict are asserted as visible text, so color alone
 // cannot pass. Pinned to ADR-0018's roles and names: crew lines are found by role in the Crews region.
-import { test, expect, chromium, firefox, webkit, type Page } from '@playwright/test'
+import { test, expect, chromium, type Page } from '@playwright/test'
 import { crewLine, expectD2Colours, rand, spawnEvent, startReal, type Real } from './harness.ts'
 
 const LOAD = { timeout: 10000 }
 const WIDTHS = [1024, 1440]
-const BROWSERS = [['chromium', chromium], ['firefox', firefox], ['webkit', webkit]] as const
+const BROWSERS = [['chromium', chromium]] as const
 
 let real: Real | undefined
 test.afterEach(async () => {
@@ -19,9 +19,9 @@ test.afterEach(async () => {
 
 
 for (const [browserName, launcher] of BROWSERS) {
-  test.describe(`${browserName}${browserName === 'chromium' ? ' (also Edge)' : ''}`, () => {
+  test.describe(`${browserName}`, () => {
     for (const width of WIDTHS) {
-      test(`R-17: at ${width} px the page loads, has no horizontal scrollbar, and shows each crew status and verdict as text`, async () => {
+      test(`R-48: at ${width} px the page loads, has no horizontal scrollbar, and shows each crew status and verdict as text`, async () => {
         const run = rand()
         const member = `quotas-builder-${run}`
         const browser = await launcher.launch()
@@ -43,8 +43,8 @@ for (const [browserName, launcher] of BROWSERS) {
 
         // Status and verdict are words in the visible text of each crew line, not only in a color or icon.
         const cases: Array<[string, RegExp, RegExp]> = [
-          ['ratelimit-design', /merged/i, /QC PASS/],
-          ['quotas', /running/i, /QC FAIL/],
+          ['ratelimit-design', /done/i, /QC PASS/], // ADR-0028 section 9: merged shows as Done, running as Active
+          ['quotas', /active/i, /QC FAIL/],
           ['gateway', /planned/i, /QC none/],
         ]
         for (const [slug, status, verdict] of cases) {
@@ -67,10 +67,8 @@ for (const [browserName, launcher] of BROWSERS) {
           expect(box!.x + box!.width, `${slug} line right edge`).toBeLessThanOrEqual(width)
         }
 
-        // Opening a line adds a member line without widening the page.
-        await crewLine(page, 'quotas').click()
-        await expect(crewLine(page, 'quotas')).toHaveAttribute('aria-expanded', 'true')
-        await expect(page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: member })).toBeVisible()
+        // ADR-0028 section 10: the crew card lists its agents as cards, with no expand step, and they fit the page width.
+        await expect(crewLine(page, 'quotas').getByRole('listitem').filter({ hasText: member })).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
         } finally {
           await browser.close()

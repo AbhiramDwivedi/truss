@@ -1,0 +1,182 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/rework",
+    "exists": true
+  },
+  "session": {
+    "status": "running",
+    "sessionId": "session-rework",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": null,
+    "backgroundTasks": [],
+    "error": null,
+    "queue": []
+  },
+  "requests": [],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Rework the UI to the client design reference.",
+      "ts": "2026-11-02T11:06:40.000Z",
+      "id": "msg-1",
+      "intent": "goal"
+    }
+  ],
+  "run": {
+    "goal": "Rework the UI to the client design reference.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:10:00.000Z",
+    "crews": [
+      {
+        "slug": "rework-server",
+        "stage": 0,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "rework-server/**"
+        ],
+        "foreman": {
+          "name": "rework-server",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "reported",
+          "detail": "DONE",
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agentId": "a1b2c3d4e5f60010",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agent": "rework-server",
+          "event": "report",
+          "text": "rework-server reported DONE"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "rework-network",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "rework-network/**"
+        ],
+        "foreman": {
+          "name": "rework-network",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T11:56:40.000Z",
+          "agentId": "a1b2c3d4e5f60001",
+          "purpose": "Leads one truss crew.",
+          "task": "Splitting the network goal into builder tasks."
+        },
+        "members": [
+          {
+            "name": "rework-network-builder",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "tagged",
+            "detail": "working",
+            "ts": "2026-11-02T11:58:30.000Z",
+            "agentId": "a1b2c3d4e5f60002",
+            "purpose": "Builds the code a foreman task names, in the crew worktree.",
+            "task": "Building AgentCard and Wire in views/crews."
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T11:58:30.000Z",
+          "agent": "rework-network-builder",
+          "event": "tag",
+          "text": "rework-network-builder sent working"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null,
+        "eventsUnread": 2
+      },
+      {
+        "slug": "rework-chat",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "rework-chat/**"
+        ],
+        "foreman": {
+          "name": "rework-chat",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T11:58:20.000Z",
+          "agentId": "a1b2c3d4e5f60060",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:58:20.000Z",
+          "agent": "rework-chat",
+          "event": "spawn",
+          "text": "rework-chat spawned"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Rework the UI to the client design reference.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:10:00.000Z"
+      }
+    ],
+    "skipped": [
+      {
+        "file": "events.jsonl",
+        "line": 7,
+        "reason": "version"
+      },
+      {
+        "file": "events.jsonl",
+        "line": 9,
+        "reason": "version"
+      }
+    ]
+  },
+  "decisions": [],
+  "adrs": [],
+  "design": {
+    "planMd": null,
+    "architecture": null,
+    "images": []
+  },
+  "notices": []
+}

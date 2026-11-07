@@ -1,9 +1,10 @@
 // Entry point (ADR-0011 Decision 8): wires ui-state and ui-session for one repo and serves them on 127.0.0.1.
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const USAGE = 'usage: node ui/server/main.ts [--repo <path>] [--plugin <path>] [--truss-dir <path>] [--port <n>]';
+const USAGE = 'usage: node ui/server/main.ts [--repo <path>] [--plugin <path>] [--truss-dir <path>] [--claude-dir <path>] [--port <n>]';
 const uiDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 function oneLine(e: unknown): string {
@@ -16,15 +17,16 @@ function fail(code: number, msg: string): never {
 }
 
 function parseArgs(argv: string[]) {
-  const o: { repo?: string; plugin?: string; trussDir?: string; port: number } = { port: 0 };
+  const o: { repo?: string; plugin?: string; trussDir?: string; claudeDir?: string; port: number } = { port: 0 };
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i]!;
-    if (!['--repo', '--plugin', '--truss-dir', '--port'].includes(flag)) fail(2, `unknown argument ${flag}; ${USAGE}`);
+    if (!['--repo', '--plugin', '--truss-dir', '--claude-dir', '--port'].includes(flag)) fail(2, `unknown argument ${flag}; ${USAGE}`);
     const value = argv[i + 1];
     if (value === undefined || value.startsWith('--')) fail(2, `${flag} needs a value; ${USAGE}`);
     if (flag === '--repo') o.repo = value;
     else if (flag === '--plugin') o.plugin = value;
     else if (flag === '--truss-dir') o.trussDir = value;
+    else if (flag === '--claude-dir') o.claudeDir = value;
     else {
       if (!/^\d+$/.test(value) || Number(value) > 65535) fail(2, `--port must be an integer 0 to 65535; ${USAGE}`);
       o.port = Number(value);
@@ -51,8 +53,17 @@ const { createStore, trussDirFor } = await import('./state/index.ts');
 const { createSession } = await import('./session/index.ts');
 const { createServer } = await import('./http/index.ts');
 
-const store = createStore(trussDirFlag === undefined ? { repo } : { repo, trussDir: trussDirFlag });
-const session = createSession({ repo, pluginPath });
+const claudeDir = resolve(args.claudeDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'));
+const store = createStore(trussDirFlag === undefined ? { repo, pluginPath, claudeDir } : { repo, pluginPath, claudeDir, trussDir: trussDirFlag });
+// The run as the store holds it: a typed goal starts /truss:run only when no plan is live (ADR-0028 section 1).
+const liveRun = () => (store.snapshot().state as { run?: { version: number | null; crews: { slug: string }[] } | null }).run ?? null;
+const session = createSession({
+  repo,
+  pluginPath,
+  claudeDir,
+  hasPlan: () => { const r = liveRun(); return r !== null && r.version !== null; },
+  crewSlugs: () => liveRun()?.crews.map((c) => c.slug) ?? [],
+});
 let lastSessionId: string | null = null;
 session.subscribe((view) => {
   store.setSession(view);

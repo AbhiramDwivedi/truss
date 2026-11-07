@@ -1729,6 +1729,16 @@ function cmdAdmit(f: Flags): Obj {
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
   const a = admission(dir, plan, crew, 'admit', plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length)
   if (!a.admitted) throw refuse(a)
+  // ADR-0015 Decision 6: --label and --title together record the agent's card title for the UI
+  const label = str(f, 'label')
+  const title = str(f, 'title')
+  if (label !== undefined || title !== undefined) {
+    if (label === undefined || title === undefined) throw usage('--label and --title go together')
+    if (parseLabel(label) === undefined) throw usage(`--label ${label} is not a workflow label`)
+    const one = title.replace(/\s+/g, ' ').trim().slice(0, 120)
+    if (one === '') throw usage('--title is empty')
+    appendEvent(dir, { event: 'title', crew: slug, agent: label, label, title: one })
+  }
   return a
 }
 

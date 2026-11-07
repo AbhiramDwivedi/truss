@@ -1,0 +1,322 @@
+{
+  "v": 1,
+  "repo": "/work/demo",
+  "trussDir": {
+    "path": "/work/demo/.git/truss/rework",
+    "exists": true
+  },
+  "session": {
+    "status": "running",
+    "sessionId": "session-rework",
+    "model": "claude-opus-5-5",
+    "claudeCodeVersion": "3.0.0",
+    "permissionMode": "default",
+    "plugin": {
+      "name": "truss",
+      "version": "0.18.0",
+      "path": "/work/demo/plugins/truss",
+      "source": null
+    },
+    "usage": {
+      "costUsd": 23.48,
+      "models": {
+        "claude-opus-5-5": {
+          "inputTokens": 412330,
+          "outputTokens": 120345,
+          "cacheReadInputTokens": 9820113,
+          "cacheCreationInputTokens": 640221
+        },
+        "claude-sonnet-5-5": {
+          "inputTokens": 220118,
+          "outputTokens": 90411,
+          "cacheReadInputTokens": 4410982,
+          "cacheCreationInputTokens": 301771
+        }
+      },
+      "results": 3,
+      "at": "2026-11-02T11:59:30.000Z"
+    },
+    "backgroundTasks": [],
+    "error": null,
+    "queue": [],
+    "flow": [
+      {
+        "at": "2026-11-02T11:35:00.000Z",
+        "tool": "Agent",
+        "to": "rework-server",
+        "summary": "Start the server crew on the flow and session changes."
+      },
+      {
+        "at": "2026-11-02T11:45:00.000Z",
+        "tool": "SendMessage",
+        "to": "rework-chat",
+        "summary": "Ask the chat crew a question about the reply card."
+      },
+      {
+        "at": "2026-11-02T11:59:55.000Z",
+        "tool": "Agent",
+        "to": "rework-network",
+        "summary": "Build the network view to the design."
+      }
+    ]
+  },
+  "requests": [],
+  "transcript": [
+    {
+      "n": 1,
+      "role": "user",
+      "text": "Rework the UI to the client design reference.",
+      "ts": "2026-11-02T11:06:40.000Z",
+      "id": "msg-1",
+      "intent": "goal"
+    },
+    {
+      "n": 2,
+      "role": "assistant",
+      "text": "The plan has five crews in two stages. I am starting the first stage now.",
+      "ts": "2026-11-02T11:08:20.000Z",
+      "id": null,
+      "intent": null
+    },
+    {
+      "n": 3,
+      "role": "assistant",
+      "text": "Network crew is building; the chat crew has a question for you.",
+      "ts": "2026-11-02T11:59:00.000Z",
+      "id": null,
+      "intent": null
+    }
+  ],
+  "run": {
+    "goal": "Rework the UI to the client design reference.",
+    "version": 3,
+    "approval": "client",
+    "approvedAt": "2026-11-02T11:10:00.000Z",
+    "crews": [
+      {
+        "slug": "rework-server",
+        "stage": 0,
+        "verdict": "change",
+        "status": "merged",
+        "goal": null,
+        "owns": [
+          "rework-server/**"
+        ],
+        "foreman": {
+          "name": "rework-server",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "reported",
+          "detail": "DONE",
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agentId": "a1b2c3d4e5f60010",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:35:00.000Z",
+          "agent": "rework-server",
+          "event": "report",
+          "text": "rework-server reported DONE"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": {
+          "verdict": "PASS",
+          "file": "reports/rework-server/qc-1.md"
+        }
+      },
+      {
+        "slug": "rework-network",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "rework-network/**"
+        ],
+        "foreman": {
+          "name": "rework-network",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "spawned",
+          "detail": null,
+          "ts": "2026-11-02T11:56:40.000Z",
+          "agentId": "a1b2c3d4e5f60001",
+          "purpose": "Leads one truss crew.",
+          "task": "Splitting the network goal into builder tasks."
+        },
+        "members": [
+          {
+            "name": "rework-network-builder",
+            "type": "general-purpose",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "state": "tagged",
+            "detail": "working",
+            "ts": "2026-11-02T11:58:30.000Z",
+            "agentId": "a1b2c3d4e5f60002",
+            "purpose": "Builds the code a foreman task names, in the crew worktree.",
+            "task": "Building AgentCard and Wire in views/crews."
+          },
+          {
+            "name": "rework-network-qc",
+            "type": "truss:qc-engineer",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "state": "spawned",
+            "detail": null,
+            "ts": "2026-11-02T11:59:20.000Z",
+            "agentId": "a1b2c3d4e5f60003",
+            "purpose": "Rules on one truss crew's work, or on the integration branch in single merge mode.",
+            "task": null
+          }
+        ],
+        "latest": {
+          "ts": "2026-11-02T11:59:20.000Z",
+          "agent": "rework-network-qc",
+          "event": "spawn",
+          "text": "rework-network-qc spawned"
+        },
+        "estAgents": 4,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "rework-chat",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "rework-chat/**"
+        ],
+        "foreman": {
+          "name": "rework-chat",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "tagged",
+          "detail": "QUESTION",
+          "ts": "2026-11-02T11:58:00.000Z",
+          "agentId": "a1b2c3d4e5f60020",
+          "purpose": "Leads one truss crew.",
+          "task": "Waiting on the client about the reply card."
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:58:00.000Z",
+          "agent": "rework-chat",
+          "event": "tag",
+          "text": "rework-chat sent QUESTION"
+        },
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      },
+      {
+        "slug": "rework-docs",
+        "stage": 1,
+        "verdict": "change",
+        "status": "running",
+        "goal": null,
+        "owns": [
+          "rework-docs/**"
+        ],
+        "foreman": {
+          "name": "rework-docs",
+          "type": "truss:foreman",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "state": "stalled",
+          "detail": "14 min",
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agentId": "a1b2c3d4e5f60030",
+          "purpose": "Leads one truss crew.",
+          "task": null
+        },
+        "members": [],
+        "latest": {
+          "ts": "2026-11-02T11:59:00.000Z",
+          "agent": "rework-docs",
+          "event": "stall",
+          "text": "rework-docs stalled 14 min"
+        },
+        "estAgents": 3,
+        "stuck": {
+          "kind": "stalled",
+          "since": "2026-11-02T11:45:00.000Z",
+          "minutes": 14,
+          "detail": "rework-docs stalled 14 min"
+        },
+        "qc": null
+      },
+      {
+        "slug": "rework-page",
+        "stage": 2,
+        "verdict": "change",
+        "status": "planned",
+        "goal": null,
+        "owns": [
+          "rework-page/**"
+        ],
+        "foreman": null,
+        "members": [],
+        "latest": null,
+        "estAgents": 3,
+        "stuck": null,
+        "qc": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "run",
+        "goal": "Rework the UI to the client design reference.",
+        "approval": "client",
+        "approvedAt": "2026-11-02T11:10:00.000Z"
+      }
+    ],
+    "skipped": []
+  },
+  "decisions": [
+    {
+      "n": 3,
+      "run": "rework",
+      "text": "15:40 | mermaid is restyled, not allowed inline | CSP stays | none | followed"
+    }
+  ],
+  "adrs": [
+    {
+      "file": "0023-factory-floor-ui.md",
+      "title": "ADR-0023: Factory floor UI",
+      "status": "accepted, 2026-10-20",
+      "number": 23,
+      "date": "2026-10-20",
+      "decidedBy": "the client",
+      "links": [],
+      "summary": "Decides factory floor ui."
+    },
+    {
+      "file": "0028-the-ui-rework.md",
+      "title": "ADR-0028: The UI rework",
+      "status": "proposed, 2026-11-04",
+      "number": 28,
+      "date": "2026-11-04",
+      "decidedBy": "the client",
+      "links": [],
+      "summary": "Decides the ui rework."
+    }
+  ],
+  "design": {
+    "planMd": "# Plan\n\nFive crews in three stages.\n",
+    "architecture": {
+      "path": "docs/architecture.md",
+      "markdown": "# Architecture\n\nThe factory has a server, a state reducer and a web page.\n\n## Overview\n\nWork flows from the client to the PM, then to crews and agents.\n\n```mermaid\nflowchart LR\n  Client --> PM\n  PM --> Crew\n  Crew --> Agent\n```\n\n## Failure paths\n\nThis block does not parse on purpose.\n\n```mermaid\nflowchart LR\n  Client -->\n  PM ==>> [\n```\n\n## Change log\n\n- 2026-10-01: first draft, mentions the Zebra change-log entry.\n\n## History\n\n- v1 was a single page. The Quokka history paragraph.\n\n## Modules\n\nui-state reads the Truss dir. ui-server serves it.\n"
+    },
+    "images": []
+  },
+  "notices": []
+}

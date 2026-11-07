@@ -85,7 +85,114 @@ export const LIVE_STATES: ReadonlySet<Member['state']> = new Set(['spawned', 'ta
 export const DONE_STATES: ReadonlySet<Member['state']> = new Set(['reported'])
 export const FAILED_STATES: ReadonlySet<Member['state']> = new Set(['stalled', 'allowance-spent'])
 
-export const statusWord = (c: Crew): string => c.status ?? 'status unknown'
+/** `opus`, `sonnet`, the raw model id, or null when the model is unknown (the card then shows no badge). */
+export const modelKey = (m: string | null): string | null => (m && /opus/i.test(m) ? 'opus' : m && /sonnet/i.test(m) ? 'sonnet' : m || null)
+
+const NAME_ROLES: ReadonlySet<string> = new Set(['builder', 'tester', 'writer', 'runner', 'planner', 'ux'])
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** The role word in an agent name: its last segment, else the last earlier segment that is a role (`quotas-builder-cf12108d`). */
+function nameRole(name: string): string | null {
+  const segs = name.split('-').filter(Boolean).map((x) => x.toLowerCase())
+  if (segs.length < 2) return null
+  const last = segs.at(-1)!
+  if (NAME_ROLES.has(last) || ROLE_ORDER.includes(last)) return last
+  return [...segs.slice(1)].reverse().find((x) => NAME_ROLES.has(x) || ROLE_ORDER.includes(x)) ?? null
+}
+
+/** The role a non-truss agent type names by its last segment (`kit:builder`, `kit:test-writer`), else null. */
+const TYPE_ROLES: Readonly<Record<string, string>> = { builder: 'builder', tester: 'tester', 'test-writer': 'tester', writer: 'writer', reviewer: 'reviewer', scout: 'scout' }
+function typeRole(type: string | null | undefined): string | null {
+  if (!type || type.startsWith('truss:')) return null
+  return TYPE_ROLES[type.split(':').at(-1)!.toLowerCase()] ?? null
+}
+
+/** The agent card's role word (ADR-0028 section 6). */
+export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
+  const type = m.type ?? ''
+  if (type === 'truss:foreman' || type === 'workflow-crew') return 'Foreman'
+  if (type === 'truss:qc-engineer') return 'QC engineer'
+  if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
+  const typed = typeRole(m.type)
+  if (typed !== null) return sentence(typed)
+  const role = nameRole(m.name)
+  return role !== null && NAME_ROLES.has(role) ? sentence(role) : 'General purpose'
+}
+
+export const RUNNER_PURPOSE = 'Runs one check command for the crew.'
+
+/**
+ * A runner or an untyped general-purpose agent: it runs one check command for the crew. An agent with a real type
+ * (`kit:builder`, `truss:*`) is never a check run.
+ */
+export function isCheckRun(m: Pick<Member, 'type' | 'name'>): boolean {
+  const type = m.type ?? ''
+  if (type === 'workflow-crew' || type.startsWith('truss:') || typeRole(type) !== null) return false
+  const role = nameRole(m.name)
+  if (role === 'runner') return true
+  return (type === '' || type === 'general-purpose') && (role === null || !(NAME_ROLES.has(role) || ROLE_ORDER.includes(role)))
+}
+
+const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writer', 'resolver']
+
+/**
+ * The member list order: foreman first, then the named truss roles (builder, tester, ux, qc, stress, planning,
+ * writer, resolver), then the rest; check runs last, split off by the caller.
+ */
+export function orderAgents(agents: readonly Member[], foreman: Member | null): Member[] {
+  const rank = (m: Member): number => {
+    if (foreman ? m === foreman || m.name === foreman.name : false) return 0
+    if (m.type === 'truss:foreman' || m.type === 'workflow-crew') return 0
+    const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (typeRole(m.type) ?? nameRole(m.name) ?? '')
+    const i = ROLE_ORDER.indexOf(key)
+    return i >= 0 ? i + 1 : ROLE_ORDER.length + 1
+  }
+  return agents.map((m, i) => ({ m, i, r: rank(m) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.m)
+}
+
+const MARKER_DETAILS: ReadonlySet<string> = new Set(['working', 'idle', 'spawned', 'tagged', 'fetched', 'reported', 'done'])
+
+const BARE_MARKERS: ReadonlySet<string> = new Set([...MARKER_DETAILS, 'question', 'blocked', 'proposal'])
+
+export const REPORTED = 'Reported'
+export const REPORTED_PREFIX = 'Reported: '
+export const NO_TASK = 'No task recorded'
+export const NO_ACTIVITY = 'No activity yet'
+
+/** The crew's goal text, first line: crew.goal is a goal id (text in older runs); an id resolves through `goals`, never shows bare. */
+export function crewGoalText(crew: Pick<Crew, 'goal'>, goals: readonly { id: string; goal: string | null }[]): string | null {
+  const listed = crew.goal === null ? goals[0] : goals.find((g) => g.id === crew.goal)
+  const raw = listed !== undefined ? listed.goal : crew.goal
+  const first = raw?.split('\n').find((l) => l.trim() !== '')?.trim()
+  return first || null
+}
+
+/**
+ * The one task line: the task, else the foreman's crew goal, else a detail that is not a bare marker, else for a
+ * reported agent `Reported: <MARKER>` or `Reported`, else null (the card words the empty case).
+ */
+export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
+  if (m.task) return m.task
+  const isForeman = m.type === 'truss:foreman' || m.type === 'workflow-crew' || crew.foreman === m
+  if (isForeman) {
+    const g = crewGoalText(crew, goals)
+    if (g) return g
+  }
+  const d = m.detail?.trim()
+  if (d && !BARE_MARKERS.has(d.toLowerCase())) return d
+  if (m.state === 'reported') return d ? REPORTED_PREFIX + d.toUpperCase() : REPORTED
+  return null
+}
+
+/** 3 once reported or in a merged or dropped crew, 1 while spawned with no detail and no task, else 2. */
+export function stepOf(m: Member, crew?: Pick<Crew, 'status'>): 1 | 2 | 3 {
+  if (crew && (crew.status === 'merged' || crew.status === 'dropped')) return 3
+  if (m.state === 'reported') return 3
+  if (m.state === 'spawned' && !m.detail && !m.task) return 1
+  return 2
+}
+
+export const statusWord =(c: Crew): string => c.status ?? 'status unknown'
 
 /** The stalled agent's name: the crew's stalled member, else the first word of stuck.detail. */
 export function stalledAgent(c: Crew): string {

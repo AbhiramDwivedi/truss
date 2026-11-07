@@ -2,20 +2,23 @@
 // the run's crew branches built (through /api/image), and mermaid blocks as labelled source. App loads this
 // file with React.lazy, so marked is fetched only when the tab opens. Raw HTML in the markdown is escaped,
 // never passed through; links keep only web, mail and relative targets; markdown images show as words, since
-// the page may load only its own files.
-import { useMemo, useState } from 'react'
+// the page may load only its own files. Mermaid blocks are drawn as diagrams (R-38, ADR-0028 section 5): the
+// mermaid chunk is imported here and nowhere else, on the first render of a block, and a block that can't be
+// drawn shows its source. Only the latest architecture shows (R-39): change log, history and versions
+// sections are dropped before the markdown is rendered.
+import { useCallback, useMemo, useState } from 'react'
 import { Marked, type Tokens } from 'marked'
 import { ImageOff, RotateCw } from 'lucide-react'
 import { Button } from '../../components/ui/button.tsx'
 import type { DesignImage, RunState } from '../../store/types.ts'
 import { imageUrl } from '../rail/format.ts'
+import { MERMAID_CONFIG, MermaidBlock, type MermaidApi } from './MermaidBlock.tsx'
+import './mermaid.css'
 
 export interface DesignPanelProps {
   state: RunState | null
   now: number
 }
-
-export const MERMAID_LABEL = 'mermaid diagram (source)'
 
 function escapeHtml(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -27,6 +30,11 @@ function safeHref(href: string): boolean {
   return !/^[a-z][a-z0-9+.-]*:/i.test(h)
 }
 
+// The mermaid blocks of the document being parsed, in order. toHtml fills it; the code renderer below leaves a
+// marker per block, which Markdown swaps for a MermaidBlock. Raw HTML is escaped, so no text can forge a marker.
+let found: string[] = []
+const MARKER = /<div data-mermaid="(\d+)"><\/div>\n?/
+
 const marked = new Marked({
   gfm: true,
   renderer: {
@@ -36,7 +44,8 @@ const marked = new Marked({
     code({ text, lang }: Tokens.Code) {
       const word = String(lang || '').trim().split(/\s+/)[0]!.toLowerCase()
       if (word === 'mermaid') {
-        return `<figure><figcaption>${MERMAID_LABEL}</figcaption><pre tabindex="0"><code>${escapeHtml(text)}</code></pre></figure>\n`
+        found.push(text)
+        return `<div data-mermaid="${found.length - 1}"></div>\n`
       }
       return `<pre tabindex="0"><code>${escapeHtml(text)}</code></pre>\n`
     },
@@ -50,16 +59,53 @@ const marked = new Marked({
   },
 })
 
-/** HTML for `markdown`, or null when marked throws (the caller shows the text as it is). */
-function toHtml(markdown: string): string | null {
+/** A run of html, or (diagram set) the place of the mermaid block with that number in `sources`. */
+interface Piece {
+  html: string
+  diagram: number | null
+}
+interface Pieces {
+  parts: Piece[]
+  sources: string[]
+}
+
+/** The pieces for `markdown` in order, or null when marked throws (the caller shows the text as it is). */
+function toPieces(markdown: string): Pieces | null {
+  found = []
   try {
     // A wide table scrolls inside a focusable box, so a keyboard can scroll it too (axe scrollable-region-focusable).
     // Raw HTML in the markdown is escaped, so every <table> here is one marked wrote.
-    const html = marked.parse(String(markdown), { async: false }) as string
-    return html.replace(/<table>/g, '<div tabindex="0" data-table-scroll><table>').replace(/<\/table>/g, '</table></div>')
+    const html = (marked.parse(String(markdown), { async: false }) as string)
+      .replace(/<table>/g, '<div tabindex="0" data-table-scroll><table>')
+      .replace(/<\/table>/g, '</table></div>')
+    const cut = html.split(new RegExp(MARKER.source, 'g'))
+    const out: Piece[] = []
+    for (let i = 0; i < cut.length; i += 2) {
+      if (cut[i]) out.push({ html: cut[i]!, diagram: null })
+      if (cut[i + 1] !== undefined) out.push({ html: '', diagram: Number(cut[i + 1]) })
+    }
+    return { parts: out, sources: found }
   } catch {
     return null
   }
+}
+
+/** mermaid, imported once on the first block that needs it; a failed import is tried again on the next open. */
+let mermaidLoad: Promise<MermaidApi> | null = null
+function loadMermaid(): Promise<MermaidApi> {
+  if (mermaidLoad === null) {
+    mermaidLoad = import('mermaid')
+      .then((mod) => {
+        const m = mod.default
+        m.initialize({ ...MERMAID_CONFIG, flowchart: { ...MERMAID_CONFIG.flowchart } })
+        return m as MermaidApi
+      })
+      .catch((e: unknown) => {
+        mermaidLoad = null
+        throw e
+      })
+  }
+  return mermaidLoad
 }
 
 // Prose styles for marked's output, from the D2 type scale; Tailwind's preflight strips the browser's own.
@@ -111,23 +157,71 @@ export function firstCount(parts: string[], budget = FIRST_LINES): number {
   return n
 }
 
-function Markdown({ text }: { text: string }) {
+const HEADING_DROPPED = /\b(change ?log|history|versions?)\b/i
+
+/** The markdown without its change log, history and versions sections (R-39): each such heading goes, with
+ *  everything up to the next heading of the same or a higher level. Lines in code fences are never headings. */
+export function latestOnly(markdown: string): string {
+  const out: string[] = []
+  let fence: string | null = null
+  let dropping = 0 // the level of the heading being dropped, or 0
+  for (const line of String(markdown).split('\n')) {
+    const f = /^\s{0,3}(`{3,}|~{3,})/.exec(line)
+    if (f) fence = fence === null ? f[1]![0]! : fence === f[1]![0] ? null : fence
+    if (fence === null && !f) {
+      const h = /^\s{0,3}(#{1,6})\s+(.*)$/.exec(line)
+      if (h) {
+        const level = h[1]!.length
+        if (dropping > 0 && level <= dropping) dropping = 0
+        if (dropping === 0 && HEADING_DROPPED.test(h[2]!)) dropping = level
+      }
+    }
+    if (dropping === 0) out.push(line)
+  }
+  return out.join('\n')
+}
+
+export function Markdown({ text: raw }: { text: string }) {
+  const text = useMemo(() => latestOnly(raw), [raw])
   const parts = useMemo(() => sections(text), [text])
   const first = useMemo(() => firstCount(parts), [parts])
   const [whole, setWhole] = useState(false)
   const shownText = whole || first >= parts.length ? text : parts.slice(0, first).join('\n')
-  const html = useMemo(() => toHtml(shownText), [shownText])
+  const pieces = useMemo(() => toPieces(shownText), [shownText])
   const more = parts.length - first
-  if (html === null) {
+  // Each block reports once; the status line speaks when every block of the shown document has.
+  const [outcome, setOutcome] = useState<Record<number, boolean>>({})
+  const onDone = useCallback((i: number, drawn: boolean) => setOutcome((o) => (o[i] === drawn ? o : { ...o, [i]: drawn })), [])
+  if (pieces === null) {
     return (
       <pre tabIndex={0} className="overflow-x-auto rounded-ctl bg-secondary p-3 font-mono text-ui whitespace-pre-wrap text-fg">
         {text}
       </pre>
     )
   }
+  const total = pieces.sources.length
+  const settled = Array.from({ length: total }, (_, i) => outcome[i]).filter((v) => v !== undefined)
+  const failed = settled.filter((v) => !v).length
+  const status =
+    total === 0 || settled.length < total
+      ? ''
+      : failed === 0
+        ? `Diagrams drawn: ${total} of ${total}`
+        : `${failed} ${failed === 1 ? 'diagram' : 'diagrams'} couldn't be drawn`
   return (
     <>
-      <div className={prose} dangerouslySetInnerHTML={{ __html: html }} />
+      <div className={prose}>
+        {pieces.parts.map((p, i) =>
+          p.diagram === null ? (
+            <div key={i} dangerouslySetInnerHTML={{ __html: p.html }} />
+          ) : (
+            <MermaidBlock key={i} source={pieces.sources[p.diagram]!} index={p.diagram} total={total} load={loadMermaid} onDone={onDone} />
+          ),
+        )}
+      </div>
+      <p role="status" className="sr-only">
+        {status}
+      </p>
       {!whole && more > 0 && (
         <Button size="sm" variant="secondary" className="mt-3" onClick={() => setWhole(true)}>
           Show the whole document ({more} more {more === 1 ? 'section' : 'sections'})

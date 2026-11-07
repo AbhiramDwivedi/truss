@@ -19,7 +19,7 @@ export function d2Colour(name: string, theme: D2Theme): string {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
 }
 
-const SEND = /^(Send|Add goal|Send details|Send answer)$/
+const SEND = /^(Start run|Send to PM|Add as new goal)$/
 
 /** Asserts body `background-color` is `bg` and the move surface's is `move`, in the theme the page shows. */
 export async function expectD2Colours(page: Page, theme: D2Theme, within = { timeout: 5000 }): Promise<void> {

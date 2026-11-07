@@ -99,11 +99,12 @@ async function open(page: Page, rig: Rig) {
   await expect(page.getByRole('banner').getByRole('heading', { level: 1, name: 'Truss', exact: true })).toBeVisible(WITHIN)
 }
 // ADR-0018 section 10, by role and accessible name.
-const goalBox = (page: Page) => page.getByRole('textbox', { name: 'Goal or message', exact: true })
-const sendButton = (page: Page) => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: 'Send', exact: true })
+// ADR-0028 section 1: "Your goal" / "Start run" before a plan exists, "Message to the PM" / "Send to PM" after.
+const goalBox = (page: Page) => page.getByRole('textbox', { name: /^(Your goal|Message to the PM)$/ })
+const sendButton = (page: Page) => page.getByRole('form', { name: 'Message', exact: true }).getByRole('button', { name: /^(Start run|Send to PM)$/ })
 const questionCard = (page: Page) => page.getByRole('article', { name: /^Question from Claude: / })
 const permissionCard = (page: Page) => page.getByRole('article', { name: /^Permission request: / })
-const transcript = (page: Page) => page.getByRole('log', { name: 'Transcript', exact: true })
+const transcript = (page: Page) => page.getByRole('log', { name: 'Conversation with the PM', exact: true })
 
 test('R-18: after a keyboard answer to a question card, focus is on the next actionable element, never BODY', async ({ page }) => {
   await withRig({ session: baseState().session }, async (rig) => {
@@ -165,7 +166,7 @@ test('waiting with background tasks and no reply card: says agents still running
     transcript: [{ n: 1, role: 'assistant', text: resultText, ts: new Date().toISOString() }],
   }, async (rig) => {
     await open(page, rig)
-    await expect(page.getByRole('region', { name: 'Your move', exact: true }).getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
+    await expect(page.getByRole('banner').getByText('Agents still running; nothing needed from you')).toBeVisible(WITHIN)
     await expect(page.getByRole('button', { name: /^(Approve|Deny)$/ })).toHaveCount(0)
     await expect(transcript(page).getByText(resultText)).toBeVisible()
     const box = goalBox(page)

@@ -1,0 +1,46 @@
+# Truss architecture
+## Roles and who talks to whom
+## The run lifecycle
+### The Workflow path (ADR-0009)
+#### Resource-aware sizing (ADR-0015, proposed)
+## The client brief (ADR-0008)
+## On disk
+### `events.jsonl`
+### `decisions.md` grammar
+### `plan.json`
+## Hooks
+### Message rules
+### Agent calls
+### Workflow calls (ADR-0009)
+### Plan gates
+### Report capture
+### The foreman stop gate
+### Rework allowance and head guard
+### Seams
+### Fetch gate
+### Seams
+### retro's leftover details
+### The self-improving retro (ADR-0012)
+### Heartbeat and stalls
+### Idle foremen
+### Limit-reset wake
+### Decision times
+### `/truss`
+### Failing open
+## Local web UI
+### Module map
+### Seams
+### Answering a request
+### Gap fields
+### Rework fields
+### On disk
+### Principles: what binds `ui/`
+### Not verified yet
+## Repo layout (ADR-0013)
+### What moves
+### The two branches
+### Install flow
+### Seams the move pins
+## Plugin dependencies
+## Failure modes and recovery
+## Not verified yet

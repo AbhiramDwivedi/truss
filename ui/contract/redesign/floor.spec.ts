@@ -17,7 +17,7 @@ async function d2Shell(page: Page, theme: Theme, opts: { send?: boolean } = {}) 
   await expect(page.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false', LOAD)
   await expect(page.locator('body')).toHaveCSS('background-color', token('bg', theme), T)
   if (opts.send !== false) {
-    const send = page.getByRole('form', { name: 'Message' }).getByRole('button', { name: /^(Send|Add goal|Send details|Send answer)/ })
+    const send = page.getByRole('form', { name: 'Message' }).getByRole('button', { name: /^(Start run|Send to PM|Add as new goal|Send answer)/ })
     await expect(send, 'the composer send is the move surface when no card is open').toHaveCSS('background-color', token('move', theme), T)
   }
 }
@@ -38,7 +38,7 @@ async function animationNames(root: ReturnType<Page['getByRole']>, mode: 'self-a
 
 test.describe('floor', () => {
   for (const theme of THEMES) {
-    test(`stuck-crew (${theme}): the fail band, Why / How long / Next, the metrics link and the long slug`, async ({ browser }) => {
+    test(`stuck-crew (${theme}): the fail band, Why / How long / Next, Restart builder and the long slug`, async ({ browser }) => {
       const s = await scenario('stuck-crew')
       const o = await openState(browser, s, theme, DESKTOP)
       try {
@@ -46,21 +46,19 @@ test.describe('floor', () => {
         await d2Shell(page, theme)
         const stuck = s.fixture.run.crews.find((c: any) => c.stuck)
         expect(stuck.slug).toBe(s.apiSlug)
-        const crews = page.getByRole('region', { name: 'Crews' })
-        const line = crews.getByRole('button', { name: /stuck: stalled \d+ min/ })
+        // ADR-0028 section 10: the StuckCard sits inside the crew's card (an article named by its slug)
+        const crews = page.getByRole('region', { name: 'Build network' })
+        const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
         await expect(line).toHaveCount(1, LOAD)
-        if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
-        await expect(page.getByText(`Stuck, silent ${stuck.stuck.minutes}m`)).toBeVisible(T)
+        await expect(line.getByText('Stuck', { exact: true }).first()).toBeVisible(T)
+        // ADR-0028 section 9 and views/crews StuckCard: the Stuck word above plus Why / How long / Next replace "Stuck, silent Nm".
         for (const term of ['Why', 'How long', 'Next']) await expect(page.getByRole('term').filter({ hasText: new RegExp(`^${term}$`) })).toHaveCount(1, T)
-        const link = page.getByRole('region', { name: 'Live metrics' }).getByRole('link', { name: '1 crew stuck' })
-        await expect(link).toHaveAttribute('href', `#crew-${s.apiSlug}`, T)
-        await link.click()
         const restart = crews.getByRole('button', { name: 'Restart builder' })
         await expect(restart).toBeInViewport(T)
         // the stuck primary button is `surface` text on a `fail` fill, in both themes (4.70 light, 6.63 dark)
         await expect(restart, 'Restart builder is filled fail').toHaveCSS('background-color', token('fail', theme), T)
         await expect(restart, 'Restart builder text is surface, not a raw hex').toHaveCSS('color', token('surface', theme), T)
-        const long = crews.getByRole('button', { name: new RegExp(LONG_SLUG) })
+        const long = crews.getByRole('article', { name: new RegExp(LONG_SLUG) })
         expect(LONG_SLUG.length).toBe(80)
         await expect(long, 'the full 80-character slug is in the accessible name').toHaveAccessibleName(new RegExp(LONG_SLUG), T)
         expect(await o.problems()).toEqual([])
@@ -74,15 +72,13 @@ test.describe('floor', () => {
     try {
       const { page } = o
       await d2Shell(page, 'light')
-      const crews = page.getByRole('region', { name: 'Crews' })
-      const line = crews.getByRole('button', { name: /stuck: stalled \d+ min/ })
+      const crews = page.getByRole('region', { name: 'Build network' })
+      const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
       await expect(line).toHaveCount(1, LOAD)
-      if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
       const sends = () => s.iface.calls.filter((c) => c.kind === 'send') as any[]
       for (const label of ['Restart builder', 'Re-plan crew', 'Ask Claude']) {
         const before = sends().length
         const button = crews.getByRole('button', { name: label })
-        if (!(await button.isVisible()) && (await line.getAttribute('aria-expanded')) === 'false') await line.click()
         const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/message', LOAD)
         await button.click()
         const req = await posted
@@ -142,41 +138,43 @@ test.describe('floor', () => {
         await expect(page.getByRole('list', { name: 'Deliverables' }).getByText(/^Arrives when .+ merges\. Nothing to open yet\.$/).first()).toBeVisible(T)
         await expect(page.getByRole('dialog')).toHaveCount(0, T)
         await expect(page.getByRole('complementary', { name: /^Preview: / })).toBeVisible(T)
-        const crews = page.getByRole('region', { name: 'Crews' })
+        const crews = page.getByRole('region', { name: 'Build network' })
         expect(LONG_SLUG.length).toBe(80)
-        await expect(crews.getByRole('button', { name: new RegExp(LONG_SLUG) })).toHaveAccessibleName(new RegExp(LONG_SLUG), T)
+        await expect(crews.getByRole('article', { name: new RegExp(LONG_SLUG) })).toHaveAccessibleName(new RegExp(LONG_SLUG), T)
         expect(await o.problems()).toEqual([])
       } finally { await o.close(); await s.stop() }
     })
 
-    test(`live-counter (${theme}): a stale stamp reads "not updating" in signal-text, and Tasks done has no denominator`, async ({ browser }) => {
+    test(`live-counter (${theme}): Run metrics holds cost, tokens table, run time, agents started and crews done n of m, and no limit`, async ({ browser }) => {
       const s = await scenario('live-counter/stale')
       const o = await openState(browser, s, theme, DESKTOP)
       try {
         const { page } = o
         await d2Shell(page, theme)
-        const metrics = page.getByRole('region', { name: 'Live metrics' })
+        // ADR-0028 section 8 (R-43): Run metrics replaces Live metrics; values are derived in the client, so no stamp
+        const metrics = page.getByRole('region', { name: 'Run metrics' })
         await expect(metrics).toBeVisible(LOAD)
-        const stale = metrics.getByText(/as of \d\d:\d\d, not updating/)
-        await expect(stale).toBeVisible(T)
-        await expect(stale, 'the counter\'s stuck state is signal-text').toHaveCSS('color', token('signal-text', theme), T)
-        await expect(metrics.getByRole('term')).toHaveText(['Elapsed', 'Tokens', 'Spend', 'Agents', 'Crews merged', 'Tasks done'], T)
-        await expect(metrics.getByRole('definition').nth(5), 'gap f: a count, no denominator').not.toContainText('/', T)
-        await expect(page.getByText('needs a server change')).toHaveCount(0, T)
+        await expect(metrics.getByRole('term').filter({ hasText: /cost/i })).toHaveCount(1, T)
+        await expect(metrics.getByRole('term').filter({ hasText: /run time/i })).toHaveCount(1, T)
+        await expect(metrics.getByRole('term').filter({ hasText: /agents started/i })).toHaveCount(1, T)
+        await expect(metrics.getByRole('term').filter({ hasText: /crews done/i })).toHaveCount(1, T)
+        await expect(metrics.getByText(/\d+ of \d+/).first(), 'crews done reads n of m').toBeVisible(T)
+        await expect(metrics.getByText(/limit|budget|ceiling|of \$/i), 'no limit, budget, ceiling or "of $X"').toHaveCount(0, T)
+        await expect(metrics.getByText('not updating')).toHaveCount(0, T)
         expect(await o.problems()).toEqual([])
       } finally { await o.close(); await s.stop() }
     })
   }
 
-  test('live-counter: a fresh stamp reads "as of HH:MM" without "not updating"', async ({ browser }) => {
+  test('live-counter: Run metrics is the one metrics region and Live metrics is gone', async ({ browser }) => {
     const s = await scenario('live-counter')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
       const { page } = o
       await d2Shell(page, 'light')
-      const metrics = page.getByRole('region', { name: 'Live metrics' })
-      await expect(metrics.getByText(/as of \d\d:\d\d(?!, not updating)/).first()).toBeVisible(LOAD)
-      await expect(metrics.getByText('not updating')).toHaveCount(0, T)
+      await expect(page.getByRole('region', { name: 'Run metrics' })).toBeVisible(LOAD)
+      await expect(page.getByRole('region', { name: 'Live metrics' })).toHaveCount(0, T)
+      await expect(page.locator('#run-metrics'), 'the rail header summary links to #run-metrics').toHaveCount(1, T)
       expect(await o.problems()).toEqual([])
     } finally { await o.close(); await s.stop() }
   })
@@ -188,10 +186,8 @@ test.describe('floor', () => {
       try {
         const { page } = o
         await d2Shell(page, theme)
-        const crews = page.getByRole('region', { name: 'Crews' })
-        const line = crews.getByRole('button', { name: /stuck: stalled \d+ min/ })
-        await expect(line).toHaveCount(1, LOAD)
-        if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
+        const crews = page.getByRole('region', { name: 'Build network' })
+        await expect(crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })).toHaveCount(1, LOAD)
         const ask = crews.getByRole('button', { name: 'Ask Claude' })
         await expect(ask).toBeVisible(T)
         const moving = await animationNames(ask, 'card-of-button')
@@ -205,14 +201,14 @@ test.describe('floor', () => {
     })
   }
 
-  test('reduced motion: the running crew and the session ping stop under reduce', async ({ browser }) => {
+  test('reduced motion: the running crew wire and the session ping stop under reduce', async ({ browser }) => {
     const s = await scenario('crews-running')
     const o = await openState(browser, s, 'light', DESKTOP)
     try {
       const { page } = o
       await d2Shell(page, 'light')
-      const crews = page.getByRole('region', { name: 'Crews' })
-      const running = crews.getByRole('button', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
+      const crews = page.getByRole('region', { name: 'Build network' })
+      const running = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
       await expect(running).toBeVisible(LOAD)
       const page0 = await page.getByRole('banner').evaluate((el) => Array.from(el.ownerDocument.getElementsByTagName('*')).map((d) => getComputedStyle(d).animationName))
       expect(page0.some((n) => n !== 'none'), 'without reduce, running work moves (dash or ping)').toBe(true)

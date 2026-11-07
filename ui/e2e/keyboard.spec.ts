@@ -19,7 +19,8 @@ test.afterEach(async () => {
   iface = undefined
 })
 
-const crewLine = (page: Page, slug: string) => page.getByRole('button', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
+// ADR-0028 section 10: a crew card is an article named by its slug; it is not a button any more.
+const crewLine = (page: Page, slug: string) => page.getByRole('region', { name: 'Build network', exact: true }).getByRole('article', { name: new RegExp(`\\b${slug}\\b`, 'i') }).first()
 const isFocused = (l: Locator) => l.evaluate((el) => el === document.activeElement)
 
 // True when focus sits on a sibling of `l` in one arrow-key widget (radio group, tab list, listbox).
@@ -66,8 +67,9 @@ async function use(page: Page, t: Locator): Promise<void> {
 
 const messageBox = goalBox
 const status = (i: Iface, id: string) => i.requests().find((r) => r.id === id)
-const APPROVE = { name: 'Approve', exact: true } as const
-const DENY = { name: 'Deny', exact: true } as const
+// ADR-0028 section 2: reply card Approve and Deny carry a hint ("Sends: Approved."), so anchor the start only.
+const APPROVE = { name: /^Approve\b/ } as const
+const DENY = { name: /^Deny\b/ } as const
 
 test('R-19: html has lang="en" and the page has a title', async ({ page }) => {
   iface = await startInterface()
@@ -142,26 +144,27 @@ test('R-18: approve and deny a permission card with the keyboard', async ({ page
   await expect.poll(() => status(iface!, b)?.decision, WITHIN).toBe('deny')
 })
 
+// ADR-0028 section 2: Approve and Deny exist on a reply card only for an approval ask.
 test('R-18: approve and deny a reply card with the keyboard', async ({ page }) => {
   const run = rand()
   iface = await startInterface()
   await page.goto(iface.url)
-  const a = iface.reply({ text: `Plan ready ${run}. Approve?` })
+  const a = iface.reply({ text: `Plan ready ${run}. Approve?`, approvalAsk: true })
   await expect(cardOf(page, 'reply', `Plan ready ${run}`)).toBeVisible(LOAD)
   await use(page, cardOf(page, 'reply', `Plan ready ${run}`).getByRole('button', APPROVE))
   await expect.poll(() => status(iface!, a)?.decision, WITHIN).toBe('allow')
 
-  const b = iface.reply({ text: `Push ready ${run}. Approve?` })
+  const b = iface.reply({ text: `Push ready ${run}. Approve?`, approvalAsk: true })
   await expect(cardOf(page, 'reply', `Push ready ${run}`)).toBeVisible(WITHIN)
   await use(page, cardOf(page, 'reply', `Push ready ${run}`).getByRole('button', DENY))
   await expect.poll(() => status(iface!, b)?.decision, WITHIN).toBe('deny')
 })
 
-test('R-18: expand and collapse a crew line with Enter and Space, then open the decisions/ADRs and design panels', async ({ page }) => {
+test('R-18: open and close an agent disclosure with Enter and Space, then reach the decisions/ADRs timeline and the architecture', async ({ page }) => {
   const run = rand()
   const member = `quotas-builder-${run}`
   real = await startReal({
-    events: [spawnEvent('quotas', member)],
+    events: [member, ...Array.from({ length: 6 }, (_, i) => `${member}-x${i}`)].map((n) => spawnEvent('quotas', n)),
     trussFiles: { 'plan.md': `# Plan ${run}\n\nThe plan for run ${run}.\n` },
   })
   real.appendDecision(`- 10:00 | choose-${run}-store | because ${run} | checker: none | followed`)
@@ -169,31 +172,29 @@ test('R-18: expand and collapse a crew line with Enter and Space, then open the 
   const line = crewLine(page, 'quotas')
   await expect(line).toBeVisible(LOAD)
 
-  await reach(page, line)
-  await expect(line).toHaveAttribute('aria-expanded', 'false')
+  // ADR-0028 section 10, crews.test.ts:360 and rework network.spec.ts:82: a crew card shows 6 agent cards and a
+  // "Show n more agents" disclosure button for the rest; an agent card has no toggle unless its task text is cut.
+  await expect(line.getByRole('listitem').filter({ hasText: member }).first()).toBeVisible()
+  const disclosure = line.getByRole('button', { name: /^Show (\d+ more agents?|fewer agents)$/ })
+  await reach(page, disclosure)
   await page.keyboard.press('Enter')
-  await expect(line).toHaveAttribute('aria-expanded', 'true')
-  const members = page.getByRole('list', { name: 'quotas members', exact: true }).getByRole('listitem').filter({ hasText: member })
-  await expect(members).toBeVisible()
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
   await page.keyboard.press('Space')
-  await expect(line).toHaveAttribute('aria-expanded', 'false')
-  await expect(members).toBeHidden()
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
 
-  // Shift+Tab goes back to the line before; Tab brings the focus forward again.
+  // Shift+Tab goes back to the control before; Tab brings the focus forward again.
   const before = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))
   await page.keyboard.press('Shift+Tab')
   expect(await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))).not.toBe(before)
   await page.keyboard.press('Tab')
   expect(await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))).toBe(before)
 
-  // ADR-0018: the Run tablist is one Tab stop; Left and Right move and activate (reach uses the arrows).
-  const tab = (name: string) => page.getByRole('tablist', { name: 'Run', exact: true }).getByRole('tab', { name, exact: true })
-  await use(page, tab('Decisions and ADRs'))
-  await expect(tab('Decisions and ADRs')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByRole('tabpanel', { name: 'Decisions and ADRs', exact: true }).getByText(rx(`choose-${run}-store`)).first()).toBeVisible(WITHIN)
-  await use(page, tab('Design'))
-  await expect(tab('Design')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByText(rx(`The plan for run ${run}.`)).first()).toBeVisible(LOAD)
+  // ADR-0028 sections 3 and 10: there is no Run tablist. The timeline item and the Architecture deliverable are plain buttons.
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  // The timeline lists ADRs and events; a decisions.md line only raises the "N decisions" count (ADR-0028 section 3).
+  await expect(page.getByText(/\b[1-9]\d* decisions?$/).first()).toBeVisible(WITHIN)
+  await use(page, page.getByRole('region', { name: /deliverables/i }).getByRole('button', { name: /^Architecture/ }).first())
+  await expect(page.getByRole('figure', { name: /^Diagram \d+ of \d+$/ }).first()).toBeVisible(LOAD)
 
   // There are no modals: nothing opens as a dialog, and focus stays on a control.
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -233,8 +234,7 @@ test('R-18: every Tab stop of the live page has a visible focus style and an acc
   real = await startReal({ events: [spawnEvent('quotas', `quotas-builder-${run}`)] })
   await page.goto(real.url)
   await expect(crewLine(page, 'quotas')).toBeVisible(LOAD)
-  await crewLine(page, 'quotas').press('Enter')
-  await walk(page)
+  await walk(page) // ADR-0028 section 10: no expand step on crew cards
 })
 
 test('R-18: every Tab stop of the card page has a visible focus style and an accessible name', async ({ page }) => {

@@ -1,6 +1,6 @@
 # Truss local web UI
 
-`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live: brief questions and approvals as cards, one line per crew, decisions and ADRs, and a design panel. The design is in [ADR-0011](../plugins/truss/docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [plugins/truss/docs/architecture.md](../plugins/truss/docs/architecture.md).
+`ui/` runs Truss from a browser tab. One Node process hosts a Claude Code session with the Truss plugin loaded, and serves a page that shows the run live in two columns. The left rail holds the conversation with the PM and the record (decisions and ADRs); the right side holds the crew network, deliverables and run metrics, with what needs you on top. The design is in [ADR-0011](../plugins/truss/docs/adr/0011-local-web-ui.md) and the "Local web UI" section of [plugins/truss/docs/architecture.md](../plugins/truss/docs/architecture.md).
 
 The UI is not part of the plugin install: `claude plugin install truss@truss` installs only `plugins/truss/`. To get the UI, clone the repo:
 
@@ -105,10 +105,10 @@ This runs `node --test` on `ui/contract/*.check.ts` (state, session, http) and `
 
 ### Browser tests
 
-1. Install the Playwright browsers once. The tests use Chromium, Firefox and WebKit (`ui/e2e/browsers.spec.ts`):
+1. Install the Playwright browsers once. The tests use Chromium only (R-48: Chrome only) (`ui/e2e/browsers.spec.ts`):
 
    ```
-   npx --prefix ui playwright install chromium firefox webkit
+   npx --prefix ui playwright install chromium
    ```
 
 2. Run the tests:

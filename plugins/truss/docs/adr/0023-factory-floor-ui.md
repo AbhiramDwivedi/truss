@@ -78,7 +78,7 @@ Gap h: ship without. There are no crew control or pause endpoints.
   - `Ask Claude`: `Crew <slug> is stuck: <detail>. What is happening, and what do you suggest?`
 - For a crew whose `stuck.kind` is `idle-foreman`, the primary button is `Start a successor foreman` in place of `Restart <role>`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
   - `Start a successor foreman`: `Crew <slug> is stuck: <detail>. Start a successor foreman for it.`
-- The `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
+- Superseded by [ADR-0029](0029-real-data.md) section 5: `Pause build` and its Hint are removed. Before: the `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
 
 ### 2. The design system: tokens, type and icons
 

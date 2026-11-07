@@ -27,8 +27,8 @@ const permCard = (r: any) => permissionCard(r.toolName, r.input, r.options)
 // ---- helpers -------------------------------------------------------------------------------------------
 
 // ADR-0018: a request card is an `article` named `Question from Claude: <header>`, `Permission request: <tool>`
-// or `Reply needed`. An open card holds its buttons; an answered one keeps its name and loses them.
-const ANY_CARD = /^(Question from Claude: |Permission request: |Reply needed$)/
+// `The PM replied` or `Approval needed` (ADR-0028 section 2; was `Reply needed`). An open card holds its buttons; an answered one keeps its name and loses them.
+const ANY_CARD = /^(Question from Claude: |Permission request: |The PM replied$|Approval needed$)/
 // The open card that holds `text` and a button matching `controls`.
 function openCard(page: Page, text: RegExp | string, controls: RegExp): Locator {
   const hasText = typeof text === 'string' ? rx(text) : text
@@ -40,9 +40,12 @@ function cardHolding(page: Page, ...texts: Array<RegExp | string>): Locator {
   for (const t of texts) l = l.filter({ hasText: typeof t === 'string' ? rx(t) : t })
   return l.first()
 }
-const APPROVE = /^Approve$/
-const DENY = /^Deny$/
+// ADR-0028 section 2: the reply card button names carry a hint ("Sends: Approved."), so anchor the start only.
+const APPROVE = /^Approve\b/
+const DENY = /^Deny\b/
 const SUBMIT = /^Submit answers$/
+const SEND_REPLY = /^Send reply$/ // ADR-0028 section 2
+const YOUR_REPLY = { name: 'Your reply', exact: true } as const // ADR-0028 section 2
 const ANSWERED = /answered|approved|allowed|denied|replied/i
 const MESSAGE_WITH_ANSWER = { name: 'Message with your answer', exact: true } as const
 
@@ -305,6 +308,8 @@ test.describe('R-7 permission cards', () => {
       ] as const
       const reqs = cards.map(([reason], i) => wrapRequest(permCard({ toolName: 'Bash', input: { command: `echo ${reason}-${i}` }, options: { description: `Cancel ${reason}` } }) as any, { status: 'cancelled', cancelReason: reason }))
       iface.emit({ requests: reqs })
+      // Answered and cancelled requests the page did not just answer sit in one closed disclosure.
+      await page.getByText(/\d+ earlier requests? answered/).click()
       for (const [reason, words] of cards) {
         const c = cardHolding(page, `Cancel ${reason}`)
         await expect(c).toBeVisible(WITHIN)
@@ -323,7 +328,7 @@ test.describe('R-7 reply cards', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const tag = rand()
-      iface.reply({ text: `Plan is ready ${tag}. Approve?`, isError: true, backgroundTasks: 3 })
+      iface.reply({ text: `Plan is ready ${tag}. Approve?`, isError: true, backgroundTasks: 3, approvalAsk: true })
       const card = openCard(page, rx(tag), APPROVE)
       await expect(card).toBeVisible(WITHIN)
       await expect(card).toContainText(/error/i)
@@ -335,17 +340,21 @@ test.describe('R-7 reply cards', () => {
   for (const [name, decision, button, message, sent] of [
     ['approve', 'allow', APPROVE, '', 'Approved.'],
     ['deny', 'deny', DENY, '', 'Not approved.'],
-    ['approve with a message', 'allow', APPROVE, 'but mind the tests', 'Approved.\n\nbut mind the tests'],
-    ['deny with a message', 'deny', DENY, 'use a smaller plan', 'Not approved.\n\nuse a smaller plan'],
+    // ADR-0028 section 2: with text in the box, "Send reply" sends the text instead of Approved. / Not approved.
+    // (ReplyCard hint "Sends your text instead of Approved. or Not approved."); Approve and Deny still send their own words.
+    ['approve with a message', 'message', SEND_REPLY, 'but mind the tests', 'but mind the tests'],
+    ['deny with a message', 'message', SEND_REPLY, 'use a smaller plan', 'use a smaller plan'],
   ] as const) {
     test(`R-7, R-15: reply card ${name} posts the decision and reaches SessionControl.answer within 1 s`, async ({ page }) => {
       await withIface({}, async (iface) => {
         await open(page, iface)
         const tag = rand()
-        const id = iface.reply({ text: `Push now? ${tag}` })
+        const id = iface.reply({ text: `Push now? ${tag}`, approvalAsk: true })
         const card = openCard(page, rx(tag), button)
         await expect(card).toBeVisible(WITHIN)
-        if (message) await card.getByRole('textbox', MESSAGE_WITH_ANSWER).fill(message)
+        await expect(card).toHaveAccessibleName('Approval needed') // ADR-0028 section 2
+        await expect(card).toContainText(name.startsWith('approve') ? 'Sends: Approved.' : 'Sends: Not approved.')
+        if (message) await card.getByRole('textbox', YOUR_REPLY).fill(message)
         const t0 = Date.now()
         await card.getByRole('button', { name: button }).click()
         const call = await nextCall(iface, 'answer', 0)
@@ -361,12 +370,35 @@ test.describe('R-7 reply cards', () => {
     })
   }
 
+  // ADR-0028 section 2 (R-47): a turn that is not an approval ask gets a reply form, with no Approve and no Deny.
+  test('R-47: a reply card for a turn that is not an approval ask is "The PM replied" with Send reply and no Approve or Deny', async ({ page }) => {
+    await withIface({}, async (iface) => {
+      await open(page, iface)
+      const tag = rand()
+      const text = `Nothing is waiting on approval. Give me something new. ${tag}`
+      const id = iface.reply({ text, approvalAsk: false })
+      const card = openCard(page, rx(tag), SEND_REPLY)
+      await expect(card).toBeVisible(WITHIN)
+      await expect(card).toHaveAccessibleName('The PM replied')
+      await expect(card.getByRole('button', { name: APPROVE })).toHaveCount(0)
+      await expect(card.getByRole('button', { name: DENY })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: APPROVE })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: DENY })).toHaveCount(0)
+      const reply = `Add CSV export ${tag}`
+      await card.getByRole('textbox', YOUR_REPLY).fill(reply)
+      await card.getByRole('button', { name: SEND_REPLY }).click()
+      const call = await nextCall(iface, 'answer', 0)
+      expect(call.id).toBe(id)
+      expect(call.body).toEqual({ decision: 'message', message: reply })
+    })
+  })
+
   test('R-7: a message typed in the box while a reply card is open answers that card', async ({ page }) => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       const tag = rand()
-      iface.reply({ text: `Shall I go on? ${tag}` })
-      await expect(openCard(page, rx(tag), APPROVE)).toBeVisible(WITHIN)
+      iface.reply({ text: `Shall I go on? ${tag}`, approvalAsk: false })
+      await expect(openCard(page, rx(tag), SEND_REPLY)).toBeVisible(WITHIN)
       const typed = `Yes, go on ${tag}`
       const t0 = Date.now()
       await goalBox(page).fill(typed)
@@ -378,6 +410,7 @@ test.describe('R-7 reply cards', () => {
       expect(req.status).toBe('answered')
       expect(req.decision).toBe('message')
       expect(req.message).toBe(typed)
+      await page.getByText(/\d+ earlier requests? answered/).click()
       await expect(cardHolding(page, rx(tag), ANSWERED)).toBeVisible(WITHIN)
     })
   })
@@ -392,15 +425,16 @@ test.describe('goal and message box', () => {
       const typed = `Build the thing ${rand()}`
       const box = goalBox(page)
       await expect(box).toBeVisible()
-      // D2 (ADR-0023): the box lives in the Composer, the form named Message, not in Your move.
-      await expect(page.getByRole('form', { name: 'Message', exact: true }).getByRole('textbox', { name: 'Goal or message', exact: true })).toBeVisible()
-      await expect(yourMove(page).getByRole('textbox', { name: 'Goal or message', exact: true })).toHaveCount(0)
+      // ADR-0028 section 1: with no plan the box is "Your goal" and the button "Start run"; the box is not in Your move.
+      await expect(page.getByRole('textbox', { name: 'Your goal', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeVisible()
+      await expect(yourMove(page).getByRole('textbox', { name: 'Your goal', exact: true })).toHaveCount(0)
       const posted = page.waitForRequest((r) => r.url().endsWith('/api/message') && r.method() === 'POST')
       const t0 = Date.now()
       await box.fill(typed)
       await sendButton(page).click()
       const req = await posted
-      expect(req.postDataJSON()).toEqual({ text: typed })
+      expect(req.postDataJSON()).toEqual({ text: typed, intent: 'goal' }) // ADR-0028 section 1: no plan sends intent goal
       const call = await nextCall(iface, 'send', 0)
       expect(call.at - t0).toBeLessThan(1000)
       expect(call.text).toBe(typed)
@@ -489,10 +523,14 @@ test.describe('header', () => {
     await withIface({}, async (iface) => {
       await open(page, iface)
       iface.setSession({ model: 'claude-opus-5-5', status: 'running', sessionId: 'sess-1' })
-      await expect(banner(page)).toContainText('claude-opus-5-5', WITHIN)
-      iface.setSession({ model: 'claude-haiku-5-5' })
-      await expect(banner(page)).toContainText('claude-haiku-5-5', WITHIN)
+      // ADR-0028 section 8: the model is no longer in the banner; the rail's run context shows it below the lg
+      // breakpoint (views/rail/RunContext.tsx), so the viewport is narrowed.
+      await page.setViewportSize({ width: 800, height: 900 })
       await expect(banner(page)).not.toContainText('claude-opus-5-5')
+      await expect(page.getByText('claude-opus-5-5', { exact: true }).first()).toBeVisible(WITHIN)
+      iface.setSession({ model: 'claude-haiku-5-5' })
+      await expect(page.getByText('claude-haiku-5-5', { exact: true }).first()).toBeVisible(WITHIN)
+      await expect(page.getByText('claude-opus-5-5', { exact: true })).toHaveCount(0)
     })
   })
 
@@ -528,14 +566,17 @@ test.describe('header', () => {
       await open(page, iface)
       const u = usage()
       iface.setSession({ model: 'claude-opus-5-5', status: 'waiting', usage: u })
+      // ADR-0028 section 8: the model and token usage moved to Run metrics ("Tokens by model" table); the banner
+      // keeps a summary link "$<cost> · <time>" to #run-metrics.
       const b = banner(page)
-      await expect(b).toContainText('claude-haiku-5-5', WITHIN)
-      await expect(b).toContainText('claude-opus-5-5')
+      const tokens = page.getByRole('region', { name: 'Tokens by model', exact: true })
+      await expect(tokens).toContainText('claude-haiku-5-5', WITHIN)
+      await expect(tokens).toContainText('claude-opus-5-5')
       // 0.5544791 USD, however it is rounded.
-      await expect(b).toContainText(/\$?\s?0\.55/)
+      await expect(b.getByRole('link', { name: /\$0\.55/ })).toBeVisible()
       // Output tokens of the opus entry (2865), with or without a thousands separator or a k suffix.
-      await expect(b).toContainText(/2,?865|2\.9\s?k/i)
-      const text = (await b.innerText()).toLowerCase()
+      await expect(tokens).toContainText(/2,?865|2\.9\s?k/i)
+      const text = (await b.innerText()).toLowerCase() + (await tokens.innerText()).toLowerCase()
       for (const word of ['limit', 'ceiling', 'budget', 'remaining', 'quota', 'cap ']) expect(text, word).not.toContain(word)
       expect(text).not.toMatch(/\bof \$?\d/)
       // A later result replaces the totals; nothing is summed.
