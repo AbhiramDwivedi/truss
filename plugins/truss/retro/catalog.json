@@ -190,7 +190,8 @@
       "fix": "Send any QC finding that needs a change to an acceptance-test file to a tester fix member, and leave tester-owned files out of the builder files-you-may-change list. Green re-routes a fix builder's BLOCKED or QUESTION naming a tester file to a tester fix member and runs testsBackstop after each green fix (ADR-0027 F-70).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-70",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": null
       }
     },
     {
@@ -236,7 +237,8 @@
       "fix": "The PM logs only through `factory.ts decide --dir <D> --line \"...\"`, which stamps the time and appends, never through Edit, so no edit has to match text that the stamping changes (ADR-0027 F-73).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-73",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": null
       }
     },
     {
@@ -336,7 +338,8 @@
       "fix": "qcPrompt carries the member foreground line and agents/qc-engineer.md says the same (ADR-0027 F-72).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-72",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": null
       }
     },
     {
@@ -351,7 +354,8 @@
       "fix": "runFactory resolves F.dir against F.repo, admit fails closed with 'admission check failed:', and factory.ts refuses a relative --dir outside start (ADR-0027 F-67).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-67",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": null
       }
     },
     {
@@ -366,7 +370,8 @@
       "fix": "A PreToolUse hook refuses a main-session git push or merge whose command does not gate on scrub with && (ADR-0027 F-74).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-74",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": null
       }
     }
   ]

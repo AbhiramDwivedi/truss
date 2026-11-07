@@ -13,7 +13,25 @@ export const KINDS = [
   'architecture decision',
 ] as const
 
-export type FixedBy = { finding: string; date: string }
+/** `version`: the plugin version the fix shipped in; null = merged but unreleased; absent = legacy entry (treated as shipped). */
+export type FixedBy = { finding: string; date: string; version?: string | null }
+
+const SEMVER = /^\d+\.\d+\.\d+$/
+
+/** 1 when a is newer than b, -1 when older, 0 when equal. Both are x.y.z. */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] > pb[i] ? 1 : -1
+  return 0
+}
+
+/** Did the fix reach a session that ran plugin version `ran` (null = unknown)? Unreleased: never. Legacy (no version key): yes. Unknown ran: yes, since a recurrence cannot be ruled out. */
+export function fixShipped(fixedBy: FixedBy, ran: string | null): boolean {
+  if (fixedBy.version === null) return false
+  if (fixedBy.version === undefined || ran === null) return true
+  return compareVersions(ran, fixedBy.version) >= 0
+}
 export type Probe = { kind: 'command'; run: string } | { kind: 'file'; path: string }
 export type Entry = {
   id: string
@@ -81,7 +99,8 @@ function checkEntry(e: unknown, at: number): Entry {
   if (e.fixedBy !== null) {
     const f = e.fixedBy
     if (!isObj(f)) throw new Error(`${where}: fixedBy must be null or {finding, date}`)
-    onlyKeys(f, ['finding', 'date'], `${where}.fixedBy`)
+    onlyKeys(f, ['finding', 'date', 'version'], `${where}.fixedBy`)
+    if ('version' in f && f.version !== null && !(typeof f.version === 'string' && SEMVER.test(f.version))) throw new Error(`${where}: fixedBy.version must be null or x.y.z`)
     if (!nonEmpty(f.finding)) throw new Error(`${where}: fixedBy.finding must be a non-empty string`)
     if (!realDate(f.date)) throw new Error(`${where}: fixedBy.date must be YYYY-MM-DD`)
   }
