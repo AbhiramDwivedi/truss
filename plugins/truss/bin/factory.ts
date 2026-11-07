@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -2141,7 +2141,307 @@ function idleMs(p: string): number {
   }
 }
 
-type Outcome = { merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
+// ADR-0030: retiring member worktrees. A branch whose commits the target lacks is kept as a ref under ARCHIVE_PREFIX/<run id>/<branch>
+// before it is deleted; archive refs whose commit is older than ARCHIVE_KEEP_MS are pruned at finish.
+export const ARCHIVE_PREFIX = 'refs/truss/archive'
+export const ARCHIVE_KEEP_MS = 30 * 86400000
+export const STOP_GRACE_MS = 2000
+type Wt = { path: string; branch: string | undefined; locked: boolean }
+type RetireWhy = 'merged' | 'superseded' | 'dropped' | 'failed'
+const within = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
+const realOr = (p: string): string => {
+  try {
+    return flat(realpathSync(p))
+  } catch {
+    return flat(p)
+  }
+}
+
+// A worktree's `git status --porcelain` entries split in two: links are untracked symlinks that point into the main checkout but
+// outside the worktree (the worktrees plugin links ui/node_modules that way), which are no work; real is everything else.
+export function worktreeChanges(wt: string, mainTop: string): { real: string[]; links: string[] } {
+  const r = run(wt, ['status', '--porcelain', '-z', '--untracked-files=all'])
+  const out = { real: [] as string[], links: [] as string[] }
+  if (r.status !== 0) return { real: [r.err || 'git status failed'], links: [] }
+  const top = realOr(mainTop)
+  const self = realOr(wt)
+  for (const e of r.out.split('\0').filter((x) => x !== '')) {
+    const rel = e.slice(3)
+    if (e.startsWith('?? ')) {
+      const full = `${wt}/${rel.replace(/\/$/, '')}`
+      try {
+        if (lstatSync(full).isSymbolicLink()) {
+          const to = flat(path.resolve(path.dirname(full), readlinkSync(full)))
+          if (within(to, top) && !within(to, self) && !within(to, flat(wt))) {
+            out.links.push(full)
+            continue
+          }
+        }
+      } catch {
+        // unreadable: counted as real
+      }
+    }
+    out.real.push(rel === '' ? e : rel)
+  }
+  return out
+}
+
+// The processes whose cwd is inside root (Linux /proc; none elsewhere), skipping this process and its ancestors. Each is stoppable
+// when the run started it (Claude Code sets CLAUDECODE=1 for every command it runs) or it is orphaned (its parent is init or a
+// systemd user manager); any other is someone's live process.
+export function processesIn(root: string): { pid: number; stoppable: boolean }[] {
+  if (process.platform !== 'linux' || !existsSync('/proc')) return []
+  const r = realOr(root)
+  const ppidOf = (pid: number): number => {
+    try {
+      const s = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      return Number(s.slice(s.lastIndexOf(')') + 2).split(' ')[1])
+    } catch {
+      return 0
+    }
+  }
+  const mine = new Set<number>()
+  for (let p = process.pid; p > 1 && !mine.has(p); p = ppidOf(p)) mine.add(p)
+  const out: { pid: number; stoppable: boolean }[] = []
+  let names: string[] = []
+  try {
+    names = readdirSync('/proc').filter((n) => /^\d+$/.test(n))
+  } catch {
+    return out
+  }
+  for (const n of names) {
+    const pid = Number(n)
+    if (mine.has(pid)) continue
+    let cwd: string
+    try {
+      cwd = flat(readlinkSync(`/proc/${n}/cwd`))
+    } catch {
+      continue
+    }
+    if (!within(cwd, r)) continue
+    const ppid = ppidOf(pid)
+    let parent = ''
+    try {
+      parent = readFileSync(`/proc/${ppid}/comm`, 'utf8').trim()
+    } catch {
+      // parent gone
+    }
+    let ours = false
+    try {
+      ours = readFileSync(`/proc/${n}/environ`, 'utf8').split('\0').includes('CLAUDECODE=1')
+    } catch {
+      // not readable: not ours
+    }
+    out.push({ pid, stoppable: ours || ppid === 1 || parent === 'systemd' })
+  }
+  return out
+}
+
+// True while pid runs (a zombie counts as gone).
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+  try {
+    const s = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return s.slice(s.lastIndexOf(')') + 2, s.lastIndexOf(')') + 3) !== 'Z'
+  } catch {
+    return existsSync('/proc') ? false : true
+  }
+}
+
+// Stops one pid: SIGTERM, then SIGKILL once STOP_GRACE_MS passes. Returns the signal that ended it, or undefined when it outlived both.
+export function stopPid(pid: number, graceMs = STOP_GRACE_MS): 'SIGTERM' | 'SIGKILL' | undefined {
+  const waitGone = (ms: number): boolean => {
+    const end = Date.now() + ms
+    while (running(pid)) {
+      if (Date.now() > end) return false
+      sleepSync(50)
+    }
+    return true
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return running(pid) ? undefined : 'SIGTERM'
+  }
+  if (waitGone(graceMs)) return 'SIGTERM'
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // gone between the checks
+  }
+  return waitGone(1000) ? 'SIGKILL' : undefined
+}
+
+type RetireCtx = { dir: string; repo: string; target: string; mainTop: string }
+// Retires one worktree and its branch, or says why it stays: locked, a live process someone else runs inside it, or real changes.
+// Processes the run started (or orphans) inside it are stopped first, and the main-checkout links unlinked so git removes it
+// without --force. A branch tip the target lacks is archived first. One retire event per retirement, one stop event per pid.
+function retireWorktree(x: RetireCtx, w: Wt, o: { crew: string; run: string; why: RetireWhy }): string | undefined {
+  if (w.branch === undefined) return 'detached'
+  if (w.locked) return 'locked'
+  const live = existsSync(w.path) ? processesIn(w.path) : []
+  const others = live.filter((p) => !p.stoppable)
+  if (others.length > 0) return `live process ${others.map((p) => p.pid).join(', ')}`
+  if (existsSync(w.path)) {
+    const ch = worktreeChanges(w.path, x.mainTop)
+    if (ch.real.length > 0) return 'dirty'
+    for (const p of live) {
+      const sig = stopPid(p.pid)
+      appendEvent(x.dir, { event: 'stop', crew: o.crew, agent: w.branch, pid: p.pid, signal: sig ?? null, worktree: w.path })
+      if (sig === undefined) return `live process ${p.pid}`
+    }
+    for (const l of ch.links) {
+      try {
+        unlinkSync(l)
+      } catch {
+        // git remove reports it
+      }
+    }
+    if (run(x.repo, ['worktree', 'remove', w.path]).status !== 0) return 'dirty'
+  } else run(x.repo, ['worktree', 'prune'])
+  return retireBranch(x, w.branch, { ...o, worktree: w.path })
+}
+// Archives (when the target lacks its tip) and deletes one branch; undefined on success, else why it stays.
+function retireBranch(x: RetireCtx, branch: string, o: { crew: string; run: string; why: RetireWhy; worktree: string | null }): string | undefined {
+  const tip = run(x.repo, ['rev-parse', '--verify', '-q', `refs/heads/${branch}^{commit}`]).out
+  if (tip === '') return 'no branch'
+  const inTarget = run(x.repo, ['merge-base', '--is-ancestor', tip, `refs/heads/${x.target}`]).status === 0
+  const archive = inTarget ? null : `${ARCHIVE_PREFIX}/${o.run}/${branch}`
+  if (archive !== null && run(x.repo, ['update-ref', archive, tip]).status !== 0) return 'archive failed'
+  if (run(x.repo, ['branch', '-D', branch]).status !== 0) return 'branch delete failed'
+  const why = o.why === 'merged' && !inTarget ? 'superseded' : o.why
+  appendEvent(x.dir, { event: 'retire', crew: o.crew, agent: branch, run: o.run, branch, worktree: o.worktree, reason: why, archive })
+  return undefined
+}
+// Drops archive refs whose commit is older than ARCHIVE_KEEP_MS.
+function pruneArchive(repo: string, now = Date.now()): void {
+  const r = run(repo, ['for-each-ref', '--format=%(refname) %(committerdate:unix)', `${ARCHIVE_PREFIX}/`])
+  if (r.status !== 0) return
+  for (const l of r.out.split('\n')) {
+    const [ref, at] = l.split(' ')
+    if (ref !== undefined && ref !== '' && Number(at) * 1000 < now - ARCHIVE_KEEP_MS) run(repo, ['update-ref', '-d', ref])
+  }
+}
+
+// The run dir of run id under the transcripts root, else under any session of the same project (<proj>/<session>/subagents/workflows/<id>).
+function runDirFor(tdir: string, id: string): string | undefined {
+  const root = path.dirname(tdir)
+  if (existsSync(`${root}/${id}/journal.jsonl`)) return `${root}/${id}`
+  const parts = root.split('/')
+  if (parts.length < 4 || parts[parts.length - 1] !== 'workflows' || parts[parts.length - 2] !== 'subagents') return undefined
+  const proj = parts.slice(0, -3).join('/')
+  try {
+    for (const s of readdirSync(proj)) if (existsSync(`${proj}/${s}/subagents/workflows/${id}/journal.jsonl`)) return `${proj}/${s}/subagents/workflows/${id}`
+  } catch {
+    // no project dir
+  }
+  return undefined
+}
+// Worktree basename -> crew slug for a run's agents, from the first cwd in each agent transcript (its first 64 KiB).
+function ownersOf(runDir: string): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const a of runOf(runDir).agents) {
+    const slug = parseLabel(a.label)?.slug
+    if (slug === undefined || !existsSync(a.transcript)) continue
+    let head = ''
+    try {
+      const fd = openSync(a.transcript, 'r')
+      const buf = Buffer.alloc(65536)
+      head = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8')
+      closeSync(fd)
+    } catch {
+      continue
+    }
+    const m = /"cwd":"([^"]+)"/.exec(head)
+    if (m?.[1] !== undefined) out.set(path.basename(flat(m[1]).replace(/\/+$/, '')), slug)
+  }
+  return out
+}
+
+// ADR-0030: the finish sweep. Every wf_<run>-<n> member worktree (and branch with no worktree left) whose crew is terminal is retired:
+// merged now (reason merged, or superseded when the target lacks its tip), dropped, or failed (rework allowance spent now). The crew
+// is the one the run's agent transcript names for that worktree, else the run's only crew in the spawn events. Other member
+// worktrees keep the 0.19.0 rule, run only when a crew merged: this run's own, or an older run's idle an hour, once merged and clean.
+// A dropped crew's own worktree and branch truss-<slug> go too. Returns what stayed.
+function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal: Map<string, RetireWhy>, merged: string[]): { path: string; branch: string; why: string }[] {
+  const left: { path: string; branch: string; why: string }[] = []
+  const events = existsSync(`${x.dir}/events.jsonl`) ? jsonLines(`${x.dir}/events.jsonl`) : []
+  const crewsOfRun = new Map<string, Set<string>>()
+  for (const e of events) {
+    if (e.event !== 'spawn' || typeof e.by !== 'string' || !e.by.startsWith('workflow:') || typeof e.crew !== 'string') continue
+    const id = e.by.slice('workflow:'.length)
+    if (!crewsOfRun.has(id)) crewsOfRun.set(id, new Set())
+    crewsOfRun.get(id)?.add(e.crew)
+  }
+  const owners = new Map<string, Map<string, string>>()
+  const ownerOf = (id: string, base: string): string | undefined => {
+    // only runs this truss dir recorded: another goal's run may use the same slug
+    if (id !== runId && !crewsOfRun.has(id)) return undefined
+    if (!owners.has(id)) {
+      const d = runDirFor(tdir, id)
+      owners.set(id, d === undefined ? new Map() : ownersOf(d))
+    }
+    const named = owners.get(id)?.get(base)
+    if (named !== undefined) return named
+    const only = crewsOfRun.get(id)
+    return only !== undefined && only.size === 1 ? [...only][0] : undefined
+  }
+  const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
+  const pathRe = new RegExp(`(^|/)${idRe}-\\d+$`)
+  const memberRun = (branch: string): string | undefined => /^worktree-(.+)-\d+$/.exec(branch)?.[1]
+  const checkedOut = new Set<string>()
+  for (const w of worktreesOf(x.repo)) {
+    if (w.branch === undefined) continue
+    checkedOut.add(w.branch)
+    const ours = branchRe.test(w.branch) && pathRe.test(w.path)
+    const old = OLD_WF_BRANCH.test(w.branch) && OLD_WF_PATH.test(w.path)
+    if (!ours && !old) continue
+    const id = ours ? runId : (memberRun(w.branch) as string)
+    if (!ours && path.basename(w.path) !== w.branch.slice('worktree-'.length)) continue
+    const crew = ownerOf(id, path.basename(w.path))
+    const why = crew === undefined ? undefined : terminal.get(crew)
+    if (why !== undefined && crew !== undefined) {
+      // an older run's member of a crew that is terminal now: that run is over for this crew, so no idle wait
+      const kept = retireWorktree(x, w, { crew, run: id, why })
+      if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
+      continue
+    }
+    if (merged.length === 0 || (!ours && idleMs(w.path) < OLD_WF_IDLE_MS)) continue
+    const isMerged = [...merged.map((s) => `truss-${s}`), x.target].some((b) => run(x.repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${b}`]).status === 0)
+    if (w.locked) left.push({ path: w.path, branch: w.branch, why: 'locked' })
+    else if (!isMerged) left.push({ path: w.path, branch: w.branch, why: 'unmerged' })
+    else {
+      const kept = retireWorktree(x, w, { crew: crew ?? merged[0] as string, run: id, why: 'merged' })
+      if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
+    }
+  }
+  // member branches whose worktree is already gone
+  const heads = run(x.repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
+  for (const b of heads.status === 0 ? heads.out.split('\n') : []) {
+    if (b === '' || checkedOut.has(b) || !OLD_WF_BRANCH.test(b)) continue
+    const id = memberRun(b) as string
+    const crew = ownerOf(id, b.slice('worktree-'.length))
+    const why = crew === undefined ? undefined : terminal.get(crew)
+    if (why !== undefined && crew !== undefined) retireBranch(x, b, { crew, run: id, why, worktree: null })
+  }
+  // a dropped crew's own worktree and branch
+  for (const [crew, why] of terminal) {
+    if (why !== 'dropped') continue
+    const b = `truss-${crew}`
+    const w = worktreesOf(x.repo).find((v) => v.branch === b)
+    const kept = w !== undefined ? retireWorktree(x, w, { crew, run: runId, why }) : checkedOut.has(b) ? undefined : run(x.repo, ['rev-parse', '--verify', '-q', `refs/heads/${b}`]).status === 0 ? retireBranch(x, b, { crew, run: runId, why, worktree: null }) : undefined
+    if (kept !== undefined && w !== undefined) left.push({ path: w.path, branch: b, why: kept })
+  }
+  pruneArchive(x.repo)
+  return left
+}
+
+type Outcome ={ merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling, audits: Audit[], fails: number): Outcome {
@@ -2206,24 +2506,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     if (run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/truss-${slug}`]).status === 0) run(repo, ['worktree', 'remove', w.path])
   }
   run(repo, ['worktree', 'remove', wt])
-  // ADR-0021 Decision 7: this run's own wf_<id>-<digits> worktrees (branch worktree-<id>-<digits>, path ending <id>-<digits>), removed without --force
-  // once merged; one that is locked, unmerged or dirty stays and is reported, never refused on.
-  const runId = path.basename(flat(need(f, 'transcript')).replace(/\/+$/, ''))
-  const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
-  const pathRe = new RegExp(`(^|/)${idRe}-\\d+$`)
-  const left: { path: string; branch: string; why: string }[] = []
-  for (const w of worktreesOf(repo)) {
-    if (w.branch === undefined || w.path === wt) continue
-    const ours = branchRe.test(w.branch) && pathRe.test(w.path)
-    // an older run's member worktree (wf_*) is cleaned too, but only once it has sat untouched for an hour, so a live run's fresh worktree stays
-    if (!ours && !(OLD_WF_BRANCH.test(w.branch) && OLD_WF_PATH.test(w.path) && idleMs(w.path) >= OLD_WF_IDLE_MS)) continue
-    const merged = [`truss-${slug}`, target].some((b) => run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${b}`]).status === 0)
-    const why = w.locked ? 'locked' : !merged ? 'unmerged' : run(w.path, ['status', '--porcelain']).out !== '' ? 'dirty' : undefined
-    if (why === undefined && run(repo, ['worktree', 'remove', w.path]).status === 0) run(repo, ['branch', '-D', w.branch])
-    else left.push({ path: w.path, branch: w.branch, why: why ?? 'dirty' })
-  }
-  return { merged: true, ...(left.length > 0 ? { left } : {}) }
+  // ADR-0021 Decision 7 and ADR-0030: the run's member worktrees are retired by sweepMembers once every crew has had its turn
+  return { merged: true }
 }
 
 // ADR-0026 item 56: when the repo finish merged into is the plugin's own repo, one warning per plugin agents/*.md the merges
@@ -2373,6 +2657,13 @@ function cmdFinish(f: Flags): Obj {
     else out.refused.push({ slug: c.slug, why: r.refused ?? 'refused' })
   }
   if (out.merged.length > 0 && targetBefore.status === 0) out.warnings.push(...agentFileWarnings(repo, targetBefore.out, settings.target))
+  // ADR-0030: retire the member worktrees and branches of every crew that is terminal now
+  const terminal = new Map<string, RetireWhy>()
+  for (const c of loadPlan(dir).crews) if (isObj(c) && typeof c.slug === 'string' && c.status === 'dropped') terminal.set(c.slug, 'dropped')
+  for (const r of out.refused) if (typeof r.slug === 'string' && String(r.why).startsWith('rework allowance spent')) terminal.set(r.slug, 'failed')
+  for (const s of out.merged) terminal.set(s, 'merged')
+  const mainTop = worktreesOf(repo)[0]?.path ?? repo
+  out.leftWorktrees.push(...sweepMembers({ dir, repo, target: settings.target, mainTop }, tdir, wfRun.id, terminal, out.merged))
   // each merged crew's sweep reports what it left; a later crew's sweep may have removed it, and the same one is listed per pass.
   // Report each still-present worktree once.
   const present = new Set(worktreesOf(repo).map((w) => w.path))
