@@ -4,6 +4,8 @@ Status: proposed, 2026-10-29. Written by the design crew `intake-design` (a mid-
 
 Amended 2026-10-30, for the client's ruling (decisions.md, 19:51): "Approvals are not a mandatory step. If there is a reason for human oversight, ask for approval only then". A goal's `approval` is `"client"` only when a client trigger of run/SKILL.md section 4 applies to it, and `"auto"` otherwise, whether or not the goal has a stage-0 crew. The schema row for `goals[].approval`, the amend refusal on `approval` against stage 0, and the first Client decision below are changed to match. The code has no such refusal (`hooks/intake.ts:41-42` checks only that `approval` is `auto` or `client`). The per-crew `after` field (gate 6) was not approved and is not built: `plan.schema.json` has no `after`, and `gateOf` (`hooks/register.ts:331`) has no gate for it. The `after` text below is the original design, not what shipped.
 
+Amended 2026-11-07 (truss 0.19.0, retro F-9): the hook that stamped `decisions.md` no longer rewrites an Edit or Write of it. It refuses the call and names `factory.ts decide`, which stamps and appends each line.
+
 VERDICT: change. The interface that can't take the work is `plan.json` with its plan-file route and gates (`docs/plan.schema.json`; `hooks/register.ts` `Plan`, `planVerdict`, `planLines`, `keepReason`, `routePlanFiles`). It holds one goal, has no way to append crews once `approvedAt` is set, and runs one global stage sequence, so a goal added mid-run either waits for every crew already in flight or is hand-edited into a stage it doesn't belong to.
 
 ## Context

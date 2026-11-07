@@ -2,6 +2,7 @@
 
 Status: accepted, 2026-10-27
 Amended by ADR-0012 (the retro may read transcripts; P24 no longer binds the retro).
+Amended 2026-11-07 (truss 0.19.0, retro F-9): the hook that stamped `decisions.md` no longer rewrites an Edit or Write of it. It refuses the call and names `factory.ts decide`, which stamps and appends each line.
 Proposed on 2026-10-26 by foundry run 2's design crew, for foundry 0.4.0. It applies repo [ADR-0012](claude-ops/0012-extension-framework.md) and was accepted with it on 2026-10-27.
 
 ## Context
