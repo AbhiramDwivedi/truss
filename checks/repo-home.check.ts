@@ -34,7 +34,8 @@ describe('repo-home hygiene', () => {
   it('.gitignore lists the hygiene lines in order', () => {
     const lines = txt('.gitignore').split('\n').map((s) => s.trim())
     let at = -1
-    for (const l of ['__pycache__/', '*.pyc', 'node_modules/', '.claude/worktrees/', '.claude/settings.local.json', '**/.claude-plugin/types/']) {
+    // 'node_modules' has no trailing slash so it also ignores the ui/node_modules symlink in worktrees
+    for (const l of ['__pycache__/', '*.pyc', 'node_modules', '.claude/worktrees/', '.claude/settings.local.json', '**/.claude-plugin/types/']) {
       const i = lines.indexOf(l)
       assert.ok(i >= 0, `.gitignore lacks ${l}`)
       assert.ok(i > at, `.gitignore lacks ${l} after the previous line`)
