@@ -248,9 +248,9 @@ t('u3 entry-ux 1: plan.json ux true gives entry.ux true, and a crew with neither
   assert.deepEqual(plain.members, {})
 })
 
-t('u3 entry-ux 2: a non-empty ## UX section sets entry.ux, also when plan.json says ux false', () => {
+t('u3 entry-ux 2: a non-empty ## UX section sets entry.ux, unless plan.json says ux false (F-12: false wins)', () => {
   assert.equal(startEntry(startWorld(crew('x'), { ux: 'Follow ui/DESIGN.md. Screens: list and detail.' })).ux, true)
-  assert.equal(startEntry(startWorld(crew('x', { ux: false }), { ux: 'Follow ui/DESIGN.md.' })).ux, true)
+  assert.equal(startEntry(startWorld(crew('x', { ux: false }), { ux: 'Follow ui/DESIGN.md.' })).ux, false)
 })
 
 t('u3 entry-ux 3: an empty ## UX section or one that starts with none does not set entry.ux', () => {
