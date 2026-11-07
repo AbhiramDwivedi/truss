@@ -9,12 +9,12 @@ import { promisify } from 'node:util'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const run = promisify(execFile)
 const ROOT = process.env.COMPOSE_ROOT ?? execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-const OPS = process.env.CLAUDE_OPS_ROOT ?? '/home/abd/Projects/claude-ops'
+const OPS = process.env.CLAUDE_OPS_ROOT ?? join(homedir(), 'Projects', 'claude-ops')
 const txt = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const rd = (p: string) => JSON.parse(txt(p))
 const ID = ['-c', 'user.name=compose', '-c', 'user.email=compose@invalid']
