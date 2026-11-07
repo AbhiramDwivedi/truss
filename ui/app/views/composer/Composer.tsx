@@ -57,7 +57,7 @@ export function Composer({ state, now }: ComposerProps) {
   const base = useId()
   const flags = usePageFlags()
   const [text, setText] = useState('')
-  const [choice, setChoice] = useState<Choice>('message')
+  const [picked, setChoice] = useState<Choice | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
@@ -75,12 +75,14 @@ export function Composer({ state, now }: ComposerProps) {
   // useConnection has no server snapshot, and the view tests render on the server; assume live there.
   const offline = useSyncExternalStore(pageStore().subscribe, pageStore().getConnection, () => 'live') !== 'live'
   const empty = text.trim() === ''
-  const asGoal = !planned || choice === 'goal'
+  // Before a run the composer defaults to New goal (a goal starts /truss:run); once planned it defaults to Message.
+  const choice: Choice = picked ?? (planned ? 'message' : 'goal')
+  const asGoal = choice === 'goal'
   const lastEntry = state?.transcript[state.transcript.length - 1]
   const working = state?.session.status === 'running' && lastEntry?.role === 'user'
 
-  const sendName = !planned ? 'Start run' : choice === 'goal' ? 'Add as new goal' : 'Send to PM'
-  const SendIcon = !planned ? Play : choice === 'goal' ? Plus : ArrowUp
+  const sendName = !planned && choice === 'goal' ? 'Start run' : choice === 'goal' ? 'Add as new goal' : 'Send to PM'
+  const SendIcon = !planned && choice === 'goal' ? Play : choice === 'goal' ? Plus : ArrowUp
   const hintId = `${base}-hint`
   const alertId = `${base}-alert`
   const stuck = stage === 'stuck' && error === null
@@ -90,7 +92,7 @@ export function Composer({ state, now }: ComposerProps) {
   if (expired) hint = EXPIRED_HINT
   else if (offline) hint = OFFLINE_HINT
   else if (cardOpen) hint = CARD_OPEN_HINT
-  else if (!planned) hint = empty ? TYPE_FIRST : START_HINT
+  else if (!planned && choice === 'goal') hint = empty ? TYPE_FIRST : START_HINT
   else hint = choice === 'goal' ? GOAL_HINT : MESSAGE_HINT
 
   useEffect(() => {
@@ -117,7 +119,7 @@ export function Composer({ state, now }: ComposerProps) {
       // Clear only what was sent: anything typed while the send was on its way stays in the box.
       setText((cur) => (cur.startsWith(sent) ? cur.slice(sent.length) : cur))
       if (box.current && box.current.value === sent) box.current.style.height = ''
-      if (planned && choice === 'goal') setChoice('message')
+      if (planned && choice === 'goal') setChoice(null)
       return
     }
     if (tokenDead) return
@@ -154,38 +156,36 @@ export function Composer({ state, now }: ComposerProps) {
       }}
     >
       <label htmlFor={GOAL_BOX_ID} className="text-meta font-medium text-fg">
-        {planned ? 'Message to the PM' : 'Your goal'}
+        {planned || choice === 'message' ? 'Message to the PM' : 'Your goal'}
       </label>
 
-      {planned && (
-        <div
-          role="radiogroup"
-          aria-label="Send as"
-          className="inline-flex max-w-full items-center gap-0.5 self-start overflow-x-auto rounded-ctl bg-secondary p-0.5 no-scrollbar"
-        >
-          {CHOICES.map((c, i) => {
-            const on = c.value === choice
-            return (
-              <button
-                key={c.value}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                data-state={on ? 'checked' : 'unchecked'}
-                tabIndex={on ? 0 : -1}
-                onClick={() => setChoice(c.value)}
-                onKeyDown={(e) => moveChoice(e, i)}
-                className={cn(
-                  triggerLook,
-                  'h-8 pointer-coarse:h-11 data-[state=checked]:bg-surface data-[state=checked]:text-fg data-[state=checked]:shadow-e1 data-[state=checked]:ring-1 data-[state=checked]:ring-border',
-                )}
-              >
-                <span className="min-w-0 truncate">{c.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div
+        role="radiogroup"
+        aria-label="Send as"
+        className="inline-flex max-w-full items-center gap-0.5 self-start overflow-x-auto rounded-ctl bg-secondary p-0.5 no-scrollbar"
+      >
+        {CHOICES.map((c, i) => {
+          const on = c.value === choice
+          return (
+            <button
+              key={c.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              data-state={on ? 'checked' : 'unchecked'}
+              tabIndex={on ? 0 : -1}
+              onClick={() => setChoice(c.value)}
+              onKeyDown={(e) => moveChoice(e, i)}
+              className={cn(
+                triggerLook,
+                'h-8 pointer-coarse:h-11 data-[state=checked]:bg-surface data-[state=checked]:text-fg data-[state=checked]:shadow-e1 data-[state=checked]:ring-1 data-[state=checked]:ring-border',
+              )}
+            >
+              <span className="min-w-0 truncate">{c.label}</span>
+            </button>
+          )
+        })}
+      </div>
 
       <InputGroup>
         <Textarea
@@ -195,7 +195,7 @@ export function Composer({ state, now }: ComposerProps) {
           aria-describedby={alertText ? alertId : hintId}
           aria-invalid={error ? true : undefined}
           rows={3}
-          placeholder={planned ? 'Ask the PM, or add a detail' : 'Describe the goal, for example: add CSV export'}
+          placeholder={planned || choice === 'message' ? 'Ask the PM, or add a detail' : 'Describe the goal, for example: add CSV export'}
           className="max-h-[40vh] resize-y focus-visible:outline-2 focus-visible:outline-(--focus) focus-visible:-outline-offset-2"
           value={text}
           disabled={expired}
@@ -236,7 +236,14 @@ export function Composer({ state, now }: ComposerProps) {
           <span id={alertId} role="alert" className="min-w-0 [overflow-wrap:anywhere]">
             {alertText}
           </span>
-          <Button type="button" variant="secondary" size="sm" className="pointer-coarse:min-h-11" disabled={busy && !stuck} onClick={() => void send(true)}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="pointer-coarse:min-h-11"
+            disabled={busy && !stuck}
+            onClick={() => void send(true)}
+          >
             Try again
           </Button>
         </div>
