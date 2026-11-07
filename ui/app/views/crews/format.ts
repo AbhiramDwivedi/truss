@@ -159,14 +159,25 @@ export const REPORTED_PREFIX = 'Reported: '
 export const NO_TASK = 'No task recorded'
 export const NO_ACTIVITY = 'No activity yet'
 
+/** The crew's goal text, first line: crew.goal is a goal id (text in older runs); an id resolves through `goals`, never shows bare. */
+export function crewGoalText(crew: Pick<Crew, 'goal'>, goals: readonly { id: string; goal: string | null }[]): string | null {
+  const listed = crew.goal === null ? goals[0] : goals.find((g) => g.id === crew.goal)
+  const raw = listed !== undefined ? listed.goal : crew.goal
+  const first = raw?.split('\n').find((l) => l.trim() !== '')?.trim()
+  return first || null
+}
+
 /**
  * The one task line: the task, else the foreman's crew goal, else a detail that is not a bare marker, else for a
  * reported agent `Reported: <MARKER>` or `Reported`, else null (the card words the empty case).
  */
-export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>): string | null {
+export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
   if (m.task) return m.task
   const isForeman = m.type === 'truss:foreman' || m.type === 'workflow-crew' || crew.foreman === m
-  if (isForeman && crew.goal) return crew.goal
+  if (isForeman) {
+    const g = crewGoalText(crew, goals)
+    if (g) return g
+  }
   const d = m.detail?.trim()
   if (d && !BARE_MARKERS.has(d.toLowerCase())) return d
   if (m.state === 'reported') return d ? REPORTED_PREFIX + d.toUpperCase() : REPORTED
