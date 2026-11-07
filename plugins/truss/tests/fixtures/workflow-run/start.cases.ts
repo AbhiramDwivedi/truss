@@ -274,7 +274,7 @@ test('start (workflow crew): sets running, makes the worktree and branch from th
   const { v, ts, ...rest } = spawns[0]
   assert.equal(v, 1)
   assert.ok(Number.isFinite(Date.parse(ts)))
-  assert.deepEqual(rest, { event: 'spawn', crew: 'x', agent: 'x', agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
+  assert.deepEqual(rest, { event: 'spawn', crew: 'x', agent: 'x', agentId: null, type: 'workflow-crew', model: 'opus', effort: 'medium', by: 'factory' })
   assert.deepEqual(validateEvent(spawns[0]), [])
   assert.ok(readFileSync(`${env.dir}/decisions.md`, 'utf8').includes('x'), 'a decision line was appended')
   assertEventsValid(env)
