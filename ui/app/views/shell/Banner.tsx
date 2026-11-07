@@ -115,7 +115,8 @@ export function Banner({ state, now, connection }: BannerProps) {
       <div className="flex h-8 min-w-0 items-center gap-2">
         <img src="/favicon.svg" alt="" width={24} height={24} className="size-6 shrink-0" />
         <h1 className="text-title font-semibold text-fg">Truss</h1>
-        <p className="min-w-0 truncate text-meta text-muted">Software factory</p>
+        {/* Two lines inside the 32 px row when the rail is narrow, never cut off. */}
+        <p className="min-w-0 text-meta leading-4 text-muted">Software factory</p>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
             size="sm"
@@ -151,6 +152,7 @@ export function Banner({ state, now, connection }: BannerProps) {
       <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-1 lg:flex-nowrap">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {working ? <LivePing tone="ok" /> : <Dot tone={bad ? 'fail' : session?.status === 'waiting' ? 'signal' : 'neutral'} />}
+          <span className="shrink-0 text-ui text-muted">PM session:</span>
           <p role="status" aria-label="Session" title={words} className={bad ? 'min-w-0 truncate text-ui text-fail-text' : 'min-w-0 truncate text-ui text-fg'}>
             {words}
           </p>

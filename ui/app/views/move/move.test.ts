@@ -202,7 +202,7 @@ test('YourMove: a stuck crew gets no Your move card', async () => {
 
 // ---- Composer --------------------------------------------------------------------------------------------
 const isChecked = (n: N) => n.a['aria-checked'] ?? (n.a.checked !== undefined ? 'true' : 'false')
-test('Composer: no plan, nothing sent has a visible Your goal label, a disabled Start run, the hint and no radiogroup', async () => {
+test('Composer: no plan, nothing sent has a visible Your goal label, a disabled Start run, the hint and a Send as radiogroup defaulting to New goal', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: fx('empty/state'), now: NOW })
   const form = find(v, 'form', 'Message')
   assert.equal(form.length, 1)
@@ -210,13 +210,27 @@ test('Composer: no plan, nothing sent has a visible Your goal label, a disabled 
   const box = find(form[0]!, 'textbox', 'Your goal')
   assert.equal(box.length, 1)
   assert.ok(all(form[0]!, (n) => n.tag === 'label' && tidy(text(n)) === 'Your goal').length >= 1, 'the label is visible')
-  assert.equal(find(form[0]!, 'radiogroup').length, 0)
-  assert.equal(find(form[0]!, 'radio').length, 0)
+  assert.equal(find(form[0]!, 'radiogroup', 'Send as').length, 1)
+  const radios = find(form[0]!, 'radio')
+  assert.deepEqual(radios.map((n) => tidy(text(n))), ['Message', 'New goal'])
+  assert.deepEqual(radios.map((n) => n.a['aria-checked']), ['false', 'true'])
   const send = find(form[0]!, 'button', 'Start run')
   assert.equal(send.length, 1)
   assert.notEqual(send[0]!.a.disabled, undefined, 'Start run is disabled while the box is empty')
   assert.match(tidy(text(form[0]!)), /Type a goal first\./)
   assert.doesNotMatch(tidy(text(form[0]!)), /Nothing sent yet|Goal or message/)
+})
+test('YourMove: answered requests collapse into one closed disclosure and the heading shows only when something waits', async () => {
+  const s = fx('approval/state')
+  s.requests = s.requests.map((q) => ({ ...q, status: 'answered', answeredAt: q.createdAt }))
+  const v = await mount('move/YourMove', 'YourMove', { state: s, now: NOW })
+  const det = all(v, (n) => n.tag === 'details')
+  assert.equal(det.length, 1)
+  assert.equal(det[0]!.a.open, undefined, 'closed by default')
+  assert.match(tidy(text(all(det[0]!, (n) => n.tag === 'summary')[0]!)), /^\d+ earlier requests? answered$/)
+  assert.equal(find(v, 'heading', 'Your move').length, 0, 'no heading with nothing waiting')
+  const open = await mount('move/YourMove', 'YourMove', { state: fx('approval/state'), now: NOW })
+  assert.equal(find(open, 'heading', 'Your move').length, 1)
 })
 test('Composer: a plan or a sent goal shows Message to the PM, Send as radios and Send to PM', async () => {
   const v = await mount('composer/Composer', 'Composer', { state: fx('follow-up/state'), now: NOW })

@@ -31,7 +31,7 @@ test.describe('moves', () => {
         await expect(move).toHaveCount(0, T)
         await expect(page.getByText('Nothing needs you right now')).toHaveCount(0, T)
         const form = page.getByRole('form', { name: 'Message' })
-        await expect(form.getByRole('radiogroup', { name: 'Send as' })).toHaveCount(0, T)
+        await expect(form.getByRole('radio', { name: 'New goal' }), 'New goal is the default before a run').toBeChecked(T)
         // ADR-0028 section 1: with no plan the composer is "Your goal" and the button "Start run"
         await expect(form.getByRole('textbox', { name: 'Your goal', exact: true })).toBeVisible(T)
         const send = form.getByRole('button', { name: 'Start run', exact: true })

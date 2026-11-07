@@ -113,6 +113,10 @@ test('Banner: h1 Truss, status Session, notifications and theme buttons, no limi
   assert.match(theme[0]!.a['aria-pressed'] ?? '', /^(true|false)$/)
   assert.doesNotMatch(tidy(text(b)), /\b(limit|budget|quota)/i)
 })
+test('Banner: the session line carries a PM session label', async () => {
+  const b = await mount('shell/Banner', 'Banner', { state: fx('empty/state'), now: NOW, connection: 'live' })
+  assert.match(tidy(text(b)), /PM session:\s*idle/)
+})
 test('Banner: Session reads connecting before the first snapshot', async () => {
   const b = await mount('shell/Banner', 'Banner', { state: null, now: NOW, connection: 'connecting' })
   assert.equal(tidy(text(find(b, 'status', 'Session')[0]!)), 'connecting')

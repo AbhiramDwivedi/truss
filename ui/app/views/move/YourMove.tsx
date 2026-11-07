@@ -152,69 +152,85 @@ export function YourMove({ state, now }: YourMoveProps) {
     </Card>
   )
 
+  const settledCard = (r: Request) => {
+    const { head, lines } = settledWords(local[r.id]?.cancelled ? { ...r, status: 'cancelled' } : r, local[r.id]?.sent ?? null)
+    const when = hhmm(r.answeredAt)
+    return (
+      <Card key={r.id} variant="default" density="compact" asChild>
+        <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <span className="font-medium text-fg">{cardName(r)}</span>
+            {when && <span className="font-mono text-meta text-muted tabular-nums">{when}</span>}
+          </div>
+          {r.kind === 'permission' && (r.title || r.summary) && (
+            <p className="min-w-0 text-fg break-words">
+              {r.title}
+              {r.title && r.summary ? ' ' : ''}
+              {r.summary && <code className="rounded-chip bg-secondary px-1.5 py-0.5 font-mono text-meta break-all">{r.summary}</code>}
+            </p>
+          )}
+          {r.kind === 'reply' && r.text && <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>}
+          <p role="status" className="min-w-0 text-muted break-words">
+            {head}
+          </p>
+          {lines.map((l, i) => (
+            <p key={i} className="min-w-0 text-meta text-muted break-words">
+              {l}
+            </p>
+          ))}
+        </article>
+      </Card>
+    )
+  }
+
+  const justAnswered = settled.filter((r) => local[r.id]?.sent !== undefined || local[r.id]?.cancelled === true)
+  const earlier = settled.filter((r) => !justAnswered.includes(r))
+
   const [hero, ...rest] = open
 
   // Nothing open, waiting or settled: nothing to show, so no region and no heading.
   if (!hero && waitingReplies.length === 0 && settled.length === 0 && !flags.ended) return null
 
   return (
-    <section id="your-move" ref={region} aria-labelledby="your-move-title" tabIndex={-1} className="flex min-w-0 flex-col gap-3 outline-none">
-      {heading}
+    <section
+      id="your-move"
+      ref={region}
+      {...(hero ? { 'aria-labelledby': 'your-move-title' } : { 'aria-label': 'Your move' })}
+      tabIndex={-1}
+      className="flex min-w-0 flex-col gap-3 outline-none"
+    >
+      {/* The heading shows only while something waits on the person. */}
+      {hero && heading}
 
       {flags.ended && <Notice tone="fail">{SESSION_ENDED}</Notice>}
 
       {/* Every open card, the waiting replies and the "more waiting" label sit in one keyed list under this section,
           so when the hero is settled the next card moves up in place and keeps what was typed in it. */}
-      {hero &&
-        [
-          renderOpen(hero, true),
-          ...waitingReplies.map(waitingCard),
-          ...(rest.length > 0
-            ? [
-                <p key="more-waiting" className="text-meta font-medium text-muted">
-                  {rest.length} more waiting on you
-                </p>,
-              ]
-            : []),
-          ...rest.map((r) => renderOpen(r, false)),
-        ]}
+      {hero && [
+        renderOpen(hero, true),
+        ...waitingReplies.map(waitingCard),
+        ...(rest.length > 0
+          ? [
+              <p key="more-waiting" className="text-meta font-medium text-muted">
+                {rest.length} more waiting on you
+              </p>,
+            ]
+          : []),
+        ...rest.map((r) => renderOpen(r, false)),
+      ]}
 
       {!hero && waitingReplies.map(waitingCard)}
 
-      {settled.length > 0 && (
-        <div className="flex min-w-0 flex-col gap-2">
-          <h3 className="text-meta font-medium text-muted">Earlier requests</h3>
-          {settled.map((r) => {
-            const { head, lines } = settledWords(local[r.id]?.cancelled ? { ...r, status: 'cancelled' } : r, local[r.id]?.sent ?? null)
-            const when = hhmm(r.answeredAt)
-            return (
-              <Card key={r.id} variant="default" density="compact" asChild>
-                <article aria-label={cardName(r)} data-request={r.id} className="flex min-w-0 flex-col gap-1 text-ui">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                    <span className="font-medium text-fg">{cardName(r)}</span>
-                    {when && <span className="font-mono text-meta text-muted tabular-nums">{when}</span>}
-                  </div>
-                  {r.kind === 'permission' && (r.title || r.summary) && (
-                    <p className="min-w-0 text-fg break-words">
-                      {r.title}
-                      {r.title && r.summary ? ' ' : ''}
-                      {r.summary && <code className="rounded-chip bg-secondary px-1.5 py-0.5 font-mono text-meta break-all">{r.summary}</code>}
-                    </p>
-                  )}
-                  {r.kind === 'reply' && r.text && <p className="line-clamp-3 min-w-0 text-fg break-words whitespace-pre-wrap">{r.text}</p>}
-                  <p role="status" className="min-w-0 text-muted break-words">
-                    {head}
-                  </p>
-                  {lines.map((l, i) => (
-                    <p key={i} className="min-w-0 text-meta text-muted break-words">
-                      {l}
-                    </p>
-                  ))}
-                </article>
-              </Card>
-            )
-          })}
-        </div>
+      {/* What the person just answered here stays in view; the rest collapse into one closed disclosure. */}
+      {justAnswered.map(settledCard)}
+
+      {earlier.length > 0 && (
+        <details className="flex min-w-0 flex-col gap-2">
+          <summary className="cursor-pointer text-meta font-medium text-muted">
+            {earlier.length} earlier {earlier.length === 1 ? 'request' : 'requests'} answered
+          </summary>
+          <div className="mt-2 flex min-w-0 flex-col gap-2">{earlier.map(settledCard)}</div>
+        </details>
       )}
     </section>
   )

@@ -97,7 +97,7 @@ async function content(page: Page, state: string, s: Scenario): Promise<void> {
   if (state === 'empty') {
     await expect(page.getByRole('status', { name: 'Session' })).toHaveText(/\bidle\b/, T)
     await expect(move.getByRole('article')).toHaveCount(0, T)
-    await expect(form.getByRole('radiogroup', { name: 'Send as' })).toHaveCount(0, T)
+    await expect(form.getByRole('radio', { name: 'New goal' }), 'ADR-0028: New goal is the default choice before a run').toBeChecked(T)
     await expect(form.getByRole('button', { name: 'Start run', exact: true })).toBeVisible(T)
     // ADR-0028 section 8: Run metrics is always the last section of main; with no usage every tile reads "No usage yet"
     await expect(metrics).toBeVisible(T)

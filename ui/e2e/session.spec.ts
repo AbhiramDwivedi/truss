@@ -308,6 +308,8 @@ test.describe('R-7 permission cards', () => {
       ] as const
       const reqs = cards.map(([reason], i) => wrapRequest(permCard({ toolName: 'Bash', input: { command: `echo ${reason}-${i}` }, options: { description: `Cancel ${reason}` } }) as any, { status: 'cancelled', cancelReason: reason }))
       iface.emit({ requests: reqs })
+      // Answered and cancelled requests the page did not just answer sit in one closed disclosure.
+      await page.getByText(/\d+ earlier requests? answered/).click()
       for (const [reason, words] of cards) {
         const c = cardHolding(page, `Cancel ${reason}`)
         await expect(c).toBeVisible(WITHIN)
@@ -408,6 +410,7 @@ test.describe('R-7 reply cards', () => {
       expect(req.status).toBe('answered')
       expect(req.decision).toBe('message')
       expect(req.message).toBe(typed)
+      await page.getByText(/\d+ earlier requests? answered/).click()
       await expect(cardHolding(page, rx(tag), ANSWERED)).toBeVisible(WITHIN)
     })
   })
