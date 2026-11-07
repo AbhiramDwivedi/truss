@@ -71,7 +71,11 @@
               "required": ["finding", "date"],
               "properties": {
                 "finding": { "description": "The finding id, F-<n>, with the session it came from: <session id>/F-<n>.", "type": "string", "minLength": 1 },
-                "date": { "description": "The merge date, YYYY-MM-DD.", "type": "string", "format": "date" }
+                "date": { "description": "The merge date, YYYY-MM-DD.", "type": "string", "format": "date" },
+                "version": {
+                  "description": "Optional. The plugin version the fix shipped in (x.y.z). null = merged but not yet released. Absent = legacy entry, treated as shipped. recur reports NOT SHIPPED, not RECURRED, for a hit in a session that ran an older version.",
+                  "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }]
+                }
               }
             }
           ]

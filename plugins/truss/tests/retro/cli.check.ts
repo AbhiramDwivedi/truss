@@ -747,3 +747,63 @@ describe('retro/cli.ts recur: a quoted catalog line is not a recurrence; the sam
     assert.deepEqual(saved.findings[0].evidence, [{ file: p.main, line: 4 }])
   })
 })
+
+// ---------- recur: a fix that never shipped to the session's plugin version is NOT SHIPPED ----------
+
+describe('retro/cli.ts recur: NOT SHIPPED when the session ran a plugin older than the fix, RECURRED from the shipping version on', () => {
+  function shipPrep(fixedBy: any, ran?: string) {
+    const root = mktmp()
+    const trussDir = join(root, 'truss')
+    mkdirSync(join(trussDir, 'retro'), { recursive: true })
+    const catPath = join(root, 'catalog.json')
+    writeFileSync(catPath, JSON.stringify({ v: 1, entries: [{ id: 'ship-e', kind: 'friction', title: 't', anchor: 'zz', patterns: ['zz'], fix: 'f', fixedBy }] }))
+    const x: any = { v: 1, session: 's', files: [{ path: 'nope.jsonl', lines: 9 }], items: [], catalogHits: [{ id: 'ship-e', file: 'nope.jsonl', line: 7 }], skipped: [] }
+    if (ran) x.pluginVersion = ran
+    writeFileSync(join(trussDir, 'retro', 'extract.json'), JSON.stringify(x))
+    return { trussDir, catPath }
+  }
+  const FB = { finding: 'S/F-9', date: '2026-11-03' }
+
+  test('an unreleased fix (version null) is NOT SHIPPED and makes no finding', async () => {
+    const { main } = await cliMod()
+    const p = shipPrep({ ...FB, version: null }, '0.18.0')
+    const r = await main(['recur', p.trussDir, p.catPath])
+    assert.equal(r.code, 0, r.out)
+    assert.deepEqual(linesOf(r.out), ['NOT SHIPPED: ship-e | fixed by S/F-9 in unreleased | ran 0.18.0 | nope.jsonl:7', 'OK: 0 recurred of 1 fixed'])
+    assert.equal(existsSync(join(p.trussDir, 'retro', 'findings.json')), false)
+  })
+
+  test('a fix shipped in 0.19.0 is NOT SHIPPED for a 0.18.0 session and RECURRED for 0.19.0 and 0.20.1', async () => {
+    const { main } = await cliMod()
+    const old = await main(['recur', ...Object.values(shipPrep({ ...FB, version: '0.19.0' }, '0.18.0'))])
+    assert.deepEqual(linesOf(old.out), ['NOT SHIPPED: ship-e | fixed by S/F-9 in 0.19.0 | ran 0.18.0 | nope.jsonl:7', 'OK: 0 recurred of 1 fixed'])
+    for (const ran of ['0.19.0', '0.20.1']) {
+      const r = await main(['recur', ...Object.values(shipPrep({ ...FB, version: '0.19.0' }, ran))])
+      assert.deepEqual(linesOf(r.out), [`RECURRED: ship-e | fixed by S/F-9 (2026-11-03) | nope.jsonl:7`, 'OK: 1 recurred of 1 fixed'])
+    }
+  })
+
+  test('an extract with no pluginVersion (or null) reads as ran unknown: recur never rescans transcripts', async () => {
+    const { main } = await cliMod()
+    for (const ran of [undefined, null]) {
+      const p = shipPrep({ ...FB, version: '0.19.0' })
+      if (ran === null) {
+        const f = join(p.trussDir, 'retro', 'extract.json')
+        writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), pluginVersion: null }))
+      }
+      const r = await main(['recur', p.trussDir, p.catPath])
+      assert.equal(r.code, 0, r.out)
+      assert.ok(linesOf(r.out)[0].includes('ran unknown') || linesOf(r.out)[0].startsWith('RECURRED'), r.out)
+      assert.ok(!r.out.includes('ran 0.'), r.out)
+    }
+  })
+
+  test('a legacy entry with no version key stays RECURRED, and a bad version is refused by the loader', async () => {
+    const { main } = await cliMod()
+    const r = await main(['recur', ...Object.values(shipPrep(FB, '0.18.0'))])
+    assert.deepEqual(linesOf(r.out), ['RECURRED: ship-e | fixed by S/F-9 (2026-11-03) | nope.jsonl:7', 'OK: 1 recurred of 1 fixed'])
+    const bad = await main(['recur', ...Object.values(shipPrep({ ...FB, version: 'v1' }, '0.18.0'))])
+    assert.equal(bad.code, 2)
+    assert.ok(bad.out.includes('fixedBy.version'), bad.out)
+  })
+})

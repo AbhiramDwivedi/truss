@@ -4,8 +4,13 @@
   "description": "<truss dir>/retro/extract.json: what retro/extract.ts read mechanically from one session's transcripts (R-24). factory.ts finish and retro/cli.ts extract overwrite it whole. The same transcripts and catalog give the same bytes: no wall-clock time, files in code-point order of path, items in file order then line order. It holds short quotes, so it stays inside .git with the truss dir and is never committed (R-32); it is kept until the truss dir is removed, so no later step needs the transcripts (R-35). See adr/0012-self-improving-retro.md, Decision 2.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["v", "session", "files", "items", "catalogHits", "skipped"],
+  "required": ["v", "session", "files", "items", "catalogHits", "skipped", "pluginVersion"],
   "properties": {
+    "pluginVersion": {
+      "description": "The plugin version the session ran: the commonest plugins/cache/truss/truss/<x.y.z>/ path in the main session transcript, or null when it has none. retro/cli.ts recur reads it from here alone (R-35).",
+      "type": ["string", "null"],
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
     "v": {
       "description": "File format version. A reader treats a file with any other v as absent.",
       "const": 1

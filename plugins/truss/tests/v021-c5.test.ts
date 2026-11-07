@@ -1,66 +1,50 @@
 import { expect } from 'claude-code/testing'
 
-import { NOW, ROOT, world, test } from './harness'
+import { DECISION_LOG_REFUSAL } from '../hooks/register'
+import { ROOT, world, test } from './harness'
 
-// truss 0.2.1 C5: a `- HH:MM |` the PM types on a new decision-log line is replaced with the clock's local time
+// retro F-9 (replaces truss 0.2.1 C5): an Edit or Write of this session's decisions.md is refused, never rewritten,
+// and the refusal points at `factory.ts decide`
 
 const LOG = `${ROOT}/decisions.md`
-const pad = (n: number) => String(n).padStart(2, '0')
-const at = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`
 const ran = (w: ReturnType<typeof world>, tool: string) => w.ran.filter(c => c.tool === tool).at(-1)
 
-test('C5: a Write of the decision log gets the real time on each new line', async ($, on) => {
+test('F-9: a Write of the decision log is refused with the decide command, and never runs', async ($, on) => {
   const w = world($, on)
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: '- 10:40 | merge auth first | fewer conflicts | answer | followed\n- 10:41 | defer docs | none | followed\n' } as never)
-  expect(ran(w, 'Write')?.content).toBe(`- ${at(NOW)} | merge auth first | fewer conflicts | answer | followed\n- ${at(NOW)} | defer docs | none | followed\n`)
+  const r = (await $.tool.call({ tool: 'Write', file_path: LOG, content: '- HH:MM | a | b | none | followed\n' } as never)) as { deny?: string }
+  expect(r.deny).toBe(DECISION_LOG_REFUSAL)
+  expect(r.deny).toContain('factory.ts decide --dir')
+  expect(r.deny).toContain('--line')
+  expect(ran(w, 'Write')).toBeUndefined()
 })
 
-test('C5: lines the log already holds keep their time', async ($, on) => {
+test('F-9: an Edit of the decision log is refused', async ($, on) => {
   const w = world($, on)
-  w.files.set(LOG, '# Decisions\n- 09:05 | start two crews | plan | none | followed\n')
-  await w.clock.advance(7 * 60_000)
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: '# Decisions\n- 09:05 | start two crews | plan | none | followed\n- 23:59 | merge auth | qc PASS | none | followed\n' } as never)
-  expect(ran(w, 'Write')?.content).toBe(`# Decisions\n- 09:05 | start two crews | plan | none | followed\n- ${at(NOW + 7 * 60_000)} | merge auth | qc PASS | none | followed\n`)
+  const r = (await $.tool.call({ tool: 'Edit', file_path: LOG, old_string: 'a', new_string: '- 10:40 | b | c | none | followed\n' } as never)) as { deny?: string }
+  expect(r.deny).toBe(DECISION_LOG_REFUSAL)
+  expect(ran(w, 'Edit')).toBeUndefined()
 })
 
-test('C5: an Edit of the decision log stamps its new lines only, and keeps its other fields', async ($, on) => {
-  const w = world($, on)
-  w.files.set(LOG, '- 09:05 | start two crews | plan | none | followed\n')
-  await $.tool.call({
-    tool: 'Edit',
-    file_path: LOG,
-    old_string: '- 09:05 | start two crews | plan | none | followed\n',
-    new_string: '- 09:05 | start two crews | plan | none | followed\n- 10:40 | merge auth | qc PASS | none | followed\n',
-  } as never)
-  const call = ran(w, 'Edit')
-  expect(call?.old_string).toBe('- 09:05 | start two crews | plan | none | followed\n')
-  expect(call?.new_string).toBe(`- 09:05 | start two crews | plan | none | followed\n- ${at(NOW)} | merge auth | qc PASS | none | followed\n`)
+test('F-9: a Windows path to the log is matched', async ($, on) => {
+  world($, on)
+  const r = (await $.tool.call({ tool: 'Write', file_path: 'C:\\r\\.git\\truss\\s1\\decisions.md', content: 'x\n' } as never)) as { deny?: string }
+  expect(r.deny).toBe(DECISION_LOG_REFUSAL)
 })
 
-test('C5: a Windows path to the log is matched, and CRLF lines keep their endings', async ($, on) => {
-  const w = world($, on)
-  await $.tool.call({ tool: 'Write', file_path: 'C:\\r\\.git\\truss\\s1\\decisions.md', content: '- 10:40 | a | b | none | followed\r\n' } as never)
-  expect(ran(w, 'Write')?.content).toBe(`- ${at(NOW)} | a | b | none | followed\r\n`)
-})
-
-test('C5: other files, another session\'s log and lines without a leading time are left alone', async ($, on) => {
+test('F-9: other files and another session\'s log go through untouched', async ($, on) => {
   const w = world($, on)
   const text = '- 10:40 | merge auth | x | none | followed\n'
   await $.tool.call({ tool: 'Write', file_path: 'C:/r/notes/decisions.md', content: text } as never)
   expect(ran(w, 'Write')?.content).toBe(text)
   await $.tool.call({ tool: 'Write', file_path: 'C:/r/.git/truss/s2/decisions.md', content: text } as never)
   expect(ran(w, 'Write')?.content).toBe(text)
-  const prose = 'merged at 10:40 | later\n  - 10:40 | indented\n'
-  await $.tool.call({ tool: 'Write', file_path: LOG, content: prose } as never)
-  expect(ran(w, 'Write')?.content).toBe(prose)
 })
 
-test('C5: fails open: a call the check cannot read goes through as made', async ($, on) => {
+test('F-9: fails open: a call the check cannot read goes through as made', async ($, on) => {
   const w = world($, on)
-  // no file_path: the check throws, and the write goes on untouched for the tool to qc
   const text = '- 10:40 | merge auth | x | none | followed\n'
   const r = (await $.tool.call({ tool: 'Write', content: text } as never)) as { deny?: string }
   expect(r.deny).toBeUndefined()
   expect(ran(w, 'Write')?.content).toBe(text)
-  expect(w.logs.some(l => l.includes('decision time failed'))).toBe(true)
+  expect(w.logs.some(l => l.includes('decision log failed'))).toBe(true)
 })

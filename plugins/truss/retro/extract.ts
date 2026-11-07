@@ -18,6 +18,19 @@ export type Extract = {
   items: Item[]
   catalogHits: { id: string; file: string; line: number; quote: string }[]
   skipped: { json: number; type: Obj }
+  /** The plugin version the session ran: the commonest `plugins/cache/truss/truss/<x.y.z>/` path in the main transcript, null when there is none. */
+  pluginVersion: string | null
+}
+
+const CACHE_VERSION = /plugins\/cache\/truss\/truss\/(\d+\.\d+\.\d+)\//g
+
+/** The commonest plugin-cache version in a transcript's text; the first seen wins a tie. */
+function commonestVersion(text: string): string | null {
+  const count = new Map<string, number>()
+  for (const m of text.matchAll(CACHE_VERSION)) count.set(m[1], (count.get(m[1]) ?? 0) + 1)
+  let best: string | null = null
+  for (const [v, n] of count) if (best === null || n > count.get(best)!) best = v
+  return best
 }
 
 const QUOTE_MAX = 200
@@ -152,6 +165,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
   const times = new Map<string, { first: string; last: string }>()
   const skippedTypes = new Map<string, number>()
   let skippedJson = 0
+  let pluginVersion: string | null = null
   let seq = 0
 
   paths.forEach((path, fileIdx) => {
@@ -197,6 +211,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
       files.push({ path, lines: 0 })
       return
     }
+    if (isMain) pluginVersion = commonestVersion(text)
     let lineNo = 0
     let pos = 0
     while (pos < text.length) {
@@ -377,6 +392,7 @@ export function extractSession(sessionDir: string, catalog: Catalog): Extract {
     items: slots.map(s => s.item),
     catalogHits: hits.map(h => ({ id: h.id, file: paths[h.fileIdx], line: h.line, quote: h.quote })),
     skipped: { json: skippedJson, type: Object.fromEntries(types.map(k => [k, skippedTypes.get(k)])) },
+    pluginVersion,
   }
 }
 

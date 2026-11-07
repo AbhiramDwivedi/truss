@@ -39,7 +39,7 @@ const hasEmail = (s: string): boolean => {
     const shaped = local.length > 0 && labels.length >= 2 && labels.every(l => l.length > 0) && /^[a-z]/.test(labels[labels.length - 1]!)
     if (shaped) {
       const allowed =
-        (local === 'noreply' && domain === 'anthropic.com') || domain === 'example.com' || domain.endsWith('.invalid')
+        (local === 'noreply' && domain === 'anthropic.com') || local === 'git' || domain === 'example.com' || domain.endsWith('.invalid')
       if (!allowed) return true
     }
     at = s.indexOf('@', at + 1)

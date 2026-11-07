@@ -82,6 +82,12 @@ describe('retro/scrub.ts: emails', () => {
     assert.deepEqual(scrub(text), [])
   })
 
+  test('an SSH remote git@<host> is no email, another local part at the same host still hits', async () => {
+    const { scrub } = await scrubMod()
+    assert.deepEqual(scrub(`remote ${'git'}${AT}github.com:o/r.git`), [])
+    assert.deepEqual(scrub(`remote ssh://${'git'}${AT}github.com/o/r.git`), [])
+    assert.deepEqual(scrub(`mail ${'someone'}${AT}github.com`), [{ line: 1, kind: 'email' }])
+  })
   test('an exception is the whole address, not a substring: look-alikes still hit', async () => {
     const { scrub } = await scrubMod()
     const u = user()

@@ -178,7 +178,7 @@ describe('run-procedure: truss-config.schema.json', () => {
 describe('run-procedure: plugin.json and README', () => {
   test('plugin.json version is the newest CHANGELOG heading, 0.11.0 or later', () => {
     const version = json(PLUGIN, '.claude-plugin', 'plugin.json').version as string
-    assert.equal(version, CHANGELOG_RAW.match(/^## (\d+\.\d+\.\d+)$/m)?.[1], 'plugin.json version matches the first CHANGELOG heading')
+    assert.equal(version, CHANGELOG_RAW.match(/^## (\d+\.\d+\.\d+)(?: \(\d{4}-\d{2}-\d{2}\))?$/m)?.[1], 'plugin.json version matches the first CHANGELOG heading')
     const [major, minor] = version.split('.').map(Number)
     assert.ok(major! > 0 || minor! >= 11, `${version} is 0.11.0 or later`)
   })

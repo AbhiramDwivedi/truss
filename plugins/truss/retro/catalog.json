@@ -72,7 +72,10 @@
         "__pycache__/[^\\s*`'\"]+\\.pyc"
       ],
       "fix": "Remove the tracked bytecode with git rm -r --cached on the __pycache__ directories and add __pycache__/ and *.pyc to .gitignore, so no .pyc file is tracked and a crew's status is clean.",
-      "probe": { "kind": "command", "run": "test -z \"$(git ls-files -- '*.pyc')\"" },
+      "probe": {
+        "kind": "command",
+        "run": "test -z \"$(git ls-files -- '*.pyc')\""
+      },
       "fixedBy": null
     },
     {
@@ -85,8 +88,9 @@
       ],
       "fix": "Run acceptance and test commands in the foreground with an explicit Bash timeout up to 600000 and never in the background. If a background run is unavoidable, load the Monitor schema with ToolSearch first, pass a description, and do not poll between notifications.",
       "fixedBy": {
-        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-1",
-        "date": "2026-10-31"
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-11",
+        "date": "2026-11-07",
+        "version": "0.19.0"
       }
     },
     {
@@ -190,7 +194,8 @@
       "fix": "Send any QC finding that needs a change to an acceptance-test file to a tester fix member, and leave tester-owned files out of the builder files-you-may-change list. Green re-routes a fix builder's BLOCKED or QUESTION naming a tester file to a tester fix member and runs testsBackstop after each green fix (ADR-0027 F-70).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-70",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": "0.19.0"
       }
     },
     {
@@ -235,8 +240,9 @@
       ],
       "fix": "The PM logs only through `factory.ts decide --dir <D> --line \"...\"`, which stamps the time and appends, never through Edit, so no edit has to match text that the stamping changes (ADR-0027 F-73).",
       "fixedBy": {
-        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-73",
-        "date": "2026-11-03"
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-9",
+        "date": "2026-11-07",
+        "version": "0.19.0"
       }
     },
     {
@@ -249,8 +255,9 @@
       ],
       "fix": "Paste the same shell rules that crew briefs carry (one plain command per call, no cd, no chains, no $VAR, scripts in files) into every brief for an agent the PM starts in a worktree.",
       "fixedBy": {
-        "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-38",
-        "date": "2026-10-31"
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-10",
+        "date": "2026-11-07",
+        "version": "0.19.0"
       }
     },
     {
@@ -336,7 +343,8 @@
       "fix": "qcPrompt carries the member foreground line and agents/qc-engineer.md says the same (ADR-0027 F-72).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-72",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": "0.19.0"
       }
     },
     {
@@ -351,7 +359,8 @@
       "fix": "runFactory resolves F.dir against F.repo, admit fails closed with 'admission check failed:', and factory.ts refuses a relative --dir outside start (ADR-0027 F-67).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-67",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": "0.19.0"
       }
     },
     {
@@ -366,7 +375,54 @@
       "fix": "A PreToolUse hook refuses a main-session git push or merge whose command does not gate on scrub with && (ADR-0027 F-74).",
       "fixedBy": {
         "finding": "361b2630-4123-451d-98e0-e36681a3c70c/F-74",
-        "date": "2026-11-03"
+        "date": "2026-11-03",
+        "version": "0.19.0"
+      }
+    },
+    {
+      "id": "plugin-fix-unreleased",
+      "kind": "missing hook or gate",
+      "title": "Catalog entries were marked fixedBy before the fix was released, so a run on the older installed truss looked like a recurrence",
+      "anchor": "plugins/cache/truss/truss/0.18.0/",
+      "patterns": [
+        "plugins/cache/truss/truss/0\\.18\\.0/bin/factory\\.ts"
+      ],
+      "fix": "fixedBy carries the shipping version (null until released), extract records the session's pluginVersion, and recur reports NOT SHIPPED for a session that ran an older version (F-8).",
+      "fixedBy": {
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-8",
+        "date": "2026-11-07",
+        "version": "0.19.0"
+      }
+    },
+    {
+      "id": "hook-rewrite-no-verdict",
+      "kind": "mechanical bug",
+      "title": "The decisions.md stamp hook rewrote every Edit/Write input, so auto mode gave no verdict for the call and for other calls in the same response",
+      "anchor": "gave no verdict for",
+      "patterns": [
+        "gave no verdict for \\w+: a hook changed this call's input",
+        "gave no verdict for Agent: another call in this response was changed by a hook"
+      ],
+      "fix": "The hook refuses Edit and Write of decisions.md and names `factory.ts decide`, which stamps the line; it no longer rewrites a call's input (F-9).",
+      "fixedBy": {
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-9",
+        "date": "2026-11-07",
+        "version": "0.19.0"
+      }
+    },
+    {
+      "id": "ux-false-turns-on-ux",
+      "kind": "mechanical bug",
+      "title": "A goal-file ## UX section reading \"ux: false.\" turned UX on, so the crew blocked for building no UI",
+      "anchor": "builds no UI",
+      "patterns": [
+        "BLOCKED: crew \\S+ builds no UI"
+      ],
+      "fix": "An explicit `ux: false` in plan.json or the ## UX section wins, and plan-check reports a plan whose ux flag contradicts its goal file (F-12).",
+      "fixedBy": {
+        "finding": "6e95264e-96a9-486a-9179-671d5920b67e/F-12",
+        "date": "2026-11-07",
+        "version": "0.19.0"
       }
     }
   ]

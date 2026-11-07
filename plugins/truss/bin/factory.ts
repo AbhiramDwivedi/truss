@@ -348,6 +348,11 @@ export function factorySpawned(dir: string, slug: string): Obj | undefined {
 }
 
 // The roles table copied for args, with `--type role=agentType` laid on the roles marked typeFromProject: true; resolver follows the role its typeFromProject names.
+// The roles table's model and effort for a role; every spawn event carries both, never null (a stage.js agent() call always sets them).
+export function roleDefaults(roles: Obj, role: string): { model: string; effort: string } {
+  const r = isObj(roles[role]) ? roles[role] : {}
+  return { model: typeof r.model === 'string' ? r.model : 'sonnet', effort: typeof r.effort === 'string' ? r.effort : 'medium' }
+}
 function rolesWithTypes(plugin: string, types: string[], cfgRoles?: unknown): Obj {
   const roles = readRoles(plugin)
   // ADR-0021 Decision 3: truss.json `roles.build` sets builder (and resolver, which follows it), `roles.test` sets tester; --type wins below.
@@ -497,14 +502,23 @@ function cmdPlanCheck(f: Flags): Obj {
       else if (plan.version === 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
     }
     if (Object.hasOwn(c, 'ux') && typeof c.ux !== 'boolean') errors.push(`${s}: ux must be a boolean`)
+    // a ## UX section that contradicts plan.json ux (ux false but the section asks for UX; ux true but the section says none)
+    if (typeof c.ux === 'boolean' && typeof c.slug === 'string' && SLUG.test(c.slug)) {
+      const gf = `${dirOf(f)}/goals/${c.slug}.md`
+      const uxSection = existsSync(gf) ? goalSections(readFileSync(gf, 'utf8')).UX : undefined
+      if (uxSection !== undefined && uxSection !== '') {
+        if (c.ux === false && !uxSaysOff(uxSection)) errors.push(`${s}: plan.json ux is false but the goal file's ## UX section asks for UX; make the section say "none" or set ux true`)
+        if (c.ux === true && uxSaysOff(uxSection)) errors.push(`${s}: plan.json ux is true but the goal file's ## UX section says UX is off; change one of them`)
+      }
+    }
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
       const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
       if (sameGoal && crews[i].stage !== crews[j].stage) continue
-      // Crews of different goals overlap at any stage, unless either is merged or dropped.
-      if (!sameGoal && [crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
+      // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
+      if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
         for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
           if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
@@ -985,6 +999,15 @@ function ensureWorktree(repo: string, slug: string, target: string): string {
 type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
+// A ## UX section that says UX is off: starts with none, no, off, or "ux: false" (also "ux: no" / "ux: off").
+export const uxSaysOff = (uxText: string): boolean => /^(?:none|no|off|ux\s*[:=]\s*(?:false|no|off|none))(?![\w-])/i.test(uxText.trim())
+// plan.json ux false wins over any ## UX section; plan.json ux true is on; otherwise a non-empty ## UX section that is not off.
+export function uxOn(planUx: unknown, uxText: string): boolean {
+  if (planUx === false) return false
+  if (planUx === true) return true
+  return uxText !== '' && !uxSaysOff(uxText)
+}
+
 // A crew entry for stage.js; `resume`, `tasks`, `done` and `answers` are the restart facts (fresh start: null and empty).
 function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[] }): Obj {
   const slug = String(crew.slug)
@@ -999,7 +1022,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
-  const ux = crew.ux === true || (uxText !== '' && !/^none\b/i.test(uxText))
+  const ux = uxOn(crew.ux, uxText)
   // ADR-0025 item 40, ADR-0026 item 53: the first ## UX line that reads "Live page" as a whole word after an optional list
   // marker ("-", "*", "+" or "1." / "1)", then any run of spaces), trimmed, else null. "Live pages are not built" is no Live page line.
   const livePage = uxText.split(/\r?\n/).map((l) => l.trim().replace(/^(?:[-*+]|\d+[.)])\s+/, '')).find((l) => /^Live page(?![\w-])/.test(l))?.trim() ?? null
@@ -1457,7 +1480,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     }
   }
   if (kind === 'stale') {
-    appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
+    appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(c.roles, 'planner'), by: 'factory' })
     appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
   }
   const out = stageOut(c, [entry], [], [], [], [])
@@ -1494,7 +1517,11 @@ function cmdStart(f: Flags): Obj {
   if (only !== undefined) {
     if (picked === undefined) throw refuse({ error: `start --slug ${only}: no crew ${only} in the plan` })
     if (unapproved.has(goalOf(picked))) throw refuse({ error: `start --slug ${only}: its goal ${goalOf(picked)} is not approved (approvedAt is null)` })
-    if (picked.status !== 'planned') throw refuse({ error: `start --slug ${only}: the crew is ${String(picked.status)}, not planned; a running crew restarts with --resume` })
+    if (picked.status === 'running') {
+      // a PM resuming a crew that is already running gets a clear no-op, not an error
+      return { noop: true, slug: only, note: `start --slug ${only}: the crew is already running; nothing started. To restart a dead run use start --slug ${only} --resume stale (or answers / merge-ready)`, entries: [], held: [], refused: [] }
+    }
+    if (picked.status !== 'planned') throw refuse({ error:`start --slug ${only}: the crew is ${String(picked.status)}, not planned; a running crew restarts with --resume` })
   }
   const open =crews.filter((c) => c.status === 'planned' || c.status === 'running').map((c) => c.stage).filter((w) => typeof w === 'number')
   // A plan with a goals array gets per-goal stages; a plan without one takes the single global next stage, as before.
@@ -1568,7 +1595,7 @@ function cmdStart(f: Flags): Obj {
     const wt = ensureWorktree(repo, slug, settings.target)
     crew.status = 'running'
     savePlan(dir, plan)
-    appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', model: null, effort: null, by: 'factory' })
+    appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(roles, 'planner'), by: 'factory' })
     appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--
     entries.push(crewEntry(ctx, crew, wt, { resume: null }))
@@ -1661,7 +1688,15 @@ function argsFileOut(f: Flags, out: Obj): Obj {
 import { spawn } from 'node:child_process'
 import { admits, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
 
-const HEAVY_WAIT_MS = 240000
+// How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 540 s (under the 600000 ms Bash timeout stage.js sets, leaving room for the command).
+export const HEAVY_WAIT_MS = 540000
+export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = process.env): number {
+  for (const v of [str(f, 'wait-ms'), env.TRUSS_HEAVY_WAIT_MS]) {
+    const n = v === undefined || v.trim() === '' ? NaN : Number(v)
+    if (Number.isInteger(n) && n >= 0) return n
+  }
+  return HEAVY_WAIT_MS
+}
 const sleepSync = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const pidAlive = (pid: unknown): boolean => {
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
@@ -1727,8 +1762,16 @@ function cmdAdmit(f: Flags): Obj {
   const plan = loadPlan(dir)
   const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  const a = admission(dir, plan, crew, 'admit', plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length)
-  if (!a.admitted) throw refuse(a)
+  const running = (): number => plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length
+  let a = admission(dir, plan, crew, 'admit', running())
+  // --wait-ms N: a hold re-checks every 2 s for up to N ms (bounded) before it refuses, so a short memory dip does not stop the crew
+  const waitMs = Math.min(intOr(Number(str(f, 'wait-ms') ?? 0), 0, 0), 600000)
+  const t0 = Date.now()
+  while (!a.admitted && Date.now() - t0 < waitMs) {
+    sleepSync(Math.min(2000, Math.max(1, waitMs - (Date.now() - t0))))
+    a = admission(dir, plan, crew, 'admit', running())
+  }
+  if (!a.admitted) throw refuse({ ...a, ...(waitMs > 0 ? { waitedMs: Date.now() - t0 } : {}) })
   // ADR-0015 Decision 6: --label and --title together record the agent's card title for the UI
   const label = str(f, 'label')
   const title = str(f, 'title')
@@ -1788,6 +1831,7 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     const label = need(f, 'label')
     const cwd = flat(need(f, 'cwd'))
     if (cmd.length === 0) throw usage('heavy needs a command after --')
+    const waitLimit = heavyWaitMs(f)
     const t0 = Date.now()
     let token: string | null = null
     for (;;) {
@@ -1803,8 +1847,9 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
         releaseHeavySlot(dir, token)
         token = null
       }
-      if (Date.now() - t0 >= HEAVY_WAIT_MS) {
-        return { body: { heavy: { label, ran: false, why: `waited ${Date.now() - t0} ms for the heavy slot and free memory` } }, code: 1 }
+      if (Date.now() - t0 >= waitLimit) {
+        const waitedMs = Date.now() - t0
+        return { body: { heavy: { label, ran: false, waitedMs, waitLimitMs: waitLimit, why: `waited ${waitedMs} ms (limit ${waitLimit} ms) for the heavy slot and free memory` } }, code: 1 }
       }
       await sleep(500)
     }
@@ -1949,7 +1994,8 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     }
     const by = `workflow:${wfRun.id}`
     if (!events.some((e) => e.event === 'spawn' && e.agentId === a.agentId && e.by === by)) {
-      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? null, effort: facts.effort ?? null, by })
+      const dflt = roleDefaults(roles, parsed.role)
+      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? dflt.model, effort: facts.effort ?? dflt.effort, by })
     }
     const marker = markerOf(text)
     if (!events.some((e) => e.event === 'report' && e.crew === slug && e.agent === a.label && (e.marker ?? null) === marker)) {
@@ -2083,6 +2129,18 @@ function redRecord(dir: string, slug: string): Obj | undefined {
   return undefined
 }
 
+// Member worktrees of earlier runs: branch worktree-wf_<id>-<n>, path ending wf_<id>-<n>.
+export const OLD_WF_BRANCH = /^worktree-wf_[\w.-]+-\d+$/
+export const OLD_WF_PATH = /(^|\/)wf_[\w.-]+-\d+$/
+export const OLD_WF_IDLE_MS = 3600000
+function idleMs(p: string): number {
+  try {
+    return Date.now() - statSync(p).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
 type Outcome = { merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
@@ -2156,7 +2214,10 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   const pathRe = new RegExp(`(^|/)${idRe}-\\d+$`)
   const left: { path: string; branch: string; why: string }[] = []
   for (const w of worktreesOf(repo)) {
-    if (w.branch === undefined || !branchRe.test(w.branch) || !pathRe.test(w.path) || w.path === wt) continue
+    if (w.branch === undefined || w.path === wt) continue
+    const ours = branchRe.test(w.branch) && pathRe.test(w.path)
+    // an older run's member worktree (wf_*) is cleaned too, but only once it has sat untouched for an hour, so a live run's fresh worktree stays
+    if (!ours && !(OLD_WF_BRANCH.test(w.branch) && OLD_WF_PATH.test(w.path) && idleMs(w.path) >= OLD_WF_IDLE_MS)) continue
     const merged = [`truss-${slug}`, target].some((b) => run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${b}`]).status === 0)
     const why = w.locked ? 'locked' : !merged ? 'unmerged' : run(w.path, ['status', '--porcelain']).out !== '' ? 'dirty' : undefined
     if (why === undefined && run(repo, ['worktree', 'remove', w.path]).status === 0) run(repo, ['branch', '-D', w.branch])

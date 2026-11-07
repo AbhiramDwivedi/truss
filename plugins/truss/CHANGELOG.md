@@ -2,7 +2,16 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
-## Unreleased
+## 0.19.0 (2026-11-07)
+
+truss fixes the retro findings F-8 to F-12 and several factory bugs. Install or update as before with `claude plugin install truss@truss`.
+
+- **recur reports `NOT SHIPPED` for a fix not yet released (F-8).** `extract` records the session's `pluginVersion`, and `recur` reads it from the extract alone. A catalog hit in a session that ran an older plugin than the entry's `fixedBy.version`, or an unreleased one, is `NOT SHIPPED`, not `RECURRED`. The ADR-0027 entries are now marked `0.19.0`.
+- **decisions.md cannot be edited by hand (F-9).** The hook refuses an Edit or Write of the session's `decisions.md` and names `factory.ts decide`, which stamps and appends the line. It no longer rewrites a call's input, so auto mode no longer gives "no verdict" for that call or the others in the same response. ADR-0003, 0009 and 0010 carry a note, and the `- HH:MM | ...` examples in `skills/run/SKILL.md` say to log them with `decide`.
+- **Worktree Agent briefs need the shell rules (F-10).** The plugin refuses an Agent call with `isolation: "worktree"` whose prompt lacks the shell rules, and the refusal quotes the block to add.
+- **The shell rules say foreground, no polling, kill by pid (F-11).** They add: run tests and builds in the foreground with an explicit Bash timeout up to 600000, never sleep-poll a background task or misuse Monitor, and stop only a process you started, by its pid, never `pkill`. `stage.js` and `skills/run/SKILL.md` carry the same text.
+- **`ux: false` wins (F-12).** A goal-file `## UX` section reading `ux: false` no longer turns UX on, and plan-check reports a plan whose `ux` flag contradicts the goal file.
+- **Factory fixes.** Spawn events carry the model and effort. A crew whose branch is already merged is skipped in the overlap check. `start` on a running crew is a no-op. `admit --wait-ms N` re-checks a hold every 2 s for up to N ms before it refuses. The heavy slot wait is `--wait-ms N`, else `TRUSS_HEAVY_WAIT_MS`, else 540000 ms, under the 600000 ms Bash timeout `stage.js` sets. Old `wf_` worktrees are cleaned.
 
 - **ADRs follow one template.** The design engineer writes every new ADR as `# ADR-NNNN: <decision>`, then `Status:`, `Decided by:` and an optional `Amends:` or `Supersedes:` line, then Context, Decision Drivers, Considered Options, Decision and Consequences. Existing ADRs keep their format. An engineer-default fork still carries the exact line `Decided by: default`.
 - **The clarity writing skill ships with truss.** It is vendored from [addyosmani/clarity](https://github.com/addyosmani/clarity) (MIT, commit `e27ceef`) as `skills/clarity/` and addressed as `truss:clarity`, so nothing needs installing. The design engineer loads it with the Skill tool before it writes an ADR or architecture-doc prose, and the writer before it writes a doc or an ADR. When the load fails, either one says so in its report and carries on with `technical-writer` when the session lists it. `/truss:init` and `/truss:run` no longer check for it. For other prose the writer keeps its order: the brief's `writingSkill`, then `technical-writer`.
