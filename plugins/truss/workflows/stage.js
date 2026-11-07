@@ -202,8 +202,9 @@ async function ask(crew, role, prompt, opts = {}) {
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 // label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
+// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; still one call, no retry here.
 async function admit(crew, at, label, title) {
-  const r = await runFactory(crew, `admit --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}` : ''}`, 'admitted')
+  const r = await runFactory(crew, `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}` : ''}`, 'admitted')
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
@@ -360,7 +361,7 @@ const acceptanceOf = (e) => (typeof e.acceptanceTest === 'string' ? e.acceptance
 const UX_STEPS = ['ux-direction', 'ux-review']
 const answersFor = (crew, name) => {
   const names = new Set((crew.tasks || []).map((t) => t.name))
-  return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) && ((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
+  return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) &&((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
 }
 
 // the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1).
