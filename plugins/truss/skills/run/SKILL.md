@@ -347,6 +347,8 @@ The plugin also sends you prompts:
 
 On a `stalled:` or `idle foreman:` prompt, read the agent's transcript tail before any TaskStop: a resumed agent may be compacting, and it looks idle while it does.
 
+When a subagent's completion notification arrives and its work is merged or recorded, stop it with TaskStop. Don't leave a finished agent open.
+
 `/truss` shows each crew's status, its live members by model, and when it last reported or what it is waiting on you for, with its report folder.
 
 ### Take a new goal mid-run
@@ -438,6 +440,8 @@ When the run's last crew has merged and any foreman's report carried a `## Learn
 ## 10. Report to the client
 
 First, sweep the end-of-run list. Start a fresh checking engineer, as in "The checking engineer", whose brief opens with the line `End-of-run sweep.` and gives every deferred item and every `Deferred` and open-question line from the foremen's final reports and the QC engineers' and stress tests' reports, each with where it came from, plus the decision log's path. For each item it returns `SWEEP: keep | drop`. Log each with `factory.ts decide` as one line, `sweep <keep|drop>: <item> | <reason> | checker-<n> | <outcome>` (decide stamps the time), where `<outcome>` is `followed` or `overruled: <reason>`. Follow it by default; to keep an item the checking engineer dropped, log why.
+
+The sweep also stops what the run left running. Stop every subagent of the run that is still open with TaskStop, and every dev server the run started, by its pid. `finish` already retired the terminal crews' member worktrees and stopped the run's processes inside them; check its `leftWorktrees` for any it kept.
 
 **Retro.** After the sweep, the PM starts the retro without waiting for the client to ask, following `skills/retro/SKILL.md` on this session's truss dir. A retro triage sorts each finding into fix now, defer or drop, one line each as `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`, and drops a finding the catalog already holds, naming the catalog id as the reason. A finding that is not about truss's own setup (plugin, skills, agents, CLAUDE.md, `.claude/settings.json`) is dropped with the reason `out of scope (R-30)`; the retro never changes code a truss run delivered. The fix-now findings become a goal through amend (ADR-0010), as in "Take a new goal mid-run". A fix goal is `"auto"` unless a run-skill section-4 client trigger applies, and a `.claude/settings.json` edit counts as one; then it is `"client"`. Each fix goes through a QC engineer before merge, and a fix that fails QC is not merged and is reported to the client. On a project other than the truss repo, a plugin fix is a draft at `<truss dir>/retro/upstream/<finding id>.md`, reported to the client and not applied. Truss writes `.claude/settings.json` in a fix; when the classifier refuses a write, show the client the refusal and let the client write the rules, never work around it.
 

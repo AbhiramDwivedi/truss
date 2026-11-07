@@ -2,6 +2,15 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.20.0 (2026-11-07)
+
+truss cleans up after itself: no abandoned member branches, no stale processes. Install or update as before with `claude plugin install truss@truss`.
+
+- **finish retires every member of a terminal crew ([ADR-0030](docs/adr/0030-retire-members.md)).** When a crew merges, is dropped or spends its rework allowance, `finish` removes every member worktree and branch of it, from this run and from earlier runs, resumes and fix goals that this truss dir recorded. Branches whose worktree was already gone go too, and a dropped crew's own `truss-<slug>` branch. A branch tip the target lacks is kept first as `refs/truss/archive/<run id>/<branch>`, so nothing is lost; archive refs older than 30 days are pruned. Each retirement is one `retire` event with its reason: `merged`, `superseded`, `dropped` or `failed`.
+- **A main-checkout symlink is not dirt.** An untracked symlink into the main checkout, like the `ui/node_modules` link the worktrees plugin makes, no longer keeps a worktree. Real changes still do, and so does a live process the run did not start; both are listed in `leftWorktrees`.
+- **finish stops the run's leftover processes.** A process inside a worktree being retired that the run started, or an orphan, is stopped by pid: SIGTERM, then SIGKILL after 2 s, with a `stop` event. Linux only. Nothing is killed by pattern.
+- **The PM stops finished subagents.** `skills/run/SKILL.md` says to stop a subagent with TaskStop once its work is merged or recorded, and to stop every subagent and dev server the run started at the end of a run.
+
 ## 0.19.0 (2026-11-07)
 
 truss fixes the retro findings F-8 to F-12 and several factory bugs. Install or update as before with `claude plugin install truss@truss`.

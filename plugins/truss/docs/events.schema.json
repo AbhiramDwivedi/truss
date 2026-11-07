@@ -8,7 +8,7 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
@@ -59,6 +59,36 @@
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
           "label": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "retire" } } },
+      "then": {
+        "description": "factory finish retired a member worktree and its branch, or a branch whose worktree was gone (truss ADR-0030). agent repeats branch; run is the Workflow run the member belonged to; worktree is its path, or null for a branch alone; archive is the ref the branch tip was kept under when the target lacked it, else null.",
+        "additionalProperties": false,
+        "required": ["run", "branch", "worktree", "reason", "archive"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true, "agent": true,
+          "run": { "type": "string", "minLength": 1 },
+          "branch": { "type": "string", "minLength": 1 },
+          "worktree": { "type": ["string", "null"] },
+          "reason": { "enum": ["merged", "superseded", "dropped", "failed"] },
+          "archive": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "stop" } } },
+      "then": {
+        "description": "factory finish stopped a process the run started (or an orphan) whose cwd was inside a worktree it was retiring (truss ADR-0030). agent is the worktree's branch; signal is the one that ended it, or null when it outlived SIGKILL.",
+        "additionalProperties": false,
+        "required": ["pid", "signal", "worktree"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true, "agent": true,
+          "pid": { "type": "integer", "minimum": 2 },
+          "signal": { "enum": ["SIGTERM", "SIGKILL", null] },
+          "worktree": { "type": "string", "minLength": 1 }
         }
       }
     },

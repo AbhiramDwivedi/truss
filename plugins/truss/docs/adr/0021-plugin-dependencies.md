@@ -106,6 +106,8 @@ When `finish --transcript T` merges a crew, step 5 (`bin/factory.ts:1489-1500`) 
 
 Another run's worktrees stay, and so do near-miss names.
 
+Amended 2026-11-07 (truss 0.20.0, ADR-0030): the sweep now runs once per finish, after every merge. Every member of a crew that merged, was dropped or spent its rework allowance is retired, from this run and from earlier runs, unmerged or not; a tip the target lacks is first kept as `refs/truss/archive/<run id>/<branch>`. An untracked symlink into the main checkout no longer makes a worktree dirty, and processes the run started inside a retired worktree are stopped by pid.
+
 Decided by: the plan, item 6; PM rulings A and B (14:55, checker-41), which replace item 6's "records every worktree it leaves in the audit"; PM ruling E keeps this as the bounded, run-scoped path beside worktrees 0.8.4.
 
 ### 8. The claude-ops issues are external dependencies, resolved upstream

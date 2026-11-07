@@ -326,7 +326,8 @@ t('cf 1: finish removes wf_<run>-<n> worktrees and branches; another run, wf_<ru
   for (const bn of [`worktree-${RUN}-1x`, 'worktree-wf_e804087f-eaax-1', `worktree-${OTHER}-1`]) assert.ok(branchExists(w, bn), `branch ${bn} must stay`)
 })
 
-t('cf 2: a dirty, a locked and an unmerged wf_<run> worktree stay and are reported in leftWorktrees with why dirty, locked, unmerged', () => {
+// From 0.20.0 (ADR-0030) an unmerged member of the merged crew is retired too, its tip archived first.
+t('cf 2: a dirty and a locked wf_<run> worktree stay and are reported in leftWorktrees with why dirty, locked; an unmerged one is archived and retired', () => {
   const w = finishWorld()
   const clean = addWf(w, `${RUN}-1`)
   const dirty = addWf(w, `${RUN}-2`)
@@ -335,11 +336,14 @@ t('cf 2: a dirty, a locked and an unmerged wf_<run> worktree stay and are report
   git(w.env.repo, ['worktree', 'lock', locked])
   const unmerged = addWf(w, `${RUN}-4`)
   putFile(unmerged, 'unmerged.txt', 'x\n', 'unmerged work')
+  const tip = git(unmerged, ['rev-parse', 'HEAD'])
   const r = w.finish()
   assert.equal(r.status, 0, `finish must not refuse because of left worktrees: ${say(r)}`)
   assert.deepEqual(r.json.audit, [], `left worktrees are never in audit: ${say(r)}`)
   assert.ok(!existsSync(clean), `the clean merged worktree must be removed: ${say(r)}`)
-  for (const [p, bn, why, name] of [[dirty, `worktree-${RUN}-2`, 'dirty', `${RUN}-2`], [locked, `worktree-${RUN}-3`, 'locked', `${RUN}-3`], [unmerged, `worktree-${RUN}-4`, 'unmerged', `${RUN}-4`]]) {
+  assert.ok(!existsSync(unmerged) && !branchExists(w, `worktree-${RUN}-4`), `the unmerged member of the merged crew is retired: ${say(r)}`)
+  assert.equal(git(w.env.repo, ['rev-parse', `refs/truss/archive/${RUN}/worktree-${RUN}-4`]), tip, 'its tip is archived first')
+  for (const [p, bn, why, name] of [[dirty, `worktree-${RUN}-2`, 'dirty', `${RUN}-2`], [locked, `worktree-${RUN}-3`, 'locked', `${RUN}-3`]]) {
     assert.ok(existsSync(p), `${p} must stay (no --force, no locked removal)`)
     assert.ok(branchExists(w, bn), `branch ${bn} must stay`)
     const e = leftOf(r.json, name)
@@ -347,7 +351,7 @@ t('cf 2: a dirty, a locked and an unmerged wf_<run> worktree stay and are report
     assert.equal(e.branch, bn)
     assert.equal(e.why, why, JSON.stringify(e))
   }
-  assert.equal(left(r.json).length, 3, `only the three left worktrees are listed: ${JSON.stringify(r.json.leftWorktrees)}`)
+  assert.equal(left(r.json).length, 2, `only the two left worktrees are listed: ${JSON.stringify(r.json.leftWorktrees)}`)
 })
 
 // ---- cf: recordRun writes one restart event per restarted member
