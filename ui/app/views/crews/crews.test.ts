@@ -330,11 +330,11 @@ test('BuildNetwork: partial shows the unread-events notice once, with the last k
   assert.equal(agentCards(art).length, 2)
   assert.equal(find(reg, 'article').length, s.run.crews.length)
 })
-test('BuildNetwork: real-12 shows Done and a Dropped chip for a dropped crew and Done for a merged crew with a BLOCKED foreman', async () => {
+test('BuildNetwork: real-12 shows Dropped, not Done, for a dropped crew and Done for a merged crew with a BLOCKED foreman', async () => {
   const reg = region(await network(rx('real-12')))
   const dropped = articleOf(reg, 'web-app')
-  assert.ok(hasWord(headText(dropped), 'Done'))
-  assert.ok(all(dropped, (n) => own(n) === 'Dropped').length > 0)
+  assert.ok(!hasWord(headText(dropped), 'Done'), 'a dropped crew is not Done')
+  assert.equal(all(dropped, (n) => own(n) === 'Dropped').length, 1, 'one Dropped badge')
   for (const w of ['Waiting on you', 'Active']) assert.ok(!hasWord(headText(dropped), w), w)
   const merged = articleOf(reg, 'redesign-design')
   assert.ok(hasWord(headText(merged), 'Done'))
@@ -585,6 +585,11 @@ test('AgentCard helpers: taskLine picks the task, then the foreman goal, then a 
   assert.equal(taskLine(member({ task: null, detail: 'working' }), crew), null)
   assert.equal(taskLine(member({ task: null, detail: null }), crew), null)
   assert.equal(taskLine(fm, { ...crew, goal: null }), null)
+  // crew.goal is a goal id: the foreman line is the goal's text (first line), never the id
+  const goals = [{ id: 'run', goal: 'Run goal.' }, { id: 'g2', goal: '\nSecond goal line.\nMore.' }]
+  assert.equal(taskLine(fm, { ...crew, goal: 'g2' }, goals), 'Second goal line.')
+  assert.equal(taskLine(fm, { ...crew, goal: null }, goals), 'Run goal.')
+  assert.equal(taskLine(fm, { ...crew, goal: 'g9' }, goals), 'g9', 'an unlisted value is older goal text and stays')
 })
 test('AgentCard helpers: stepOf is Reported, Spawned only with no detail and no task, Working otherwise', async () => {
   const { stepOf } = await fmt()

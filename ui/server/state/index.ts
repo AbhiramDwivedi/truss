@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
-import { readTranscriptTask, readTranscriptActivity, projectKeyOf } from './transcript.ts'
+import { readTranscriptTask, readTranscriptActivity, readWorkflowAgents, projectKeyOf } from './transcript.ts'
 import type { ActivityRead } from './transcript.ts'
 import { readGoalTask } from './goal-task.ts'
 import type { SessionView } from '../session/index.ts'
@@ -266,6 +266,36 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     return readGoalTask(trussDir, foremanOf)
   }
 
+  // A running crew's workflow members that the events log has not recorded yet (it records them when the stage ends),
+  // read from the session's workflow transcript dirs at most once a second per crew. Names and ids on the crew win.
+  const liveCache = new Map<string, { at: number; agents: ReturnType<typeof readWorkflowAgents> }>()
+  function liveMembers(c: Run['crews'][number]): Member[] {
+    if (opts.claudeDir === undefined || trussDir === null || reducer === null || c.status === 'merged' || c.status === 'dropped') return []
+    const sessionDir = path.join(opts.claudeDir, 'projects', projectKeyOf(repo), path.basename(trussDir))
+    const key = `${sessionDir}|${c.slug}`
+    const now = Date.now()
+    let hit = liveCache.get(key)
+    if (hit === undefined || now - hit.at >= 1000) {
+      hit = { at: now, agents: readWorkflowAgents(sessionDir, c.slug) }
+      liveCache.set(key, hit)
+    }
+    const names = new Set(c.members.map((m) => m.name))
+    const ids = new Set(c.members.map((m) => m.agentId))
+    const out: Member[] = []
+    for (const a of hit.agents) {
+      if (ids.has(a.agentId)) continue
+      let name = a.name
+      for (let n = 2; names.has(name); n++) name = `${a.name}-${n}`
+      names.add(name)
+      const task = readTranscriptTask(sessionDir, a.agentId, a.by, reducer.titleOf)
+      const ak = `${sessionDir}|${a.agentId}`
+      const act = readTranscriptActivity(sessionDir, a.agentId, a.by, activityCache.get(ak) ?? undefined)
+      activityCache.set(ak, act)
+      out.push({ name, type: a.type, model: a.model, effort: null, state: 'spawned', detail: null, ts: new Date(a.mtimeMs).toISOString(), agentId: a.agentId, purpose: purposeOf(purposes, a.type, false), task, activity: act === null ? null : act.value })
+    }
+    return out
+  }
+
   let decoratedMemo: { run: Run; key: string; value: Run } | null = null
   function decorated(r: Run | null): Run | null {
     if (r === null) return null
@@ -273,6 +303,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     for (const c of r.crews) {
       if (c.foreman) ids.push(taskFor(c.foreman, c.slug), activityFor(c.foreman))
       for (const m of c.members) ids.push(taskFor(m, null), activityFor(m))
+      for (const m of liveMembers(c)) ids.push(m.name, m.agentId, m.task, m.activity ?? null)
     }
     const key = JSON.stringify(ids)
     if (decoratedMemo !== null && decoratedMemo.run === r && decoratedMemo.key === key) return decoratedMemo.value
@@ -287,7 +318,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
       task: taskFor(m, foremanOf),
       activity: activityFor(m),
     })
-    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, c.slug), members: c.members.map((m) => fill(m, null)) })) }
+    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, c.slug), members: [...c.members.map((m) => fill(m, null)), ...liveMembers(c)] })) }
   }
 
   function compute(): Record<string, unknown> {

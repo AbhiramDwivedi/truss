@@ -27,6 +27,9 @@ export interface CrewCardProps {
   checkRunsOpen?: boolean
 }
 
+/** The run's goals, so a foreman card can show its crew's goal text instead of the goal id. */
+export const GoalsContext = React.createContext<readonly { id: string; goal: string | null }[]>([])
+
 /** Agent cards shown before "Show n more agents". */
 export const FOLD = 6
 
@@ -44,7 +47,7 @@ export function isRecent(handoff: FlowEntry | null | undefined, now: number): bo
 }
 
 /** The agent's task line: a stall says so, otherwise the shared task rule. */
-function lineOf(m: Member, crew: Crew): string | null {
+function lineOf(m: Member, crew: Crew, goals: readonly { id: string; goal: string | null }[]): string | null {
   const done = crew.status === 'merged' || crew.status === 'dropped'
   if (!done && m.state === 'stalled') {
     const min = detailMinutes(m.detail) ?? crew.stuck?.minutes ?? null
@@ -52,7 +55,7 @@ function lineOf(m: Member, crew: Crew): string | null {
   }
   if (!done && m.state === 'allowance-spent') return 'Allowance spent'
   // A stalled member's detail is its stall minutes: in a done crew that is stall text, not a task.
-  return taskLine(done && FAILED_STATES.has(m.state) ? { ...m, detail: null } : m, crew)
+  return taskLine(done && FAILED_STATES.has(m.state) ? { ...m, detail: null } : m, crew, goals)
 }
 
 function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React.ReactNode; children: React.ReactNode }) {
@@ -67,6 +70,7 @@ function Notice({ tone, icon, children }: { tone: 'signal' | 'fail'; icon: React
 }
 
 export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, trunkLit = false, gutterLink = true, checkRunsOpen = false }: CrewCardProps) {
+  const goals = React.useContext(GoalsContext)
   const slugId = React.useId()
   const listId = `${slugId}-agents`
   const [expanded, setExpanded] = React.useState(false)
@@ -109,14 +113,13 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
             <h3 id={slugId} tabIndex={0} title={crew.slug} className="min-w-0 flex-1 truncate font-mono text-body font-semibold text-fg">
               {crew.slug}
             </h3>{' '}
-            <StatusBadge status={status} size="sm" />
+            {crew.status === 'dropped' ? <Badge tone="neutral" size="sm">Dropped</Badge> : <StatusBadge status={status} size="sm" />}
           </div>{' '}
           <p className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted">
             <span className="tabular-nums">{stage === null ? 'No stage' : `Stage ${stage}`}</span>{' '}
             <span className="tabular-nums">{plural(agents.length, 'agent')}</span>{' '}
             <span>{qc}</span>{' '}
             {blocked && <span className="font-medium text-fail-text">{blocked}</span>}{' '}
-            {crew.status === 'dropped' && <Badge size="sm">Dropped</Badge>}
           </p>{' '}
           {fromPm && (
             <p title={fromPm} className="truncate text-meta text-muted">
@@ -146,7 +149,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
           <>
             <ul id={listId} aria-label={`${crew.slug} agents`} className="mt-3 flex min-w-0 flex-col gap-2">
               {shown.map((m) => (
-                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
+                <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew, goals)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
               ))}
             </ul>
             {checkRuns.length > 0 && (
@@ -163,7 +166,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
                 <ul id={runsId} aria-label={`${crew.slug} check runs`} hidden={!runsOpen} className="mt-2 flex min-w-0 flex-col gap-2">
                   {runsOpen &&
                     checkRuns.map((m) => (
-                      <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
+                      <AgentCard key={m.name} member={m} role={roleWord(m)} task={lineOf(m, crew, goals)} activity={m.activity ?? null} status={agentStatus(m, crew)} step={stepOf(m, crew)} />
                     ))}
                 </ul>
               </div>

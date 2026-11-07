@@ -7,7 +7,7 @@ import { Skeleton } from '../../components/ui/skeleton.tsx'
 import { crewStatus, pmStatus, STATUS_WORD, type Status } from '../status/status.ts'
 import { PmNode, type PmNodeProps } from './PmNode.tsx'
 import { StageGroup, type StagePhase } from './StageGroup.tsx'
-import { isRecent } from './CrewCard.tsx'
+import { GoalsContext, isRecent } from './CrewCard.tsx'
 import { crewEnd, crewStart, short } from './format.ts'
 import { goalGroups, goalLabel, type GoalGroup } from './goals.ts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -204,12 +204,14 @@ export function BuildNetwork({ state, now }: BuildNetworkProps) {
           Crews appear here once the PM has a plan.
         </p>
       ) : (
+        <GoalsContext.Provider value={state.run?.goals ?? []}>
         <div className="mt-6">
           {renderStages(stages, now, handoffs, trunkAnimated, trunkLit)}
           {earlier.map((g) => (
             <EarlierGoal key={g.id} group={g} now={now} handoffs={handoffs} trunkAnimated={trunkAnimated} trunkLit={trunkLit} />
           ))}
         </div>
+        </GoalsContext.Provider>
       )}
     </section>
   )

@@ -187,3 +187,58 @@ export function readTranscriptActivity(sessionDir: string, agentId: string, by: 
     }
   }
 }
+
+export interface LiveWorkflowAgent {
+  agentId: string
+  by: string // workflow:<wf id>
+  name: string // Claude Code's description for the agent: the workflow's label, `<crew slug>-<role>`
+  type: string | null
+  model: string | null
+  mtimeMs: number
+}
+
+// The workflow agents running now for a crew. The truss events log records a stage workflow's members only when the
+// stage ends, but each member's transcript and meta file appear under subagents/workflows/<wf id>/ as it spawns; the
+// description in agent-<id>.meta.json is the workflow label, which starts with the crew slug. Read only; never throws.
+export function readWorkflowAgents(sessionDir: string, slug: string): LiveWorkflowAgent[] {
+  const out: LiveWorkflowAgent[] = []
+  try {
+    const root = path.join(sessionDir, 'subagents', 'workflows')
+    for (const wf of fs.readdirSync(root)) {
+      if (!plain(wf)) continue
+      let names: string[]
+      try {
+        names = fs.readdirSync(path.join(root, wf))
+      } catch {
+        continue
+      }
+      for (const f of names) {
+        const m = /^agent-([A-Za-z0-9]+)\.meta\.json$/.exec(f)
+        if (m === null) continue
+        try {
+          const real = agentFile(sessionDir, m[1]!, `workflow:${wf}`, '.meta.json')
+          if (real === null) continue
+          const st = fs.statSync(real)
+          if (st.size > CAP) continue
+          const o = JSON.parse(fs.readFileSync(real, 'utf8')) as { description?: unknown; agentType?: unknown; model?: unknown } | null
+          if (o === null || typeof o !== 'object') continue
+          const d = typeof o.description === 'string' ? o.description.trim() : ''
+          if (d !== slug && !d.startsWith(`${slug}-`)) continue
+          out.push({
+            agentId: m[1]!,
+            by: `workflow:${wf}`,
+            name: d,
+            type: typeof o.agentType === 'string' ? o.agentType : null,
+            model: typeof o.model === 'string' ? o.model : null,
+            mtimeMs: st.mtimeMs,
+          })
+        } catch {
+          // an unreadable or half-written meta file is skipped until the next read
+        }
+      }
+    }
+  } catch {
+    return out
+  }
+  return out.sort((a, b) => a.mtimeMs - b.mtimeMs || a.agentId.localeCompare(b.agentId))
+}
