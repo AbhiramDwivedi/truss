@@ -1688,8 +1688,8 @@ function argsFileOut(f: Flags, out: Obj): Obj {
 import { spawn } from 'node:child_process'
 import { admits, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
 
-// How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 900 s.
-export const HEAVY_WAIT_MS = 900000
+// How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 540 s (under the 600000 ms Bash timeout stage.js sets, leaving room for the command).
+export const HEAVY_WAIT_MS = 540000
 export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = process.env): number {
   for (const v of [str(f, 'wait-ms'), env.TRUSS_HEAVY_WAIT_MS]) {
     const n = v === undefined || v.trim() === '' ? NaN : Number(v)

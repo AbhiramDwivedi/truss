@@ -95,12 +95,12 @@ test('f12 5: admit --wait-ms re-checks a hold for a bounded time before it refus
   assert.equal(runEnv(env, 'admit', { slug: 's', 'wait-ms': 2500 }, { TRUSS_SAMPLE: p }).json.admitted, true)
 })
 
-test('f12 6: the heavy slot wait defaults to 900 s and --wait-ms or TRUSS_HEAVY_WAIT_MS sets it', () => {
-  assert.equal(HEAVY_WAIT_MS, 900000)
-  assert.equal(heavyWaitMs({}, {}), 900000)
+test('f12 6: the heavy slot wait defaults to 540 s and --wait-ms or TRUSS_HEAVY_WAIT_MS sets it', () => {
+  assert.equal(HEAVY_WAIT_MS, 540000)
+  assert.equal(heavyWaitMs({}, {}), 540000)
   assert.equal(heavyWaitMs({}, { TRUSS_HEAVY_WAIT_MS: '5000' }), 5000)
   assert.equal(heavyWaitMs({ 'wait-ms': '100' }, { TRUSS_HEAVY_WAIT_MS: '5000' }), 100)
-  assert.equal(heavyWaitMs({ 'wait-ms': 'x' }, { TRUSS_HEAVY_WAIT_MS: 'y' }), 900000)
+  assert.equal(heavyWaitMs({ 'wait-ms': 'x' }, { TRUSS_HEAVY_WAIT_MS: 'y' }), 540000)
 })
 
 test('f12 7: the old-run member worktree patterns match wf_ branches and paths and nothing else', () => {
