@@ -517,6 +517,36 @@ describe('retro/extract.ts: the files list', () => {
   })
 })
 
+// ---------- pluginVersion ----------
+
+describe('retro/extract.ts: pluginVersion', () => {
+  const cachePath = (v: string) => `~/.claude/plugins/cache/truss/truss/${v}/agents/foreman.md`
+  test('is the commonest plugin-cache version in the main transcript only, and is written to extract.json', async () => {
+    const { extractSession, writeExtract } = await extractMod()
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [prompt('a', 0), say(`read ${cachePath('0.18.0')}`, 1), say(`read ${cachePath('0.19.2')}`, 2), say(`read ${cachePath('0.19.2')}`, 3)],
+      [`${sid}/subagents/agent-a1.jsonl`]: [say(`${cachePath('0.30.0')} ${cachePath('0.30.0')} ${cachePath('0.30.0')}`, 1, { agentId: 'a1' })],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    assertExtractSchema(x)
+    assert.equal(x.pluginVersion, '0.19.2')
+    const trussDir = join(s.root, 'truss')
+    const out = writeExtract(trussDir, x)
+    assert.equal(JSON.parse(readFileSync(out, 'utf8')).pluginVersion, '0.19.2')
+  })
+
+  test('is null when the main transcript names no plugin-cache path, even if a subagent does', async () => {
+    const { extractSession } = await extractMod()
+    const s = session(sid => ({
+      [`${sid}.jsonl`]: [prompt('a', 0), say('plugins/cache/other/truss/1.2.3/x plugins/cache/truss/truss/1.2/x', 1)],
+      [`${sid}/subagents/agent-a1.jsonl`]: [say(cachePath('0.30.0'), 1, { agentId: 'a1' })],
+    }))
+    const x = extractSession(s.sessionDir, await emptyCatalog(s.root))
+    assertExtractSchema(x)
+    assert.equal(x.pluginVersion, null)
+  })
+})
+
 // ---------- writeExtract ----------
 
 describe('retro/extract.ts writeExtract', () => {

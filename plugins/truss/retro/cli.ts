@@ -4,8 +4,7 @@
 // the extract's files and line counts, never the transcripts (R-35). Erasable TypeScript only, Node standard library
 // only (P19).
 import { execFileSync } from 'node:child_process'
-import { existsSync,mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync,mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fixShipped, KINDS, loadCatalog, recurrences } from './catalog.ts'
@@ -217,27 +216,12 @@ function runFindings(trussDir: string, label: string, reportPath: string): strin
 
 // ---------- recur (Decision 7) ----------
 
-const CACHE_VERSION = /plugins\/cache\/truss\/truss\/(\d+\.\d+\.\d+)\//g
-
-/** The plugin version the session ran: the extract's pluginVersion when it has one, else the commonest `plugins/cache/truss/truss/<v>/` path in the main transcript (found under ~/.claude/projects/*), else null. */
-function ranVersion(trussDir: string, files: FilesList): string | null {
+/** The plugin version the session ran: the extract's pluginVersion, else null (R-35: the extract alone, no transcript rescan). */
+function ranVersion(trussDir: string): string | null {
   try {
     const x = JSON.parse(read(join(trussDir, 'retro', 'extract.json')))
     if (typeof x.pluginVersion === 'string' && /^\d+\.\d+\.\d+$/.test(x.pluginVersion)) return x.pluginVersion
   } catch { /* loadExtract already vouched for the file */ }
-  if (files.length === 0) return null
-  const projects = join(homedir(), '.claude', 'projects')
-  let dirs: string[] = []
-  try { dirs = readdirSync(projects) } catch { return null }
-  for (const d of dirs) {
-    const p = join(projects, d, files[0].path)
-    if (!existsSync(p)) continue
-    const count = new Map<string, number>()
-    for (const m of readFileSync(p, 'utf8').matchAll(CACHE_VERSION)) count.set(m[1], (count.get(m[1]) ?? 0) + 1)
-    let best: string | null = null
-    for (const [v, n] of count) if (best === null || n > count.get(best)!) best = v
-    return best
-  }
   return null
 }
 
@@ -246,7 +230,7 @@ function runRecur(trussDir: string, catalogPath: string | undefined): string[] {
   const catalog = catalogAt(catalogPath)
   const fixed = catalog.entries.filter((e) => e.fixedBy !== null)
   const hits = recurrences({ catalogHits: x.catalogHits as never }, catalog)
-  const ran = ranVersion(trussDir, x.files)
+  const ran = ranVersion(trussDir)
   const lines: string[] = []
   const byId = new Map<string, typeof hits>()
   for (const h of hits) {

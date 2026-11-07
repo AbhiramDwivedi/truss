@@ -783,6 +783,21 @@ describe('retro/cli.ts recur: NOT SHIPPED when the session ran a plugin older th
     }
   })
 
+  test('an extract with no pluginVersion (or null) reads as ran unknown: recur never rescans transcripts', async () => {
+    const { main } = await cliMod()
+    for (const ran of [undefined, null]) {
+      const p = shipPrep({ ...FB, version: '0.19.0' })
+      if (ran === null) {
+        const f = join(p.trussDir, 'retro', 'extract.json')
+        writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), pluginVersion: null }))
+      }
+      const r = await main(['recur', p.trussDir, p.catPath])
+      assert.equal(r.code, 0, r.out)
+      assert.ok(linesOf(r.out)[0].includes('ran unknown') || linesOf(r.out)[0].startsWith('RECURRED'), r.out)
+      assert.ok(!r.out.includes('ran 0.'), r.out)
+    }
+  })
+
   test('a legacy entry with no version key stays RECURRED, and a bad version is refused by the loader', async () => {
     const { main } = await cliMod()
     const r = await main(['recur', ...Object.values(shipPrep(FB, '0.18.0'))])
