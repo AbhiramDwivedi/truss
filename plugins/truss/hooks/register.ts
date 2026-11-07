@@ -929,6 +929,12 @@ export function isEmptyHandBack(message: string): boolean {
   return trimmed.length < HANDBACK_MIN || STAND_INS.has(trimmed.toLowerCase())
 }
 
+// 10:04 for a clock reading, in the machine's local time (bin/factory.ts `decide` stamps decision lines with it)
+export function localTime(ms: number): string {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 // What the decision-log deny says. Rewriting the input of an Edit/Write made auto mode give "classifier gave no verdict"
 // (retro F-9), so the log is written only by `factory.ts decide`, which stamps the clock's time itself.
 export const DECISION_LOG_REFUSAL = `${MARK} Refused: decisions.md is written only by the decide command, which stamps the time. Run: node <plugin>/bin/factory.ts decide --dir <truss dir> --line "<decision> | <reason> | <recommendation> | <outcome>"`

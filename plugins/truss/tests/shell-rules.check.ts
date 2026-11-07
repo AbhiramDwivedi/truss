@@ -20,6 +20,12 @@ test('SKILL.md quotes the hook constant word for word', () => {
   assert.ok(skill.includes(`"${constant}"`))
 })
 
+test('workflows/stage.js SHELL is the hook constant, word for word', () => {
+  assert.ok(constant !== undefined)
+  const stage = readFileSync(here('workflows/stage.js'), 'utf8')
+  assert.ok(stage.includes(`const SHELL = "${constant}"`))
+})
+
 test('the rules carry the foreground, no-poll and pid lines', () => {
   assert.ok(constant !== undefined)
   assert.match(constant, /in the foreground with an explicit Bash timeout up to 600000/)
