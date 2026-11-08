@@ -467,9 +467,9 @@ function cmdPlanCheck(f: Flags): Obj {
   const errors: string[] = []
   const crews: Obj[] = plan.crews.filter(isObj)
   const name = (c: Obj): string => (typeof c.slug === 'string' ? c.slug : '?')
-  if (plan.version !== 2 && plan.version !== 3) errors.push('plan: version must be 2 or 3')
+  if (plan.version !== 2 && plan.version !== 3 && plan.version !== 4) errors.push('plan: version must be 2, 3 or 4')
   const goalIds: string[] = []
-  if (plan.version === 3 || plan.version === 2) {
+  if (plan.version === 2 || plan.version === 3 || plan.version === 4) {
     // plan.schema.json: top-level goals and a crew's goal are version 3 only.
     if (plan.goals !== undefined) {
       if (plan.version === 2) errors.push('plan: goals is version 3 only')
@@ -499,7 +499,31 @@ function cmdPlanCheck(f: Flags): Obj {
     else if (c.slug === 'truss') errors.push(`${s}: truss is a reserved slug`)
     if (c.goal !== undefined) {
       if (plan.version === 2) errors.push(`${s}: goal is version 3 only`)
-      else if (plan.version === 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
+      else if (plan.version >= 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
+    }
+    // ADR-0031 item 7: process, qc and red are version 4 only; qc and red belong to a lean crew; estAgents limits per size
+    const hasProc = Object.hasOwn(c, 'process')
+    const hasQc = Object.hasOwn(c, 'qc')
+    const hasRed = Object.hasOwn(c, 'red')
+    if (plan.version === 4) {
+      if (hasProc && c.process !== 'solo' && c.process !== 'lean' && c.process !== 'full') errors.push(`${s}: process must be solo, lean or full`)
+      const lean = c.process === 'lean'
+      for (const [k, has] of [['qc', hasQc], ['red', hasRed]] as const) {
+        if (lean) {
+          if (typeof c[k] !== 'boolean') errors.push(`${s}: ${k} must be a boolean on a lean crew`)
+        } else if (has) errors.push(`${s}: ${k} is lean only`)
+      }
+      const est = c.estAgents
+      if (typeof est === 'number') {
+        if (c.process === 'solo' && est > 1) errors.push(`${s}: estAgents ${est} is above 1 for a solo crew`)
+        if (lean && est > 3) errors.push(`${s}: estAgents ${est} is above 3 for a lean crew`)
+        else if (lean && est > 2 && c.qc !== true) errors.push(`${s}: estAgents ${est} is above 2 for a lean crew without qc`)
+      }
+      if (c.stage === 0 && hasProc && c.process !== 'full') errors.push(`${s}: process must be full on a stage-0 design crew, not ${String(c.process)}`)
+    } else {
+      if (hasProc) errors.push(`${s}: process is version 4 only`)
+      if (hasQc) errors.push(`${s}: qc is version 4 only`)
+      if (hasRed) errors.push(`${s}: red is version 4 only`)
     }
     if (Object.hasOwn(c, 'ux') && typeof c.ux !== 'boolean') errors.push(`${s}: ux must be a boolean`)
     // a ## UX section that contradicts plan.json ux (ux false but the section asks for UX; ux true but the section says none)
@@ -1044,13 +1068,13 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
-function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
+function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries)]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    held, foremen, refused, stale, unfinished, warnings,
+    held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
 
@@ -1419,8 +1443,13 @@ function unapprovedGoals(plan: Obj): Set<string> {
   return new Set(goals.filter((g): g is Obj => isObj(g) && g.approvedAt === null && typeof g.id === 'string' && g.id !== RUN_GOAL).map((g) => String(g.id)))
 }
 
+const isDirect = (crew: Obj): boolean => crew.process === 'solo' || crew.process === 'lean'
+
 function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj {
   if (!['answers', 'merge-ready', 'stale'].includes(kind)) throw usage(`--resume needs answers, merge-ready or stale, got ${kind}`)
+  // ADR-0031 item 6: a solo or lean crew runs direct and merges with land, so it is never resumed (before any flag check)
+  const direct = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug && isDirect(x))
+  if (direct !== undefined) throw refuse({ slug, why: `${slug} is a ${String(direct.process)} crew; it runs direct, so merge it with land` })
   const transcript = str(f, 'transcript') ?? ''
   if ((kind === 'answers' || kind === 'stale') && transcript === '') throw usage(`--resume ${kind} needs --transcript T: ${NEED_TRANSCRIPT}`)
   let answers: unknown[] = []
@@ -1554,6 +1583,7 @@ function cmdStart(f: Flags): Obj {
   const refused: Obj[] = []
   const entries: Obj[] = []
   const held: Obj[] = []
+  const direct: Obj[] = []
   for (const crew of picked === undefined ? crews : [picked]) {
     if (!startsNow(crew) || crew.status !== 'planned') continue
     // a picked crew is held with admission's reason rather than dropped: admission's parallelism is never above the cap,
@@ -1564,7 +1594,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length)
+    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -1572,6 +1602,21 @@ function cmdStart(f: Flags): Obj {
     const slug = String(crew.slug)
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
+    // ADR-0031 item 6: a planned solo or lean crew runs direct; same planVerdict, no engine split, no ## Members check
+    if (isDirect(crew)) {
+      const directVerdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
+      if (directVerdict !== undefined) {
+        refused.push({ slug, reason: directVerdict.deny })
+        continue
+      }
+      const wt = ensureWorktree(repo, slug, settings.target)
+      crew.status = 'running'
+      savePlan(dir, plan)
+      appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
+      slots--
+      direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
+      continue
+    }
     const { engine, reason } = engineOf(sections, settings.merge, noWorkflow)
     if (engine === 'foreman') {
       const foremanVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
@@ -1613,7 +1658,7 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held)
+  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held, direct)
 }
 
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
