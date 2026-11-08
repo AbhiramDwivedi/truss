@@ -3,7 +3,6 @@
 // asserts each change shows within 2 s. Elements are found by role and accessible name; the
 // names carry per-run random values, so no fixed string can pass by accident.
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { expectD2Colours } from './colours.ts'
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -63,11 +62,7 @@ test.afterAll(() => {
 })
 
 // ADR-0023 checklist item 22: the live page paints the tokens.json colours.
-test('D2 colours: the live page paints body with tokens.json bg and the move surface with move', async ({ page }) => {
-  await page.goto(url)
-  await expect(crewLine(page, 'quotas')).toBeVisible({ timeout: 10000 })
-  await expectD2Colours(page, 'light')
-})
+// D2 colours on a real page are page-fixes.spec.ts's and retro-stage.spec.ts's: the CSS is the same on every page.
 
 test('changes to the Truss files show on the page within 2 s without a reload', async ({ page }) => {
   await page.goto(url)
