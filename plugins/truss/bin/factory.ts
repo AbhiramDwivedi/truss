@@ -437,8 +437,16 @@ function cmdPlanWrite(f: Flags): Obj {
   const raw = results[results.length - 1].result
   const message = typeof raw === 'string' ? raw : isObj(raw) && typeof raw.report === 'string' ? raw.report : JSON.stringify(raw)
   const no = (reason: string): never => { throw refuse({ written: false, reason }) }
-  const json = fencedBlock(message, '````json plan.json')
-  const md = fencedBlock(message, '````markdown plan.md')
+  // The structured result fields `planJson` (a JSON string or the plan object) and `planMd` win when they hold a plan / text;
+  // the report's fenced blocks are the fallback (a designer's report may hold placeholder blocks while the fields hold the plan).
+  let fieldJson: string | undefined
+  if (isObj(raw) && raw.planJson !== undefined) {
+    const s = typeof raw.planJson === 'string' ? raw.planJson : isObj(raw.planJson) ? JSON.stringify(raw.planJson) : undefined
+    if (s !== undefined && parsePlan(s) !== undefined) fieldJson = s
+  }
+  const fieldMd = isObj(raw) && typeof raw.planMd === 'string' && raw.planMd.trim() !== '' ? raw.planMd : undefined
+  const json = fieldJson ?? fencedBlock(message, '````json plan.json')
+  const md = fieldMd ?? fencedBlock(message, '````markdown plan.md')
   if (json === undefined || md === undefined) no(json === undefined ? 'no plan.json block' : 'no plan.md block')
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
