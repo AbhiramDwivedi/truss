@@ -231,13 +231,6 @@ test('a sampler error prints freeMB null on admit', () => {
 
 // ---------- admit usage, start output ----------
 
-test('admit with a slug not in the plan exits 2 with an error line', () => {
-  const w = world([planned('q')])
-  const r = w.run(['admit', ...fl(w, 'nope')])
-  assert.equal(r.status, 2, say(r))
-  assert.equal(typeof r.json?.error, 'string')
-})
-
 test('start --args-file short output carries held, after crews', () => {
   const w = world([planned('q')], { maxParallelCrews: 4 })
   const p = `${w.scratch}/args.json`

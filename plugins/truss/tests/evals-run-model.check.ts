@@ -199,10 +199,16 @@ function parse(stdout: string) {
   return { rows, scoreLine }
 }
 
+// One default run (stub reply PASS, no flags, cwd ROOT), shared by the tests that only read its output: each full
+// golden run takes about 3 s, and six identical ones were half this file's time. Tests that change the env, the
+// flags, the cwd or the binary, or that snapshot the checkout around their own run, still call run() themselves.
+let DEFAULT_RUN: ReturnType<typeof run> | undefined
+const defaultRun = () => (DEFAULT_RUN ??= run())
+
 test('run-model: exit 0, one line per golden case sorted by id, then a score line with HEAD sha and the case total', () => {
   const all = cases()
   assert.ok(all.length >= 1, 'no golden cases')
-  const { r, stdout } = run()
+  const { r, stdout } = defaultRun()
   assert.equal(r.status, 0, r.stderr)
   const { rows, scoreLine } = parse(stdout)
   assert.equal(rows.length, all.length)
@@ -222,7 +228,7 @@ test('run-model: results follow the stub reply - PASS reply then FAIL reply flip
   const fails = qcs.filter((c) => c.expected.kind === 'FAIL').length
   assert.ok(passes >= 1 && fails >= 1, 'need qc PASS and FAIL cases')
 
-  const a = run()
+  const a = defaultRun()
   assert.equal(a.r.status, 0, a.r.stderr)
   const pa = parse(a.stdout)
   for (const [i, m] of pa.rows.entries()) {
@@ -255,7 +261,7 @@ test('run-model: a reply with a preamble before the VERDICT line scores got=none
 
 test('run-model: one claude call per case, with the flags, role prompt, tool list, stdin and cwd the ADR fixes', () => {
   const all = cases()
-  const { r, calls } = run()
+  const { r, calls } = defaultRun()
   assert.equal(r.status, 0, r.stderr)
   assert.equal(calls.length, all.length, 'one call per case')
   const roleBody = { qc: body('qc').trim(), checker: body('checker').trim() }
@@ -361,7 +367,7 @@ function parseArgv(argv: string[], id: string) {
 }
 
 test('run-model: argv carries only the allowed flags (no --permission-mode, no write tool via --tools)', () => {
-  const { r, calls } = run()
+  const { r, calls } = defaultRun()
   assert.equal(r.status, 0, r.stderr)
   assert.ok(calls.length >= 1)
   for (const [i, { argv }] of calls.entries()) {
@@ -375,7 +381,7 @@ test('run-model: argv carries only the allowed flags (no --permission-mode, no w
 
 test('run-model: --tools and --disallowedTools carry the exact values (qc: Read Grep Glob Bash; checker: Read Grep Glob)', () => {
   const all = cases()
-  const { r, calls } = run()
+  const { r, calls } = defaultRun()
   assert.equal(r.status, 0, r.stderr)
   assert.equal(calls.length, all.length)
   const DISALLOWED = ['Bash(git diff --output*)', 'Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git reset:*)', 'Bash(git checkout:*)']
@@ -417,7 +423,7 @@ test('run-model: writes nothing under .claude (worktrees excepted) and no run ou
   // Baselines come from module load, before any run in this file: an earlier test's run must not hide a leak.
   const before = CLAUDE_BASE
   const commonBefore = COMMON_BASE
-  const { r } = run()
+  const { r } = defaultRun()
   assert.equal(r.status, 0, r.stderr)
   const wt = norm(join(ROOT, '.claude', 'worktrees'))
   const bad: string[] = []

@@ -58,9 +58,5 @@ mt('the monitor agent has model: haiku', () => {
   assert.ok(fm.some((l) => /^model: *haiku\s*$/.test(l)), `the frontmatter needs "model: haiku":\n${fm.join('\n')}`)
 })
 
-mt('the run skill names the monitor, the parallelism file and held', () => {
-  if (skillMissing) assert.fail(SKILL_MISSING)
-  for (const word of ['truss:resource-monitor', 'parallelism', 'held']) {
-    assert.ok(skillText.includes(word), `skills/run/SKILL.md does not name ${word}`)
-  }
-})
+// The run skill's monitor step (names truss:resource-monitor, resources/parallelism.json and held) is pinned
+// line by line in monitor-wiring.check.ts.
