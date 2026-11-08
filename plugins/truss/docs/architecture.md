@@ -6,7 +6,7 @@ The prompts decide what agents should do. The hooks refuse the calls that break 
 
 Truss has a design phase: a design engineer, principle packs, a plan file and stages. [ADR-0001](adr/0001-design-phase.md) decides it. The parts are `agents/design-engineer.md`, the `skills/principles/` and `skills/init/` skills, and the plan gates in `hooks/register.ts`, which read `plan.json`. The plan file's contract is [`plan.schema.json`](plan.schema.json), with an example in [`plan.example.json`](plan.example.json).
 
-Truss builds on kit and records what a run did (designed in foundry run 2, ADRs accepted 2026-10-27). [ADR-0002](adr/0002-kit-manifest-and-config.md): Truss init reads kit's manifest, has kit declare `truss:qc-engineer` and `truss:checking-engineer` read-only, and proposes the new `.claude/truss.json` keys ([`truss-config.schema.json`](truss-config.schema.json)); crews take ports from worktrees' slots. [ADR-0003](adr/0003-event-log-and-retro.md): the hooks append `events.jsonl` ([`events.schema.json`](events.schema.json)), `decisions.md` gets a grammar, and `scripts/retro.py` with the `truss:retro` skill counts both. Both apply the repo's extension rules, [repo ADR-0012](adr/claude-ops/0012-extension-framework.md). Run 2's stage 1 merged; the sections on kit, the config keys, the event log and `decisions.md` describe the code.
+Truss builds on kit and records what a run did (designed in foundry run 2, ADRs accepted 2026-10-27). [ADR-0002](adr/0002-kit-manifest-and-config.md): Truss init reads kit's manifest, has kit declare `truss:qc-engineer` and `truss:checking-engineer` read-only, and proposes the new `.claude/truss.json` keys ([`truss-config.schema.json`](truss-config.schema.json)); crews take ports from worktrees' slots. [ADR-0003](adr/0003-event-log-and-retro.md): the hooks append `events.jsonl` ([`events.schema.json`](events.schema.json)), `decisions.md` gets a grammar, and `retro/cli.ts counts` (`retro/counts.ts`) with the `truss:retro` skill counts both. Both apply the repo's extension rules, [repo ADR-0012](adr/claude-ops/0012-extension-framework.md). Run 2's stage 1 merged; the sections on kit, the config keys, the event log and `decisions.md` describe the code.
 
 The quality gates (designed in foundry run 3, [ADR-0004](adr/0004-scope-repair-and-head-gates.md), accepted 2026-10-28 with the client's approval of the run-3 plan) are evidence-based for scope, repair and cost. Plan v2 carries a `reworkAllowance`. The foreman's report gains Examined and Not examined sections, and the QC engineer FAILs an absence claim that states no scope. The QC engineer writes fixed head and patch lines, so a hook can tell which head a PASS belongs to, and a PASS survives a merge of the target that leaves the patch id unchanged. The hooks refuse the QC engineer spawn that would exceed the allowance, and record the spent allowance in `events.jsonl`. They also refuse main-session `truss:*` calls that set no model or effort. Every new rule applies only to plans with `version >= 2` and fails open on v1. The effort ladder itself is a repo-level principle, in the amendment to repo [ADR-0011](adr/claude-ops/0011-agents-pin-their-model.md). Run 3 merged; the sections on the rework allowance and head guard describe the code.
 
@@ -41,7 +41,7 @@ flowchart TB
   arch["truss:design-engineer<br/>[agent: agents/design-engineer.md]<br/>Writes the doc, ADRs and draft plan"]
   crew["Crew agents<br/>[agents: foreman, QC engineer, checking engineer, writer, commissioning engineer]<br/>Do and check the work"]
   hooks["Hooks module<br/>[hooks/register.ts]<br/>Gates, report capture, wakes"]
-  retro["retro<br/>[scripts/retro.py, truss:retro]<br/>Counts what a run did"]
+  retro["retro<br/>[retro/cli.ts counts, truss:retro]<br/>Counts what a run did"]
   fjson[(".claude/truss.json<br/>[project config]")]
   kitman[("kit's .claude/kit/manifest.json<br/>[kit's store, read by init]")]
   plan[("plan.json, plan.md<br/>[Truss dir]")]
@@ -504,11 +504,11 @@ On the Workflow path ([ADR-0009](adr/0009-workflow-factory.md)), `factory.ts` wr
 - HH:MM | checker-<n> RECOMMEND <answer|defer|pass>: <text> | <outcome>
 ```
 
-The PM writes every line through `factory.ts decide --dir <absolute truss dir>` ([ADR-0027](adr/0027-retro-fixes2.md), F-73), never with Edit or Write. It has one form per line kind: the four-field decision line, the `checker-<n>` line and the `## Run` heading. decide stamps `HH:MM` with the clock's local time and `<start>` with the clock's UTC time, and appends one line. It exits 2 and writes nothing on a newline in any value, on a relative `--dir`, and, in the decision form only, on a field count other than four. The grammar has no continuation lines: decide refuses a newline, and `scripts/retro.py` reads only `## Run` headings and `- ` lines, so a continuation line in an older file is skipped. The factory's own lines (`appendDecision`, `bin/factory.ts:182`) keep the form `- HH:MM | <text> | none | followed`.
+The PM writes every line through `factory.ts decide --dir <absolute truss dir>` ([ADR-0027](adr/0027-retro-fixes2.md), F-73), never with Edit or Write. It has one form per line kind: the four-field decision line, the `checker-<n>` line and the `## Run` heading. decide stamps `HH:MM` with the clock's local time and `<start>` with the clock's UTC time, and appends one line. It exits 2 and writes nothing on a newline in any value, on a relative `--dir`, and, in the decision form only, on a field count other than four. The grammar has no continuation lines: decide refuses a newline, and the retro counts read only `## Run` headings and `- ` lines, so a continuation line in an older file is skipped. The factory's own lines (`appendDecision`, `bin/factory.ts:182`) keep the form `- HH:MM | <text> | none | followed`.
 
-`<outcome>` is `followed`, `followed (deferred)` or `overruled: <reason>`. One `## Run` heading per run lets `scripts/retro.py` split a session dir that holds several runs; without headings it reports the split as `"not recorded"`. retro also reads the older shapes (date-stamped lines, free-form lines, a literal `HH:MM`) and says `"not recorded"` for what they lack ([ADR-0003](adr/0003-event-log-and-retro.md), sections 2 and 3).
+`<outcome>` is `followed`, `followed (deferred)` or `overruled: <reason>`. One `## Run` heading per run lets the retro counts split a session dir that holds several runs; without headings it reports the split as `"not recorded"`. retro also reads the older shapes (date-stamped lines, free-form lines, a literal `HH:MM`) and says `"not recorded"` for what they lack ([ADR-0003](adr/0003-event-log-and-retro.md), sections 2 and 3).
 
-**Goal tags ([ADR-0010](adr/0010-mid-run-intake.md), section 6).** A goal added mid-run gets no heading of its own: it shares its run's `## Run` heading, plan, QC engineer window and event log, so retro's run split stays as it is. Every decision line about an added goal starts its decision field with `[<id>] `, the goal's id, for example `- HH:MM | [intake] intake-gates status running | ... | none | followed`; the first is `- HH:MM | [<id>] goal added: <goal on one line> | client request mid-run | none | followed` (section 4, step 2). Lines about the run's first goal, `run`, carry no tag. `scripts/retro.py` counts lines whose decision field matches `^\[([a-z0-9]+(?:-[a-z0-9]+)*)\] ` per goal, and adds a top-level `goals` key to its output only when `plan.json` has a non-empty `goals` array, so every existing output keeps its keys (section 6).
+**Goal tags ([ADR-0010](adr/0010-mid-run-intake.md), section 6).** A goal added mid-run gets no heading of its own: it shares its run's `## Run` heading, plan, QC engineer window and event log, so retro's run split stays as it is. Every decision line about an added goal starts its decision field with `[<id>] `, the goal's id, for example `- HH:MM | [intake] intake-gates status running | ... | none | followed`; the first is `- HH:MM | [<id>] goal added: <goal on one line> | client request mid-run | none | followed` (section 4, step 2). Lines about the run's first goal, `run`, carry no tag. The retro counts (`retro/counts.ts`) count lines whose decision field matches `^\[([a-z0-9]+(?:-[a-z0-9]+)*)\] ` per goal, and adds a top-level `goals` key to its output only when `plan.json` has a non-empty `goals` array, so every existing output keeps its keys (section 6).
 
 ### `plan.json`
 
@@ -845,7 +845,7 @@ Each row is a seam inside Truss that ADR-0004 adds or changes. The contract test
 | Foreman's Examined and Not examined headings, and its Branch line | foreman | hooks (`examinedVerdict`, `branchOf`), QC engineer | ADR-0004 sections 3, 4 and 6 | `tests/contract-gates.test.ts`, `tests/gates.check.ts` |
 | QC engineer's UNSCOPED finding tag | QC engineer | hooks (`qcRuling`'s `unscoped`), PM | ADR-0004 sections 3 and 4 | `tests/contract-gates.test.ts`, `tests/gates.check.ts` |
 | Spent-allowance record: the `events.jsonl` line, and the foreman's allowance-blocked message | hooks (line); foreman (message) | retro (`allowancesSpent`, from the line only); PM (message) | `events.schema.json`; ADR-0004 sections 3 and 5 | `tests/contract-gates.test.ts`, `tests/test_contract_retro_050.py` |
-| retro's per-run `allowancesSpent` | `scripts/retro.py` | the `truss:retro` skill | ADR-0004 section 8 (`retro` stays 1) | `tests/test_contract_retro.py` `RUN_KEYS`, `tests/test_contract_retro_050.py` |
+| retro's per-run `allowancesSpent` | `retro/counts.ts` | the `truss:retro` skill | ADR-0004 section 8 (`retro` stays 1) | `tests/retro-counts-contract.check.ts` `RUN_KEYS`, `tests/retro-counts-050.check.ts` |
 | Main-session `truss:*` calls on a v2 plan | PM | hooks (`mainCallVerdict`) | ADR-0004 section 7 | `tests/contract-gates.test.ts` |
 
 ### Fetch gate
@@ -896,7 +896,7 @@ Each row is a seam inside Truss that ADR-0005 adds or changes. The contract test
 | --- | --- | --- | --- | --- |
 | `fetchVerdict` and the fetch handler | hooks | the session's `WebFetch` and `WebSearch` calls; `appendEvent` | the signature and rules above; ADR-0005 section 11 | `tests/contract-fetch.test.ts` |
 | The `fetch` line in `events.jsonl` | hooks | retro (`fetches`) | `events.schema.json` `fetch` branch; "On disk" above | `tests/contract-fetch.check.ts`, `tests/test_contract_retro_080.py` |
-| retro's per-run `fetches`, `extendPasses`, `defaultDecisions`, `openClientActions` | `scripts/retro.py` | the `truss:retro` skill; retro's JSON stays internal (P15) | `fetches` is `{total, perAgent: {<agent>: n}}`; `extendPasses` counts commits in the run's window whose subject starts `docs(arch): extend ` or is `docs(arch): adopt learned items`; `defaultDecisions` counts ADRs in the adr dir holding the line `Decided by: default`; `openClientActions` counts `- [ ] ` lines under a `Client actions` heading; each is `"not recorded"` where its source is absent, as ADR-0003 does | `tests/test_contract_retro_080.py` |
+| retro's per-run `fetches`, `extendPasses`, `defaultDecisions`, `openClientActions` | `retro/counts.ts` | the `truss:retro` skill; retro's JSON stays internal (P15) | `fetches` is `{total, perAgent: {<agent>: n}}`; `extendPasses` counts commits in the run's window whose subject starts `docs(arch): extend ` or is `docs(arch): adopt learned items`; `defaultDecisions` counts ADRs in the adr dir holding the line `Decided by: default`; `openClientActions` counts `- [ ] ` lines under a `Client actions` heading; each is `"not recorded"` where its source is absent, as ADR-0003 does | `tests/retro-counts-080.check.ts` |
 | The plan-mode `UNCOVERED: ` hand-back | design engineer | PM; `routePlanFiles`, which writes nothing for it | ADR-0005 section 4 and its literals table | `tests/contract-fetch.test.ts` (regression guard), `tests/gates.check.ts` |
 | A foreman report's optional `## Learned` section | foreman | PM's run-end extend pass; `foremanStopPasses`, which neither needs nor refuses it | ADR-0005 section 7 | `tests/contract-fetch.test.ts` (regression guard), `tests/gates.check.ts` |
 | The fetch rule, the literals and the web tools in the prompts | `agents/*.md`, `skills/run/SKILL.md` | every agent and the PM | ADR-0005 sections 2, 3 and the literals table | `tests/gates.check.ts` |
@@ -907,7 +907,7 @@ Designed in [ADR-0006](adr/0006-leftover-causes.md). retro's top-level keys are 
 
 ```mermaid
 flowchart LR
-  retro["retro.py<br/>[Truss script: Python]"]
+  retro["retro/cli.ts counts<br/>[Truss script: erasable TypeScript, retro/counts.ts]"]
   events[("events.jsonl<br/>[Truss dir]")]
   git[("Local git<br/>[refs, worktree list, main checkout HEAD]")]
   disk[(".claude/worktrees/agent-id<br/>[folders on disk]")]
@@ -921,15 +921,15 @@ flowchart LR
 ```
 
 *Where `leftoverDetails` comes from: git and the disk only; the dashed edge is the copied rule set, not a call.*
-Traces to: `scripts/retro.py:452-472` (`leftovers`, which `leftoverDetails` shares its ids and "not recorded" rules with), `:410-419` (`git_out`, `GIT_OPTIONAL_LOCKS=0`); `plugins/worktrees/hooks/register.ts:734-752` (`decideSelfClean`), `:1261-1272` (`inMainBy`), `:1324` (the detached drop); ADR-0006 section 1.
+Traces to: `retro/counts.ts` (`leftovers`, which `leftoverDetails` shares its ids and "not recorded" rules with, and `gitOut`, `GIT_OPTIONAL_LOCKS=0`); `plugins/worktrees/hooks/register.ts:734-752` (`decideSelfClean`), `:1261-1272` (`inMainBy`), `:1324` (the detached drop); ADR-0006 section 1.
 
 ```mermaid
 sequenceDiagram
   participant S as truss:retro skill
-  participant R as retro.py
+  participant R as retro/cli.ts counts
   participant G as Local git
   participant J as reports/*/*-QC engineer*.md
-  S->>R: python retro.py <truss dir>
+  S->>R: node retro/cli.ts counts <truss dir>
   R->>G: worktree list --porcelain; status; is-ancestor / merge-tree / cherry; branch --show-current
   R-->>S: leftoverDetails [{id, branch, folder, head, dirty, inMain, skip}]
   S->>J: VERDICT: and finding lines only (P24)
@@ -944,8 +944,8 @@ the stress test's first step becomes `git reset --hard <sha>` in its own worktre
 
 | Seam | Producer | Consumer | Contract | Pinned by |
 | --- | --- | --- | --- | --- |
-| retro's `leftoverDetails` | `scripts/retro.py` | the `truss:retro` skill's root-cause step; retro's JSON stays internal (P15) | ADR-0006 section 1 | `tests/test_contract_leftover_details.py` |
-| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` grows by exactly `leftoverDetails` | `tests/test_contract_retro.py`, `tests/test_contract_retro_050.py` |
+| retro's `leftoverDetails` | `retro/counts.ts` | the `truss:retro` skill's root-cause step; retro's JSON stays internal (P15) | ADR-0006 section 1 | `tests/retro-counts-leftover-details.check.ts` |
+| retro's top-level key set | `retro/counts.ts` | the `truss:retro` skill | `TOP_KEYS` grows by exactly `leftoverDetails` | `tests/retro-counts-contract.check.ts`, `tests/retro-counts-050.check.ts` |
 | the stress test's start and end state | `agents/stress-engineer.md`, `agents/foreman.md` | the stress engineer; worktrees' sweep | ADR-0006 section 2 and its literals table | `tests/redteam-reset.check.ts` |
 | The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | ADR-0006 section 3 | `tests/retro-cause.check.ts` |
 
@@ -1327,7 +1327,7 @@ The install flow is proven against a local smart-HTTP copy of the repo, not agai
 | The plugin root the UI loads | plugin | `ui/server/main.ts` | Default plugin dir `join(uiDir, '..', 'plugins', 'truss')` when no `--plugin` is given. Today `ui/server/main.ts:43` is `resolve(args.plugin ?? join(uiDir, '..'))`, ui/'s parent. | the plugin-move acceptance test (the ui server starts with no `--plugin`) |
 | The architecture doc paths | repo layout | truss hooks and `bin/factory.ts` | `.claude/truss.json` `architecture` = `plugins/truss/docs/architecture.md`, `adr` = `plugins/truss/docs/adr`; `merge` `sequential` and `target` `main` stay. Today it names `docs/architecture.md` and `docs/adr`. | `checks/repo-home.check.ts:60-64` (suite `repo-home layout`); the plugin-move acceptance test |
 | The catalog entry | marketplace | Claude Code's installer | `marketplace/.claude-plugin/marketplace.json`: name `truss`, an owner, one plugin `truss` with no `version`, source `{"source":"git-subdir","url":"https://github.com/AbhiramDwivedi/truss.git","path":"plugins/truss","ref":"main"}`; `marketplace/` tracks exactly that file and `marketplace/README.md` | `checks/repo-home.check.ts:67-83` (suite `repo-home marketplace`) |
-| Root scripts | repo layout | the developer | root `package.json` with no `dependencies` or `devDependencies`; `scripts.test` = `node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && python3 -B -m unittest discover -s plugins/truss/tests && node --test checks/*.check.ts`, `scripts["test:ui"]` = `npm --prefix ui test` | `checks/repo-home.check.ts:54-59`; the plugin-move acceptance test (exact scripts) |
+| Root scripts | repo layout | the developer | root `package.json` with no `dependencies` or `devDependencies`; `scripts.test` = `node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && node --test checks/*.check.ts`, `scripts["test:ui"]` = `npm --prefix ui test` | `checks/repo-home.check.ts` ('root package.json has no dependencies and a test script'); the plugin-move acceptance test (exact scripts) |
 | The published branch | the PM's publish step | `claude plugin marketplace add` | `origin/marketplace^{tree}` equals `main:marketplace` | the sync check, a PM ship step (ADR-0013 amendment); no automated check |
 
 The ADR-0013 amendment lists the other files the move changes: 13 ui files that take the plugin to be ui/'s parent, and 6 plugin files that break under a pure move.

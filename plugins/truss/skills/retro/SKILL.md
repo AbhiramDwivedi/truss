@@ -13,10 +13,10 @@ The person who ran `/truss:retro` is the client.
 
 The session's truss dir is `<repo>/.git/truss/<session id>/`. Use the current session's, or the one the client names. Resolve `<repo>` with `git rev-parse --git-common-dir`, which also works from a worktree.
 
-Find the script: `${CLAUDE_PLUGIN_ROOT}/scripts/retro.py` when that variable is set, else `scripts/retro.py` two directories above this skill's own folder. Then run:
+Find the CLI: `${CLAUDE_PLUGIN_ROOT}/retro/cli.ts` when that variable is set, else `retro/cli.ts` two directories above this skill's own folder. Then run:
 
 ```
-python <plugin root>/scripts/retro.py <truss dir>
+node <plugin root>/retro/cli.ts counts <truss dir>
 ```
 
 Exit 2 with `retro: NO_TRUSS_DIR:` means the dir is wrong: say so, show the path, ask the client for the right one, and stop. Any other failure: show the error and stop.

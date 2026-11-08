@@ -46,6 +46,8 @@ No line holds message, prompt or report text (P8). Appends go through one in-mod
 
 ### 3. `scripts/retro.py`
 
+*Update 2026-11-08: the counts moved to `retro/cli.ts counts <truss dir>` (`retro/counts.ts`), erasable TypeScript on Node built-ins only (P19), so retro runs where `python3` is missing. The contract below holds unchanged: same inputs, same one JSON object on stdout, same exit codes and `retro: NO_TRUSS_DIR:` message. `scripts/retro.py` was deleted after a byte-for-byte diff of both on every fixture; Seam 2's tests are now `tests/retro-counts-*.check.ts`. The text below is the original decision.*
+
 `python scripts/retro.py <truss dir>` (Python 3.9+, standard library, P19; ADR-0004's pattern: the script counts, the skill QC engineers). It reads `decisions.md`, `events*.jsonl`, `messages*.jsonl`, `reports/**` and `plan.json`, and writes nothing. It strips a UTF-8 BOM and `\r`. It prints one JSON object on stdout and exits 0. With no such dir it exits 2 with `retro: NO_TRUSS_DIR: <path>` on stderr.
 
 **Reading `decisions.md`.**

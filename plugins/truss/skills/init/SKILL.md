@@ -93,7 +93,7 @@ Append it to `CLAUDE.md` only if the client approves; never overwrite or reword 
 
 Also propose a permissions allowlist for the project's `.claude/settings.json`. Crew members ask before each command no rule allows, and every refused call costs a turn. A truss session's own count (`refusals` in `/truss:retro`) was 195 refusals in one run: 168 from Claude Code's worktree guard, 27 from the auto-mode classifier (21 of them "no verdict" on Write and Edit), 2 from truss's Workflow gate and 0 plain permission denials. So:
 
-- Propose rules only for the commands a crew runs every time: the project's tests and build, read-only git, and truss's own scripts. Take the test and build commands from what the repo shows (`package.json` scripts, a `Makefile`, CI config). For example:
+- Propose rules only for the commands a crew runs every time: the project's tests and build, read-only git, and truss's own scripts (`factory.ts`, the retro CLI). Take the test and build commands from what the repo shows (`package.json` scripts, a `Makefile`, CI config). For example:
 
   ```json
   {
@@ -108,7 +108,7 @@ Also propose a permissions allowlist for the project's `.claude/settings.json`. 
         "Bash(git show:*)",
         "Bash(git rev-parse:*)",
         "Bash(node <plugin>/bin/factory.ts:*)",
-        "Bash(python3 -I <plugin>/scripts/retro.py:*)"
+        "Bash(node <plugin>/retro/cli.ts:*)"
       ]
     }
   }

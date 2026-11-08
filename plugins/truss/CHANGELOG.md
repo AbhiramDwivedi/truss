@@ -2,6 +2,10 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## Unreleased
+
+- **The retro counts run on Node, so a machine without Python gets them too.** `/truss:retro` and the end-of-run retro now run `node <plugin>/retro/cli.ts counts <truss dir>` (logic in `retro/counts.ts`). It prints the same JSON as `scripts/retro.py` did for the same input (keys, order and values), and exits 2 with `retro: NO_TRUSS_DIR: <path>` on stderr for a missing dir. `scripts/retro.py` and its 13 Python test files are gone; their cases are `tests/retro-counts-*.check.ts` on the same fixtures. The root `npm test` has no Python step. `/truss:init` proposes `Bash(node <plugin>/retro/cli.ts:*)` in place of the `python3 -I` rule; a project that already holds the old rule can drop it. The Python clarity helpers under `skills/clarity/scripts/` are vendored upstream code and stay.
+
 ## 0.20.1 (2026-11-08)
 
 truss stops leftover processes the same way on Linux, macOS and Windows, and never touches another session's. Install or update as before with `claude plugin install truss@truss`.

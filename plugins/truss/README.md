@@ -289,7 +289,7 @@ So a fetch of `example.com` on port `8443` at path `/docs/api`, with a user name
 
 Run `/truss:retro` after a run, optionally naming a Truss folder. The default is the session's, `<repo>/.git/truss/<session id>/`.
 
-The `truss:retro` skill runs `python scripts/retro.py <truss dir>` (Python 3.9 or later, standard library only). The script reads `decisions.md`, `events*.jsonl`, `messages*.jsonl`, the report files and `plan.json`, writes nothing, and prints one JSON object of counts for each `## Run` heading:
+The `truss:retro` skill runs `node retro/cli.ts counts <truss dir>` (Node standard library only). The script reads `decisions.md`, `events*.jsonl`, `messages*.jsonl`, the report files and `plan.json`, writes nothing, and prints one JSON object of counts for each `## Run` heading:
 
 - decisions, by time (`clock`, `dateOnly`, `notRecorded`) and by outcome (`followed`, `overruled`, `other`), and free-form lines;
 - checking engineer `RECOMMEND` lines, by `answer`, `defer` and `pass`;
