@@ -1449,7 +1449,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   if (!['answers', 'merge-ready', 'stale'].includes(kind)) throw usage(`--resume needs answers, merge-ready or stale, got ${kind}`)
   // ADR-0031 item 6: a solo or lean crew runs direct and merges with land, so it is never resumed (before any flag check)
   const direct = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug && isDirect(x))
-  if (direct !== undefined) throw refuse({ slug, why: `${slug} is a ${String(direct.process)} crew; it runs direct, so merge it with land` })
+  if (direct !== undefined && c.settings.merge !== 'single') throw refuse({ slug, why: `${slug} is a ${String(direct.process)} crew; it runs direct, so merge it with land` })
   const transcript = str(f, 'transcript') ?? ''
   if ((kind === 'answers' || kind === 'stale') && transcript === '') throw usage(`--resume ${kind} needs --transcript T: ${NEED_TRANSCRIPT}`)
   let answers: unknown[] = []
@@ -1603,7 +1603,8 @@ function cmdStart(f: Flags): Obj {
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
     // ADR-0031 item 6: a planned solo or lean crew runs direct; same planVerdict, no engine split, no ## Members check
-    if (isDirect(crew)) {
+    // Under merge single `land` refuses, so a solo or lean crew takes the foreman path like a full crew
+    if (isDirect(crew) && settings.merge !== 'single') {
       const directVerdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
       if (directVerdict !== undefined) {
         refused.push({ slug, reason: directVerdict.deny })
@@ -1725,6 +1726,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
     argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
     warnings: inside ? out.warnings : [...out.warnings, `--args-file ${flat(p)} is outside the truss dir ${trussDir}, so the Workflow gate can't read it as args.trussFile; pass the file's object as args.truss inline`],
   }
+  if (out.direct !== undefined) short.direct = out.direct
   if (out.missingWorktrees !== undefined) short.missingWorktrees = out.missingWorktrees
   if (inside) short.workflowArgs = { trussFile: flat(p) }
   return short

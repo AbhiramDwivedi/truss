@@ -304,7 +304,7 @@ Write `## Engine` as `foreman`, with the reason, for a deploy crew (it has a `co
 
 `start --slug <slug> --resume ...` refuses a solo or lean crew: it runs direct, so you merge it with `land`.
 
-TODO: ADR-0031 doesn't say how a solo or lean crew merges when the merge mode is `single`, where `land` refuses with exit 2.
+Under merge mode `single`, `land` refuses (exit 2), so `start` does not run a solo or lean crew direct: it takes the foreman path like a full crew, is listed under `foremen`, and merges into the integration branch as any foreman crew does. With `--args-file`, the short output carries `direct` as well, so a direct crew is never missed.
 
 The foreman-path steps below are the rule for `foreman` crews.
 
