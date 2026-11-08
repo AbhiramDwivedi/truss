@@ -90,11 +90,12 @@ describe('speed-rules', () => {
     gone(RUN, /the reconcile round has happened/i, 'run: "the reconcile round has happened"')
   })
 
-  test('6 flatten small crews: at most 2 members and no stress test runs without a foreman', () => {
-    has(RUN, /at most (2|two) members|(2|two) members or (fewer|less)/i, 'run: crew of at most 2 members')
-    has(RUN, /no foreman|without a foreman/i, 'run: no foreman')
-    has(RUN, /PM[^.]{0,120}(directly|itself)[^.]{0,200}(test-writer|builder|qc)|(directly|itself)[^.]{0,200}test-writer[^.]{0,80}builder[^.]{0,80}qc/i, 'run: PM runs test-writer, builder, qc directly')
-    has(RUN, /no stress test/i, 'run: only crews with no stress test')
+  test('6 flatten small crews: direct crews of one or two members run without a foreman', () => {
+    has(RUN, /one or two members/i, 'run: one or two members')
+    has(RUN, /no foreman/i, 'run: no foreman')
+    has(RUN, /run each direct crew yourself[^.]{0,200}foreman.s rules for members/i, 'run: PM runs each direct crew itself')
+    has(RUN, /\blean\b[^]{0,300}\bqc\b[^]{0,100}\bred\b/i, 'run: lean crew qc and red flags')
+    has(RUN, /factory\.ts land/, 'run: factory.ts land')
     has(RUN, /Head\/Patch|patch id|merge gate/i, 'run: Head/Patch rules and merge gate kept')
   })
 
