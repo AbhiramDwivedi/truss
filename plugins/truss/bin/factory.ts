@@ -2395,7 +2395,10 @@ function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal: Map<s
 type Outcome ={ merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling, audits: Audit[], fails: number): Outcome {
+// `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }): Outcome {
+  const needRed = gates?.red ?? true
+  const needQc = gates?.qc ?? true
   const slug: string = crew.slug
   const wt = crewWorktree(repo, slug)
   const plan = loadPlan(dir)
@@ -2410,8 +2413,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
   if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }
-  const red = redRecord(dir, slug)
-  if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
+  const red = needRed ? redRecord(dir, slug) : undefined
+  if (needRed && (red === undefined || !Number.isInteger(red.exit) || red.exit === 0)) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
   if (run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out !== run(wt, ['rev-parse', 'HEAD']).out) return { refused: `the crew worktree is not on branch truss-${slug}` }
   // step 2: resolve the target once, fully qualified (a same-named tag must not win), and merge that commit in, never a rebase
   const targetRef = `refs/heads/${target}`
@@ -2427,10 +2430,10 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   // step 3: the patch is always computed on the merged head, against the target head just merged in
   const head = run(wt, ['rev-parse', 'HEAD']).out
   const base = run(wt, ['merge-base', oldSha, 'HEAD']).out
-  const patch = head === '' || base === '' ? undefined : patchOf(wt, base, head)
-  if (ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined) return { refused: 'patch id unavailable' }
-  if (mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
-  if (head !== ruling.head) {
+  const patch = !needQc || head === '' || base === '' ? undefined : patchOf(wt, base, head)
+  if (needQc && (ruling === undefined || ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined)) return { refused: 'patch id unavailable' }
+  if (needQc && mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
+  if (needRed || (needQc && head !== ruling?.head)) {
     try {
       cmdCheck({ dir, slug, cwd: wt, expect: 'green' })
     } catch {
@@ -2450,7 +2453,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (entry !== undefined) entry.status = 'merged'
   savePlan(dir, fresh)
-  appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling.head}, red record exit ${red.exit}, patch ${patch}, acceptance test green on the merged head`)
+  if (gates !== undefined) appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | land: process ${gates.process}, qc ${gates.qc}, red ${gates.red}${red !== undefined ? `, red record exit ${red.exit}` : ''}${needQc && ruling !== undefined ? `, QC PASS on ${ruling.head}` : ''}`)
+  else appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling?.head}, red record exit ${red?.exit}, patch ${patch}, acceptance test green on the merged head`)
   const own = new Set(fresh.crews.filter(isObj).map((c: Obj) => `truss-${c.slug}`))
   for (const w of worktreesOf(repo)) {
     if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`truss-${slug}-`)) continue
@@ -2499,6 +2503,39 @@ function agentFileWarnings(repo: string, before: string, target: string): string
     out.push(`the merge changed ${file}; this session keeps the ${type} definition it loaded until a restart, so restart the session, or spawn the role as general-purpose with ${file} inlined in its prompt (ADR-0024 item 24)`)
   }
   return out
+}
+
+// ADR-0031 item 6: the merge gate for a direct (solo or lean) crew. mergeCrew's steps, the red and QC gates switched by the crew's booleans.
+function cmdLand(f: Flags): Obj {
+  const repo = repoOf(f)
+  const slug = need(f, 'slug')
+  const settings = settingsOf(repo)
+  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  const dir = dirOf(f)
+  const plan = loadPlan(dir)
+  const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
+  if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+  const no = (why: string): CliError => refuse({ merged: false, slug, why })
+  if (crew.status !== 'running') throw no(`${slug} is not running (status ${String(crew.status)})`)
+  const process = crew.process
+  if (process !== 'solo' && process !== 'lean') throw no(`${slug} has process ${process === undefined ? 'absent' : String(process)}, not solo or lean; a full crew merges through finish`)
+  const qc = process === 'lean' && crew.qc === true
+  const red = process === 'lean' && crew.red === true
+  let ruling: QcRuling | undefined
+  let fails = 0
+  if (qc) {
+    const since = runStart(plan) ?? 0
+    // the PM saves the hand-back as <slug>-qc[-k].md (finish's name) or, under reports/<slug>/, as qc[-k].md
+    const files = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
+    const newest = latestQc(slug, files, since)
+    ruling = newest === undefined ? undefined : qcRuling(newest.text)
+    if (ruling === undefined || ruling.verdict !== 'PASS') throw no('qc: the newest QC file is not a PASS')
+    if (ruling.unscoped > 0) throw no('qc: the QC PASS has an UNSCOPED finding')
+    fails = qcFails(slug, countedQc(dir, slug, files), since)
+  }
+  const r = mergeCrew(f, dir, repo, settings.target, crew, ruling, [], fails, { process, qc, red })
+  if (r.merged) return { merged: true, slug, process, qc, red, head: run(repo, ['rev-parse', '--verify', `refs/heads/${settings.target}`]).out }
+  throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
 function cmdFinish(f: Flags): Obj {
@@ -2673,7 +2710,7 @@ function cmdDecide(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
