@@ -942,7 +942,7 @@ export const DECISION_LOG_REFUSAL = `${MARK} Refused: decisions.md is written on
 // The shell rules every brief for an Agent in a worktree carries, word for word. skills/run/SKILL.md quotes the same text
 // (a test pins the two together).
 export const SHELL_RULES =
-  "Your worktree is guarded by Claude Code: it refuses a Bash command it can't show stays inside the worktree, and each refusal costs a turn. Write and change files with the Write and Edit tools, never a shell heredoc (`cat > f <<'EOF'`). Run one plain command per Bash call: no `&&`, `;`, `cd`, for-loop or `$VAR` argument; give paths in full. Put a script in a file and run that, rather than feeding python or node inline text that names git. Quote a git format that holds parentheses. Never cd into the main checkout. Run tests and builds in the foreground with an explicit Bash timeout up to 600000; never sleep-poll a background task or misuse Monitor (pass its documented arguments only). Stop only a process you started, by its pid; never pkill or kill by pattern."
+  "Your worktree is guarded by Claude Code: it refuses a Bash command it can't show stays inside the worktree, and each refusal costs a turn. Write and change files with the Write and Edit tools, never a shell heredoc (`cat > f <<'EOF'`). Run one plain command per Bash call: no `&&`, `;`, `cd`, for-loop or `$VAR` argument; give paths in full. Put a script in a file and run that, rather than feeding python or node inline text that names git. Quote a git format that holds parentheses. Never cd into the main checkout. Run tests and builds in the foreground with an explicit Bash timeout up to 600000; never sleep-poll a background task or misuse Monitor (pass its documented arguments only). Start a long-running process (a server, a watcher) only with Bash `run_in_background`, never `&`, `nohup`, `setsid` or `disown`: those escape the session and nothing can stop them. Stop it with TaskStop when you are done. Stop only a process you started, by its pid; never pkill or kill by pattern."
 
 // Retro F-10. An Agent call with isolation "worktree" whose prompt lacks the shell rules is refused, with the block quoted.
 // Refused, not rewritten: a rewritten input gets no auto-mode verdict (F-9), and neither do the Agent calls beside it.
@@ -1147,6 +1147,22 @@ const SCRUB_RUN = /retro\/cli\.ts["']?\s+(["']?)scrub\1(?:\s|$)/
 const PUSH_OR_MERGE = /(?:^|[^\w.-])git\s+(?:-C\s+\S+\s+)?(?:push|merge)(?:\s|$)/
 
 export const PUSH_GATE_REFUSAL = `${MARK} Refused: retro scrub gates a git push or git merge only when joined to it by && (ADR-0027 F-74).`
+
+export const DETACH_REFUSAL = `${MARK} Refused: a member starts a long-running process only with Bash run_in_background, so the session owns it and TaskStop can stop it (ADR-0030 item 7). \`&\`, \`nohup\`, \`setsid\` and \`disown\` escape the session and nothing stops them. Run the command again without them, with run_in_background set, and stop it with TaskStop when you are done.`
+const DETACH_WORD = /^\s*(?:\w+=\S*\s+)*(?:nohup|setsid|disown)(?:\s|$)/
+// a lone & (never &&, &>, >&, <&, |&) outside quotes and escapes
+const LONE_AMP = /(^|[^&>|<])&(?![&>])/
+
+// ADR-0030 item 7 (0.20.1): a member's Bash command that backgrounds a process itself, by a lone `&` or by nohup, setsid or
+// disown as a command word, is refused with the run_in_background way. Quoted text and escaped characters are not read.
+export function detachVerdict(command: unknown): { deny: string } | undefined {
+  if (typeof command !== 'string') return undefined
+  for (const seg of commandSegments(command).segments) {
+    const bare = seg.replace(/\\./g, '').replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''")
+    if (DETACH_WORD.test(bare) || LONE_AMP.test(bare)) return { deny: DETACH_REFUSAL }
+  }
+  return undefined
+}
 
 // ADR-0027 F-74 (R-32): a command that runs retro/cli.ts scrub and then a git push or git merge that scrub does not
 // gate is refused. Scrub gates a later push or merge only when every operator from the first scrub segment up to it is
@@ -2315,7 +2331,8 @@ export const register: Register = on => {
   }).catch(failOpen)
 
   // The push and merge gate (ADR-0027 F-74, R-32): a main-session Bash command that runs retro scrub and then a git
-  // push or git merge that scrub does not gate (not joined by && all the way) is refused. Members are never gated.
+  // push or git merge that scrub does not gate (not joined by && all the way) is refused. Members are never push-gated; a
+  // member's command that backgrounds a process outside run_in_background is refused instead (the detach gate).
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     if (e.agentId === undefined) {
       const input = e as unknown as { command?: unknown; args?: unknown }
@@ -2323,6 +2340,16 @@ export const register: Register = on => {
       const verdict = await safely($, 'push gate', async () => {
         const v = pushGateVerdict(command)
         if (v !== undefined) await logRule($, 'push gate refused a call: scrub is not joined to a push or merge by &&')
+        return v
+      })
+      if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)
+    } else {
+      // ADR-0030 item 7: a member backgrounds a process only through run_in_background
+      const input = e as unknown as { command?: unknown; args?: unknown }
+      const command = typeof input.command === 'string' ? input.command : isRecord(input.args) ? input.args.command : undefined
+      const verdict = await safely($, 'detach gate', async () => {
+        const v = detachVerdict(command)
+        if (v !== undefined) await logRule($, 'detach gate refused a member call: it backgrounds a process outside run_in_background')
         return v
       })
       if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)

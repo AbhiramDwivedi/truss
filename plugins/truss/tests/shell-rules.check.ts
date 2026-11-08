@@ -31,6 +31,9 @@ test('the rules carry the foreground, no-poll and pid lines', () => {
   assert.match(constant, /in the foreground with an explicit Bash timeout up to 600000/)
   assert.match(constant, /never sleep-poll a background task or misuse Monitor \(pass its documented arguments only\)/)
   assert.match(constant, /Stop only a process you started, by its pid; never pkill or kill by pattern/)
+  // 0.20.1: a long-running process stays the session's, so TaskStop can stop it
+  assert.match(constant, /only with Bash `run_in_background`, never `&`, `nohup`, `setsid` or `disown`/)
+  assert.match(constant, /Stop it with TaskStop when you are done/)
 })
 
 test('SKILL.md no longer tells the PM to Edit or Write decisions.md', () => {
