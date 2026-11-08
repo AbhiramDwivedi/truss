@@ -342,42 +342,42 @@ Source: client
 Example: Current and previous major versions of desktop Chrome, at window widths down to 1024 px. No phone layout. Firefox and Safari are not targets, and the browser checks run in chromium only.
 
 ## R-49: The PM sizes each piece of work, from one agent to a full crew
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 Example: Given a goal that is a docs fix, a config change and a new factory feature, when the PM plans it, then the docs fix and the config change each go to one agent with no foreman, planner, tester or QC engineer, and the feature gets a full crew (planner through QC engineer). The size is the PM's own call, logged with a one-line reason.
 
 ## R-50: A one-agent task needs no red-then-green test and no QC engineer
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 Example: Given a one-agent task to fix stale statuses in requirements.md, when the agent reports, then the PM reviews the diff and the agent's own proof (for example the checker's OK line), merges the branch and logs it, and no hook or merge gate asks for an acceptance test proved red or a QC engineer's PASS.
 
 ## R-51: A small crew is one or two members, and the PM picks its proof
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 Example: Given a bug fix sized as a small crew of one builder and one tester, when it runs, then the PM decides whether it gets a QC engineer and a red-then-green acceptance test, logs that choice, and the merge gate follows the logged choice.
 
 ## R-52: A sizing agent can recommend the tasks and crew sizes
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 Example: Given a goal the PM can't size at a glance, when the PM starts the sizing agent, then it returns the work split into tasks, each with a recommended size (one agent, small crew or full crew) and a one-line reason; the PM decides and may overrule it with a logged reason. A goal whose tasks are all one-agent tasks skips the plan design engineer, the checking engineer's plan review and plan approval.
 
 ## R-53: The tests for sizing are cheap
-Status: open
+Status: met
 Kind: nfr
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 Measure: the new tests start 0 agents and make 0 model calls, and add under 10 s to the root npm test.
 
 ## R-54: Sizing works on Linux, macOS and Windows
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
