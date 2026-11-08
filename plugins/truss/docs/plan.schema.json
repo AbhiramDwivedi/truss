@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "truss plan.json, versions 1, 2 and 3",
+  "title": "truss plan.json, versions 1 to 4",
   "description": "<truss dir>/plan.json: the seam between the design engineer, the PM and the hooks. The design engineer drafts it in plan mode; the PM owns it after that; the hooks treat it as read-only. See adr/0001-design-phase.md, section 8.",
   "type": "object",
   "additionalProperties": false,
@@ -15,8 +15,8 @@
   ],
   "properties": {
     "version": {
-      "description": "Plan file format version. It goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse. An optional field that a reader may treat as absent keeps the version: a crew's needs came in at version 3 this way (adr/0012-self-improving-retro.md). Readers gate on version >= 2, never === 2, so a later version inherits every v2 rule. Version 2 adds reworkAllowance. Version 3 adds the top-level goals array and a crew's goal.",
-      "enum": [1, 2, 3]
+      "description": "Plan file format version. It goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse. An optional field that a reader may treat as absent keeps the version: a crew's needs came in at version 3 this way (adr/0012-self-improving-retro.md). Readers gate on version >= 2, never === 2, so a later version inherits every v2 rule. Version 2 adds reworkAllowance. Version 3 adds the top-level goals array and a crew's goal. Version 4 adds a crew's process, qc and red, and keeps every version 2 and 3 rule (adr/0031-right-size-process.md).",
+      "enum": [1, 2, 3, 4]
     },
     "goal": {
       "description": "The run's goal, as the client gave it.",
@@ -111,9 +111,29 @@
   },
   "allOf": [
     {
-      "$comment": "versions 2 and 3 require reworkAllowance (ADR-0004 section 1, ADR-0010 section 1).",
+      "$comment": "versions 1 to 3 forbid a crew's process, qc and red (ADR-0031 section 3).",
       "if": {
-        "properties": { "version": { "enum": [2, 3] } },
+        "properties": { "version": { "enum": [1, 2, 3] } },
+        "required": ["version"]
+      },
+      "then": {
+        "properties": {
+          "crews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "not": {
+                "anyOf": [{ "required": ["process"] }, { "required": ["qc"] }, { "required": ["red"] }]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "versions 2, 3 and 4 require reworkAllowance (ADR-0004 section 1, ADR-0010 section 1, ADR-0031 section 3).",
+      "if": {
+        "properties": { "version": { "enum": [2, 3, 4] } },
         "required": ["version"]
       },
       "then": { "required": ["reworkAllowance"] }
@@ -245,6 +265,19 @@
           "enum": ["planned", "running", "merged", "dropped"]
         },
         "ux": { "type": "boolean", "default": false },
+        "process": {
+          "description": "Optional, version 4 and above. How much process the crew gets: solo (one agent, no QC engineer, no red-then-green test), lean (one or two members; qc and red record the PM's proof choice) or full (today's crew). Absent means full. See adr/0031-right-size-process.md.",
+          "enum": ["solo", "lean", "full"],
+          "default": "full"
+        },
+        "qc": {
+          "description": "Version 4 and above, lean crews only, and required on them: true when the merge gate asks for a QC PASS. See adr/0031-right-size-process.md, section 1.",
+          "type": "boolean"
+        },
+        "red": {
+          "description": "Version 4 and above, lean crews only, and required on them: true when the merge gate asks for a red record. See adr/0031-right-size-process.md, section 1.",
+          "type": "boolean"
+        },
         "needs": {
           "description": "Optional, any version. What the crew needs from the host before it starts: a browser that launches, npm ci, gh auth, a system library. The plan design engineer lists them; a crew with none leaves the key out, and every reader treats a missing needs as an empty list. factory.ts doctor runs each probe after plan-check and before any crew starts. See adr/0012-self-improving-retro.md, Decision 9.",
           "type": "array",
@@ -260,8 +293,17 @@
             "required": ["stage"]
           },
           "then": {
-            "properties": { "verdict": { "const": "design" } }
+            "properties": { "verdict": { "const": "design" }, "process": { "const": "full" } }
           }
+        },
+        {
+          "$comment": "A lean crew records its proof choice: qc and red are both required on it and allowed on no other crew (ADR-0031 sections 1 and 8).",
+          "if": {
+            "properties": { "process": { "const": "lean" } },
+            "required": ["process"]
+          },
+          "then": { "required": ["qc", "red"] },
+          "else": { "not": { "anyOf": [{ "required": ["qc"] }, { "required": ["red"] }] } }
         },
         {
           "$comment": "clientApproval is for mid-run design slices only (ADR-0001 sections 7 and 8).",
