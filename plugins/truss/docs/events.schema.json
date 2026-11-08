@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/AbhiramDwivedi/truss/docs/events.schema.json",
   "title": "truss event log line",
-  "description": "One line of <truss dir>/events.jsonl (rolled to events.<n>.jsonl past 3 MiB), appended by truss's hooks from 0.4.0 (truss ADR-0003). Each line is one JSON object matching this schema. Read by scripts/retro.py, which skips a line that isn't JSON or has a v it doesn't know, and counts the skips. No line holds message, prompt or report text (P8).",
+  "description": "One line of <truss dir>/events.jsonl (rolled to events.<n>.jsonl past 3 MiB), appended by truss's hooks from 0.4.0 (truss ADR-0003). Each line is one JSON object matching this schema. Read by retro/counts.ts, which skips a line that isn't JSON or has a v it doesn't know, and counts the skips. No line holds message, prompt or report text (P8).",
   "type": "object",
   "required": ["v", "ts", "event", "crew", "agent"],
   "properties": {

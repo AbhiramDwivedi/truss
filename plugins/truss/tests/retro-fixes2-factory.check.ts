@@ -3,21 +3,20 @@
 // (`factory.ts decide` and the SKILL.md route) and F-74 item 4 (SKILL.md "Scrub before merge" joins with && and never pipes).
 //
 // Written from the ADR before the fix exists. Every case titled `F.. n:` fails on the base code; every `control n:` passes before and
-// after. The file drives bin/factory.ts through the CLI (harness runCli / mkEnv), and reads SKILL.md and scripts/retro.py relative to
+// after. The file drives bin/factory.ts through the CLI (harness runCli / mkEnv), and reads SKILL.md and retro/counts.ts relative to
 // this file's own location, so a copy of tests/ placed in a base copy of the plugin exercises that copy's code.
 
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { readDecisions as readDecisionsOf } from '../retro/counts.ts'
 import { addCrewWorktree, appendEvent, crew, factorySpawn, git, mkEnv, planObj, putFile, readPlan, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SKILL = join(PLUGIN, 'skills', 'run', 'SKILL.md')
-const RETRO_PY = join(PLUGIN, 'scripts', 'retro.py')
 const CFG = { merge: 'sequential', target: 'main' }
 const HOUR = 3_600_000
 const say = (r: any): string => `exit ${r.status}; stdout ${String(r.stdout).slice(0, 600)}; stderr ${String(r.stderr).slice(0, 300)}`
@@ -43,26 +42,11 @@ function runningWorld() {
   return env
 }
 
-/** scripts/retro.py read_decisions on `file`, as the fields a retro reads, from a python child that loads retro.py by path. */
+/** retro/counts.ts readDecisions on `file`, as the fields a retro reads. */
 function readDecisions(file: string): any {
-  const d = tmp('retro-driver-')
-  const driver = join(d, 'driver.py')
-  writeFileSync(
-    driver,
-    [
-      'import importlib.util, json, sys',
-      'spec = importlib.util.spec_from_file_location("retro_under_test", sys.argv[1])',
-      'm = importlib.util.module_from_spec(spec)',
-      'spec.loader.exec_module(m)',
-      'runs, pre, used = m.read_decisions(sys.argv[2])',
-      'keep = lambda r: {k: r[k] for k in ("started", "goal", "decisions", "freeform", "recommendations")}',
-      'print(json.dumps({"runs": [keep(r) for r in runs], "pre": keep(pre), "preUsed": used}))',
-      '',
-    ].join('\n'),
-  )
-  const r = spawnSync('python3', ['-I', driver, RETRO_PY, file], { encoding: 'utf8', timeout: 60_000 })
-  assert.equal(r.status, 0, `python3 read_decisions failed: ${r.stderr}`)
-  return JSON.parse(r.stdout)
+  const keep = (r: any) => ({ started: r.started, goal: r.goal, decisions: r.decisions, freeform: r.freeform, recommendations: r.recommendations })
+  const { runs, pre, preUsed } = readDecisionsOf(file)
+  return { runs: runs.map(keep), pre: keep(pre), preUsed }
 }
 
 const body = (p: string): string => readFileSync(p, 'utf8').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
@@ -182,7 +166,7 @@ test('F73 5: decide writes the checker form - HH:MM | checker-<n> RECOMMEND <ans
   }
 })
 
-test('F73 6: a decision line and a Run heading that decide writes are read by retro.py read_decisions like the hand-written equivalents', () => {
+test('F73 6: a decision line and a Run heading that decide writes are read by retro counts readDecisions like the hand-written equivalents', () => {
   const env = mkEnv({ config: CFG })
   for (const flags of [
     { run: 'first goal' },
@@ -219,7 +203,7 @@ test('F73 6: a decision line and a Run heading that decide writes are read by re
   assert.equal(got.preUsed, false, 'nothing falls before the first heading')
 })
 
-test('control 2: F73 an existing appendDecision caller (mark-merged, absolute --dir) still appends - HH:MM | <text> | none | followed, and retro.py reads it', () => {
+test('control 2: F73 an existing appendDecision caller (mark-merged, absolute --dir) still appends - HH:MM | <text> | none | followed, and retro counts read it', () => {
   const env = runningWorld()
   git(env.repo, ['merge', '-q', '--no-ff', '-m', 'merge x outside finish', 'truss-x'])
   const r = env.run('mark-merged', { slug: 'x' })

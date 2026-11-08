@@ -1,4 +1,5 @@
-// The retro's command line (ADR-0012 Seams, Decisions 5, 7 and 8): extract, findings, recur, scrub and state.
+// The retro's command line (ADR-0012 Seams, Decisions 5, 7 and 8): extract, findings, recur, scrub and state, plus
+// `counts <truss dir>` (ADR-0003 section 3; retro/counts.ts), which prints its JSON and its failures on stdout and stderr.
 // `main` returns the text and exit code; running the file prints the text and sets the code. Exit 0 means OK, 1 means
 // the input failed a check (a scrub hit), 2 means a usage error or a file it cannot read. Evidence is checked against
 // the extract's files and line counts, never the transcripts (R-35). Erasable TypeScript only, Node standard library
@@ -9,6 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fixShipped, KINDS, loadCatalog, recurrences } from './catalog.ts'
 import type { Catalog } from './catalog.ts'
+import { counts } from './counts.ts'
 import { extractSession, writeExtract } from './extract.ts'
 import { scrub } from './scrub.ts'
 
@@ -21,7 +23,7 @@ export const COMMANDS = {
   state: { min: 3, max: 4 },
 }
 
-export type Result = { code: number; out: string }
+export type Result = { code: number; out: string; err?: string }
 
 export const STEPS = ['extract', 'judges', 'triage', 'fixGoal', 'applied'] as const
 export const STATUSES = ['pending', 'running', 'done', 'failed', 'skipped'] as const
@@ -421,6 +423,8 @@ const run = (cmd: string, a: string[]): { code: number; lines: string[] } => {
 
 export const main = (argv: string[]): Result => {
   const [cmd, ...args] = argv
+  // `counts <truss dir>` prints the JSON counts (ADR-0003); its failures go to stderr as `retro: ...` with exit 2
+  if (cmd === 'counts') return counts(args)
   try {
     if (cmd === undefined || !Object.hasOwn(COMMANDS, cmd)) {
       throw new Fatal(`USAGE: retro/cli.ts <${Object.keys(COMMANDS).join('|')}> <args>`)
@@ -440,5 +444,6 @@ export const main = (argv: string[]): Result => {
 if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   const r = main(process.argv.slice(2))
   process.stdout.write(r.out)
+  if (r.err) process.stderr.write(r.err)
   process.exitCode = r.code
 }

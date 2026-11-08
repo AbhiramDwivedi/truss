@@ -56,7 +56,7 @@ describe('repo-home layout', () => {
     const p = rd('package.json')
     assert.equal(p.dependencies, undefined)
     assert.equal(p.devDependencies, undefined)
-    assert.equal(typeof p.scripts?.test, 'string')
+    assert.equal(p.scripts?.test, 'node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && node --test checks/*.check.ts')
   })
   it('.claude/truss.json names plugins/truss docs', () => {
     const t = rd('.claude/truss.json')
