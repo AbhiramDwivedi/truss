@@ -2,6 +2,15 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.20.1 (2026-11-08)
+
+truss stops leftover processes the same way on Linux, macOS and Windows, and never touches another session's. Install or update as before with `claude plugin install truss@truss`.
+
+- **finish stops no process ([ADR-0030](docs/adr/0030-retire-members.md) item 7).** The member sweep no longer scans `/proc` or signals any pid, and a process inside a member worktree no longer keeps it. A worktree stays in `leftWorktrees` only for real changes or a lock. No `stop` events are written. A system scan can't tell this session's processes from another session's, and found nothing off Linux.
+- **The PM's TaskStop is the reaper.** `skills/run/SKILL.md` has the PM stop each finished subagent, Workflow run or background shell whose work is merged, recorded or dropped. An agent that reported and shows as waiting on its own background work counts as finished. A session-scoped CronCreate job does this every 30 minutes, and the end-of-run sweep does it once more and deletes the job. TaskStop stops whatever the agent or shell left running, on every OS.
+- **Members background a process only with `run_in_background`.** The shell rules (hook, `skills/run/SKILL.md` and `stage.js`) say to start a server or watcher only with Bash `run_in_background`, never `&`, `nohup`, `setsid` or `disown`, and to stop it with TaskStop. The plugin refuses a subagent's Bash command that backgrounds a process itself; `&&`, `2>&1`, `&>` and quoted text pass.
+- **The other `/proc` reads have a safe path off Linux.** Pid liveness uses `process.kill(pid, 0)` everywhere, with the zombie check on Linux only. The session start time is unknown off Linux, so `start` warns that it can't tell whether the stress agent file changed instead of passing silently.
+
 ## 0.20.0 (2026-11-07)
 
 truss cleans up after itself: no abandoned member branches, no stale processes. Install or update as before with `claude plugin install truss@truss`.
