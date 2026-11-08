@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { counts } from '../retro/counts.ts'
 
 export const HERE = dirname(fileURLToPath(import.meta.url))
 export const PLUGIN = join(HERE, '..')
@@ -36,13 +37,25 @@ after(() => {
 })
 
 // run the counts for a dir; text output decoded as UTF-8
+// in-process: calls counts() the way cli.ts main does (same {code, out, err} result), with cwd and env swapped in
+// for the call when given, so no test pays a node start-up
 export const runCounts = (dir: string, opts: { cwd?: string; env?: Record<string, string> } = {}) => {
-  const r = spawnSync(process.execPath, [CLI, 'counts', dir], {
-    cwd: opts.cwd,
-    env: opts.env ?? process.env,
-    timeout: 120000,
-    maxBuffer: 1 << 28,
-  })
+  const cwd0 = process.cwd()
+  const env0 = process.env
+  try {
+    if (opts.cwd) process.chdir(opts.cwd)
+    if (opts.env) process.env = { ...opts.env }
+    const r = counts([dir])
+    return { code: r.code, stdout: r.out, stderr: r.err ?? '' }
+  } finally {
+    process.env = env0
+    process.chdir(cwd0)
+  }
+}
+
+// the real process: `node cli.ts counts <args>`, for the few tests that check the CLI itself
+export const runCli = (args: string[]) => {
+  const r = spawnSync(process.execPath, [CLI, 'counts', ...args], { timeout: 120000, maxBuffer: 1 << 28 })
   return { code: r.status, stdout: r.stdout.toString('utf8'), stderr: r.stderr.toString('utf8') }
 }
 
