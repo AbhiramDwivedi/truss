@@ -123,22 +123,7 @@ test('a stalled member clears when a later spawn names it as by', () => {
   } finally { w.store.close() }
 })
 
-test('gap g still holds: a later event from a different agent does not clear the stall', () => {
-  const w = storeFor({
-    'plan.json': plan(['a']),
-    'events.jsonl': jsonl([
-      spawn(T(0), 'a', 'a-one', 'main'), spawn(T(1), 'a', 'a-two', 'main'),
-      stall(T(20), 'a', 'a-one', 'agent', 10),
-      { v: 1, ts: T(25), event: 'tag', crew: 'a', agent: 'a-two', tag: 'DONE' },
-    ]),
-  })
-  try {
-    const s = crewBy(w.run(), 'a').stuck
-    assert.ok(s, 'a-one is still stalled')
-    assert.equal(s.detail, 'a-one stalled 10 min')
-  } finally { w.store.close() }
-})
-
+// gap g's "a later event from a different agent does not clear the stall" is ui/test/state/gaps.test.ts's.
 test('gap g still holds: the stalled agent speaking again clears stuck', () => {
   const w = idleForeman([{ v: 1, ts: T(35), event: 'tag', crew: 'a', agent: 'a', tag: 'DONE' }])
   try {

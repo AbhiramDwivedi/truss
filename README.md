@@ -45,7 +45,7 @@ Run these from the repo root.
 npm test
 ```
 
-This runs the plugin's Node tests (`plugins/truss/tests/*.check.ts` and `plugins/truss/tests/*/*.check.ts`), its Python tests (`python3 -B -m unittest discover -s plugins/truss/tests`), then the root contract (`checks/*.check.ts`). The contract's install suite runs the two install commands against a local copy of the repo served over HTTP, so it needs `claude` and `git` on your `PATH`.
+This runs the plugin's Node tests (`plugins/truss/tests/*.check.ts` and `plugins/truss/tests/*/*.check.ts`), then the root contract (`checks/*.check.ts`). The contract's install suite runs the two install commands against a local copy of the repo served over HTTP, so it needs `claude` and `git` on your `PATH`.
 
 ```
 npm run test:ui

@@ -2,6 +2,15 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.21.0 (2026-11-08)
+
+truss sizes the process per crew, so a small task no longer pays for a full crew. Install or update as before with `claude plugin install truss@truss`.
+
+- **Right-size the process per crew ([ADR-0031](docs/adr/0031-right-size-process.md)).** Plan version 4 adds a crew field `process`: `solo`, `lean` or `full` (`full` when absent). A `lean` crew also carries the booleans `qc` and `red`. `plan-check` enforces the limits: `estAgents` at most 1 for solo, 3 for lean (2 without `qc`), and `process` stays `full` on a stage-0 design crew. `factory.ts start` lists solo and lean crews that start now under `direct`. The new `factory.ts land --slug` merge gate asks for a red record only when `red` is true and for a QC PASS only when `qc` is true. Full crews and `finish` are unchanged. A goal whose tasks are all solo skips `plan.js`. The new read-only `truss:sizing-engineer` advisor recommends a size per task; the PM decides and logs it. Under merge mode `single`, solo and lean crews take the foreman path.
+- **More tests run, faster.** The 9 ui/contract check files that `npm --prefix ui test` never ran are now wired in (about 130 tests). The retro counts tests run in-process, which took the retro suite from 185 s to 38 s on a loaded host. Five duplicated tests were removed.
+- **Two factory fixes.** plan-write reads the design engineer's `planJson` and `planMd` result fields, and member briefs state the commit-trailer layout.
+- **The retro counts run on Node, so a machine without Python gets them too.** `/truss:retro` and the end-of-run retro now run `node <plugin>/retro/cli.ts counts <truss dir>` (logic in `retro/counts.ts`). It prints the same JSON as `scripts/retro.py` did for the same input (keys, order and values), and exits 2 with `retro: NO_TRUSS_DIR: <path>` on stderr for a missing dir. `scripts/retro.py` and its 13 Python test files are gone; their cases are `tests/retro-counts-*.check.ts` on the same fixtures. The root `npm test` has no Python step. `/truss:init` proposes `Bash(node <plugin>/retro/cli.ts:*)` in place of the `python3 -I` rule; a project that already holds the old rule can drop it. The Python clarity helpers under `skills/clarity/scripts/` are vendored upstream code and stay.
+
 ## 0.20.1 (2026-11-08)
 
 truss stops leftover processes the same way on Linux, macOS and Windows, and never touches another session's. Install or update as before with `claude plugin install truss@truss`.

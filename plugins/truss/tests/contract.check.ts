@@ -34,10 +34,7 @@ const lacks = (text: string, phrase: string, where: string) => assert.ok(!text.i
 
 test('init names the kit manifest path', () => has(init(), '.claude/kit/manifest.json', 'skills/init/SKILL.md'))
 
-test('init runs kit:init with the declare args', () => {
-  has(init(), 'kit:init', 'skills/init/SKILL.md')
-  has(init(), 'declare read-only: truss:qc-engineer, truss:checking-engineer', 'skills/init/SKILL.md')
-})
+// kit:init with the declare args is compose-wiring-contract.check.ts's "control: init still runs kit:init ..." (the exact Skill call).
 
 test('init says what it does when kit is not installed', () =>
   has(init(), 'kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)', 'skills/init/SKILL.md'))

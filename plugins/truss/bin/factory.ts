@@ -437,8 +437,16 @@ function cmdPlanWrite(f: Flags): Obj {
   const raw = results[results.length - 1].result
   const message = typeof raw === 'string' ? raw : isObj(raw) && typeof raw.report === 'string' ? raw.report : JSON.stringify(raw)
   const no = (reason: string): never => { throw refuse({ written: false, reason }) }
-  const json = fencedBlock(message, '````json plan.json')
-  const md = fencedBlock(message, '````markdown plan.md')
+  // The structured result fields `planJson` (a JSON string or the plan object) and `planMd` win when they hold a plan / text;
+  // the report's fenced blocks are the fallback (a designer's report may hold placeholder blocks while the fields hold the plan).
+  let fieldJson: string | undefined
+  if (isObj(raw) && raw.planJson !== undefined) {
+    const s = typeof raw.planJson === 'string' ? raw.planJson : isObj(raw.planJson) ? JSON.stringify(raw.planJson) : undefined
+    if (s !== undefined && parsePlan(s) !== undefined) fieldJson = s
+  }
+  const fieldMd = isObj(raw) && typeof raw.planMd === 'string' && raw.planMd.trim() !== '' ? raw.planMd : undefined
+  const json = fieldJson ?? fencedBlock(message, '````json plan.json')
+  const md = fieldMd ?? fencedBlock(message, '````markdown plan.md')
   if (json === undefined || md === undefined) no(json === undefined ? 'no plan.json block' : 'no plan.md block')
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
@@ -467,9 +475,9 @@ function cmdPlanCheck(f: Flags): Obj {
   const errors: string[] = []
   const crews: Obj[] = plan.crews.filter(isObj)
   const name = (c: Obj): string => (typeof c.slug === 'string' ? c.slug : '?')
-  if (plan.version !== 2 && plan.version !== 3) errors.push('plan: version must be 2 or 3')
+  if (plan.version !== 2 && plan.version !== 3 && plan.version !== 4) errors.push('plan: version must be 2, 3 or 4')
   const goalIds: string[] = []
-  if (plan.version === 3 || plan.version === 2) {
+  if (plan.version === 2 || plan.version === 3 || plan.version === 4) {
     // plan.schema.json: top-level goals and a crew's goal are version 3 only.
     if (plan.goals !== undefined) {
       if (plan.version === 2) errors.push('plan: goals is version 3 only')
@@ -499,7 +507,31 @@ function cmdPlanCheck(f: Flags): Obj {
     else if (c.slug === 'truss') errors.push(`${s}: truss is a reserved slug`)
     if (c.goal !== undefined) {
       if (plan.version === 2) errors.push(`${s}: goal is version 3 only`)
-      else if (plan.version === 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
+      else if (plan.version >= 3 && (typeof c.goal !== 'string' || (c.goal !== RUN_GOAL && !goalIds.includes(c.goal)))) errors.push(`${s}: goal ${JSON.stringify(c.goal)} is neither ${RUN_GOAL} nor a goal in the plan's goals`)
+    }
+    // ADR-0031 item 7: process, qc and red are version 4 only; qc and red belong to a lean crew; estAgents limits per size
+    const hasProc = Object.hasOwn(c, 'process')
+    const hasQc = Object.hasOwn(c, 'qc')
+    const hasRed = Object.hasOwn(c, 'red')
+    if (plan.version === 4) {
+      if (hasProc && c.process !== 'solo' && c.process !== 'lean' && c.process !== 'full') errors.push(`${s}: process must be solo, lean or full`)
+      const lean = c.process === 'lean'
+      for (const [k, has] of [['qc', hasQc], ['red', hasRed]] as const) {
+        if (lean) {
+          if (typeof c[k] !== 'boolean') errors.push(`${s}: ${k} must be a boolean on a lean crew`)
+        } else if (has) errors.push(`${s}: ${k} is lean only`)
+      }
+      const est = c.estAgents
+      if (typeof est === 'number') {
+        if (c.process === 'solo' && est > 1) errors.push(`${s}: estAgents ${est} is above 1 for a solo crew`)
+        if (lean && est > 3) errors.push(`${s}: estAgents ${est} is above 3 for a lean crew`)
+        else if (lean && est > 2 && c.qc !== true) errors.push(`${s}: estAgents ${est} is above 2 for a lean crew without qc`)
+      }
+      if (c.stage === 0 && hasProc && c.process !== 'full') errors.push(`${s}: process must be full on a stage-0 design crew, not ${String(c.process)}`)
+    } else {
+      if (hasProc) errors.push(`${s}: process is version 4 only`)
+      if (hasQc) errors.push(`${s}: qc is version 4 only`)
+      if (hasRed) errors.push(`${s}: red is version 4 only`)
     }
     if (Object.hasOwn(c, 'ux') && typeof c.ux !== 'boolean') errors.push(`${s}: ux must be a boolean`)
     // a ## UX section that contradicts plan.json ux (ux false but the section asks for UX; ux true but the section says none)
@@ -1044,13 +1076,13 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
-function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = []): Obj {
+function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries)]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
-    held, foremen, refused, stale, unfinished, warnings,
+    held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
 
@@ -1419,8 +1451,13 @@ function unapprovedGoals(plan: Obj): Set<string> {
   return new Set(goals.filter((g): g is Obj => isObj(g) && g.approvedAt === null && typeof g.id === 'string' && g.id !== RUN_GOAL).map((g) => String(g.id)))
 }
 
+const isDirect = (crew: Obj): boolean => crew.process === 'solo' || crew.process === 'lean'
+
 function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj {
   if (!['answers', 'merge-ready', 'stale'].includes(kind)) throw usage(`--resume needs answers, merge-ready or stale, got ${kind}`)
+  // ADR-0031 item 6: a solo or lean crew runs direct and merges with land, so it is never resumed (before any flag check)
+  const direct = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug && isDirect(x))
+  if (direct !== undefined && c.settings.merge !== 'single') throw refuse({ slug, why: `${slug} is a ${String(direct.process)} crew; it runs direct, so merge it with land` })
   const transcript = str(f, 'transcript') ?? ''
   if ((kind === 'answers' || kind === 'stale') && transcript === '') throw usage(`--resume ${kind} needs --transcript T: ${NEED_TRANSCRIPT}`)
   let answers: unknown[] = []
@@ -1554,6 +1591,7 @@ function cmdStart(f: Flags): Obj {
   const refused: Obj[] = []
   const entries: Obj[] = []
   const held: Obj[] = []
+  const direct: Obj[] = []
   for (const crew of picked === undefined ? crews : [picked]) {
     if (!startsNow(crew) || crew.status !== 'planned') continue
     // a picked crew is held with admission's reason rather than dropped: admission's parallelism is never above the cap,
@@ -1564,7 +1602,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length)
+    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -1572,6 +1610,22 @@ function cmdStart(f: Flags): Obj {
     const slug = String(crew.slug)
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
+    // ADR-0031 item 6: a planned solo or lean crew runs direct; same planVerdict, no engine split, no ## Members check
+    // Under merge single `land` refuses, so a solo or lean crew takes the foreman path like a full crew
+    if (isDirect(crew) && settings.merge !== 'single') {
+      const directVerdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
+      if (directVerdict !== undefined) {
+        refused.push({ slug, reason: directVerdict.deny })
+        continue
+      }
+      const wt = ensureWorktree(repo, slug, settings.target)
+      crew.status = 'running'
+      savePlan(dir, plan)
+      appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
+      slots--
+      direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
+      continue
+    }
     const { engine, reason } = engineOf(sections, settings.merge, noWorkflow)
     if (engine === 'foreman') {
       const foremanVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
@@ -1613,7 +1667,7 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held)
+  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held, direct)
 }
 
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
@@ -1680,6 +1734,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
     argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
     warnings: inside ? out.warnings : [...out.warnings, `--args-file ${flat(p)} is outside the truss dir ${trussDir}, so the Workflow gate can't read it as args.trussFile; pass the file's object as args.truss inline`],
   }
+  if (out.direct !== undefined) short.direct = out.direct
   if (out.missingWorktrees !== undefined) short.missingWorktrees = out.missingWorktrees
   if (inside) short.workflowArgs = { trussFile: flat(p) }
   return short
@@ -2350,7 +2405,10 @@ function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal: Map<s
 type Outcome ={ merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling, audits: Audit[], fails: number): Outcome {
+// `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }): Outcome {
+  const needRed = gates?.red ?? true
+  const needQc = gates?.qc ?? true
   const slug: string = crew.slug
   const wt = crewWorktree(repo, slug)
   const plan = loadPlan(dir)
@@ -2365,8 +2423,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
   if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }
-  const red = redRecord(dir, slug)
-  if (red === undefined || !Number.isInteger(red.exit) || red.exit === 0) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
+  const red = needRed ? redRecord(dir, slug) : undefined
+  if (needRed && (red === undefined || !Number.isInteger(red.exit) || red.exit === 0)) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
   if (run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out !== run(wt, ['rev-parse', 'HEAD']).out) return { refused: `the crew worktree is not on branch truss-${slug}` }
   // step 2: resolve the target once, fully qualified (a same-named tag must not win), and merge that commit in, never a rebase
   const targetRef = `refs/heads/${target}`
@@ -2382,10 +2440,10 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   // step 3: the patch is always computed on the merged head, against the target head just merged in
   const head = run(wt, ['rev-parse', 'HEAD']).out
   const base = run(wt, ['merge-base', oldSha, 'HEAD']).out
-  const patch = head === '' || base === '' ? undefined : patchOf(wt, base, head)
-  if (ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined) return { refused: 'patch id unavailable' }
-  if (mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
-  if (head !== ruling.head) {
+  const patch = !needQc || head === '' || base === '' ? undefined : patchOf(wt, base, head)
+  if (needQc && (ruling === undefined || ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined)) return { refused: 'patch id unavailable' }
+  if (needQc && mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
+  if (needRed || (needQc && head !== ruling?.head)) {
     try {
       cmdCheck({ dir, slug, cwd: wt, expect: 'green' })
     } catch {
@@ -2405,7 +2463,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (entry !== undefined) entry.status = 'merged'
   savePlan(dir, fresh)
-  appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling.head}, red record exit ${red.exit}, patch ${patch}, acceptance test green on the merged head`)
+  if (gates !== undefined) appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | land: process ${gates.process}, qc ${gates.qc}, red ${gates.red}${red !== undefined ? `, red record exit ${red.exit}` : ''}${needQc && ruling !== undefined ? `, QC PASS on ${ruling.head}` : ''}`)
+  else appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling?.head}, red record exit ${red?.exit}, patch ${patch}, acceptance test green on the merged head`)
   const own = new Set(fresh.crews.filter(isObj).map((c: Obj) => `truss-${c.slug}`))
   for (const w of worktreesOf(repo)) {
     if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`truss-${slug}-`)) continue
@@ -2454,6 +2513,39 @@ function agentFileWarnings(repo: string, before: string, target: string): string
     out.push(`the merge changed ${file}; this session keeps the ${type} definition it loaded until a restart, so restart the session, or spawn the role as general-purpose with ${file} inlined in its prompt (ADR-0024 item 24)`)
   }
   return out
+}
+
+// ADR-0031 item 6: the merge gate for a direct (solo or lean) crew. mergeCrew's steps, the red and QC gates switched by the crew's booleans.
+function cmdLand(f: Flags): Obj {
+  const repo = repoOf(f)
+  const slug = need(f, 'slug')
+  const settings = settingsOf(repo)
+  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  const dir = dirOf(f)
+  const plan = loadPlan(dir)
+  const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
+  if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+  const no = (why: string): CliError => refuse({ merged: false, slug, why })
+  if (crew.status !== 'running') throw no(`${slug} is not running (status ${String(crew.status)})`)
+  const process = crew.process
+  if (process !== 'solo' && process !== 'lean') throw no(`${slug} has process ${process === undefined ? 'absent' : String(process)}, not solo or lean; a full crew merges through finish`)
+  const qc = process === 'lean' && crew.qc === true
+  const red = process === 'lean' && crew.red === true
+  let ruling: QcRuling | undefined
+  let fails = 0
+  if (qc) {
+    const since = runStart(plan) ?? 0
+    // the PM saves the hand-back as <slug>-qc[-k].md (finish's name) or, under reports/<slug>/, as qc[-k].md
+    const files = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
+    const newest = latestQc(slug, files, since)
+    ruling = newest === undefined ? undefined : qcRuling(newest.text)
+    if (ruling === undefined || ruling.verdict !== 'PASS') throw no('qc: the newest QC file is not a PASS')
+    if (ruling.unscoped > 0) throw no('qc: the QC PASS has an UNSCOPED finding')
+    fails = qcFails(slug, countedQc(dir, slug, files), since)
+  }
+  const r = mergeCrew(f, dir, repo, settings.target, crew, ruling, [], fails, { process, qc, red })
+  if (r.merged) return { merged: true, slug, process, qc, red, head: run(repo, ['rev-parse', '--verify', `refs/heads/${settings.target}`]).out }
+  throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
 function cmdFinish(f: Flags): Obj {
@@ -2628,7 +2720,7 @@ function cmdDecide(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, doctor: cmdDoctor,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')

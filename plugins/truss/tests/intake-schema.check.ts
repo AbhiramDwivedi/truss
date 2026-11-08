@@ -61,16 +61,19 @@ const forbidsKey = (node: any, key: string): boolean => {
 
 const types = (p: any): string[] => (Array.isArray(p?.type) ? p.type : p?.type ? [p.type] : [])
 
-test('version enum is [1, 2, 3]', () => {
-  assert.deepEqual(props.version?.enum, [1, 2, 3])
+test('version enum is [1, 2, 3, 4]', () => {
+  assert.deepEqual(props.version?.enum, [1, 2, 3, 4])
 })
 
-test('reworkAllowance is required in versions 2 and 3, not in 1', () => {
+test('reworkAllowance is required in versions 2, 3 and 4, not in 1', () => {
   const req = allOf.filter((e: any) => e.then?.required?.includes('reworkAllowance'))
   assert.ok(req.length > 0, 'no allOf entry requires reworkAllowance')
   assert.ok(
-    req.some((e: any) => versionAccepts(e.if, 2) && versionAccepts(e.if, 3) && !versionAccepts(e.if, 1)),
-    'the conditional that requires reworkAllowance must cover versions 2 and 3 and not 1',
+    req.some(
+      (e: any) =>
+        versionAccepts(e.if, 2) && versionAccepts(e.if, 3) && versionAccepts(e.if, 4) && !versionAccepts(e.if, 1),
+    ),
+    'the conditional that requires reworkAllowance must cover versions 2, 3 and 4 and not 1',
   )
 })
 

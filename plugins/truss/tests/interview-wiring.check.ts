@@ -171,8 +171,9 @@ describe('regression guards: merged text that must survive the rewrite', () => {
   test('designer design mode keeps the 3,000-word ADR allowance', () => {
     has(mdSection(ARCH, 'design mode'), /at most 3,000 words/i, '3,000-word ADR allowance gone')
   })
-  test('run keeps the foremanless small crew rule', () => {
-    has(runSection(6), /at most 2 members and no stress test has no foreman/i, 'foremanless small-crew rule gone')
+  test('run keeps the direct crew rule', () => {
+    has(runSection(6), /Direct crews/, 'Direct crews rule gone')
+    has(runSection(6), /factory\.ts land/, 'factory.ts land in the direct crew rule gone')
   })
   test('run keeps the plan table stress test column', () => {
     has(runSection(5), /Stress test \(yes\/no\)/, 'Stress test (yes/no) column gone')
