@@ -1111,16 +1111,18 @@ function memberWarnings(c: StartCtx, entries: Obj[]): string[] {
 }
 
 // The start time of the session, in ms since the epoch, or undefined when it can't be read: TRUSS_SESSION_START (a test
-// override), else the start time of the CLAUDE_PID process (/proc/<pid>/stat field 22 over the tick rate, plus btime).
+// override), else on Linux the start time of the CLAUDE_PID process (/proc/<pid>/stat field 22 over the tick rate, plus btime).
+// macOS and Windows have no /proc and truss reads no system process table, so there it is undefined, and the caller warns that it
+// can't tell (the safe side: a restart prompt, never a silent pass).
 // Never the /proc/<pid> inode mtime, never the transcript (--continue keeps the old one).
-function sessionStart(): number | undefined {
-  const o = process.env.TRUSS_SESSION_START
+export function sessionStart(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform): number | undefined {
+  const o = env.TRUSS_SESSION_START
   if (o !== undefined && o !== '') {
     const n = Number(o)
     return Number.isFinite(n) ? n : undefined
   }
-  const pid = process.env.CLAUDE_PID
-  if (pid === undefined || !/^\d+$/.test(pid)) return undefined
+  const pid = env.CLAUDE_PID
+  if (pid === undefined || !/^\d+$/.test(pid) || platform !== 'linux') return undefined
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
     // comm (field 2) may hold spaces and parentheses: count fields from after the last ")". Field 3 is the first after it.
@@ -1698,13 +1700,16 @@ export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = 
   return HEAVY_WAIT_MS
 }
 const sleepSync = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-const pidAlive = (pid: unknown): boolean => {
+// True while pid runs: process.kill(pid, 0), which works on every OS. On Linux a zombie counts as gone; elsewhere a live answer
+// stands (no /proc, and truss reads no system process table), which only ever keeps a group from being reaped.
+export const pidAlive = (pid: unknown, platform: NodeJS.Platform = process.platform): boolean => {
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
   try {
     process.kill(pid, 0)
   } catch (e: any) {
     return e.code === 'EPERM'
   }
+  if (platform !== 'linux') return true
   try {
     // a zombie has exited: its parent has not collected it yet
     return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8'))
@@ -2145,7 +2150,6 @@ function idleMs(p: string): number {
 // before it is deleted; archive refs whose commit is older than ARCHIVE_KEEP_MS are pruned at finish.
 export const ARCHIVE_PREFIX = 'refs/truss/archive'
 export const ARCHIVE_KEEP_MS = 30 * 86400000
-export const STOP_GRACE_MS = 2000
 type Wt = { path: string; branch: string | undefined; locked: boolean }
 type RetireWhy = 'merged' | 'superseded' | 'dropped' | 'failed'
 const within = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
@@ -2186,114 +2190,16 @@ export function worktreeChanges(wt: string, mainTop: string): { real: string[]; 
   return out
 }
 
-// The processes whose cwd is inside root (Linux /proc; none elsewhere), skipping this process and its ancestors. Each is stoppable
-// when the run started it (Claude Code sets CLAUDECODE=1 for every command it runs) or it is orphaned (its parent is init or a
-// systemd user manager); any other is someone's live process.
-export function processesIn(root: string): { pid: number; stoppable: boolean }[] {
-  if (process.platform !== 'linux' || !existsSync('/proc')) return []
-  const r = realOr(root)
-  const ppidOf = (pid: number): number => {
-    try {
-      const s = readFileSync(`/proc/${pid}/stat`, 'utf8')
-      return Number(s.slice(s.lastIndexOf(')') + 2).split(' ')[1])
-    } catch {
-      return 0
-    }
-  }
-  const mine = new Set<number>()
-  for (let p = process.pid; p > 1 && !mine.has(p); p = ppidOf(p)) mine.add(p)
-  const out: { pid: number; stoppable: boolean }[] = []
-  let names: string[] = []
-  try {
-    names = readdirSync('/proc').filter((n) => /^\d+$/.test(n))
-  } catch {
-    return out
-  }
-  for (const n of names) {
-    const pid = Number(n)
-    if (mine.has(pid)) continue
-    let cwd: string
-    try {
-      cwd = flat(readlinkSync(`/proc/${n}/cwd`))
-    } catch {
-      continue
-    }
-    if (!within(cwd, r)) continue
-    const ppid = ppidOf(pid)
-    let parent = ''
-    try {
-      parent = readFileSync(`/proc/${ppid}/comm`, 'utf8').trim()
-    } catch {
-      // parent gone
-    }
-    let ours = false
-    try {
-      ours = readFileSync(`/proc/${n}/environ`, 'utf8').split('\0').includes('CLAUDECODE=1')
-    } catch {
-      // not readable: not ours
-    }
-    out.push({ pid, stoppable: ours || ppid === 1 || parent === 'systemd' })
-  }
-  return out
-}
-
-// True while pid runs (a zombie counts as gone).
-function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-  try {
-    const s = readFileSync(`/proc/${pid}/stat`, 'utf8')
-    return s.slice(s.lastIndexOf(')') + 2, s.lastIndexOf(')') + 3) !== 'Z'
-  } catch {
-    return existsSync('/proc') ? false : true
-  }
-}
-
-// Stops one pid: SIGTERM, then SIGKILL once STOP_GRACE_MS passes. Returns the signal that ended it, or undefined when it outlived both.
-export function stopPid(pid: number, graceMs = STOP_GRACE_MS): 'SIGTERM' | 'SIGKILL' | undefined {
-  const waitGone = (ms: number): boolean => {
-    const end = Date.now() + ms
-    while (running(pid)) {
-      if (Date.now() > end) return false
-      sleepSync(50)
-    }
-    return true
-  }
-  try {
-    process.kill(pid, 'SIGTERM')
-  } catch {
-    return running(pid) ? undefined : 'SIGTERM'
-  }
-  if (waitGone(graceMs)) return 'SIGTERM'
-  try {
-    process.kill(pid, 'SIGKILL')
-  } catch {
-    // gone between the checks
-  }
-  return waitGone(1000) ? 'SIGKILL' : undefined
-}
-
 type RetireCtx = { dir: string; repo: string; target: string; mainTop: string }
-// Retires one worktree and its branch, or says why it stays: locked, a live process someone else runs inside it, or real changes.
-// Processes the run started (or orphans) inside it are stopped first, and the main-checkout links unlinked so git removes it
-// without --force. A branch tip the target lacks is archived first. One retire event per retirement, one stop event per pid.
+// Retires one worktree and its branch, or says why it stays: locked or real changes. truss stops no process (ADR-0030 item 7):
+// the PM's TaskStop of the finished agent or background shell stops what it left running. The main-checkout links are unlinked
+// so git removes it without --force. A branch tip the target lacks is archived first. One retire event per retirement.
 function retireWorktree(x: RetireCtx, w: Wt, o: { crew: string; run: string; why: RetireWhy }): string | undefined {
   if (w.branch === undefined) return 'detached'
   if (w.locked) return 'locked'
-  const live = existsSync(w.path) ? processesIn(w.path) : []
-  const others = live.filter((p) => !p.stoppable)
-  if (others.length > 0) return `live process ${others.map((p) => p.pid).join(', ')}`
   if (existsSync(w.path)) {
     const ch = worktreeChanges(w.path, x.mainTop)
     if (ch.real.length > 0) return 'dirty'
-    for (const p of live) {
-      const sig = stopPid(p.pid)
-      appendEvent(x.dir, { event: 'stop', crew: o.crew, agent: w.branch, pid: p.pid, signal: sig ?? null, worktree: w.path })
-      if (sig === undefined) return `live process ${p.pid}`
-    }
     for (const l of ch.links) {
       try {
         unlinkSync(l)

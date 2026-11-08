@@ -1,14 +1,16 @@
 // @ts-nocheck
 // Factory fixes from the 2026-11-07 client request (truss ADR-0030): finish retires every member worktree and branch of a terminal
 // crew, archiving a branch tip the target lacks; an untracked symlink into the main checkout is clean; a worktree with real changes
-// or someone else's live process stays and is reported; a process the run started inside a retired worktree is stopped by pid.
+// stays and is reported; a process inside a retired worktree is never signalled or waited on (0.20.1: Claude Code's TaskStop
+// stops what a finished agent or background shell left running, so truss reads no process table and kills nothing).
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../hooks/register.ts'
-import { ARCHIVE_PREFIX, processesIn, worktreeChanges } from '../bin/factory.ts'
+import { ARCHIVE_PREFIX, worktreeChanges } from '../bin/factory.ts'
+import * as factory from '../bin/factory.ts'
 import { addCrewWorktree, appendEvent, crew, factorySpawn, git, gitStatus, head, mkEnv, mkRun, planObj, putFile, qcReport, readEvents, tmp, validateEvent, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const t = (name, a, b) => (b === undefined ? test(name, { timeout: 30000 }, a) : test(name, { timeout: 30000, ...a }, b))
@@ -168,28 +170,7 @@ const waitFor = (cond, ms) => {
 }
 const linux = process.platform === 'linux'
 
-t('r3: someone else\'s live process inside a member worktree keeps it, reported with the pid; the process is not touched', { skip: !linux }, (ctx) => {
-  let kid
-  ctx.after(() => kid?.kill('SIGKILL'))
-  let p
-  const w = world({
-    members: (env) => {
-      p = member(env, `${RUN}-1`, 'truss-s')
-      return { runAgents: [agent('s-builder', p)], oldAgents: [] }
-    },
-  })
-  kid = child(p, false, false)
-  assert.ok(waitFor(() => processesIn(p).some((x) => x.pid === kid.pid), 5000), 'the fixture child is seen inside the worktree')
-  assert.equal(processesIn(p).find((x) => x.pid === kid.pid)?.stoppable, false)
-  const r = w.finish()
-  assert.deepEqual(r.json?.merged, ['s'], say(r))
-  assert.ok(existsSync(p) && branchExists(w.env.repo, `worktree-${RUN}-1`), `the worktree stays: ${say(r)}`)
-  assert.ok(left(r.json).some((l) => l.path === p && l.why === `live process ${kid.pid}`), JSON.stringify(r.json.leftWorktrees))
-  assert.ok(!gone(kid.pid), 'the process is still running')
-  assert.equal(readEvents(w.env.dir).filter((e) => e.event === 'stop').length, 0)
-})
-
-t('r4: a process the run started inside a retired worktree is stopped by pid (SIGKILL after the grace when it ignores SIGTERM), logged, and the worktree goes', { skip: !linux }, (ctx) => {
+t('r3: processes inside member worktrees, the run\'s own and anyone else\'s, keep nothing and are never touched; the worktrees go and no stop event is written', { skip: !linux }, (ctx) => {
   const kids = []
   ctx.after(() => kids.forEach((k) => k.kill('SIGKILL')))
   let p
@@ -201,15 +182,43 @@ t('r4: a process the run started inside a retired worktree is stopped by pid (SI
       return { runAgents: [agent('s-builder', p), agent('s-tester', q)], oldAgents: [] }
     },
   })
-  const soft = child(p, true, false)
-  const hard = child(q, true, true)
-  kids.push(soft, hard)
-  assert.ok(waitFor(() => processesIn(p).some((x) => x.pid === soft.pid) && processesIn(q).some((x) => x.pid === hard.pid), 5000), 'both children are seen')
+  const theirs = child(p, false, false)
+  const ours = child(q, true, true)
+  kids.push(theirs, ours)
+  assert.ok(waitFor(() => !gone(theirs.pid) && !gone(ours.pid), 5000), 'both children run')
   const r = w.finish()
   assert.deepEqual(r.json?.merged, ['s'], say(r))
   assert.ok(!existsSync(p) && !existsSync(q), `both worktrees go: ${say(r)}`)
-  assert.ok(gone(soft.pid) && gone(hard.pid), 'both processes are stopped')
-  const stops = readEvents(w.env.dir).filter((e) => e.event === 'stop')
-  assert.deepEqual(stops.map((e) => [e.pid, e.signal]).sort(), [[soft.pid, 'SIGTERM'], [hard.pid, 'SIGKILL']].sort(), JSON.stringify(stops))
-  for (const e of stops) assert.deepEqual(validateEvent(e), [], JSON.stringify(e))
+  assert.ok(!(r.json.leftWorktrees ?? []).some((l) => /process/.test(l.why)), JSON.stringify(r.json.leftWorktrees))
+  assert.ok(!gone(theirs.pid) && !gone(ours.pid), 'neither process is signalled')
+  assert.equal(readEvents(w.env.dir).filter((e) => e.event === 'stop').length, 0)
+})
+
+t('r4: factory exports no process scan or stopper and reads no other process\'s cwd or environment', () => {
+  assert.equal(factory.processesIn, undefined)
+  assert.equal(factory.stopPid, undefined)
+  const src = readFileSync(new URL('../bin/factory.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(src, /\/cwd`|\/environ`|\bps -A|lsof|Win32_Process|taskkill/)
+})
+
+t('r5: the session start time is read from /proc on Linux only; on macOS and Windows it is unknown (the caller then warns), and the test override works everywhere', () => {
+  const env = { CLAUDE_PID: String(process.pid) }
+  for (const os of ['darwin', 'win32']) {
+    assert.equal(factory.sessionStart(env, os), undefined, os)
+    assert.equal(factory.sessionStart({ ...env, TRUSS_SESSION_START: '1234' }, os), 1234, os)
+  }
+  if (linux) {
+    const s = factory.sessionStart(env, 'linux')
+    assert.ok(typeof s === 'number' && s <= Date.now() && s > Date.now() - 600000, String(s))
+  }
+})
+
+t('r6: pid liveness is process.kill(pid, 0) on every OS; a gone pid is dead, a live one alive, without /proc off Linux', () => {
+  const done = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' })
+  const dead = Number(done.stdout)
+  for (const os of ['linux', 'darwin', 'win32']) {
+    assert.equal(factory.pidAlive(process.pid, os), true, os)
+    assert.equal(factory.pidAlive(dead, os), false, os)
+    assert.equal(factory.pidAlive('12', os), false, os)
+  }
 })
