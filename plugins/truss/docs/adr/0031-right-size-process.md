@@ -143,6 +143,8 @@ crew <slug> merged into <target> at <head> | land: process <p>, qc <bool>, red <
 
 `finish` and its gates don't change for `full` crews, and `stage.js` doesn't change.
 
+Under merge mode `single`, a `solo` or `lean` crew takes the foreman path like a full crew, because `land` refuses `single` (exit 2). `factory.ts start` guards this with `settings.merge !== 'single'`, and `skills/run/SKILL.md` says the same.
+
 ### 7. plan-check rules
 
 `plan-check` (`bin/factory.ts:465-531`) accepts versions 2, 3 and 4. Every new refusal goes into `errors` as `<slug>: <rule> ...`, so it names the crew's slug and the field it breaks: `process`, `estAgents`, `qc` or `red`.
