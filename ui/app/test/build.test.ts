@@ -299,7 +299,7 @@ test('ui/package.json is exact-pinned, matches the lock and holds the approved s
 test('ui/package.json scripts other than build are unchanged', () => {
   const s = JSON.parse(read('package.json')).scripts
   assert.equal(s.start, 'node server/main.ts')
-  assert.equal(s.test, "node --test contract/state.check.ts contract/session.check.ts contract/http.check.ts test/*/*.test.ts 'app/**/*.test.ts'")
+  assert.equal(s.test, "node --test contract/state.check.ts contract/session.check.ts contract/http.check.ts contract/gaps.check.ts contract/build.check.ts contract/background-reply.check.ts contract/redesign/*.check.ts contract/rework/*.check.ts test/*/*.test.ts 'app/**/*.test.ts'")
   assert.equal(s.e2e, 'playwright test')
   assert.equal(s['check:live'], 'node --test contract/live.check.ts')
 })
