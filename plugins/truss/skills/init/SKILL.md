@@ -47,6 +47,7 @@ The brief's first line is `Mode: init`. After it, the brief gives:
 - when the client ran `/truss:init` with a goal: the goal, word for word, and that the design engineer also adds a domain section for each domain the goal touches, so a repo with no code yet still gets a doc;
 - when your args carry a `Greenfield: <path>` line (the run skill passes it after the client brief): that line word for word, and that the repo has no code, so the design engineer lists planned modules and cites the R-ids in the requirements file at that path;
 - when `truss.json` exists and names a missing doc: that path, and that the file's other keys must stay as they are;
+- the feature map: the design engineer creates `docs/features.md` from the code on day 0 (one entry per user-facing capability, with entry points, owning persona and doc pointers), unless the repo already has one. Crews and the planner read it before they scan code, and each crew's knowledge step keeps it current;
 - the project's agents: list `<repo>/.claude/agents/*.md` (symlinks followed), sort them into personas (they can write) and judges (read-only), and pass the list. When the project has no persona, the brief says so, and that the design engineer proposes day-0 personas, one per stack and area it finds in the code plus a read-only `product-owner` judge, as its "init mode" outputs say;
 - what to write: the architecture doc (principles, module map, ADRs for the decisions already in the code) and `<repo>/.claude/truss.json` with the keys `architecture` and `adr` only. An existing doc is extended, not replaced. With none, the doc goes to `docs/architecture.md` and the ADRs to `docs/adr/`.
 
@@ -58,6 +59,7 @@ The brief's first line is `Mode: init`. After it, the brief gives:
    - each ADR's path and title;
    - the contents of `.claude/truss.json`;
    - anything the design engineer's hand-back flags as uncertain;
+   - the feature map the design engineer created (its path and how many capabilities it lists);
    - the proposed personas, from its `PERSONA:` blocks: each one's name, stack and area, and its rules. When the project has no persona and the design engineer proposed none, tell the client and ask the design engineer once for them.
 3. If the design engineer wrote no `.claude/truss.json`, or it fails step 1's checks, tell the client, do step 5, and then go to step 8.
 

@@ -88,11 +88,12 @@ Amends: ADR-NNNN
    - **Module map:** each module, the paths it owns, what it does, and its seams (the interfaces other modules use), with the diagrams that "Diagrams" below asks for.
    - **Decisions:** one ADR in the ADR directory, in the "ADR format" above, for each decision already visible in the code that clears this bar, linked from here: reversing it would touch more than one module, a seam, or a stored data shape. For a repo that's usually 5 to 12. Skip conventions a linter or formatter enforces.
 2. `.claude/truss.json` with only the `architecture` and `adr` keys. The `truss:init` skill proposes the other keys to the client; you don't write them.
-3. **Persona proposals, when the project has no personas** (no project agent that can write, in `.claude/agents/`). Propose one persona per stack and area you found in the code, and a read-only `product-owner` judge, following "Persona rules" below. Do not write them into `.claude/agents/`: list each in your report under `PERSONA: <name>` with its whole file in a fenced block, and `truss:init` shows them to the client and installs the ones the client approves. A project with personas already gets proposals only for a stack or area none covers, plus the `product-owner` when it has none.
+3. **The feature map**, `docs/features.md` (or the path `featureMap` names in `.claude/truss.json`, which you then write), created from the code on day 0. One entry per user-facing capability: what it does in a sentence or two, its entry points as repo paths (each verified to exist), the owning persona, and pointers to docs and ADRs. It is the routing table: crews and the planner read it before they scan code, so each area points to its persona, docs and entry points. Keep entries terse; the knowledge step of each crew edits and merges them later, it doesn't append.
+4. **Persona proposals, when the project has no personas** (no project agent that can write, in `.claude/agents/`). Propose one persona per stack and area you found in the code, and a read-only `product-owner` judge, following "Persona rules" below. Do not write them into `.claude/agents/`: list each in your report under `PERSONA: <name>` with its whole file in a fenced block, and `truss:init` shows them to the client and installs the ones the client approves. A project with personas already gets proposals only for a stack or area none covers, plus the `product-owner` when it has none.
 
 ### Extend pass
 
-**Inputs.** The architecture doc already exists. The brief names the domains to add, each with the `UNCOVERED:` line's reason, or gives a foreman's `## Learned` items to adopt, each with its source. A domain may have no code yet; work by the rule in "Where knowledge comes from".
+**Inputs.** The architecture doc already exists. The brief names the domains to add, each with the `UNCOVERED:` line's reason, or gives conflicting crew amendments and leftover `## Learned` items to reconcile (crews already wrote their own knowledge into their branches), each with its source. A domain may have no code yet; work by the rule in "Where knowledge comes from".
 
 **Outputs.** For each domain, one domain section under the doc's Principles, plus ADRs. Adopt a `## Learned` item into the domain section it belongs to, or into a reference section for a tool. Change no other section, add no module-map entry or diagram, and leave `.claude/truss.json` as it is. A section holds four kinds of thing:
 
@@ -106,6 +107,8 @@ Amends: ADR-NNNN
 ## plan mode
 
 **Who starts you.** The PM, at the start of every run, outside every crew, like the checking engineer.
+
+**Feature map first.** Read the feature map before you scan code: it routes each area to its persona, docs and entry points. Cite the entries a crew touches in `plan.md`. When it is missing, say so and create it as in init mode. When the PM sends the product-owner's `PO: REVISE` findings on the acceptance criteria (`<n>. <crew>: <what>. Fix: <fix>`), revise those crews' acceptance tests once to answer each finding: realistic data, an automated grader for AI output, a check a user would recognise, a test for every requirement.
 
 **Inputs.** The goal, the truss dir, the architecture doc's path, and the path of `requirements.md` and the R-ids this run accepted (when the client brief ran), and optionally the absolute path of `plan.schema.json`. Without one, the schema is at `<principles skill base dir>/../../docs/plan.schema.json`, which is the truss plugin's `docs/plan.schema.json`.
 

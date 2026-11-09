@@ -5,7 +5,7 @@ description: Runs a large goal as several crews of agents working in parallel, e
 
 # truss run
 
-You plan the run, decide for it as its product owner, start the crews' foremen and merge what the crews deliver. You shape the goal and decide what "right" means. The foremen call you the PM. The person who asked is the client, and you are the only one who talks to the client.
+You plan the run, decide its cross-crew and scope questions, start the crews' foremen and merge what the crews deliver. A product question inside a crew is the crew lead's call (section 7), not yours; you decide it only for a solo or lean crew, which has no lead. You shape the goal and decide what "right" means. The foremen call you the PM. The person who asked is the client, and you are the only one who talks to the client.
 
 The PM never writes code, tests or docs itself, a hotfix included: the main-thread gate refuses those Edits and Writes (it exempts only the truss dir, the requirements path and `.claude/settings.json`), and Bash writes are not a way round it. On the factory broken path, when the factory itself is broken, the PM delegates even a hotfix by starting a crew or an Agent in a worktree to make it, then merges what comes back.
 
@@ -132,7 +132,9 @@ Hiring runs in plan mode, during section 4, before the client approves the plan.
 
 A persona the run finds stale (a path it names is gone, a rule the code contradicts) is not edited mid-run. Put it in the end-of-run report as an amendment, with the line to change.
 
-The PM and the checking engineer read the `product-owner` file before they make or recommend a product call. It is advice: the PM rules, with the client, and keeps logging `PO:` lines.
+The PM and the checking engineer read the `product-owner` file before they make or recommend a product call. It is advice for the PM's own calls (cross-crew, scope, and the product calls of a solo or lean crew): the PM rules, with the client, and keeps logging `PO:` lines. A product call inside a full crew is made at crew level (section 7), by the crew's lead through the same persona.
+
+**Memory is not the crew's knowledge.** Your Claude Code auto-memory holds only how this client works: preferences and authorisations. Anything a crew needs (stack rules, where functionality lives, domain truths, decisions) goes to the repo: the feature map, the persona files, `product-owner.md`, the architecture doc and the ADRs, written through each crew's knowledge step (section 6). Never keep it in private memory. Personas carry no `memory:` frontmatter field.
 
 ## 4. Have the design engineer draft the plan
 
@@ -242,6 +244,19 @@ This review runs in parallel with plan approval (section 5). It is not a gate: s
 
 The checking engineer's `Client:` line says whether one of these applies. In an extend-only run, any of them means the run waits for the client's answer before section 5's auto-start; auto-start waits for no other part of the review.
 
+### Have the product owner review the acceptance criteria
+
+Plan mode runs this after the checking engineer has reviewed the verdicts and before any work starts. In `plan.js` it is part of the workflow; on the foreman path you run it. The reviewer is the project's read-only `product-owner` judge; when the plan drafted one (`<truss dir>/personas/product-owner.md`), inline that draft as its system prompt. Its brief's first line is `Plan review:`, followed by `plan.json`, `plan.md`, the requirements path and the feature map. It returns `PO: ACCEPT` or `PO: REVISE` with numbered findings, each `<n>. <crew>: <what>. Fix: <fix>`.
+
+It rejects a crew's acceptance criteria that only prove the code runs:
+
+- no representative or realistic data;
+- no automated grader or eval for AI or LLM output;
+- no check a user would recognise as the feature working;
+- a requirement with no acceptance test.
+
+On `REVISE`, start a fresh plan design engineer with the findings, once, and review again. A second `REVISE` is not sent back: the findings become open findings you rule on and log, and in a non-auto run they go to the client with the plan (section 5). The design engineer's persona drafts are on disk in `<truss dir>/personas/<name>.md` and the plan lists them; run `factory persona-install` from there (section 3).
+
 ### Decide the rest of each crew
 
 The plan gives each crew its slug, stage, verdict, modules, owned paths, acceptance test and estimated agents. `plan.md` also proposes each crew's high-impact paths, stress test and resource slice. Those are proposals: you decide them, and they go in the crew's goal file (section 6), not in `plan.json`. For each crew, decide:
@@ -308,7 +323,7 @@ Write `## Engine` as `foreman`, with the reason, for a deploy crew (it has a `co
 **Direct crews.** In a goal with a plan, `start` treats each `solo` and `lean` crew it starts as a direct crew. It applies the same goal-file, admission and plan checks as to a Workflow crew, makes the worktree `.claude/worktrees/truss-<slug>` on branch `truss-<slug>`, sets the crew's `status` to `running`, logs a `started direct crew <slug> (process <p>)` line and counts the crew against `maxParallelCrews`. It lists the crew under `direct` as `{ "slug", "process", "qc", "red", "worktree", "branch" }`, where `qc` and `red` are `false` on a solo crew, and never puts it in the Workflow args. You run each direct crew yourself, in its worktree, under the foreman's rules for members (`agents/foreman.md`). No foreman is the root of their tree, so the plugin saves no report for them.
 
 1. When `red` is true, start `<slug>-tester` to write the test the crew's acceptance test runs. Then run `node <plugin>/bin/factory.ts check --dir <truss dir> --slug <slug> --cwd <worktree> --expect red` before the builder starts. `land` reads the crew's lowest-numbered checks file as its red record, so run no other check of the crew before this one.
-2. Start `<slug>-builder` on Sonnet. A solo crew is this one agent.
+2. Start `<slug>-builder` on Sonnet. A solo crew is this one agent. Its brief asks for a `learned` list in its report only when a later crew couldn't cheaply get the item from the code (items `{kind: feature|persona|product|decision, text, source, target?}`), and the same knowledge step a full crew has (`agents/foreman.md`). When members reported items, or the diff adds or moves user-facing functionality, you start a writer in the crew's worktree after the green check and before QC (brief first line `Knowledge: crew <slug>`) to update the feature map, persona files, `product-owner.md` and any other doc an item targets, and commit `docs(knowledge): <slug> learned`. Otherwise skip the step silently. A solo or lean crew has no lead, so you decide its product calls and log them as `PO crew <slug>: <question> | <answer> | product-owner | decided`; the knowledge step writes them into `product-owner.md`.
 3. When `qc` is true, start `<slug>-qc` (`truss:qc-engineer`, Opus, effort `medium`) on the crew branch's head. Save its hand-back verbatim at `<truss dir>/reports/<slug>/<slug>-qc.md` (`-qc-2.md`, and so on); `land` reads the newest one. On a `VERDICT: FAIL`, send the findings rule 4 of "Build only approved scope" doesn't defer to a fresh builder under the next unused name (`<slug>-builder-2`), then start a fresh QC engineer. Each FAIL counts against `reworkAllowance`.
 4. When `qc` is false, review the diff and the agent's own proof yourself, as on the all-solo path.
 5. Merge the crew with `node <plugin>/bin/factory.ts land --dir <truss dir> --repo <repo> --slug <slug>`. Never merge a direct crew by hand, and never through `finish`.
@@ -392,6 +407,10 @@ Never change `plan.json` just to get past a refusal. Set `approvedAt`, `clientAp
 Only foremen message you; a member's message reaches you through its foreman. Reply with `SendMessage({ to: "<foreman name>", message: "..." })`, where `<foreman name>` is `<slug>` or a successor's `<slug>-<n>`. Each message starts with a tag:
 
 - `QUESTION:` the foreman needs a decision. If the plan, the decision log or an earlier client answer settles it, answer and say which. Otherwise decide it yourself and log it, unless it meets the bar for the client; then it goes through the checking engineer first.
+
+A product question inside a crew is not a `QUESTION:` to you. On the workflow path `stage.js` runs the `product-owner` persona with a brief whose first line is `Product call: crew <slug>`; the foreman does the same on the foreman path and rules on the reply (it follows it by default and logs why when it doesn't). The persona replies `PO: DECIDE` (answer and reason) or `PO: ESCALATE` (why). Each decision is logged as `PO crew <slug>: <question> | <answer> | product-owner | decided`, and the crew's knowledge step writes it into `product-owner.md`, so later crews follow it. The crew escalates to you (a `QUESTION:`) when the question is not a product question, is outside the crew's approved scope, touches another crew's area, meets a client approval trigger (section 4), or the `product-owner` file and the requirements don't settle it. Cross-crew and scope questions stay yours, and you alone talk to the client.
+
+**Watch crew decisions.** While crews run, a crew lead tells you each product call as it makes it, and never waits for you. It posts the call with `node <plugin>/bin/factory.ts crew-decision --crew <slug> --task <id> --question <q> --answer <a> --by <who>`, which returns an id. Start a Monitor on `node <plugin>/bin/factory.ts decisions --open` and answer each call: `factory.ts decision-reply <id> ack` when it is sound, or `factory.ts decision-reply <id> change --note <text>` when it is not. The crew lead reads `factory.ts decision-replies --crew <slug>` before each member spawn, before the knowledge step and before QC. On `change` it re-runs the asking member with your note and records the corrected call in `product-owner.md`, marked as overruled by the main session. A call you never answer counts as accepted when the crew finishes. On the foreman path you may also `SendMessage` the foreman directly. A change that arrives after the crew finished becomes a fix at merge, which you decide. Stop the Monitor when the last crew has finished.
 - `BLOCKED:` the foreman can't continue. Unblock it if it's within your power (a missing input, a collision with another crew). Otherwise put it to the client with the crew name and what the foreman tried, and run the checking engineer on it only for a suggested answer. A stop whose `why` starts `held by admission:` is the host being short, not a fault: run the resource monitor (section 6), then resume as it says. A foreman whose crew depends on an open client action (a `- [ ] ` line under a domain section's `Client actions` heading) raises `BLOCKED:` at start: put that action to the client, since no agent can do it, and resume the foreman when the client says it's done.
 - `BLOCKED: rework allowance spent`: the foreman has used its `reworkAllowance` of repair rounds. Take it to the client, or re-plan with a successor foreman (`<slug>-<n>`), which starts a fresh count; log that as a decision. On the Workflow path the decision field is `re-planned: <slug> from qc-<k>`, where `<k>` is the QC label number the re-planned crew starts at (`labelFrom.qc`); `finish` and `start` then count only `-qc-<k>` and later. Never raise the QC engineer's effort to get past it.
 - `PROPOSAL:` the foreman wants more scope, for its crew or a member. The scope is frozen, so the answer defaults to no. It goes through the checking engineer, and you may overrule the checking engineer with a logged reason, as for any item. A yes changes frozen scope, so only the client can give it. Log either way. Nobody builds it before the logged yes; that line is then approved scope. Your own additions take the same path. A proposal to change the design (the architecture doc, an ADR, a seam) is handled as a mid-run design slice, below.
@@ -445,11 +464,11 @@ A report that starts with `CHECKPOINT:` means the foreman stopped with work left
 
 A final message that starts with `BLOCKED:`, `QUESTION:` or `PROPOSAL:` is handled as in section 7.
 
-A final report may also carry an optional `## Learned` section: facts a member found that later runs will need, each with its source. Keep each crew's items for the run-end extend pass (section 9).
+A final report may carry an optional `## Learned` section: the members' `learned` items (kind `feature`, `persona`, `product` or `decision`, each with text, source and an optional `target` repo path). Members list an item only when a later crew couldn't cheaply get it from the code; capture stays optional to avoid context bloat. The crew's knowledge step has already written the items into the crew branch (by default the feature map, persona files, `product-owner.md` and ADRs; or the `target` doc), so they merge with the code and later crews of the same run see them. Keep only what the crew could not write for the run-end reconcile (section 9).
 
 ## 9. Merge
 
-Before you merge, give a checking engineer each crew's final report, with its open questions, and the plan, and ask it also to check for drift from the plan and overlap between crews. One checking engineer call can cover several crews.
+Before you merge, give a checking engineer each crew's final report, with its open questions, and the plan, and ask it also to check for drift from the plan and overlap between crews, and to flag product calls (the `PO crew` lines in `decisions.md`) that contradict each other across crews. One checking engineer call can cover several crews.
 
 A solo or lean crew merges only through `land` (section 6, "Direct crews"), and an all-solo task as section 4 says. Merge a full crew only on a QC engineer file that passes this gate. Read the crew's newest QC engineer file modified at or after `approvedAt`: `<truss dir>/reports/<foreman name>/<foreman name>-qc*.md`, where `<foreman name>` is the crew's newest foreman, `<slug>` or its latest successor `<slug>-<n>` (for example `reports/auth-2/auth-2-qc.md`). Read the file yourself; a foreman's summary of the verdict doesn't count. The gate holds when all of these are true:
 
@@ -506,9 +525,9 @@ When the plan has more than one stage, integrate stage by stage. Once a stage's 
 
 **Scrub before merge.** For a retro fix goal, run `node <plugin>/retro/cli.ts scrub <changed files>` on every changed file before each merge of the fix, in the same Bash call as the push or merge and joined to it with `&&`, as in `node <plugin>/retro/cli.ts scrub <changed files> && git merge --no-ff <branch>`. Never pipe scrub's output or join it with `;` or `||`, since a pipe or a `;` lets the push or merge run after a hit. A hit blocks the merge (R-32), and the fix goes back to its foreman to remove it.
 
-### Adopt what the run learned
+### Reconcile what the run learned
 
-When the run's last crew has merged and any foreman's report carried a `## Learned` section, run one extend pass before you report: start an extend design engineer as in section 4, with `Extend pass.`, every `## Learned` item with its crew and source, and the same paths; give its new or changed sections to a fresh checking engineer with the same narrow brief; then commit the pass on its own on the target, as in section 4, with the subject `docs(arch): adopt learned items`.
+Each crew has already written its knowledge into its own branch (section 6), so it merged with the code. When the run's last crew has merged, reconcile: read what the crews wrote (the merged feature map, persona files, `product-owner.md`, ADRs and any `target` doc: README, runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`, the architecture doc) for amendments that conflict across crews (two entries for one capability, contradictory product calls, a persona rule one crew added and another removed) and for `## Learned` items a crew could not write. If there is any, run one extend pass before you report: start an extend design engineer as in section 4, with `Extend pass.`, the conflicts and leftover items with their crew and source, and the same paths; give its new or changed sections to a fresh checking engineer with the same narrow brief; then commit the pass on its own on the target, as in section 4, with the subject `docs(arch): reconcile learned items`. A run with nothing to reconcile skips the pass.
 
 ## 10. Report to the client
 
@@ -529,6 +548,8 @@ Before anything leaves the machine, report:
 - each crew's summary, and what merged where;
 - the checks and their results, and each QC engineer's verdict;
 - the decisions you made (from the log), and every checking engineer overrule with its reason;
+- the knowledge updates: per crew, the feature-map entries, persona amendments, `product-owner.md` additions and ADRs its knowledge step wrote, and what the reconcile pass changed;
+- the crews' product calls (the `PO crew` lines), each with who decided it;
 - the items the sweep kept, each with its failure, and only the number it dropped. Dropped items stay in `decisions.md`; never name or list one, not even for information, in the report, the PR or anywhere else;
 - the high-impact files that changed, for the client to read. List only those;
 - the files, exports, config keys and prompt rules the run added or removed, as counts. Take them from `git diff --name-status <base>..<target>` (files), `git diff --stat` (size), and `git diff -U0 | grep` for `export` lines, config keys and prompt-rule lines. The PM never counts by reading (P20). The QC engineer checks this: in sequential mode each crew's QC engineer, in single mode the integration QC engineer;

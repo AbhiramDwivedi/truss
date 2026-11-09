@@ -2,6 +2,17 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.23.0 (2026-11-09)
+
+truss captures what each crew learns in the repo, lets crew leads make product calls, and has the product owner review the plan before work starts. Install or update as before with `claude plugin install truss@truss`.
+
+- **Per-crew knowledge capture ([ADR-0033](docs/adr/0033-crew-knowledge-and-product-calls.md)).** Members' reports carry optional `learned` items `{kind, text, source, target?}` (`MEMBER_SCHEMA`). After a crew's green check, and only when there are items or the diff adds or moves user-facing functionality, a writer (brief `Knowledge: crew <slug>`) updates the crew branch: the feature map (`docs/features.md`, or `featureMap`), persona files, `product-owner.md`, ADRs or the item's `target`, and commits `docs(knowledge): <slug> learned`. Entries stay terse and are edited or merged, not appended, to avoid context bloat. The QC brief gets a `Knowledge:` block; a diff that adds or moves functionality with no feature-map entry, or an unrecorded crew product call, is a FAIL. Solo and lean crews use the same capture. The run-end "Adopt what the run learned" pass is now a reconcile across crews.
+- **The feature map.** The routing table of user-facing capabilities, entry points, owning personas and doc pointers. `/truss:init` has the design engineer create it on day 0; the planner and crews read it before scanning code.
+- **Crew-level product calls.** The crew lead decides a product question through the `product-owner` persona (`PO: DECIDE` or `PO: ESCALATE`; `stage.js` on the workflow path, the foreman otherwise), logged as `PO crew <slug>: ...`. The PM decides cross-crew and scope questions and the calls of solo and lean crews. Crews post calls with `factory crew-decision`; the PM acks or changes them (`decisions --open`, `decision-reply`) while the crew runs, and the crew reads `decision-replies` before each member, the knowledge step and QC. The checking engineer's merge check flags contradictory calls across crews.
+- **Product-owner plan review.** In plan mode, after the checking engineer reviews the verdicts, the product owner reviews the acceptance criteria (`PO: ACCEPT` or `PO: REVISE`), rejecting criteria that only prove the code runs. One revise round, one re-review; a second REVISE goes to the PM as open findings. `plan.js` writes persona drafts to `<truss dir>/personas/<name>.md`.
+- **Memory versus repo.** The PM's auto-memory holds only how the client works; anything a crew needs goes to the repo.
+- **Mechanics.** Persona `loaded` uses a cross-platform session start, and read-only judges never run with write tools.
+
 ## 0.22.0 (2026-11-09)
 
 truss runs persona agents: project agents specialised by stack, so a known stack no longer gets a generic builder or tester. Install or update as before with `claude plugin install truss@truss`. kit `^0.4.0` is now the dependency (it ships `kit:persona`).
