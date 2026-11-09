@@ -109,13 +109,13 @@ Send a report without proof back to its member before you integrate it.
 
 ## 6. Knowledge step, then QC engineer
 
-**Knowledge step.** Members' reports may carry `learned` items `{kind: feature|persona|product|decision, text, source, target?}`. A member lists one only when a later crew couldn't cheaply get it from the code; capture stays optional so the docs don't bloat with context. The step runs only when members reported items, or when the diff adds or moves user-facing functionality; otherwise skip it silently, with no "nothing new" report. After the checks are green and before the stress test and QC engineer, start a writer member (`truss:writer`, Opus, `medium`, named `<crew>-knowledge`) with a brief whose first line is `Knowledge: crew <slug>`. Give it the members' `learned` items, the crew's diff and the paths below. In your crew branch it updates, tersely, by editing or merging existing entries and not appending:
+**Knowledge step.** Members' reports may carry `learned` items `{kind: feature|persona|product|decision, text, source, target?}`. A member lists one only when a later crew couldn't cheaply get it from the code; capture stays optional so the docs don't bloat with context. The step runs only when members reported items, or when the crew diff adds, renames or deletes non-test source files (read that from git, not from member reports; give the writer those paths so it adds feature-map entries); otherwise skip it silently, with no "nothing new" report. After the checks are green and before the stress test and QC engineer, start a writer member (`truss:writer`, Opus, `medium`, named `<crew>-knowledge`) with a brief whose first line is `Knowledge: crew <slug>`. Give it the members' `learned` items, the crew's diff and the paths below. In your crew branch it updates, tersely, by editing or merging existing entries and not appending:
 
 - the feature map (`docs/features.md`, or `featureMap` in `.claude/truss.json`): one entry per user-facing capability the diff adds or moves;
 - the persona files the crew used: amend a Standards or Review checklist rule, fix a path that moved;
 - `product-owner.md`: this crew's product calls and any domain truth it found;
 - an ADR for a design decision (a `decision` item);
-- any other repo doc an item's `target` names (a README, a runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`, the architecture doc). The kind-to-file list above is only the default.
+- any other repo doc an item's `target` names (a README, a runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`, the architecture doc). The kind-to-file list above is only the default. The step edits only markdown, and only this commit may touch files outside your crew's owns, and only doc paths (the feature map, the ADR dir, the product-owner file, `.claude/agents/*.md`, `*.md` targets).
 
 It commits `docs(knowledge): <slug> learned`. The knowledge merges with the code, so later crews of the run read it. Read the feature map before you split (section 3): it names each area's persona, docs and entry points.
 

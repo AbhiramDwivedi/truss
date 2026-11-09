@@ -57,6 +57,12 @@ When your brief's first line is `Knowledge: crew <slug>`, you record what the cr
 - **`product-owner.md`**: the crew's product calls (question, answer, reason, who decided; mark one the main session overruled) and any domain truth a `product` item found.
 - **An ADR** for each `decision` item, in the repo's ADR format and next number.
 
+The step runs when members reported items, or when the crew diff adds, renames or deletes non-test source files (detected from git, not from member reports). In the second case your brief lists those paths: add a feature-map entry for each capability they hold.
+
+You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. Only this commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and `*.md` targets.
+
+Reachable knowledge: learning can go to any doc, but a doc that no agent can find is as hidden as code. Whenever you write an item outside the feature map, make sure that doc is reachable from the feature map entry for the area (a doc pointer) or from the project's `CLAUDE.md` / `AGENTS.md` index; add the pointer if it is missing.
+
 Every fact traces to an item's source or the diff. Commit `docs(knowledge): <slug> learned` with the usual trailers.
 ## 5. Commit and report
 

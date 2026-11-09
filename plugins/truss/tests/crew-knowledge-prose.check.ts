@@ -118,6 +118,33 @@ test('design and planning engineers use the feature map', () => {
   assert.match(PLANNER, /`learned` item/)
 })
 
+test('0.23.0 prose: plan result, judge host, trigger, scope and reachable knowledge', () => {
+  const ADR = read('../docs/adr/0033-crew-knowledge-and-product-calls.md')
+  assert.match(RUN, /`productOwner` is `\{skipped\}` or `\{judge, verdict: ACCEPT\|REVISE\|UNCLEAR, revised, open\}`/)
+  assert.match(RUN, /`personaDrafts`/)
+  assert.match(RUN, /persona-install --from <truss dir>\/personas --repo <root>/)
+  assert.match(RUN, /never read as `ACCEPT`/)
+  assert.match(RUN, /re-runs the checking engineer on the revised plan/)
+  assert.match(DESIGN, /re-runs the checking engineer on the revised plan/)
+  assert.match(ADR, /re-runs the checking engineer on the revised plan/)
+  for (const t of [RUN, ADR]) {
+    assert.match(t, /`truss:judge`/)
+    assert.match(t, /never runs as `general-purpose`|never `general-purpose`/)
+    assert.match(t, /Bash can still write/)
+  }
+  for (const t of [RUN, FOREMAN, WRITER, ADR]) {
+    assert.match(t, /adds, renames or deletes non-test source files/)
+    assert.doesNotMatch(t, /diff adds or moves user-facing functionality;/)
+  }
+  for (const t of [WRITER, ADR]) {
+    assert.match(t, /a doc that no agent can find is as hidden as code/)
+    assert.match(t, /`CLAUDE\.md` \/ `AGENTS\.md` index/)
+    assert.match(t, /not a `\.md` file is skipped/)
+  }
+  for (const t of [RUN, ADR, QC]) assert.match(t, /only (this commit|the knowledge-step commit)[^.]* may touch files outside the crew's owns/i)
+  assert.match(ADR, /counts learned items per crew and knowledge steps run versus skipped/)
+})
+
 test('init creates the feature map on day 0', () => {
   assert.match(INIT, /docs\/features\.md/)
 })
