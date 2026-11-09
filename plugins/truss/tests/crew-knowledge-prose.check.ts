@@ -40,6 +40,15 @@ test('run skill: watch crew decisions with ack and change', () => {
   assert.match(RUN, /counts as accepted when the crew finishes/)
 })
 
+test('product calls see every crew decision of the run; direct crew members follow persona routing', () => {
+  assert.match(RUN, /carries every crew decision of the run so far/)
+  assert.match(FOREMAN, /every crew decision of the run so far/)
+  assert.match(read('../docs/adr/0033-crew-knowledge-and-product-calls.md'), /parallel crews stay consistent/)
+  assert.match(RUN, /start `<slug>-tester`, as the persona whose area/)
+  assert.match(RUN, /Start `<slug>-builder` as the persona whose area/)
+  assert.doesNotMatch(RUN, /Start `<slug>-builder` on Sonnet/)
+})
+
 test('run skill: plan mode has the product-owner plan review', () => {
   assert.match(RUN, /### Have the product owner review the acceptance criteria/)
   assert.match(RUN, /Plan review:/)

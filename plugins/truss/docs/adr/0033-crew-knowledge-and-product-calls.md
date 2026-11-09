@@ -67,6 +67,8 @@ The run-end pass shrinks to **reconciling** conflicting amendments across crews,
 
 A product question inside a crew is decided by the crew's lead. On the workflow path `stage.js` runs the `product-owner` persona with a brief whose first line is `Product call: crew <slug>`; it replies `PO: DECIDE` (answer and reason) or `PO: ESCALATE` (why). On the foreman path the foreman does the same and rules: it follows the reply by default and logs why when it doesn't. Each decision is logged as `PO crew <slug>: <question> | <answer> | product-owner | decided` and lands in `product-owner.md` through the knowledge step, so later crews follow it.
 
+The `Product call:` brief carries every crew decision of the run so far (`factory decisions`), not only the asking crew's. The product owner follows an earlier call that settles the question and escalates when its answer would contradict another crew's call. This is how parallel crews stay consistent; the checking engineer's contradiction check at merge is the backstop.
+
 A crew escalates to the PM when: the question is not a product question, it is outside the crew's approved scope, it touches another crew's area, it meets a client approval trigger, or the `product-owner` file and the requirements don't settle it. A solo or lean crew has no lead, so the PM decides its product calls. The PM still decides cross-crew and scope questions and is the only one who talks to the client. At merge, the checking engineer's drift and overlap check also flags contradictory product calls between crews.
 
 The crew lead tells the main session each call as it makes it, and never waits:
