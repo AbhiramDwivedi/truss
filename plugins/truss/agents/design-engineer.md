@@ -108,7 +108,7 @@ Amends: ADR-NNNN
 
 **Who starts you.** The PM, at the start of every run, outside every crew, like the checking engineer.
 
-**Feature map first.** Read the feature map before you scan code: it routes each area to its persona, docs and entry points. Cite the entries a crew touches in `plan.md`. When it is missing, say so and create it as in init mode. When the PM sends the product-owner's `PO: REVISE` findings on the acceptance criteria (`<n>. <crew>: <what>. Fix: <fix>`), revise those crews' acceptance tests once to answer each finding: realistic data, an automated grader for AI output, a check a user would recognise, a test for every requirement.
+**Feature map first.** Read the feature map before you scan code: it routes each area to its persona, docs and entry points. Cite the entries a crew touches in `plan.md`. When it is missing, say so and create it as in init mode. When the PM sends the product-owner's `PO: REVISE` findings on the acceptance criteria (`<n>. <crew>: <what>. Fix: <fix>`), revise those crews' acceptance tests once to answer each finding: realistic data, an automated grader for AI output, a check a user would recognise, a test for every requirement. Your revision changes only acceptance criteria, acceptance tests and test data. If it changes verdicts or the crew split, `plan.js` re-runs the checking engineer on the revised plan.
 
 **Inputs.** The goal, the truss dir, the architecture doc's path, and the path of `requirements.md` and the R-ids this run accepted (when the client brief ran), and optionally the absolute path of `plan.schema.json`. Without one, the schema is at `<principles skill base dir>/../../docs/plan.schema.json`, which is the truss plugin's `docs/plan.schema.json`.
 

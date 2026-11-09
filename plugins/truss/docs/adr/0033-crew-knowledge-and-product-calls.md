@@ -45,7 +45,7 @@ Truss's capture has these gaps:
 
 Members' reports may carry `learned` items `{kind: feature|persona|product|decision, text, source, target?}`. A member lists an item only when a later crew couldn't cheaply get it from the code. `target` is an optional repo path (a README, a runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`, a persona, `product-owner.md`, an ADR or the architecture doc). The kind-to-file mapping below is only the default.
 
-The **knowledge step** runs after a crew's green check and before the stress test and QC, in the crew branch. It runs only when members reported items, or when the diff adds or moves user-facing functionality; otherwise it is skipped silently, with no "nothing new" report. A writer member (brief first line `Knowledge: crew <slug>`) updates:
+The **knowledge step** runs after a crew's green check and before the stress test and QC, in the crew branch. It runs only when members reported items, or when the crew diff adds, renames or deletes non-test source files (detected from git, not from member reports; in that case the writer gets those paths and adds feature-map entries); otherwise it is skipped silently, with no "nothing new" report. A writer member (brief first line `Knowledge: crew <slug>`) updates:
 
 - the **feature map**, `docs/features.md` by default or `featureMap` in `.claude/truss.json`: one entry per user-facing capability, with what it does, entry points as paths, the owning persona and doc pointers;
 - the **persona files** the crew used: amend a Standards or Review checklist rule, fix a moved path;
@@ -54,6 +54,10 @@ The **knowledge step** runs after a crew's green check and before the stress tes
 - any other doc an item's `target` names.
 
 The writer keeps entries terse and edits or merges existing entries instead of appending, because unbounded notes bloat the context that every later agent reads. It commits `docs(knowledge): <slug> learned`.
+
+The step edits only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in the report, never written. **Reachable knowledge:** learning can go to any doc, but a doc that no agent can find is as hidden as code. Whenever the step writes an item outside the feature map, it makes sure that doc is reachable from the feature map entry for the area (a doc pointer) or from the project's `CLAUDE.md` / `AGENTS.md` index.
+
+**Scope.** Only the knowledge-step commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and `*.md` targets.
 
 The QC engineer's brief carries a `Knowledge:` block. QC fails a diff that adds or moves user-facing functionality without a feature-map entry, and a crew product call missing from `product-owner.md`. It never fails for missing optional learning.
 
@@ -83,7 +87,7 @@ The crew lead tells the main session each call as it makes it, and never waits:
 
 ### C. Product-owner plan review, before work starts
 
-In plan mode, after the checking engineer reviews the verdicts, the product-owner judge (or this plan's draft of it, inlined) reviews the plan's acceptance criteria. The brief opens with `Plan review:`; the reply is `PO: ACCEPT` or `PO: REVISE` with numbered findings `<n>. <crew>: <what>. Fix: <fix>`. It rejects criteria that only prove the code runs: no representative or realistic data, no automated grader or eval for AI or LLM output, no check a user would recognise, a requirement with no acceptance test. There is one revise round with the design engineer and one re-review. A second `REVISE` goes to the PM as open findings to rule on, and to the client in a non-auto run. The plan workflow writes the design engineer's persona drafts to `<truss dir>/personas/<name>.md` and lists them, so the PM runs `factory persona-install` from there.
+In plan mode, after the checking engineer reviews the verdicts, the product-owner judge (or this plan's draft of it, inlined) reviews the plan's acceptance criteria. The brief opens with `Plan review:`; the reply is `PO: ACCEPT` or `PO: REVISE` with numbered findings `<n>. <crew>: <what>. Fix: <fix>`. It rejects criteria that only prove the code runs: no representative or realistic data, no automated grader or eval for AI or LLM output, no check a user would recognise, a requirement with no acceptance test. There is one revise round with the design engineer and one re-review. The design engineer's revision changes only acceptance criteria, acceptance tests and test data; if it changes verdicts or the crew split, `plan.js` re-runs the checking engineer on the revised plan. An `UNCLEAR` verdict (no `PO: ACCEPT` or `PO: REVISE` line) is never read as `ACCEPT`. A read-only persona that is not loaded yet runs as `truss:judge`, a neutral read-only host agent, with the persona body inlined; it never runs as `general-purpose`, so a judge never gets write tools. One caveat: Bash can still write, and every read-only truss agent shares that limit. A second `REVISE` goes to the PM as open findings to rule on, and to the client in a non-auto run. The plan workflow writes the design engineer's persona drafts to `<truss dir>/personas/<name>.md` and lists them, so the PM runs `factory persona-install` from there.
 
 ### D. Memory versus repo knowledge
 
@@ -97,6 +101,7 @@ The PM's Claude Code auto-memory holds only how this client works: preferences a
 - A crew and the planner find a capability from the feature map and skip the codebase scan.
 - Product calls don't wait on the PM, and they accumulate in a file later crews follow. The main session can still correct one while the crew runs.
 - A plan whose acceptance criteria only prove the code runs is sent back before work starts.
+- The retro counts learned items per crew and knowledge steps run versus skipped, so the client can see if optional capture has decayed into none.
 
 **Negative**
 
