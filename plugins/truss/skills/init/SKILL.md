@@ -79,8 +79,8 @@ kit is optional. Decide on the manifest first, and only then look at the skill l
 
 Personas are day-0 functionality: a project with a known stack gets no generic builders and testers. When the project has no persona (step 3's list), propose them with the client's approval, in this order:
 
-1. When `kit:init` is among the session's skills, run its persona step through the Skill tool (`Skill({ skill: "kit:init", args: "personas" })`), which proposes personas and writes them on approval. Don't run `kit:init` a second time if step 5 already ran it for setup, unless its result says it skipped personas.
-2. Otherwise use the design engineer's `PERSONA:` blocks from step 3, which follow `kit:persona` when the session lists it and the design engineer's persona rules when it doesn't.
+1. If step 5 ran `kit:init` (the manifest was missing), its setup proposal covered the personas. Don't run it again and don't propose them a second time.
+2. Otherwise (kit was already set up, or kit isn't listed), use the design engineer's `PERSONA:` blocks from step 3: its day-0 personas and the `product-owner` judge. It loads `kit:persona` when the session lists it, and uses the persona rules in its prompt when it doesn't. Show them to the client for approval and install the approved ones, as below.
 
 Always include a read-only `product-owner` judge, drafted from `docs/requirements.md`, the README and the domain in the code, when the project has none. Show each persona with its stack, area and rules, and let the client edit or drop any. Write the approved ones to a fresh directory outside the repo (the session scratchpad), then install them with `node <plugin>/bin/factory.ts persona-install --from <that dir> --repo <repo>`, which validates, copies them into `.claude/agents/` and commits them. Personas installed now load at the next session start; say so. Never write a persona the client didn't approve.
 
