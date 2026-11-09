@@ -46,15 +46,17 @@ type Obj = Record<string, any>
 const PLUGIN = path.dirname(path.dirname(fileURLToPath(import.meta.url))).replace(/\\/g, '/')
 const flat = (p: string): string => String(p).replace(/\\/g, '/')
 
-// Flags as `--key value`; a flag with no value is true; a repeated flag becomes a list.
+// Flags as `--key value` or `--key=value` (the `=` form is the safe one for a value that starts with `--`); a flag with no value
+// is true; a repeated flag becomes a list.
 function parseFlags(argv: string[]): Flags {
   const flags: Flags = {}
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (!a.startsWith('--')) throw usage(`unexpected argument: ${a}`)
-    const key = a.slice(2)
+    const eq = a.indexOf('=')
+    const key = eq < 0 ? a.slice(2) : a.slice(2, eq)
     const next = argv[i + 1]
-    const value: string | boolean = next === undefined || next.startsWith('--') ? true : (i++, next)
+    const value: string | boolean = eq >= 0 ? a.slice(eq + 1) : next === undefined || next.startsWith('--') ? true : (i++, next)
     const old = flags[key]
     flags[key] = old === undefined ? value : [...(Array.isArray(old) ? old : [String(old)]), String(value)]
   }
@@ -173,11 +175,13 @@ function configOf(repo: string): Obj {
 const intOr = (v: unknown, dflt: number, min: number): number => (Number.isInteger(v) && (v as number) >= min ? (v as number) : dflt)
 
 // A path key of truss.json (featureMap, adrDir): a non-empty string that is relative and stays inside the repo (no `..` segment, no
-// drive letter, no backslash), as a clean repo-relative path with no leading ./ or trailing /; undefined for anything else.
+// drive letter), as a clean repo-relative path with no leading ./ or trailing /; undefined for anything else. A Windows backslash
+// is a separator: it is turned into `/` first, then the path is checked.
 export function repoPathOf(v: unknown): string | undefined {
-  if (typeof v !== 'string' || v.trim() === '' || /[\r\n\\]/.test(v) || v.startsWith('/') || /^[A-Za-z]:/.test(v)) return undefined
-  if (v.split('/').some((s) => s === '..')) return undefined
-  const clean = v.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '')
+  if (typeof v !== 'string' || v.trim() === '' || /[\r\n]/.test(v)) return undefined
+  const p = v.trim().replace(/\\/g, '/')
+  if (p.startsWith('/') || /^[A-Za-z]:/.test(p) || p.split('/').some((s) => s === '..')) return undefined
+  const clean = p.replace(/^(\.\/)+/, '').replace(/\/+$/, '')
   return clean === '' ? undefined : clean
 }
 // The knowledge step's doc keys (ADR-0033) as stage.js args: only the ones set to a valid path. adrDir falls back to `adr`, the
@@ -434,11 +438,14 @@ function cmdPlanArgs(f: Flags): Obj {
   if (fix !== undefined) readText(fix)
   excludeScratch(repo)
   const cfg = configOf(repo)
+  // review 10: the product-owner plan review reads the feature map, so the key (default docs/features.md) goes along when that file exists
+  const featureMap = docKeysOf(repo).featureMap ?? 'docs/features.md'
   return {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
       scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas,
+      ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
     },
     brief,
   }
@@ -990,7 +997,7 @@ function cmdOwnsCheck(f: Flags): Obj {
   const crew = loadPlan(c.dir).crews.find((x: Obj) => isObj(x) && x.slug === c.slug)
   if (crew === undefined) throw usage(`no crew ${c.slug} in the plan`)
   const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
-  const files = gitOrFail(c.wt, ['diff', '--name-only', `${baseOf(c.wt, c.target)}...HEAD`]).split('\n').filter(Boolean)
+  const files = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'diff', '--name-only', `${baseOf(c.wt, c.target)}...HEAD`]).split('\n').filter(Boolean)
   // path.matchesGlob's `**` skips dot segments; an owned `**` covers them.
   const owned = (file: string, g: string): boolean => {
     if (path.matchesGlob(file, g)) return true
@@ -1008,31 +1015,50 @@ function cmdOwnsCheck(f: Flags): Obj {
     for (let k = 0; k < segs.length; k++) if (path.matchesGlob(segs.slice(k).join('/'), rest)) return true
     return false
   }
-  const exempt = knowledgeDocs(c)
-  const outside = files.filter((file) => !owns.some((g) => owned(file, g)) && !exempt.has(file))
-  if (outside.length > 0) throw refuse({ ok: false, outside })
-  return { ok: true }
+  const allowed = knowledgeDocs(c)
+  const outside = files.filter((file) => !owns.some((g) => owned(file, g)) && !allowed.has(file))
+  // the files the exemption let through: changed, outside the crew's owns, and exempt (sorted, so the report is stable)
+  const exempt = files.filter((file) => !owns.some((g) => owned(file, g)) && allowed.has(file)).sort()
+  if (outside.length > 0) throw refuse({ ok: false, outside, exempt })
+  return { ok: true, exempt }
 }
 
-// ADR-0033: the files the crew's knowledge commit (subject `docs(knowledge): <slug> learned`) may change outside the crew's owns.
-// A file is exempt only when that commit is the only non-merge commit of the crew that changed it, and it is a doc path: the
-// feature map (featureMap, default docs/features.md), a file under the ADR directory (adrDir, default docs/adr), a persona or
-// the product-owner file (.claude/agents/*.md), or any *.md file (an item target such as a README, AGENTS.md, CLAUDE.md or docs/**).
-// A code file the knowledge commit changed, or any file another commit changed, is not exempt.
-function knowledgeDocs(c: { repo: string; slug: string; wt: string; target: string }): Set<string> {
-  const subject = `docs(knowledge): ${c.slug} learned`
-  const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%s', `${baseOf(c.wt, c.target)}..HEAD`])
+// ADR-0033: the files the crew's knowledge commit may change outside the crew's owns. The commit is the one recorded by
+// `knowledge-commit` (its subject never counts: anyone can write a subject). A file is exempt only when ALL hold: it changed in a
+// recorded knowledge commit and in no other non-merge commit of the crew; it is a .md file; it is the feature map (featureMap,
+// default docs/features.md), a file under the ADR directory (adrDir, default docs/adr), a persona or the product-owner file
+// (.claude/agents/*.md, whose YAML frontmatter is unchanged: tools and model are never the knowledge step's to edit), or the
+// target of a learned item the crew recorded with `crew-learned`. A code file, or a file another commit changed, is not exempt.
+function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string; target: string }): Set<string> {
+  const shas = knowledgeShas(c.dir, c.slug)
+  if (shas.length === 0) return new Set()
+  const base = baseOf(c.wt, c.target)
+  const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%H', `${base}..HEAD`])
   const byKnowledge = new Set<string>()
   const byOthers = new Set<string>()
   for (const chunk of out.split('\0').slice(1)) {
     const lines = chunk.split('\n')
     const files = lines.slice(1).map((l) => l.trim()).filter(Boolean)
-    for (const file of files) (lines[0] === subject ? byKnowledge : byOthers).add(file)
+    for (const file of files) (shas.includes((lines[0] as string).trim()) ? byKnowledge : byOthers).add(file)
   }
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
-  const isDoc = (file: string): boolean => file === featureMap || file.startsWith(`${adrDir}/`) || /^\.claude\/agents\/[^/]+\.md$/.test(file) || file.endsWith('.md')
+  const targets = learnedTargets(c.dir, c.slug)
+  const frontmatter = (text: string): string => {
+    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
+    if (lines[0]?.trim() !== '---') return ''
+    const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
+    return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
+  }
+  const isPersona = (file: string): boolean => /^\.claude\/agents\/[^/]+\.md$/.test(file)
+  const frontmatterKept = (file: string): boolean => {
+    const was = run(c.wt, ['show', `${base}:${file}`])
+    const now = run(c.wt, ['show', `HEAD:${file}`])
+    return frontmatter(was.status === 0 ? was.out : '') === frontmatter(now.status === 0 ? now.out : '')
+  }
+  const isDoc = (file: string): boolean =>
+    file.toLowerCase().endsWith('.md') && (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file)) && (!isPersona(file) || frontmatterKept(file))
   return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
 }
 
@@ -1217,7 +1243,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const found = buildPersonas(c.repo)
-  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries), ...found.warnings]
+  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), scriptPath: c.scriptPath, crews: entries },
@@ -1338,6 +1364,14 @@ export function sessionStart(env: Record<string, string | undefined> = process.e
     return undefined
   }
 }
+// sessionStart, asked once per process for the same inputs: a Windows probe can launch PowerShell twice at 8 s each, and one
+// start asks for it in buildPersonas, roleWarnings and stressWarnings. An unreadable start is memoised too.
+const SESSION_START_MEMO = new Map<string, number | undefined>()
+export function sessionStartOnce(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform, probe: StartProbe = REAL_PROBE): number | undefined {
+  const key = `${platform}|${env.CLAUDE_PID ?? ''}|${env.TRUSS_SESSION_START ?? ''}`
+  if (!SESSION_START_MEMO.has(key)) SESSION_START_MEMO.set(key, sessionStart(env, platform, probe))
+  return SESSION_START_MEMO.get(key)
+}
 // One warning per crew starting now whose goal file says `## Stress test` yes, when the stress role's agent file changed after
 // the session loaded its agents. Warnings never hold or refuse a crew.
 function stressWarnings(c: StartCtx, slugs: string[], w: Warned): string[] {
@@ -1349,7 +1383,7 @@ function stressWarnings(c: StartCtx, slugs: string[], w: Warned): string[] {
     if (!existsSync(goalFile) || !/^(yes|true)\b/i.test(goalSections(readFileSync(goalFile, 'utf8'))['Stress test'] ?? '')) continue
     if (!read) {
       read = true
-      started = sessionStart()
+      started = sessionStartOnce()
     }
     const type = String((isObj(c.roles.stress) ? c.roles.stress.agentType : undefined) ?? 'truss:stress-engineer')
     let changed: number | undefined
@@ -1395,7 +1429,7 @@ function changeDetail(file: string, mtime: number, started: number): string | nu
 // (stressWarnings keeps its own texts): planner, qc and writer, tester and builder when their type is truss:*, and ux when the
 // entry is ux. Never designer or checker, which the stage workflow does not spawn. A type warns when its agent file is missing,
 // is newer than the session start, or the session start can't be read; each warning names both fallbacks.
-function roleWarnings(c: StartCtx, entries: Obj[], w: Warned): string[] {
+function roleWarnings(c: StartCtx, entries: Obj[], w: Warned, personas: Obj = {}): string[] {
   const out: string[] = []
   let started: number | undefined
   let read = false
@@ -1407,7 +1441,7 @@ function roleWarnings(c: StartCtx, entries: Obj[], w: Warned): string[] {
       if (!type.startsWith('truss:')) continue
       if (!read) {
         read = true
-        started = sessionStart()
+        started = sessionStartOnce()
       }
       const file = `agents/${type.slice('truss:'.length)}.md`
       let changed: number | undefined
@@ -1423,6 +1457,26 @@ function roleWarnings(c: StartCtx, entries: Obj[], w: Warned): string[] {
         const detail = newerDetail(file, changed, started, w)
         if (detail !== null) out.push(`crew ${slug} runs ${type} as its ${role}, but ${file} changed after this session loaded its agents (${detail}); restart the session to load it, ${fallback}`)
       }
+    }
+  }
+  // The judge host is no role, but plan.js and stage.js spawn truss:judge for every inlined read-only persona: a session that loaded
+  // its agents before agents/judge.md existed has no such type, and the spawn would fail mid-run. Only a project with such a persona is warned.
+  if (entries.length > 0 && Object.values(personas).some((p) => isObj(p) && p.readOnly === true)) {
+    if (!read) started = sessionStartOnce()
+    const file = `agents/${READ_ONLY_HOST.slice('truss:'.length)}.md`
+    let changed: number | undefined
+    try {
+      changed = statSync(`${PLUGIN}/${file}`).mtimeMs
+    } catch {
+      changed = undefined
+    }
+    const slugs = entries.map((e) => String(e.slug)).join(', ')
+    const fallback = 'read-only personas cannot be judged until it is loaded'
+    if (changed === undefined) out.push(`crews ${slugs} may judge with ${READ_ONLY_HOST}, but its agent file ${file} is missing; restart the session once it is back, ${fallback}`)
+    else if (started === undefined) out.push(`crews ${slugs} may judge with ${READ_ONLY_HOST}, but I can't tell whether ${file} changed after this session loaded its agents; restart the session if it did, ${fallback}`)
+    else {
+      const detail = newerDetail(file, changed, started, w)
+      if (detail !== null) out.push(`crews ${slugs} may judge with ${READ_ONLY_HOST}, but ${file} changed after this session loaded its agents (${detail}); restart the session to load it, ${fallback}`)
     }
   }
   return out
@@ -1469,6 +1523,8 @@ function personaFault(fileName: string, doc: PersonaDoc | undefined): string | u
   if ((fm.description ?? '') === '') return 'it has no description'
   if (fm.model !== undefined && !PERSONA_MODELS.includes(fm.model)) return `its model ${fm.model} is not opus or sonnet`
   if (fm.effort !== undefined && !PERSONA_EFFORT_LEVELS.includes(fm.effort)) return `its effort ${fm.effort} is not low, medium or high`
+  // a file cut short by a fence that closed early has no Standards section: it is not installed
+  if (!/^##[ \t]+Standards[ \t]*$/m.test(doc.body)) return 'it has no ## Standards heading (a draft cut short by an early-closing fence has none)'
   return undefined
 }
 
@@ -1502,7 +1558,7 @@ function buildPersonas(repo: string): { personas: Obj; warnings: string[] } {
   } catch {
     return { personas, warnings }
   }
-  const started = sessionStart()
+  const started = sessionStartOnce()
   for (const n of names) {
     const file = `${dir}/${n}`
     const name = n.slice(0, -'.md'.length)
@@ -1528,7 +1584,7 @@ function buildPersonas(repo: string): { personas: Obj; warnings: string[] } {
       readOnly, ...(readOnly ? { inlineType: personaInlineType() } : {}), loaded, ...(loaded ? {} : { body: doc.body }),
     }
     if (!loaded) {
-      warnings.push(`persona ${name} (${file}) is ${started === undefined ? "not known to be loaded (I can't read the session start)" : 'newer than the session start, so this session has not loaded it'}; its tasks run as general-purpose with its definition inlined. Restart the session to load it`)
+      warnings.push(`persona ${name} (${file}) is ${started === undefined ? "not known to be loaded (I can't read the session start)" : 'newer than the session start, so this session has not loaded it'}; its tasks run as ${readOnly ? READ_ONLY_HOST : 'general-purpose'} with its definition inlined. Restart the session to load it`)
     }
   }
   return { personas, warnings }
@@ -1829,6 +1885,10 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by
   const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after } : t))
   const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
+  // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
+  // it; a result read earlier no longer holds for a crew that runs again
+  entry.learned = learnedOf(c.dir, slug)
+  setCrewState(c.dir, slug, null)
   // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
   if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
   const missing = missingWorktrees(c, slug, runs)
@@ -2972,6 +3032,7 @@ function cmdFinish(f: Flags): Obj {
   for (const c of results === undefined ? [] : factoryCrews) {
     const res = results.find((r) => r.slug === c.slug)
     if (res === undefined && !inRun.includes(c)) continue
+    if (res !== undefined) setCrewState(dir, String(c.slug), res.state === 'passed' ? 'finished' : 'stopped')
     if (res === undefined) out.stopped.push({ slug: c.slug, tag: null, at: null, why: 'no result for this crew in --result' })
     else if (res.state !== 'passed') {
       const first = String(res.text ?? '').replace(/\r/g, '').split('\n').find((l) => l.trim() !== '')?.trim()
@@ -3107,10 +3168,76 @@ function cmdDecide(f: Flags): Obj {
 // ==== crew decisions ====
 
 // A crew's product calls reach the main session as they happen, and the crew never waits. State is one small file per decision
-// under <dir>/crew-decisions/: <id>.json (the call), <id>.reply.json (the main session's reply), <id>.consumed (the crew took the
-// reply). Each file is made once with the exclusive flag, so the id counter, the reply hand-over and two crews polling at the same
-// time need no lock: a second claimant gets EEXIST and skips.
+// under <dir>/crew-decisions/: <id>.json (the call), <id>.reply.json (the main session's reply), <id>.consumed (the crew applied the
+// reply and said so with decision-ack). Each file is made once with the exclusive flag, so the id counter, the reply hand-over and
+// two crews acking at the same time need no lock: a second claimant gets EEXIST and skips. Reading replies marks nothing: a reply
+// that a runner garbled on its way back is read again.
 const CREW_DECISIONS = (dir: string): string => `${dir}/crew-decisions`
+// Per-crew state under <dir>/crews/<slug>/: checkpoint.json (the crew passed its reply checkpoint), knowledge-commit.json
+// ({shas}: the crew's knowledge commits), learned.jsonl (one learned item per line) and state.json ({state}: finished or stopped,
+// written when the crew's result is read, cleared when the crew starts again).
+const CREW_STATE = (dir: string, slug: string): string => `${dir}/crews/${slug}`
+const CLOSED_CREW = ['finished', 'merged', 'stopped', 'dropped']
+function readQuiet(p: string): any {
+  try {
+    return JSON.parse(readFileSync(p, 'utf8').replace(/^﻿/, ''))
+  } catch {
+    return undefined
+  }
+}
+function knowledgeShas(dir: string, slug: string): string[] {
+  const v = readQuiet(`${CREW_STATE(dir, slug)}/knowledge-commit.json`)
+  return isObj(v) && Array.isArray(v.shas) ? v.shas.filter((s: unknown): s is string => typeof s === 'string') : []
+}
+// The learned items stored for a crew, oldest first; a line that is not a JSON object is skipped.
+function learnedOf(dir: string, slug: string): Obj[] {
+  const p = `${CREW_STATE(dir, slug)}/learned.jsonl`
+  if (!existsSync(p)) return []
+  return readFileSync(p, 'utf8').split('\n').filter((l) => l.trim() !== '').flatMap((l) => {
+    try {
+      const v = JSON.parse(l)
+      return isObj(v) ? [v] : []
+    } catch {
+      return []
+    }
+  })
+}
+// The repo paths the crew's learned items name as targets, only markdown ones (an item can't send the knowledge step to code).
+function learnedTargets(dir: string, slug: string): Set<string> {
+  const out = new Set<string>()
+  for (const item of learnedOf(dir, slug)) {
+    const t = repoPathOf(item.target)
+    if (t !== undefined && t.toLowerCase().endsWith('.md')) out.add(t)
+  }
+  return out
+}
+function setCrewState(dir: string, slug: string, state: 'finished' | 'stopped' | null): void {
+  const p = `${CREW_STATE(dir, slug)}/state.json`
+  try {
+    if (state === null) rmSync(p, { force: true })
+    else {
+      mkdirSync(CREW_STATE(dir, slug), { recursive: true })
+      writeFileSync(p, JSON.stringify({ state }) + '\n')
+    }
+  } catch {
+    // a failed write only means decisions still reads the plan's status for this crew
+  }
+}
+// The crew's status for decisions: the plan's status (planned, running, merged, dropped), finished or stopped once its result was
+// read, unknown when the plan or the crew is missing.
+function crewStatusOf(dir: string, plan: Obj | undefined, slug: string): string {
+  const entry = plan === undefined ? undefined : plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
+  const planned = isObj(entry) && typeof entry.status === 'string' ? entry.status : 'unknown'
+  if (planned === 'merged' || planned === 'dropped') return planned
+  const st = readQuiet(`${CREW_STATE(dir, slug)}/state.json`)
+  return isObj(st) && (st.state === 'finished' || st.state === 'stopped') ? st.state : planned
+}
+const planQuiet = (dir: string): Obj | undefined => {
+  const v = readQuiet(`${dir}/plan.json`)
+  return isObj(v) && Array.isArray(v.crews) ? v : undefined
+}
+// The crew has applied (or can no longer apply) the main session's replies: it recorded its checkpoint, or it is closed.
+const pastCheckpoint = (dir: string, slug: string, status: string): boolean => existsSync(`${CREW_STATE(dir, slug)}/checkpoint.json`) || CLOSED_CREW.includes(status)
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim()
 type CrewDecision = { id: string; ts: string; crew: string; task: string; question: string; answer: string; by: string }
 type DecisionReply = { id: string; crew: string; reply: 'ack' | 'change'; note: string | null }
@@ -3167,14 +3294,25 @@ function cmdDecisionReply(f: Flags): Obj {
   if (verdict === 'change' && (note === null || note === '')) throw usage('a change reply needs --note: say what the crew should do instead')
   const d = readDecision(dir, id)
   const cdir = CREW_DECISIONS(dir)
-  if (existsSync(`${cdir}/${id}.consumed`)) throw usage(`crew decision ${id} already has a reply that crew ${d.crew} took`)
   const rec: DecisionReply = { id, crew: d.crew, reply: verdict, note: note === '' ? null : note }
-  writeFileSync(`${cdir}/${id}.reply.json`, JSON.stringify(rec) + '\n')
+  // the exclusive create makes a second reply (even one at the same moment) a refusal, never an overwrite
+  try {
+    writeFileSync(`${cdir}/${id}.reply.json`, JSON.stringify(rec) + '\n', { flag: 'wx' })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw usage(`crew decision ${id} already has a reply`)
+    throw e
+  }
   appendEvent(dir, { event: 'decision-reply', id, crew: d.crew, reply: verdict, note: rec.note })
-  return { id, reply: verdict }
+  const status = crewStatusOf(dir, planQuiet(dir), d.crew)
+  if (!pastCheckpoint(dir, d.crew, status)) return { id, reply: verdict }
+  return {
+    id, reply: verdict, crewPastCheckpoint: true,
+    hint: `crew ${d.crew} is past its reply checkpoint (status ${status}) and will not apply this reply; the crew result lists the call as late, so a change becomes a fix at merge`,
+  }
 }
 
-// factory decision-replies --crew <slug>: a crew's replies it has not taken yet, as [{id, reply, note}]; each is marked taken.
+// factory decision-replies --crew <slug>: the replies to a crew's calls that it has not acked yet, as [{id, reply, note}]. It marks
+// nothing: the crew acks with decision-ack once it has applied them, so a reply lost on the way back is read again.
 function cmdDecisionReplies(f: Flags): Obj {
   const dir = dirOf(f)
   const crew = need(f, 'crew')
@@ -3183,16 +3321,92 @@ function cmdDecisionReplies(f: Flags): Obj {
   const names = existsSync(cdir) ? readdirSync(cdir).filter((n) => n.endsWith('.reply.json')).sort(byDecisionId) : []
   for (const n of names) {
     const r = readJson(`${cdir}/${n}`) as DecisionReply
-    if (r.crew !== crew) continue
-    try {
-      writeFileSync(`${cdir}/${r.id}.consumed`, '', { flag: 'wx' })
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue
-      throw e
-    }
+    if (r.crew !== crew || existsSync(`${cdir}/${r.id}.consumed`)) continue
     out.push({ id: r.id, reply: r.reply, note: r.note })
   }
   return out as unknown as Obj
+}
+
+// factory decision-ack --crew <slug> --ids <id,id,...>: the crew applied these replies. Each is marked consumed with an exclusive
+// create, so two acks of one reply never both count: prints {acked, already}. Every id must be a reply to a call of this crew, or
+// nothing is acked.
+function cmdDecisionAck(f: Flags): Obj {
+  const dir = dirOf(f)
+  const crew = need(f, 'crew')
+  const ids = [...new Set(need(f, 'ids').split(',').map((s) => s.trim()).filter((s) => s !== ''))]
+  if (ids.length === 0) throw usage('--ids needs at least one decision id')
+  const cdir = CREW_DECISIONS(dir)
+  for (const id of ids) {
+    const d = readDecision(dir, id)
+    if (d.crew !== crew) throw usage(`crew decision ${id} belongs to crew ${d.crew}, not ${crew}`)
+    if (readReply(dir, id) === undefined) throw usage(`crew decision ${id} has no reply to ack`)
+  }
+  const acked: string[] = []
+  const already: string[] = []
+  for (const id of ids) {
+    try {
+      writeFileSync(`${cdir}/${id}.consumed`, '', { flag: 'wx' })
+      acked.push(id)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      already.push(id)
+    }
+  }
+  if (acked.length > 0) appendEvent(dir, { event: 'decision-ack', crew, ids: acked })
+  return { acked, already }
+}
+
+// factory decision-checkpoint --crew <slug>: the crew passed its reply checkpoint (it applied the replies it had, or made no call).
+// A reply that comes later is not applied by the crew; decision-reply and decisions --open say so. Safe to call again.
+function cmdDecisionCheckpoint(f: Flags): Obj {
+  const dir = dirOf(f)
+  const crew = need(f, 'crew')
+  if (!SLUG.test(crew)) throw usage(`--crew ${crew} is not a crew slug`)
+  mkdirSync(CREW_STATE(dir, crew), { recursive: true })
+  writeFileSync(`${CREW_STATE(dir, crew)}/checkpoint.json`, JSON.stringify({ ts: new Date().toISOString() }) + '\n')
+  return { crew, checkpoint: true }
+}
+
+// factory knowledge-commit --slug <slug> --sha <sha>: records the commit that holds the crew's knowledge step, the one commit
+// owns-check lets change docs outside the crew's owns. Prints {slug, sha} with the full sha.
+function cmdKnowledgeCommit(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  if (!SLUG.test(slug)) throw usage(`--slug ${slug} is not a crew slug`)
+  const given = need(f, 'sha')
+  if (!/^[0-9a-f]{7,64}$/.test(given)) throw usage(`--sha ${given} is not a commit sha`)
+  const r = run(repoOf(f), ['rev-parse', '--verify', '-q', `${given}^{commit}`])
+  if (r.status !== 0 || r.out === '') throw usage(`--sha ${given} is not a commit of this repo`)
+  const sha = r.out
+  const shas = knowledgeShas(dir, slug)
+  if (!shas.includes(sha)) {
+    mkdirSync(CREW_STATE(dir, slug), { recursive: true })
+    writeFileSync(`${CREW_STATE(dir, slug)}/knowledge-commit.json`, JSON.stringify({ shas: [...shas, sha] }) + '\n')
+    appendEvent(dir, { event: 'knowledge-commit', crew: slug, sha })
+  }
+  return { slug, sha }
+}
+
+// factory crew-learned --slug <slug> --add=<json array>: appends the learned items of one member report to the crew's list. The list
+// survives a restart of the crew's run: start --resume hands it back as learned, and the knowledge step reads it. Prints
+// {slug, added, total}.
+function cmdCrewLearned(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  if (!SLUG.test(slug)) throw usage(`--slug ${slug} is not a crew slug`)
+  let items: unknown
+  try {
+    items = JSON.parse(need(f, 'add'))
+  } catch {
+    throw usage('--add is not JSON')
+  }
+  if (!Array.isArray(items) || items.length === 0) throw usage('--add must be a JSON array of at least one learned item')
+  for (const i of items) {
+    if (!isObj(i) || typeof i.kind !== 'string' || i.kind.trim() === '' || typeof i.text !== 'string' || i.text.trim() === '') throw usage('every learned item needs a kind and a text')
+  }
+  mkdirSync(CREW_STATE(dir, slug), { recursive: true })
+  appendFileSync(`${CREW_STATE(dir, slug)}/learned.jsonl`, items.map((i) => JSON.stringify(i) + '\n').join(''))
+  return { slug, added: items.length, total: learnedOf(dir, slug).length }
 }
 // d-<crew>-<n> in the order they were made: by crew, then n as a number.
 function byDecisionId(a: string, b: string): number {
@@ -3205,18 +3419,22 @@ function byDecisionId(a: string, b: string): number {
   return ca < cb ? -1 : ca > cb ? 1 : na - nb
 }
 
-// factory decisions [--open] [--crew <slug>]: the run's crew decisions in the order they were made, each with its reply status;
-// --open keeps the ones with no reply yet. One read of a small directory, cheap to poll.
+// factory decisions [--open] [--crew <slug>]: the run's crew decisions in the order they were made, each with its reply status and
+// its crew's status (crewStatus); --open keeps the ones with no reply yet whose crew can still apply one, so a crew past its
+// checkpoint or a finished crew goes quiet. One read of a small directory, cheap to poll.
 function cmdDecisions(f: Flags): Obj {
   const dir = dirOf(f)
   const cdir = CREW_DECISIONS(dir)
   const only = str(f, 'crew')
   const files = existsSync(cdir) ? readdirSync(cdir).filter((n) => /^d-.*-\d+\.json$/.test(n)) : []
+  const plan = planQuiet(dir)
+  const status = new Map<string, string>()
+  const statusOf = (crew: string): string => status.get(crew) ?? (status.set(crew, crewStatusOf(dir, plan, crew)), status.get(crew) as string)
   const list = files.map((n) => {
     const d = readJson(`${cdir}/${n}`) as CrewDecision
     const r = readReply(dir, d.id)
-    return { ...d, reply: r?.reply ?? null, note: r?.note ?? null, consumed: existsSync(`${cdir}/${d.id}.consumed`) }
-  }).filter((d) => (only === undefined || d.crew === only) && (f.open !== true || d.reply === null))
+    return { ...d, reply: r?.reply ?? null, note: r?.note ?? null, consumed: existsSync(`${cdir}/${d.id}.consumed`), crewStatus: statusOf(d.crew) }
+  }).filter((d) => (only === undefined || d.crew === only) && (f.open !== true || (d.reply === null && !pastCheckpoint(dir, d.crew, d.crewStatus))))
   list.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : byDecisionId(`${a.id}.`, `${b.id}.`)))
   return { decisions: list }
 }
@@ -3224,7 +3442,8 @@ function cmdDecisions(f: Flags): Obj {
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
-  'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, decisions: cmdDecisions,
+  'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
+  'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
@@ -3243,7 +3462,7 @@ function positionalsToFlags(argv: string[], names: string[]): string[] {
     if (a.startsWith('--')) {
       out.push(a)
       const next = argv[i + 1]
-      if (next !== undefined && !next.startsWith('--')) out.push(argv[++i] as string)
+      if (!a.includes('=') && next !== undefined && !next.startsWith('--')) out.push(argv[++i] as string)
     } else if (n < names.length) {
       out.push(`--${names[n++]}`, a)
     } else {

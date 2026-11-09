@@ -48,6 +48,19 @@ t('schema 3: the lines factory.ts really writes for crew-decision and decision-r
   for (const e of ev) assert.deepEqual(validateEvent(e), [], JSON.stringify(e))
 })
 
+t('schema 5: decision-ack {ids} and knowledge-commit {sha} are crew-level events: no agent, and a missing or extra field is refused', () => {
+  const ACK = { v: 1, ts: TS, event: 'decision-ack', crew: 'a', ids: ['d-a-1', 'd-a-2'] }
+  const KC = { v: 1, ts: TS, event: 'knowledge-commit', crew: 'a', sha: 'abc1234' }
+  assert.deepEqual(validateEvent(ACK), [])
+  assert.deepEqual(validateEvent(KC), [])
+  assert.ok(validateEvent({ ...ACK, ids: ['x'] }).length > 0)
+  assert.ok(validateEvent({ ...ACK, ids: ['d-a-1', 'd-a-1'] }).length > 0)
+  assert.ok(validateEvent({ ...ACK, extra: 1 }).some((e) => e.includes('additionalProperties extra')))
+  assert.ok(validateEvent({ ...KC, sha: 'nothex' }).length > 0)
+  const { sha: _s, ...noSha } = KC
+  assert.ok(validateEvent(noSha).some((e) => e.includes('required sha')))
+})
+
 t('schema 4: backward compatible: the older events still need agent, and a line with no agent that is not a decision event is refused', () => {
   assert.deepEqual(validateEvent({ v: 1, ts: TS, event: 'report', crew: 's', agent: 's-qc', marker: 'BLOCKED' }), [])
   assert.ok(validateEvent({ v: 1, ts: TS, event: 'report', crew: 's', marker: 'BLOCKED' }).some((e) => e.includes('required agent')))

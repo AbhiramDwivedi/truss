@@ -27,7 +27,7 @@ test('control: init keeps the kit-absent line word for word', () => {
 })
 
 test('control: init still runs kit:init with the declare args on a manifest without declarations', () => {
-  assert.ok(init.includes('Skill({ skill: "kit:init", args: "declare read-only: truss:qc-engineer, truss:checking-engineer" })'))
+  assert.ok(init.includes('Skill({ skill: "kit:init", args: "declare read-only: truss:qc-engineer, truss:checking-engineer, truss:judge" })'))
 })
 
 test('cp 1: init runs kit:init through the Skill tool on a missing manifest, and drops the no-manifest line', () => {

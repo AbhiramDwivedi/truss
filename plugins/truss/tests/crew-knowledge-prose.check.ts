@@ -37,7 +37,7 @@ test('run skill: watch crew decisions with ack and change', () => {
   assert.match(RUN, /decision-reply <id> ack/)
   assert.match(RUN, /decision-reply <id> change --note/)
   assert.match(RUN, /decision-replies --crew <slug>/)
-  assert.match(RUN, /counts as accepted when the crew finishes/)
+  assert.match(RUN, /A call you never answer counts as accepted/)
 })
 
 test('product calls see every crew decision of the run; direct crew members follow persona routing', () => {
@@ -143,6 +143,51 @@ test('0.23.0 prose: plan result, judge host, trigger, scope and reachable knowle
   }
   for (const t of [RUN, ADR, QC]) assert.match(t, /only (this commit|the knowledge-step commit)[^.]* may touch files outside the crew's owns/i)
   assert.match(ADR, /counts learned items per crew and knowledge steps run versus skipped/)
+})
+
+test('0.23.0 round 2 prose: one reply checkpoint, SHA exemption, plan review, personas, judges', () => {
+  const ADR = read('../docs/adr/0033-crew-knowledge-and-product-calls.md')
+  const CL = read('../CHANGELOG.md')
+  for (const t of [RUN, FOREMAN, ADR]) {
+    assert.doesNotMatch(t, /before each member spawn/)
+    assert.match(t, /decision-ack --crew <slug>/)
+    assert.match(t, /decision-checkpoint --crew <slug>/)
+    assert.match(t, /--note=<text>|--question=<q>/)
+    assert.match(t, /\blate\b/)
+  }
+  assert.match(RUN, /one checkpoint only: after every member has integrated and green has passed, and before the knowledge step/)
+  assert.match(RUN, /`crewPastCheckpoint: true`/)
+  assert.match(RUN, /Stop the Monitor when `decisions --open` is empty and no crew is running/)
+  assert.match(ADR, /races its integration/)
+  assert.match(ADR, /loops? QC/)
+  assert.match(ADR, /decision-replies --crew <slug>`[^.]*consumes nothing/)
+  assert.match(RUN, /factory\.ts knowledge-commit --slug <slug> --sha <sha>/)
+  for (const t of [RUN, FOREMAN, ADR]) assert.match(t, /Sonnet/)
+  for (const t of [RUN, FOREMAN, ADR]) assert.match(t, /writer tasks skips? (the|it)/)
+  for (const t of [ADR, QC, RUN]) assert.match(t, /never (on )?the (commit )?subject/)
+  for (const t of [ADR, QC]) assert.match(t, /frontmatter[^.]*never exempt/)
+  assert.match(ADR, /`unrecorded`/)
+  assert.match(ADR, /`crew-learned`/)
+  assert.match(FOREMAN, /names its SHA/)
+  assert.match(RUN, /`recheck\.reviews`/)
+  assert.match(ADR, /`recheck\.reviews`/)
+  assert.match(RUN, /`plan-write` \(step 4\), not `plan\.js`, writes them/)
+  assert.match(ADR, /`factory plan-write`, not `plan\.js`, writes/)
+  assert.doesNotMatch(read('../CHANGELOG.md').split('## 0.22.0')[0], /`plan\.js` writes persona drafts/)
+  assert.doesNotMatch(DESIGN, /the PM writes it to/)
+  assert.match(DESIGN, /four-backtick/)
+  assert.match(DESIGN, /`## Standards` heading/)
+  assert.match(ADR, /four-backtick fence/)
+  assert.match(RUN, /feature map path when the file exists/)
+  for (const t of [RUN, ADR]) {
+    assert.match(t, /only when it is read-only/)
+    assert.match(t, /always runs as `truss:judge`/)
+    assert.match(t, /read-only to kit's manifest/)
+  }
+  assert.match(RUN, /docs\(arch\): reconcile learned items/)
+  assert.match(read('../README.md'), /docs\(arch\): reconcile learned items/)
+  assert.match(read('../docs/adr/0005-growth-model.md'), /docs\(arch\): reconcile learned items/)
+  assert.match(CL, /Review fixes:/)
 })
 
 test('init creates the feature map on day 0', () => {

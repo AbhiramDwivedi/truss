@@ -8,14 +8,14 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "knowledge"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
   "allOf": [
     {
-      "description": "Every event except the three crew-level ones of truss ADR-0033 names its agent. Those (crew-decision, decision-reply and knowledge) are about a crew, not an agent, and carry no agent field.",
-      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "knowledge"] } } } },
+      "description": "Every event except the crew-level ones of truss ADR-0033 names its agent. Those (crew-decision, decision-reply, decision-ack, knowledge-commit and knowledge) are about a crew, not an agent, and carry no agent field.",
+      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] } } } },
       "then": { "required": ["agent"] }
     },
     {
@@ -60,6 +60,30 @@
           "id": { "type": "string", "pattern": "^d-[a-z0-9-]+-[0-9]+$" },
           "reply": { "enum": ["ack", "change"] },
           "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "decision-ack" } } },
+      "then": {
+        "description": "The crew applied these replies to its product calls and said so with factory decision-ack (truss ADR-0033). ids are the replies newly marked consumed by that call, never one already consumed.",
+        "additionalProperties": false,
+        "required": ["ids"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^d-[a-z0-9-]+-[0-9]+$" } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "knowledge-commit" } } },
+      "then": {
+        "description": "The commit that holds a crew's knowledge step, recorded by factory knowledge-commit (truss ADR-0033). owns-check lets the docs that commit changed, and no other commit did, stand outside the crew's owns.",
+        "additionalProperties": false,
+        "required": ["sha"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "sha": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" }
         }
       }
     },
