@@ -3177,7 +3177,8 @@ const CREW_DECISIONS = (dir: string): string => `${dir}/crew-decisions`
 // ({shas}: the crew's knowledge commits), learned.jsonl (one learned item per line) and state.json ({state}: finished or stopped,
 // written when the crew's result is read, cleared when the crew starts again).
 const CREW_STATE = (dir: string, slug: string): string => `${dir}/crews/${slug}`
-const CLOSED_CREW = ['finished', 'merged', 'stopped', 'dropped']
+// stopped is not here: a stopped crew can be resumed and still applies replies at its checkpoint.
+const CLOSED_CREW = ['finished', 'merged', 'dropped']
 function readQuiet(p: string): any {
   try {
     return JSON.parse(readFileSync(p, 'utf8').replace(/^﻿/, ''))
