@@ -47,6 +47,7 @@ The brief's first line is `Mode: init`. After it, the brief gives:
 - when the client ran `/truss:init` with a goal: the goal, word for word, and that the design engineer also adds a domain section for each domain the goal touches, so a repo with no code yet still gets a doc;
 - when your args carry a `Greenfield: <path>` line (the run skill passes it after the client brief): that line word for word, and that the repo has no code, so the design engineer lists planned modules and cites the R-ids in the requirements file at that path;
 - when `truss.json` exists and names a missing doc: that path, and that the file's other keys must stay as they are;
+- the project's agents: list `<repo>/.claude/agents/*.md` (symlinks followed), sort them into personas (they can write) and judges (read-only), and pass the list. When the project has no persona, the brief says so, and that the design engineer proposes day-0 personas, one per stack and area it finds in the code plus a read-only `product-owner` judge, as its "init mode" outputs say;
 - what to write: the architecture doc (principles, module map, ADRs for the decisions already in the code) and `<repo>/.claude/truss.json` with the keys `architecture` and `adr` only. An existing doc is extended, not replaced. With none, the doc goes to `docs/architecture.md` and the ADRs to `docs/adr/`.
 
 ## 4. Show the client what the design engineer wrote
@@ -56,7 +57,8 @@ The brief's first line is `Mode: init`. After it, the brief gives:
    - the architecture doc's path, and its list of principles and its module map;
    - each ADR's path and title;
    - the contents of `.claude/truss.json`;
-   - anything the design engineer's hand-back flags as uncertain.
+   - anything the design engineer's hand-back flags as uncertain;
+   - the proposed personas, from its `PERSONA:` blocks: each one's name, stack and area, and its rules. When the project has no persona and the design engineer proposed none, tell the client and ask the design engineer once for them.
 3. If the design engineer wrote no `.claude/truss.json`, or it fails step 1's checks, tell the client, do step 5, and then go to step 8.
 
 ## 5. Build on kit's manifest
@@ -73,11 +75,20 @@ kit is optional. Decide on the manifest first, and only then look at the skill l
    - **`kit:init` isn't listed:** print `kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)` exactly as written, on its own line before any other explanation, and repeat it unchanged in your final message. Carry on without a manifest.
 4. Whenever the manifest doesn't end up declaring `truss:qc-engineer` and `truss:checking-engineer` read-only, also tell the client: "worktrees still gives each QC engineer and checking engineer its own worktree. To stop that, set worktrees' `noIsolateAgents` option to `truss:qc-engineer,truss:checking-engineer` in your own settings. worktrees reads it when the session starts, so it takes effect from the next session. Stress tests keep their worktree: the foreman starts them with an explicit `isolation: "worktree"`, which wins over the list." Never write that setting yourself, and declare nothing else read-only.
 
+## 5b. Propose day-0 personas
+
+Personas are day-0 functionality: a project with a known stack gets no generic builders and testers. When the project has no persona (step 3's list), propose them with the client's approval, in this order:
+
+1. When `kit:init` is among the session's skills, run its persona step through the Skill tool (`Skill({ skill: "kit:init", args: "personas" })`), which proposes personas and writes them on approval. Don't run `kit:init` a second time if step 5 already ran it for setup, unless its result says it skipped personas.
+2. Otherwise use the design engineer's `PERSONA:` blocks from step 3, which follow `kit:persona` when the session lists it and the design engineer's persona rules when it doesn't.
+
+Always include a read-only `product-owner` judge, drafted from `docs/requirements.md`, the README and the domain in the code, when the project has none. Show each persona with its stack, area and rules, and let the client edit or drop any. Write the approved ones to a fresh directory outside the repo (the session scratchpad), then install them with `node <plugin>/bin/factory.ts persona-install --from <that dir> --repo <repo>`, which validates, copies them into `.claude/agents/` and commits them. Personas installed now load at the next session start; say so. Never write a persona the client didn't approve.
+
 ## 6. Propose the 0.4.0 keys
 
 The keys are declared in `truss-config.schema.json`, at `<this skill's base dir>/../../docs/truss-config.schema.json`. Read it. Every key is optional, and leaving one out keeps 0.3.0 behaviour. Propose only values that match its patterns, and only paths the current `truss.json` doesn't have: never change or remove a key or value already there, at any depth, even one the schema rejects.
 
-- `roles`: job (`build`, `test`, `review`, `search`, `docs`, `deploy`) to a full agent type. Take it from the manifest's `agents`, for example `build: kit:builder`, `test: kit:test-writer`, `review: kit:reviewer`, `search: kit:scout`. Map `docs` and `deploy` only to an agent that clearly does that job. Without a manifest, use only agent types the session lists that clearly fit. Never map `truss:qc-engineer`, `truss:checking-engineer`, `truss:foreman` or `truss:design-engineer`. When kit is loaded, propose `build: kit:builder` and `test: kit:test-writer` even without a manifest; the run SKILL then passes them as the builder and tester types.
+- `roles`: job (`build`, `test`, `review`, `search`, `docs`, `deploy`) to a full agent type. Take it from the manifest's `agents`, for example `build: kit:builder`, `test: kit:test-writer`, `review: kit:reviewer`, `search: kit:scout`. Map `docs` and `deploy` only to an agent that clearly does that job. Without a manifest, use only agent types the session lists that clearly fit. Never map `truss:qc-engineer`, `truss:checking-engineer`, `truss:foreman` or `truss:design-engineer`. When kit is loaded, propose `build: kit:builder` and `test: kit:test-writer` even without a manifest; the run SKILL then passes them as the builder and tester types. This mapping is the fallback only for an area no persona covers (step 5b); a task with a persona runs as its persona whatever `roles` says.
 - subagent-limits `nudgeAtK` and `stopAtK`: when `subagent-limits` is installed, propose `nudgeAtK` about 150 and `stopAtK` about 200 for the client to approve, and write them only on approval. They are subagent-limits' own options, not `truss.json` keys: they live in `/config`, or under `pluginConfigs` in `~/.claude/settings.json`, so tell the client where, and never write that file without approval.
 - `deploy`: `{target, command, production}`, from what the repo shows (a deploy script, a `vercel.json`, `fly.toml`, a CI deploy job). Propose it only when the file has no `deploy` and the repo makes all three plain, and always as one unit: the client approves or declines all three fields together. `production` is `true` when the command deploys to production.
 - `writingSkill`: a writing skill the session lists, such as `technical-writer`.

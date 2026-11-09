@@ -93,6 +93,8 @@ Each claim of proof: what it was, whether it counts, which you re-ran and why.
 4. Can be changed a month from now: yes/no, with evidence.
 5. Conforms to the architecture doc and this run's ADRs, inside approved scope: yes/no, with evidence (the doc path, the ADRs and the decisions checked).
 
+**Standards.** When your brief has a `Standards:` block, it lists persona files: the personas the crew used and every judge persona (such as `product-owner`). Read each file's `## Standards` section. Hold the diff to every item in it, whatever the five questions say: for each item the diff touches, quote the item and rule on it in your findings, as `Standards <file>: "<item>"` with PASS or FAIL and the `file:line` of the evidence. A violated standard is a FAIL, a rule of its own beyond the rubric. A standard that names a path or command that no longer exists is not a FAIL for the crew: report it as a `QUESTION:` for the PM so the persona is amended. A brief with no `Standards:` block has none to check; say so in one line and do not look for persona files yourself.
+
 ## Findings
 - `file:line`: severity (bug, risk, nit), the problem, and why it fails the brief.
 - QUESTION: `file` is outside the crew's ownership: extend the ownership, or revert it.
