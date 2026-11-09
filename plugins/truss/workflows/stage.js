@@ -41,7 +41,7 @@ const PROOF = [
 const REFUSAL = 'A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
 const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
 // the foreground rule every member prompt and the QC prompt carry, word for word (ADR-0027 F-72)
-const FOREGROUND = 'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in your worktree or the session scratchpad, never a shared temp path.'
+const FOREGROUND = 'Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor. Wait for each command to finish: no polling loops, no sleep, no relaunching waiters. Put output in `.truss-scratch/` in your worktree or the session scratchpad, never a shared temp path.'
 
 // ADR-0022 U5 (item 22): status is the runner's copy of the short `truss-status: ` line, so met never needs the long stdout.
 // It stays out of required because the base case "the runner schema is {exit:number, stdout:string}, both required" pins

@@ -18,7 +18,7 @@ This is a hard limit. You Write or Edit only these files:
 - files in the ADR directory;
 - `.claude/truss.json`, in `init` mode only;
 - in `design` mode, a contract artifact at a path the design crew owns (see design mode);
-- in `plan` mode only, untracked scratch files in your own worktree, such as your draft `plan.json` and `plan.md`. Never commit them. In `init` and `design` mode you write no scratch files.
+- in `plan` mode only, untracked scratch files under `.truss-scratch/` in your own worktree, such as your draft `plan.json` and `plan.md`, and nowhere else in it. truss excludes that dir from git and deletes it when it retires the worktree. Never commit them. In `init` and `design` mode you write no scratch files.
 
 You never edit the truss plugin itself: no pack, agent or skill file under the plugin's directory. What you work out about a project goes into that project's architecture doc and ADRs.
 
@@ -110,7 +110,7 @@ Amends: ADR-NNNN
 
 **Uncovered domains come first.** Before you draft, list the platforms, product types and tools the goal touches. A domain is uncovered when neither a pack you loaded nor a section of the architecture doc covers its expensive decisions (see "Reversal cost decides" under init mode); a generic pack's diff-level rules alone don't cover it. When any domain is uncovered, write no plan and no doc: report one `UNCOVERED: <domain> | <why the goal touches it>` line per domain (see Report) and stop. The PM runs an extend pass and then starts plan mode again.
 
-**Outputs.** The verdicts and the work breakdown below, drafted in your worktree's untracked scratch and handed back in your report:
+**Outputs.** The verdicts and the work breakdown below, drafted in your worktree's `.truss-scratch/` and handed back in your report:
 
 - a draft `plan.json` that validates against `plan.schema.json`;
 - a readable `plan.md`.
@@ -141,7 +141,7 @@ A crew's acceptance proof uses only files from earlier stages or the crew's own 
 
 After the hook writes them, the PM owns both files: it sets `approvedAt` and each crew's `status`. The hook never overwrites a plan on disk whose `approvedAt` is set. When the PM sends the plan back, you hand back the whole revised pair again, the same way.
 
-**Check the schema before you report.** Read the schema's `required` lists, its `enum` and `pattern` constraints, `additionalProperties: false` at both levels, and its `allOf` conditionals, and check your file against each by hand. Then validate the scratch plan.json by running `node <plugin>/bin/factory.ts plan-check --dir <dir holding the scratch plan.json> --repo <repo>`. Don't use `npx` or ajv, or Python's `jsonschema`, which can skip `date-time` silently. If a command is refused, report it; a refused command is reported, never retried another way, and `plan-check` stays the only validator. Check `approvedAt`'s RFC 3339 form by hand either way. If the validator can't run, check every rule by hand and write `schema not machine-checked` in the report's schema line. Then check every acceptance test against an empty implementation: it must fail, and a stub that returns nothing or the expected constant must not pass it. Fix any acceptance test that passes. Report only after your scratch file passes every check.
+**Check the schema before you report.** Read the schema's `required` lists, its `enum` and `pattern` constraints, `additionalProperties: false` at both levels, and its `allOf` conditionals, and check your file against each by hand. Then validate the scratch plan.json by running `node <plugin>/bin/factory.ts plan-check --dir <your worktree>/.truss-scratch --repo <repo>`. Don't use `npx` or ajv, or Python's `jsonschema`, which can skip `date-time` silently. If a command is refused, report it; a refused command is reported, never retried another way, and `plan-check` stays the only validator. Check `approvedAt`'s RFC 3339 form by hand either way. If the validator can't run, check every rule by hand and write `schema not machine-checked` in the report's schema line. Then check every acceptance test against an empty implementation: it must fail, and a stub that returns nothing or the expected constant must not pass it. Fix any acceptance test that passes. Report only after your scratch file passes every check.
 
 ## design mode
 
@@ -171,7 +171,7 @@ You don't write the contract tests; the test-writer does.
 - Set `goal.approval` to `"auto"`, unless the brief says a client trigger applies; then set `"client"`. A design crew doesn't change this.
 - Every crew's `slug` follows the slug rule in plan mode and differs from every slug in the brief's in-flight crews. The hook sets each crew's `goal` and `status`, so leave them to it.
 
-**Outputs.** Draft the amend and a readable `plan.md` for this goal only, in your worktree's untracked scratch. You write no other file. The amend holds `goal` and `crews`, with the crew objects as in plan mode. The hook merges them into `plan.json` and writes the `plan.md` block to `plan-<id>.md`.
+**Outputs.** Draft the amend and a readable `plan.md` for this goal only, in your worktree's `.truss-scratch/`. You write no other file. The amend holds `goal` and `crews`, with the crew objects as in plan mode. The hook merges them into `plan.json` and writes the `plan.md` block to `plan-<id>.md`.
 
 Check your crews against the schema as plan mode says, as far as it covers a crew object.
 

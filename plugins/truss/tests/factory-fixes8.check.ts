@@ -115,7 +115,8 @@ t('r1: a merged crew retires every member of this run and of an older run, archi
   assert.equal(by(`worktree-${OLD}-5`)?.worktree, null)
   assert.equal(by(`worktree-${OLD}-6`)?.reason, 'dropped')
   assert.equal(by('truss-d')?.reason, 'dropped')
-  assert.equal(ev.length, 6, JSON.stringify(ev))
+  assert.equal(by('truss-s')?.reason, 'merged', 'the merged crew\'s own branch goes too')
+  assert.equal(ev.length, 7, JSON.stringify(ev))
   for (const e of ev) assert.deepEqual(validateEvent(e), [], JSON.stringify(e))
 })
 
