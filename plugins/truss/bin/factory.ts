@@ -415,6 +415,7 @@ function cmdPlanArgs(f: Flags): Obj {
   const brief = readText(need(f, 'brief-file'))
   const fix = str(f, 'fix')
   if (fix !== undefined) readText(fix)
+  excludeScratch(repo)
   const cfg = configOf(repo)
   return {
     truss: {
@@ -463,7 +464,33 @@ function cmdPlanWrite(f: Flags): Obj {
   }
   writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
   writeFileSync(`${dir}/plan.md`, md as string)
-  return { written: true }
+  const left = retirePlanRun(f, dir, run_.id)
+  return left.length > 0 ? { written: true, leftWorktrees: left } : { written: true }
+}
+
+// The plan run's worktrees (worktree-<run>-<n>) are done once its plan is written: each is retired, its tip archived when the target
+// lacks it. Best effort: a failure leaves the worktree for the report, never fails plan-write.
+function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; branch: string; why: string }[] {
+  const left: { path: string; branch: string; why: string }[] = []
+  try {
+    const repo = repoOf(f)
+    const wts = worktreesOf(repo)
+    const x: RetireCtx = { dir, repo, target: settingsOf(repo).target, mainTop: wts[0]?.path ?? repo }
+    const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
+    const o = { crew: 'plan', run: runId, why: 'merged' as RetireWhy }
+    for (const w of wts) {
+      if (w.branch === undefined || !branchRe.test(w.branch) || path.basename(w.path) !== w.branch.slice('worktree-'.length)) continue
+      const kept = retireWorktree(x, w, o)
+      if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
+    }
+    const heads = run(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
+    const out = new Set(worktreesOf(repo).map((w) => w.branch))
+    for (const b of heads.status === 0 ? heads.out.split('\n') : []) if (branchRe.test(b) && !out.has(b)) retireBranch(x, b, { ...o, worktree: null })
+  } catch {
+    // no repo or settings: nothing retired
+  }
+  return left
 }
 
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -1532,6 +1559,7 @@ function cmdStart(f: Flags): Obj {
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
+  excludeScratch(repo)
   const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
@@ -2216,8 +2244,29 @@ const realOr = (p: string): string => {
   }
 }
 
+// The one scratch dir a truss agent may write untracked files to in its worktree (.plan-scratch/ is the legacy name). Both are
+// listed in <git common dir>/info/exclude, so no project's .gitignore changes, and never count as work: retirement deletes them.
+export const SCRATCH_DIRS = ['.truss-scratch', '.plan-scratch']
+// Appends each scratch dir to the repo's info/exclude once; a failure is ignored (worktreeChanges still treats them as scratch).
+function excludeScratch(repo: string): void {
+  try {
+    const r = run(repo, ['rev-parse', '--git-common-dir'])
+    if (r.status !== 0 || r.out === '') return
+    const file = path.join(path.resolve(repo, r.out), 'info', 'exclude')
+    const had = existsSync(file) ? readFileSync(file, 'utf8') : ''
+    const lines = had.replace(/\r/g, '').split('\n')
+    const add = SCRATCH_DIRS.map((d) => `${d}/`).filter((l) => !lines.includes(l))
+    if (add.length === 0) return
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, `${had}${had === '' || had.endsWith('\n') ? '' : '\n'}${add.join('\n')}\n`)
+  } catch {
+    // best effort
+  }
+}
+
 // A worktree's `git status --porcelain` entries split in two: links are untracked symlinks that point into the main checkout but
-// outside the worktree (the worktrees plugin links ui/node_modules that way), which are no work; real is everything else.
+// outside the worktree (the worktrees plugin links ui/node_modules that way), which are no work; real is everything else. Untracked
+// entries under a scratch dir are neither.
 export function worktreeChanges(wt: string, mainTop: string): { real: string[]; links: string[] } {
   const r = run(wt, ['status', '--porcelain', '-z', '--untracked-files=all'])
   const out = { real: [] as string[], links: [] as string[] }
@@ -2226,6 +2275,7 @@ export function worktreeChanges(wt: string, mainTop: string): { real: string[]; 
   const self = realOr(wt)
   for (const e of r.out.split('\0').filter((x) => x !== '')) {
     const rel = e.slice(3)
+    if (e.startsWith('?? ') && SCRATCH_DIRS.some((d) => rel === `${d}/` || rel.startsWith(`${d}/`))) continue
     if (e.startsWith('?? ')) {
       const full = `${wt}/${rel.replace(/\/$/, '')}`
       try {
@@ -2258,6 +2308,15 @@ function retireWorktree(x: RetireCtx, w: Wt, o: { crew: string; run: string; why
     for (const l of ch.links) {
       try {
         unlinkSync(l)
+      } catch {
+        // git remove reports it
+      }
+    }
+    // scratch dirs go first: an excluded one git removes anyway, one not yet excluded would make `worktree remove` refuse
+    for (const d of SCRATCH_DIRS) {
+      if (!existsSync(path.join(w.path, d)) || run(w.path, ['ls-files', '--', `${d}/`]).out !== '') continue
+      try {
+        rmSync(path.join(w.path, d), { recursive: true, force: true })
       } catch {
         // git remove reports it
       }
@@ -2338,6 +2397,15 @@ function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal: Map<s
     if (!crewsOfRun.has(id)) crewsOfRun.set(id, new Set())
     crewsOfRun.get(id)?.add(e.crew)
   }
+  // A run no finish recorded (one stopped and resumed by `start --resume` in a new run) still belongs to a terminal crew whose labels
+  // it holds in this session's runs root: the runs `start --resume` rebuilds the crew from.
+  const nextTo = terminal.size > 0 ? runsNextTo(tdir) : []
+  for (const crew of terminal.keys()) {
+    for (const r of crewRunsOf(nextTo, crew)) {
+      if (!crewsOfRun.has(r.id)) crewsOfRun.set(r.id, new Set())
+      crewsOfRun.get(r.id)?.add(crew)
+    }
+  }
   const owners = new Map<string, Map<string, string>>()
   const ownerOf = (id: string, base: string): string | undefined => {
     // only runs this truss dir recorded: another goal's run may use the same slug
@@ -2406,7 +2474,8 @@ type Outcome ={ merged?: true; left?: { path: string; branch: string; why: strin
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 // `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }): Outcome {
+// `runId` names the run in the retire event of the crew's own branch (land has none: 'land').
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }, runId = 'land'): Outcome {
   const needRed = gates?.red ?? true
   const needQc = gates?.qc ?? true
   const slug: string = crew.slug
@@ -2470,9 +2539,12 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`truss-${slug}-`)) continue
     if (run(repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/truss-${slug}`]).status === 0) run(repo, ['worktree', 'remove', w.path])
   }
-  run(repo, ['worktree', 'remove', wt])
+  // the crew's own worktree and branch truss-<slug> are retired now: the target holds the branch, so nothing is archived
+  const x: RetireCtx = { dir, repo, target, mainTop: worktreesOf(repo)[0]?.path ?? repo }
+  const crewWt = worktreesOf(repo).find((w) => w.branch === `truss-${slug}`)
+  const kept = crewWt !== undefined ? retireWorktree(x, crewWt, { crew: slug, run: runId, why: 'merged' }) : retireBranch(x, `truss-${slug}`, { crew: slug, run: runId, why: 'merged', worktree: null })
   // ADR-0021 Decision 7 and ADR-0030: the run's member worktrees are retired by sweepMembers once every crew has had its turn
-  return { merged: true }
+  return kept !== undefined && crewWt !== undefined ? { merged: true, left: [{ path: crewWt.path, branch: `truss-${slug}`, why: kept }] } : { merged: true }
 }
 
 // ADR-0026 item 56: when the repo finish merged into is the plugin's own repo, one warning per plugin agents/*.md the merges
@@ -2544,7 +2616,7 @@ function cmdLand(f: Flags): Obj {
     fails = qcFails(slug, countedQc(dir, slug, files), since)
   }
   const r = mergeCrew(f, dir, repo, settings.target, crew, ruling, [], fails, { process, qc, red })
-  if (r.merged) return { merged: true, slug, process, qc, red, head: run(repo, ['rev-parse', '--verify', `refs/heads/${settings.target}`]).out }
+  if (r.merged) return { merged: true, slug, process, qc, red, head: run(repo, ['rev-parse', '--verify', `refs/heads/${settings.target}`]).out, ...(r.left !== undefined && r.left.length > 0 ? { leftWorktrees: r.left } : {}) }
   throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
@@ -2645,7 +2717,7 @@ function cmdFinish(f: Flags): Obj {
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since))
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id)
     if (r.merged) {
       out.merged.push(c.slug)
       out.leftWorktrees.push(...(r.left ?? []))
