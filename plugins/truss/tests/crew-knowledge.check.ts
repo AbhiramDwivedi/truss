@@ -739,6 +739,93 @@ t('resume 3: a resume with nothing stored makes no decisions call and a fresh cr
   assert.equal(cmdsOf(fresh, 'decisions').length, 0)
 })
 
+const CH1 = { id: 'd-a-1', reply: 'change', note: 'Use green.' }
+const D2 = { ...STORED.decisions[0], id: 'd-a-2', task: 'write-tests', question: 'Use red?', answer: 'Yes red.' }
+// a runner for a resume whose factory has the stored decisions (and the given checkpoint flag) and the given replies by read number
+const resumedRunner = (decisions, checkpoint, ...replies) => (c) => (c.cmd === 'decisions' && /--crew a\b/.test(c.prompt) ? rj({ decisions, checkpoint }) : replying(...replies)(c))
+
+t('resume 4 (review 3): a resume whose checkpoint is already recorded applies no reply: no rerun, no ack, no second checkpoint; the unacked change is listed as late', async () => {
+  const r = await runStage([RESUMED()], { personas: PERSONAS, labels: resumeLabels(), runner: resumedRunner(STORED.decisions, true, [CH1], [CH1]) })
+  passed(r)
+  assert.ok(!r.calls.some((c) => c.prompt.includes('Main session changed product call')), 'nobody applied the change')
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0)
+  assert.equal(cmdsOf(r, 'decision-checkpoint').length, 0, 'the checkpoint was recorded by the earlier run')
+  assert.equal(replyPolls(r).length, 1, 'only the late read')
+  assert.deepEqual(r.result.find((x) => x.slug === 'a').late, [{ id: 'd-a-1', reply: 'change', note: 'Use green.' }])
+  // the same resume with no checkpoint recorded still applies the reply
+  const open = await runStage([RESUMED()], { personas: PERSONAS, labels: resumeLabels({ 'a-builder-2': done('feat/b2') }), runner: resumedRunner(STORED.decisions, false, [CH1]) })
+  passed(open)
+  assert.ok(open.calls.some((c) => c.prompt.includes('Main session changed product call d-a-1')))
+})
+
+t('replies 10 (review 3): each reply is acked right after it is applied, so a Stop on the second change leaves the first acked', async () => {
+  const runner = resumedRunner([STORED.decisions[0], D2], false, [CH1, { ...CH1, id: 'd-a-2', note: 'Use red.' }])
+  const labels = resumeLabels({ 'a-builder-2': done('feat/b2'), 'a-tester': { task: 'x', marker: 'BLOCKED', text: 'cannot redo the tests', proof: '' } })
+  const r = await runStage([RESUMED()], { personas: PERSONAS, labels, runner })
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.equal(s.state, 'stopped', why(r))
+  assert.ok(callOf(r, 'a-tester'), 'the second change was tried')
+  const ack = cmdsOf(r, 'decision-ack')
+  assert.equal(ack.length, 1, 'the first id was acked before the Stop')
+  has(ack[0].prompt, '--ids d-a-1')
+  hasnt(ack[0].prompt, 'd-a-2')
+  assert.ok(ack[0].i > integrateAt(r, 'feat/b2') && ack[0].i < indexOf(r, 'a-tester'), 'acked after its own integrate, before the next rerun')
+})
+
+t('replies 11 (review 3): a done task that lost its brief is not rerun: the change goes to late, not applied', async () => {
+  const bare = ({ name, role, effort, files, after }) => ({ name, role, effort, files, after })
+  const entry = RESUMED({ tasks: [bare(TT), bare(TF)], done: ['write-tests', 'build-ui'], answers: [] })
+  const r = await runStage([entry], { personas: PERSONAS, labels: resumeLabels(), runner: resumedRunner(STORED.decisions, false, [CH1], [CH1]) })
+  passed(r)
+  assert.ok(!r.calls.some((c) => c.prompt.includes('Main session changed product call')), 'no rerun without a brief')
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0)
+  assert.deepEqual(r.result.find((x) => x.slug === 'a').late, [{ id: 'd-a-1', reply: 'change', note: 'Use green.' }])
+})
+
+t('replies 12 (review 3): a rerun after a resume carries the task brief and persona', async () => {
+  const r = await runStage([RESUMED()], { personas: PERSONAS, labels: resumeLabels({ 'a-builder-2': done('feat/b2') }), runner: resumedRunner(STORED.decisions, false, [CH1]) })
+  passed(r)
+  const again = callOf(r, 'a-builder-2')
+  has(again.prompt, 'BRIEF-TF')
+  assert.equal(again.opts.agentType, 'frontend-ui-developer')
+})
+
+t('replies 13 (review 3): a late read that fails is logged and the crew result says lateUnknown; a read that works says nothing', async () => {
+  const boom = ({ cmd, n }) => {
+    if (cmd === 'decision-replies' && n === 1) throw new Error('runner died')
+  }
+  const failed = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING(), runner: boom })
+  passed(failed)
+  const s = failed.result.find((x) => x.slug === 'a')
+  assert.equal(s.lateUnknown, true)
+  assert.equal(s.late, undefined)
+  const garbled = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING(), runner: replying([], 'Sorry, I could not run that command.') })
+  assert.equal(garbled.result.find((x) => x.slug === 'a').lateUnknown, true, 'an unreadable late read is unknown too')
+  const ok = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING(), runner: replying([], []) })
+  assert.equal(ok.result.find((x) => x.slug === 'a').lateUnknown, undefined)
+  const none = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
+  assert.equal(none.result.find((x) => x.slug === 'a').lateUnknown, undefined, 'a crew with no product call never reads')
+})
+
+t('learned 2 (review 3): the learned items go to crew-learned in chunks whose JSON stays under 6000 characters; one oversize item goes alone with its text cut', async () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({ kind: 'feature', text: `fact ${i} ` + 'x'.repeat(300), source: 'src/a.ts:1' }))
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-builder': done('feat/b', { learned: many }) }) })
+  passed(r)
+  const adds = cmdsOf(r, 'crew-learned').map((c) => JSON.parse(c.prompt.match(/--add='([^']*)'/)[1]))
+  assert.ok(adds.length >= 2, `${adds.length} calls`)
+  for (const a of adds) assert.ok(JSON.stringify(a).length <= 6000, `chunk of ${JSON.stringify(a).length}`)
+  assert.deepEqual(adds.flat().map((i) => i.text.slice(0, 7)), many.map((i) => i.text.slice(0, 7)), 'every item, in order')
+  const huge = { kind: 'decision', text: 'big ' + 'y'.repeat(9000), source: '' }
+  const small = { kind: 'feature', text: 'small one', source: '' }
+  const r2 = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-builder': done('feat/b', { learned: [small, huge, small] }) }) })
+  passed(r2)
+  const adds2 = cmdsOf(r2, 'crew-learned').map((c) => JSON.parse(c.prompt.match(/--add='([^']*)'/)[1]))
+  assert.equal(adds2.length, 3, 'the oversize item is alone')
+  assert.equal(adds2[1].length, 1)
+  assert.ok(JSON.stringify(adds2[1]).length <= 6000)
+  assert.ok(adds2[1][0].text.startsWith('big yyy') && adds2[1][0].text.length < huge.text.length)
+})
+
 t('learned 1: crew-learned is called once per member report that carries items, with the items, and only then', async () => {
   const labels = labelsFor({ 'a-tester': done('feat/t'), 'a-builder': done('feat/b', { learned: [ITEM, { ...ITEM, text: 'second fact' }] }) })
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
@@ -784,22 +871,21 @@ t('knowledge 20: knowledge-commit records the writer commit after it integrates;
   hasnt(callOf(skipped, 'a-qc').prompt, 'Knowledge commit:')
 })
 
-t('knowledge 21: a docs-only knowledge commit skips the green re-run; anything else, or no proof of it, runs green again', async () => {
+t('knowledge 21 (review 3): green always re-runs after the knowledge commit (markdown can be test input), whatever knowledge-commit says; the range is sent', async () => {
   const H2 = 'f6'.repeat(20)
-  // the skip trusts the factory's git diff (knowledge-commit docsOnly), never the writer's own report
   const integ = (head, kc) => ({ cmd, branch }) => (cmd === 'integrate' && branch === 'feat/k' ? rj(head ? { merged: true, head } : { merged: true }) : cmd === 'knowledge-commit' && kc !== undefined ? kc : undefined)
-  const docs = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md'], docsOnly: true })
-  const only = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md'] }) }), runner: integ(H2, docs) })
+  const docs = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md'] })
+  const labels = () => labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md'] }) })
+  const only = await runStage([OLD()], { personas: PERSONAS, labels: labels(), runner: integ(H2, docs) })
   passed(only)
-  assert.equal(greens(only).length, 1, 'no green after a docs-only knowledge commit')
-  assert.equal(only.result.find((x) => x.slug === 'a').head, H2, 'the crew head moves to the integrated knowledge commit')
-  has(callOf(only, 'a-qc').prompt, `Head: ${H2}`)
+  assert.equal(greens(only).length, 2, 'green re-runs after a markdown-only knowledge commit')
+  assert.ok(greens(only)[1].i > integrateAt(only, 'feat/k'), 'after the knowledge branch is integrated')
   const kc = cmdsOf(only, 'knowledge-commit')[0]
   has(kc.prompt, `--base=${HEAD}`)
   has(kc.prompt, `--head=${H2}`)
-  const no = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md', 'src/ui/a.ts'], docsOnly: false })
-  for (const [name, runner] of [['the factory says docsOnly false', integ(H2, no)], ['the factory fails', integ(H2, rj({ error: 'boom' }, 1))], ['no docsOnly in the result', integ(H2, rj({ slug: 'a', sha: KSHA }))], ['no integrated head', integ(null, docs)]]) {
-    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md'] }) }), runner })
+  const sneaky = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md'], docsOnly: true })
+  for (const [name, runner] of [['an old factory still says docsOnly', integ(H2, sneaky)], ['the factory refuses the sha (not in the range)', integ(H2, rj({ error: 'sha is not in the range' }, 2))], ['the factory fails', integ(H2, rj({ error: 'boom' }, 1))], ['no integrated head', integ(null, docs)]]) {
+    const r = await runStage([OLD()], { personas: PERSONAS, labels: labels(), runner })
     passed(r)
     assert.equal(greens(r).length, 2, name)
   }

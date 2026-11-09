@@ -293,7 +293,7 @@ t('control 2: the entry still names its goalFile and owns; acceptanceTest stays 
 
 // ---------------------------------------------------------------- item 7, resume: done tasks are stubbed
 
-const fullTask = (name) => ({ name, role: 'builder', effort: 'medium', files: [`src/x/${name}.ts`], reads: [`docs/read-${name}.md`], brief: `BRIEF-FULL-${name}: a long brief`, after: [] })
+const fullTask = (name) => ({ name, role: 'builder', effort: 'medium', files: [`src/x/${name}.ts`], reads: [`docs/read-${name}.md`], brief: `BRIEF-FULL-${name}: a long brief`, after: [], ...(name === 't1' ? { persona: 'frontend-dev' } : {}) })
 function memberBranch(wt, crewBranch, name, merge) {
   git(wt, ['checkout', '-q', '-b', name])
   putFile(wt, `members/${name}.txt`, `${name}\n`, `member ${name}`)
@@ -329,15 +329,17 @@ const resumeAnswers = (w, answers) => {
   return j.truss.crews[0]
 }
 
-t('i7 4: start --resume answers stubs the done task: no brief and no reads, name, role, effort, files and after kept', () => {
+t('i7 4 (review 3): start --resume answers shrinks the done task to name, role, effort, files, after, brief and persona (a rerun needs the brief and persona); the reads go', () => {
   const w = stoppedWorld()
   const e = resumeAnswers(w, [{ at: 'green', text: 'go on' }])
   assert.deepEqual(e.done, ['t1'])
   const stub = e.tasks.find((x) => x.name === 't1')
   assert.ok(stub, `no t1 in tasks: ${JSON.stringify(e.tasks)}`)
-  for (const k of ['role', 'effort', 'files', 'after']) assert.deepEqual(stub[k], w.tasks[0][k], `the stub of t1 lost ${k}`)
-  assert.ok(!JSON.stringify(stub).includes('BRIEF-FULL-t1'), `the stub still holds the brief: ${JSON.stringify(stub)}`)
+  for (const k of ['role', 'effort', 'files', 'after', 'brief', 'persona']) assert.deepEqual(stub[k], w.tasks[0][k], `the stub of t1 lost ${k}`)
+  assert.equal(w.tasks[0].persona, 'frontend-dev', 'the fixture task carries a persona')
   assert.ok(!JSON.stringify(stub).includes('docs/read-t1.md'), `the stub still holds the reads: ${JSON.stringify(stub)}`)
+  const bare = e.tasks.find((x) => x.name === 't2')
+  assert.ok(!Object.hasOwn(bare, 'persona'), 'a task with no persona gets none added')
 })
 t('control 3: start --resume answers keeps the task that is not done in full, and lists the done one', () => {
   const w = stoppedWorld()

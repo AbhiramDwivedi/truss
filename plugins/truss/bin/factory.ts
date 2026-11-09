@@ -1882,8 +1882,9 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
   const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
-  // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by
-  const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after } : t))
+  // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
+  // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
+  const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
   const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
   // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
   // it; a result read earlier no longer holds for a crew that runs again
@@ -3369,8 +3370,10 @@ function cmdDecisionCheckpoint(f: Flags): Obj {
 }
 
 // factory knowledge-commit --slug <slug> --sha <sha>: records the commit that holds the crew's knowledge step, the one commit
-// owns-check lets change docs outside the crew's owns. Prints {slug, sha} with the full sha. With --base and --head (shas) it also
-// prints files (git diff --name-only base head) and docsOnly, true only when that list is non-empty and every path ends in .md.
+// owns-check lets change docs outside the crew's owns. Prints {slug, sha} with the full sha. With --base and --head (shas) the sha
+// must be a non-merge commit in base..head (git rev-list --no-merges), else it is a usage error and nothing is recorded; the output
+// then also carries files (git diff --name-only base head). There is no docs-only answer: markdown can be test input, so green
+// always re-runs after the knowledge commit.
 function cmdKnowledgeCommit(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -3380,20 +3383,26 @@ function cmdKnowledgeCommit(f: Flags): Obj {
   const r = run(repoOf(f), ['rev-parse', '--verify', '-q', `${given}^{commit}`])
   if (r.status !== 0 || r.out === '') throw usage(`--sha ${given} is not a commit of this repo`)
   const sha = r.out
+  const base = str(f, 'base')
+  const head = str(f, 'head')
+  const ranged = base !== undefined && head !== undefined
+  if (ranged) {
+    for (const [name, v] of [['base', base], ['head', head]]) if (!/^[0-9a-f]{7,64}$/.test(v)) throw usage(`--${name} ${v} is not a commit sha`)
+    const l = run(repoOf(f), ['rev-list', '--no-merges', `${base}..${head}`])
+    if (l.status !== 0) throw usage(`git rev-list ${base}..${head} failed: ${l.err || l.out}`)
+    if (!l.out.split('\n').map((x) => x.trim()).includes(sha)) throw usage(`--sha ${sha} is not a non-merge commit in ${base}..${head}`)
+  }
   const shas = knowledgeShas(dir, slug)
   if (!shas.includes(sha)) {
     mkdirSync(CREW_STATE(dir, slug), { recursive: true })
     writeFileSync(`${CREW_STATE(dir, slug)}/knowledge-commit.json`, JSON.stringify({ shas: [...shas, sha] }) + '\n')
     appendEvent(dir, { event: 'knowledge-commit', crew: slug, sha })
   }
-  const base = str(f, 'base')
-  const head = str(f, 'head')
-  if (base === undefined || head === undefined) return { slug, sha }
-  for (const [name, v] of [['base', base], ['head', head]]) if (!/^[0-9a-f]{7,64}$/.test(v)) throw usage(`--${name} ${v} is not a commit sha`)
-  const d = run(repoOf(f), ['-c', 'core.quotepath=off', 'diff', '--name-only', base, head])
+  if (!ranged) return { slug, sha }
+  const d = run(repoOf(f), ['-c', 'core.quotepath=off', 'diff', '--name-only', base as string, head as string])
   if (d.status !== 0) throw usage(`git diff ${base} ${head} failed: ${d.err || d.out}`)
   const files = d.out.split('\n').map((l) => l.trim()).filter(Boolean)
-  return { slug, sha, files, docsOnly: files.length > 0 && files.every((p) => /\.md$/i.test(p)) }
+  return { slug, sha, files }
 }
 
 // factory crew-learned --slug <slug> --add=<json array>: appends the learned items of one member report to the crew's list. The list
@@ -3445,6 +3454,8 @@ function cmdDecisions(f: Flags): Obj {
     return { ...d, reply: r?.reply ?? null, note: r?.note ?? null, consumed: existsSync(`${cdir}/${d.id}.consumed`), crewStatus: statusOf(d.crew) }
   }).filter((d) => (only === undefined || d.crew === only) && (f.open !== true || (d.reply === null && !pastCheckpoint(dir, d.crew, d.crewStatus))))
   list.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : byDecisionId(`${a.id}.`, `${b.id}.`)))
+  // review 3: with --crew, whether the crew already passed its reply checkpoint, so a resume applies no reply it was told is late
+  if (only !== undefined) return { decisions: list, checkpoint: SLUG.test(only) && existsSync(`${CREW_STATE(dir, only)}/checkpoint.json`) }
   return { decisions: list }
 }
 

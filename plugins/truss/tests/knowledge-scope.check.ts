@@ -9,7 +9,7 @@
 // Run with: node --test tests/knowledge-scope.check.ts
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -227,7 +227,7 @@ t('config 2: start passes a valid featureMap and adrDir to stage.js, and nothing
   assert.ok(!Object.hasOwn(off, 'featureMap') && !Object.hasOwn(off, 'adrDir'))
 })
 
-t('scope 6: knowledge-commit with --base and --head reports the files of the range and docsOnly from git; without them it prints no docsOnly', () => {
+t('scope 6: knowledge-commit with --base and --head reports the files of the range and no docsOnly (green always re-runs after the knowledge commit); without them it prints no files', () => {
   const { env, wt } = world()
   const base = git(wt, ['rev-parse', 'HEAD'])
   commitAll(wt, { 'docs/features.md': 'map\n', 'docs/UP.MD': 'x\n' }, KNOWLEDGE)
@@ -235,17 +235,38 @@ t('scope 6: knowledge-commit with --base and --head reports the files of the ran
   const d = env.run('knowledge-commit', { slug: 's', sha: docsHead }, [`--base=${base}`, `--head=${docsHead}`])
   assert.equal(d.status, 0, d.stderr + d.stdout)
   assert.deepEqual([...d.json.files].sort(), ['docs/UP.MD', 'docs/features.md'])
-  assert.equal(d.json.docsOnly, true)
+  assert.ok(!Object.hasOwn(d.json, 'docsOnly'), 'markdown can be test input, so the factory no longer calls a commit docs-only')
   commitAll(wt, { 'src/s/x.ts': 'export {}\n' }, KNOWLEDGE)
   const codeHead = git(wt, ['rev-parse', 'HEAD'])
   const c = env.run('knowledge-commit', { slug: 's', sha: codeHead }, [`--base=${base}`, `--head=${codeHead}`])
-  assert.equal(c.json.docsOnly, false)
   assert.ok(c.json.files.includes('src/s/x.ts'))
-  const same = env.run('knowledge-commit', { slug: 's', sha: codeHead }, [`--base=${codeHead}`, `--head=${codeHead}`])
-  assert.deepEqual([same.json.files, same.json.docsOnly], [[], false], 'an empty range is not docs-only')
+  assert.ok(!Object.hasOwn(c.json, 'docsOnly'))
   const plain = env.run('knowledge-commit', { slug: 's', sha: codeHead }, [`--base=${base}`])
   assert.equal(plain.status, 0)
   assert.ok(!Object.hasOwn(plain.json, 'docsOnly') && !Object.hasOwn(plain.json, 'files'))
+})
+
+t('scope 6b (review 3): with --base and --head the sha must be a non-merge commit in base..head; any other sha is a usage error and records nothing', () => {
+  const { env, wt } = world()
+  const early = git(wt, ['rev-parse', 'HEAD'])
+  commitAll(wt, { 'docs/a.md': 'a\n' }, 'work')
+  const base = git(wt, ['rev-parse', 'HEAD'])
+  git(wt, ['checkout', '-q', '-b', 'side'])
+  commitAll(wt, { 'docs/k.md': 'k\n' }, KNOWLEDGE)
+  const kn = git(wt, ['rev-parse', 'HEAD'])
+  git(wt, ['checkout', '-q', 'truss-s'])
+  commitAll(wt, { 'docs/b.md': 'b\n' }, 'other work')
+  git(wt, ['merge', '-q', '--no-ff', '-m', 'merge side', 'side'])
+  const merge = git(wt, ['rev-parse', 'HEAD'])
+  const range = [`--base=${base}`, `--head=${merge}`]
+  for (const outside of [early, base, merge]) {
+    const r = env.run('knowledge-commit', { slug: 's', sha: outside }, range)
+    assert.equal(r.status, 2, `${outside} must be refused: ${r.stdout}${r.stderr}`)
+  }
+  assert.ok(!existsSync(`${env.dir}/crews/s/knowledge-commit.json`), 'a refused sha records nothing')
+  const ok = env.run('knowledge-commit', { slug: 's', sha: kn }, range)
+  assert.equal(ok.status, 0, ok.stderr + ok.stdout)
+  assert.equal(ok.json.sha, kn)
 })
 
 t('config 3: a featureMap or adrDir that is absolute, climbs out of the repo or is not a string is dropped; adr stands in for a missing adrDir', () => {

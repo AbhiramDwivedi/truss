@@ -23,11 +23,19 @@ Review fixes:
 
 - **One reply checkpoint.** A crew applies main-session replies once: after every member has integrated and green has passed, before the knowledge step. Nothing polls before a member spawn or during stress or QC rework (it raced running members and looped QC). `decision-replies` no longer consumes; `decision-ack` does. `decision-checkpoint` closes the crew's window, so `decisions --open` goes quiet. A reply to a crew past its checkpoint returns `crewPastCheckpoint` and is listed as `late` in the crew result; the main session makes it a fix at merge. A second reply is refused atomically. Direct crews: the PM runs `decision-checkpoint` and `knowledge-commit`. Free text uses the `--flag=value` form.
 - **Resume keeps learning.** `crew-learned` stores items and `factory start` hands them back on a resume; decisions are rebuilt from `factory decisions --crew`.
-- **Knowledge step.** The writer runs on Sonnet `medium`. Writer-only crews skip it. Green doesn't re-run after a docs-only knowledge commit; factory decides that from the git diff of the knowledge step, not from the writer's report. Items learned after the step are listed as `unrecorded` for the run-end reconcile. The QC `Knowledge:` block names the knowledge commit SHA.
+- **Knowledge step.** The writer runs on Sonnet `medium`. Writer-only crews skip it. Green always re-runs after the knowledge commit (markdown can be test input). Items learned after the step are listed as `unrecorded` for the run-end reconcile. The QC `Knowledge:` block names the knowledge commit SHA.
 - **Owns exemption.** It keys on the SHA recorded with `factory knowledge-commit`, never the commit subject, and covers only `.md` files on the listed doc paths. Persona frontmatter changes are never exempt. `owns-check` reports `exempt`.
 - **Plan review.** The revise round carries the first plan verbatim. The re-check runs when slugs, verdicts, owns or modules change; copy `recheck.reviews` into `decisions.md` then. The PO review is skipped when the checking engineer already disagrees, and gets the feature map path when the file exists. `plan-write`, not `plan.js`, writes persona drafts.
 - **Personas and judges.** `PERSONA:` blocks use a four-backtick fence; `persona-install` refuses a draft without a `## Standards` heading. An inlined read-only persona always runs as `truss:judge`; a loaded product-owner persona judges a plan only when read-only. `truss:judge` is declared read-only to kit's manifest.
 - **Retro.** It counts both `docs(arch): adopt learned items` and `docs(arch): reconcile learned items` as extend passes.
+- **Resume keeps the checkpoint.** `decisions --crew` reports `checkpoint`; a resumed crew that already passed its checkpoint applies no reply, and one still unacked is listed as `late`.
+- **Ack per reply.** Each reply is acked right after it is applied, so a Stop on a later change cannot make a resume apply the earlier one again.
+- **Rerun keeps its brief.** A resumed entry keeps a done task's `brief` and `persona`; a task with no brief is not rerun and the reply goes to `late`.
+- **Knowledge SHA checked.** With `--base` and `--head`, `knowledge-commit` takes only a non-merge commit in `base..head`.
+- **Past the checkpoint.** The ADR and run skill say it means `checkpoint.json` exists or the crew is finished, merged or dropped, not stopped.
+- **`late` is the source of truth.** The run skill says a reply sent during the checkpoint can get no hint and still lands in `late`.
+- **Unreadable late read.** It is logged and the crew result carries `lateUnknown: true`; the run skill tells the PM to check `decisions --crew` by hand.
+- **Short command lines.** `crew-learned` gets the items in chunks under 6000 characters of JSON (Windows command-line limit); one oversize item goes alone with its text cut.
 
 ## 0.22.0 (2026-11-09)
 

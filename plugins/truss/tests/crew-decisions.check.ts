@@ -248,7 +248,7 @@ t('cd 13: a merged crew is out of --open and has crewStatus merged; a crew finis
   assert.deepEqual(env.run('decisions', { open: true }).json.decisions.map((d) => d.id), [s], 'a stopped crew with no checkpoint can resume, so its call stays open')
 })
 
-t('cd 14: decision-reply to a crew past its checkpoint (or finished, merged, stopped) adds crewPastCheckpoint and a hint; before, neither key', () => {
+t('cd 14: decision-reply to a crew past its checkpoint (or finished, merged, dropped) adds crewPastCheckpoint and a hint; before, neither key', () => {
   const env = mkEnv({ useRealPlugin: true })
   const a = decide(env).json.id
   const before = reply(env, a, 'ack')
@@ -300,6 +300,15 @@ t('cd 15: knowledge-commit records the crew\'s knowledge commit sha and a knowle
   for (const bad of ['', 'xyz', '0'.repeat(40), '--no']) assertUsageError(env.run('knowledge-commit', { slug: 'api', sha: bad }))
   assertUsageError(env.run('knowledge-commit', { slug: 'Not A Slug', sha }))
   assertUsageError(env.run('knowledge-commit', { slug: 'api' }))
+})
+
+t('cd 15b (review 3): decisions --crew carries a top-level checkpoint, true once the crew recorded its checkpoint; without --crew there is none', () => {
+  const env = mkEnv({ useRealPlugin: true })
+  assert.deepEqual(env.run('decisions', {}, ['--crew=api']).json, { decisions: [], checkpoint: false })
+  assert.equal(env.run('decision-checkpoint', { crew: 'api' }).status, 0)
+  assert.equal(env.run('decisions', {}, ['--crew=api']).json.checkpoint, true)
+  assert.equal(env.run('decisions', {}, ['--crew=web']).json.checkpoint, false, 'per crew')
+  assert.ok(!Object.hasOwn(env.run('decisions').json, 'checkpoint'))
 })
 
 t('cd 16: crew-learned appends the items of a member report to the crew\'s learned list; --add=<json> works; bad input appends nothing', () => {
