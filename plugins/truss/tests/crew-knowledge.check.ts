@@ -53,13 +53,13 @@ async function exec(args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|crew-decision|decision-replies|decisions)\b([^\n]*)/)
+      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|crew-decision|decision-replies|decision-ack|decision-checkpoint|crew-learned|knowledge-commit|decisions)\b([^\n]*)/)
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
       }
       const cmd = m[1]
-      const flag = (name) => (m[2].match(new RegExp(`--${name}\\s+([^\\s\`]+)`)) || [])[1]
+      const flag = (name) => (m[2].match(new RegExp(`--${name}(?:\\s+|=)([^\\s\`]+)`)) || [])[1]
       const slug = flag("slug") ?? flag("crew")
       const expect = flag('expect')
       const branch = flag('branch')
@@ -71,7 +71,7 @@ async function exec(args, o = {}) {
       if (out === undefined) {
         const plain = expect === 'red' ? { ok: true } : { ok: true, head: HEAD }
         out =
-          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : cmd === 'crew-decision' ? rj({ id: `d${n + 1}` }) : cmd === 'decision-replies' ? rj([]) : cmd === 'decisions' ? rj({ decisions: [] }) : rj({ merged: true })
+          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : cmd === 'crew-decision' ? rj({ id: `d${n + 1}` }) : cmd === 'decision-replies' ? rj([]) : cmd === 'decision-ack' ? rj({ acked: [], already: [] }) : cmd === 'decision-checkpoint' || cmd === 'crew-learned' || cmd === 'knowledge-commit' ? rj({ ok: true }) : cmd === 'decisions' ? rj({ decisions: [] }) : rj({ merged: true })
       }
       await ticks(1)
       return out
@@ -399,8 +399,8 @@ t('product 1: a member QUESTION goes to the product-owner persona; DECIDE re-run
   assert.equal(d.length, 1, 'one crew-decision call')
   has(d[0].prompt, '--crew a')
   has(d[0].prompt, '--task build-ui')
-  has(d[0].prompt, "--question 'Should the export include archived items?'")
-  has(d[0].prompt, '--answer')
+  has(d[0].prompt, "--question='Should the export include archived items?'")
+  has(d[0].prompt, '--answer=')
   has(d[0].prompt, 'Include archived items, flagged.')
   has(d[0].prompt, '--by product-owner')
   hasnt(d[0].prompt, ' decide ')
@@ -414,17 +414,18 @@ t('product 1: a member QUESTION goes to the product-owner persona; DECIDE re-run
   has(k, 'Include archived items, flagged.')
 })
 
-t('product 2: a persona that is not loaded runs the product call as general-purpose with its body inlined', async () => {
+t('product 2: a persona that is not loaded runs the product call as truss:judge (never general-purpose) with its body inlined', async () => {
   const labels = labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: DECIDE\nyes\nReason: r' })
   const r = await runStage([OLD()], { personas: { ...PERSONAS, 'product-owner': PO_NOT_LOADED }, labels })
   passed(r)
   const po = callOf(r, 'a-po')
-  assert.equal(po.opts.agentType, 'general-purpose')
+  assert.equal(po.opts.agentType, 'truss:judge')
+  assert.notEqual(po.opts.agentType, 'general-purpose')
   has(po.prompt, 'BODY-PO line one')
   has(po.prompt, 'Product call: crew a')
 })
 
-t('product 2b: an inlined read-only persona runs as its inlineType, whatever value it has; without one it falls back to general-purpose', async () => {
+t('product 2b: an inlined read-only persona runs as its inlineType, whatever value it has; without one it falls back to truss:judge', async () => {
   const labels = labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: DECIDE\nyes\nReason: r' })
   for (const inlineType of ['truss:readonly-judge', 'other:viewer']) {
     const r = await runStage([OLD()], { personas: { ...PERSONAS, 'product-owner': { ...PO_NOT_LOADED, inlineType } }, labels })
@@ -525,48 +526,65 @@ t('product 9: pipes and newlines in a question or answer cannot break the one-li
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
   passed(r)
   const p = decideLines(r)[0].prompt
-  assert.ok(!/--question [^\n]*\|/.test(p) && !/--answer [^\n]*\|/.test(p), p)
+  assert.ok(!/--question=[^\n]*\|/.test(p) && !/--answer=[^\n]*\|/.test(p), p)
   has(p, 'A / B? second line')
 })
 
-// ---------------------------------------------------------------- main-session replies to product calls
+// ---------------------------------------------------------------- main-session replies: one checkpoint (contract fix round 2)
 
 const DECIDING = (o = {}) => labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2', { learned: [ITEM] }), 'a-po': 'PO: DECIDE\nInclude archived items.\nReason: r', ...o })
-const replying = (...byN) => ({ cmd, n }) => (cmd === 'decision-replies' && byN[n] ? rj(byN[n]) : undefined)
+// byN[n]: what the n-th decision-replies call prints (an array, or a string for a garbled result); a missing one prints []
+const replying = (...byN) => ({ cmd, n }) => (cmd === 'decision-replies' && byN[n] !== undefined ? (typeof byN[n] === 'string' ? { exit: 0, stdout: byN[n] } : rj(byN[n])) : undefined)
+const cmdsOf = (r, cmd) => r.calls.filter((c) => c.runner && c.runner.cmd === cmd)
+const integrateAt = (r, branch) => r.calls.findIndex((c) => c.runner && c.runner.key === `integrate:${branch}`)
+const CHANGE = { id: 'd1', reply: 'change', note: 'Exclude archived items.' }
 
-t('replies 1: a crew that made no product call never reads replies', async () => {
+t('replies 1: a crew that made no product call never reads replies, and still records that it passed the checkpoint', async () => {
   const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
   passed(r)
   assert.equal(replyPolls(r).length, 0)
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0)
+  const cp = cmdsOf(r, 'decision-checkpoint')
+  assert.equal(cp.length, 1)
+  has(cp[0].prompt, '--crew a')
+  assert.ok(cp[0].i > greens(r)[0].i && cp[0].i < indexOf(r, 'a-writer'), 'after the first green, before the knowledge step')
   assert.equal(r.result.find((x) => x.slug === 'a').decisions, undefined)
+  assert.equal(r.result.find((x) => x.slug === 'a').late, undefined)
 })
 
-t('replies 2: replies are read before each member spawn, before the knowledge step and before QC, and never waited for', async () => {
+t('replies 2: replies are read once, at the checkpoint after the first green and before the knowledge step; then once more after QC for late replies', async () => {
   const r = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING() })
   passed(r)
-  // before the re-run member a-builder-2, before the knowledge writer (a-writer), before QC (a-qc)
-  const at = (label) => r.calls.findIndex((c) => c.label === label)
+  const at = (label) => indexOf(r, label)
   const polls = replyPolls(r).map((c) => c.i)
-  // polls: before the re-run member, at the checkpoint before the knowledge step, before the knowledge writer's own spawn, before QC
-  assert.equal(polls.length, 4, `polls ${polls}`)
-  assert.ok(polls[0] < at('a-builder-2') && polls[0] > at('a-po'), 'before the re-run')
-  assert.ok(polls[1] < at('a-writer') && polls[1] > at('a-builder-2'), 'before the knowledge step')
-  assert.ok(polls[2] < at('a-writer') && polls[2] > polls[1], 'before the knowledge writer spawn')
-  assert.ok(polls[3] < at('a-qc') && polls[3] > at('a-writer'), 'before QC')
-  assert.ok(at('a-builder-2') > at('a-po') && decideLines(r)[0].i < at('a-builder-2'), 'the re-run does not wait on a reply')
+  // not before the re-run member (a-builder-2), not before the knowledge writer's spawn, not before QC
+  assert.equal(polls.length, 2, `polls ${polls}`)
+  assert.ok(polls[0] > greens(r)[0].i && polls[0] > at('a-builder-2'), 'the checkpoint follows the first green')
+  assert.ok(polls[0] < at('a-writer'), 'before the knowledge step')
+  assert.ok(polls[1] > at('a-qc'), 'the late read follows QC')
+  const cp = cmdsOf(r, 'decision-checkpoint')
+  assert.equal(cp.length, 1)
+  assert.ok(cp[0].i > polls[0] && cp[0].i < at('a-writer'), 'checkpoint recorded right after the read, before the knowledge step')
+  assert.ok(decideLines(r)[0].i < at('a-builder-2'), 'the re-run does not wait on a reply')
 })
 
-t('replies 3: an ack is recorded in the crew result and changes nothing else', async () => {
-  const runner = replying(undefined, [{ id: 'd1', reply: 'ack', note: '' }])
+t('replies 3: an ack is recorded, acked only after it is applied, and changes nothing else', async () => {
+  const runner = replying([{ id: 'd1', reply: 'ack', note: '' }])
   const r = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING(), runner })
   passed(r)
   assert.ok(!r.labels.includes('a-builder-3'))
   const d = r.result.find((x) => x.slug === 'a').decisions
   assert.deepEqual(d.map((x) => [x.id, x.reply, x.answer]), [['d1', 'ack', 'Include archived items.']])
+  const ack = cmdsOf(r, 'decision-ack')
+  assert.equal(ack.length, 1)
+  has(ack[0].prompt, '--crew a')
+  has(ack[0].prompt, '--ids d1')
+  const cp = cmdsOf(r, 'decision-checkpoint')[0]
+  assert.ok(ack[0].i > replyPolls(r)[0].i && cp.i > ack[0].i, 'read, then ack, then checkpoint')
 })
 
-t('replies 4: a change re-runs the asking member with the main session note, checks green again, and corrects the learned item', async () => {
-  const runner = replying([], [{ id: 'd1', reply: 'change', note: 'Exclude archived items.' }])
+t('replies 4: a change re-runs the asking task as a fix member, integrates it, then acks, checkpoints, runs green again and corrects the learned item', async () => {
+  const runner = replying([CHANGE])
   const labels = DECIDING({ 'a-builder-3': done('feat/b3') })
   const r = await runStage([OLD()], { personas: PERSONAS, labels, runner })
   passed(r)
@@ -574,8 +592,15 @@ t('replies 4: a change re-runs the asking member with the main session note, che
   assert.ok(again, why(r))
   has(again.prompt, 'Main session changed product call d1: Exclude archived items.')
   has(again.prompt, 'Task: build-ui')
-  assert.ok(r.calls.some((c) => c.runner && c.runner.key === 'integrate:feat/b3'), 'the re-run is merged')
-  assert.ok(greens(r).length >= 2)
+  const merged = integrateAt(r, 'feat/b3')
+  assert.ok(merged > again.i, 'the re-run is merged')
+  const ack = cmdsOf(r, 'decision-ack')
+  assert.equal(ack.length, 1)
+  has(ack[0].prompt, '--ids d1')
+  assert.ok(ack[0].i > merged, 'acked only after the change is applied and integrated')
+  assert.ok(cmdsOf(r, 'decision-checkpoint')[0].i > ack[0].i)
+  const green2 = greens(r).find((g) => g.i > merged)
+  assert.ok(green2 && green2.i < indexOf(r, 'a-writer'), 'green again on the change, before the knowledge step')
   const k = callOf(r, 'a-writer').prompt
   has(k, 'Exclude archived items.')
   has(k, 'overruled by main session')
@@ -583,29 +608,216 @@ t('replies 4: a change re-runs the asking member with the main session note, che
   const d = r.result.find((x) => x.slug === 'a').decisions
   assert.deepEqual(d.map((x) => [x.id, x.reply, x.answer]), [['d1', 'change', 'Exclude archived items.']])
   assert.ok(callOf(r, 'a-qc').prompt.includes('overruled by main session'))
+  assert.equal(replyPolls(r).length, 2, 'no read before QC, none for the re-run')
 })
 
-t('replies 5: a change that arrives before QC re-runs the member, the green check and the knowledge step', async () => {
-  const runner = replying([], [], [], [{ id: 'd1', reply: 'change', note: 'Exclude archived items.' }])
-  const labels = DECIDING({ 'a-builder-3': done('feat/b3'), 'a-writer-2': done('feat/k2') })
+t('replies 5: parallel tasks: a change is not applied before the asking task and its sibling are both integrated', async () => {
+  const TA = { ...TF, persona: null, after: [] }
+  const TB = { name: 'build-api', role: 'builder', effort: 'low', persona: null, files: ['src/api/a.ts'], reads: [], brief: 'BRIEF-API', after: [] }
+  // two builders run at once; which label each gets does not matter: the reply decides by task. The sibling is slow.
+  const byTask = async (call) => {
+    if (call.prompt.includes('Task: build-api')) {
+      await ticks(40)
+      return done('feat/s')
+    }
+    if (call.prompt.includes('Main session changed product call')) return done('feat/b3')
+    return call.prompt.includes('The product owner answered') ? done('feat/b2', { learned: [ITEM] }) : ASK
+  }
+  // the reply is available from the start, as a main session that answered at once
+  const runner = replying([CHANGE])
+  const labels = DECIDING({ 'a-planner': PLAN(TA, TB), 'a-builder': byTask, 'a-builder-2': byTask, 'a-builder-3': byTask, 'a-builder-4': byTask })
   const r = await runStage([OLD()], { personas: PERSONAS, labels, runner })
   passed(r)
-  assert.ok(indexOf(r, 'a-builder-3') > indexOf(r, 'a-writer'), 'the re-run follows the first knowledge step')
-  assert.ok(indexOf(r, 'a-writer-2') > indexOf(r, 'a-builder-3') && indexOf(r, 'a-writer-2') < indexOf(r, 'a-qc'))
-  has(callOf(r, 'a-writer-2').prompt, 'overruled by main session')
+  const asked = integrateAt(r, 'feat/b2')
+  const sibling = integrateAt(r, 'feat/s')
+  assert.ok(asked >= 0 && sibling >= 0, why(r))
+  assert.ok(sibling > asked, 'the sibling was still running when the asking member had already integrated')
+  const first = replyPolls(r)[0].i
+  assert.ok(first > asked && first > sibling, 'no read before both are integrated')
+  const rerun = r.calls.find((c) => c.prompt.includes('Main session changed product call d1'))
+  assert.ok(rerun, why(r))
+  assert.ok(rerun.i > Math.max(asked, sibling), 'the re-run starts only after both are integrated')
 })
 
-t('replies 6: a reply for an id the crew does not know is ignored', async () => {
+t('replies 6: a reply for an id the crew does not know is ignored and not acked', async () => {
   const runner = replying([{ id: 'zzz', reply: 'change', note: 'x' }])
   const r = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING(), runner })
   passed(r)
   assert.ok(!r.labels.includes('a-builder-3'))
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0)
+  assert.equal(cmdsOf(r, 'decision-checkpoint').length, 1)
 })
 
-t('replies 7: a stopped crew still reports its decisions', async () => {
+t('replies 7: a stopped crew still reports its decisions; it never reached the checkpoint, so it read no replies', async () => {
   const labels = DECIDING({ 'a-builder-2': { ...ASK, text: 'And deleted items?' } })
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
   const s = r.result.find((x) => x.slug === 'a')
   assert.equal(s.state, 'stopped')
   assert.equal(s.decisions.length, 1)
+  assert.equal(replyPolls(r).length, 0)
+  assert.equal(cmdsOf(r, 'decision-checkpoint').length, 0)
+  assert.equal(s.late, undefined)
+})
+
+t('replies 8: a runner result the crew cannot read is not acked, so the reply is still there next time and shows up as late', async () => {
+  const runner = replying('Sorry, I could not run that command.', [CHANGE])
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: DECIDING({ 'a-builder-3': done('feat/b3') }), runner })
+  passed(r)
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0, 'nothing was applied, so nothing is acked')
+  assert.equal(cmdsOf(r, 'decision-checkpoint').length, 1, 'the checkpoint is still recorded')
+  assert.ok(!r.labels.includes('a-builder-3'), 'a garbled read applies nothing')
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.deepEqual(s.decisions.map((x) => [x.id, x.reply]), [['d1', 'accepted']])
+  assert.deepEqual(s.late, [{ id: 'd1', reply: 'change', note: 'Exclude archived items.' }])
+})
+
+t('replies 9: a change that arrives during QC rework is not applied and is listed as late; the crew is not looped', async () => {
+  const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: the export button is wrong\n'
+  const labels = DECIDING({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-3': done('feat/fix') })
+  const runner = replying([], [CHANGE])
+  const r = await runStage([OLD()], { personas: PERSONAS, labels, runner })
+  passed(r)
+  assert.ok(r.labels.includes('a-qc-2'), 'QC reworked once')
+  assert.ok(!r.calls.some((c) => c.prompt.includes('Main session changed product call')), 'nobody applied the change')
+  assert.equal(cmdsOf(r, 'decision-ack').length, 0)
+  assert.equal(replyPolls(r).length, 2)
+  assert.ok(replyPolls(r)[1].i > indexOf(r, 'a-qc-2'), 'the late read follows the last QC')
+  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 1, 'the knowledge step does not rerun')
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.deepEqual(s.late, [CHANGE].map(({ id, reply, note }) => ({ id, reply, note })))
+  assert.deepEqual(s.decisions.map((x) => [x.id, x.reply]), [['d1', 'accepted']])
+})
+
+// ---------------------------------------------------------------- resume keeps learned items and decisions (finding 2)
+
+const OLD_ITEM = { kind: 'feature', text: 'old learned fact', source: 'src/old.ts:1', task: 'write-tests', member: 'a-tester' }
+const STORED = { decisions: [{ id: 'd-a-1', crew: 'a', task: 'build-ui', question: 'Use blue?', answer: 'Yes blue.', by: 'product-owner', reply: null, note: null, consumed: false }, { id: 'd-b-1', crew: 'b', task: 'x', question: 'Other crew?', answer: 'Other.', by: 'product-owner', reply: null, note: null, consumed: false }] }
+const RESUMED = (o = {}) => OLD('a', { resume: 'answers', tasks: [TT, TF], done: ['write-tests'], answers: [{ at: 'build-ui', text: 'blue it is' }], learned: [OLD_ITEM], ...o })
+const resumeLabels = (o = {}) => ({ 'a-builder': done('feat/b', { learned: [{ ...ITEM, text: 'fresh fact' }] }), 'a-writer': done('feat/k'), 'a-qc': PASS, ...o })
+const stored = ({ cmd, prompt }) => (cmd === 'decisions' && /factory\.ts\s+decisions\s+--crew a\b/.test(prompt) ? rj(STORED) : undefined)
+
+t('resume 1: a resumed crew seeds learned from the stage arg and rebuilds its decisions from factory decisions --crew', async () => {
+  const r = await runStage([RESUMED()], { personas: PERSONAS, labels: resumeLabels(), runner: stored })
+  passed(r)
+  assert.ok(cmdsOf(r, 'decisions').some((c) => /--crew a\b/.test(c.runner.rest)), 'decisions --crew a')
+  const k = callOf(r, 'a-writer').prompt
+  has(k, 'old learned fact')
+  has(k, 'fresh fact')
+  has(k, 'Use blue? -> Yes blue.')
+  hasnt(k, 'Other crew?')
+  const q = callOf(r, 'a-qc').prompt
+  has(q, 'Use blue? | Yes blue.')
+  hasnt(q, 'Other crew?')
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.deepEqual(s.decisions.map((x) => [x.id, x.reply]), [['d-a-1', 'accepted']])
+  assert.deepEqual(s.knowledge, { items: 2, ran: true, sourceChanges: 0 })
+  // it made no call of its own, but it has decisions, so the checkpoint reads replies
+  assert.equal(replyPolls(r).length >= 1, true)
+})
+
+t('resume 2: a pending change reply to a rebuilt decision re-runs its task on the crew branch, then is acked', async () => {
+  const runner = (c) => stored(c) ?? replying([{ id: 'd-a-1', reply: 'change', note: 'Use green.' }])(c)
+  const r = await runStage([RESUMED()], { personas: PERSONAS, labels: resumeLabels({ 'a-builder-2': done('feat/b2') }), runner })
+  passed(r)
+  const again = callOf(r, 'a-builder-2')
+  assert.ok(again, why(r))
+  has(again.prompt, 'Main session changed product call d-a-1: Use green.')
+  has(again.prompt, 'Task: build-ui')
+  const ack = cmdsOf(r, 'decision-ack')
+  assert.equal(ack.length, 1)
+  has(ack[0].prompt, '--ids d-a-1')
+  assert.ok(ack[0].i > integrateAt(r, 'feat/b2'))
+  has(callOf(r, 'a-writer').prompt, 'Use green.')
+  hasnt(callOf(r, 'a-writer').prompt, 'Yes blue.')
+})
+
+t('resume 3: a resume with nothing stored makes no decisions call and a fresh crew never asks for them', async () => {
+  const none = await runStage([RESUMED({ learned: undefined })], { personas: PERSONAS, labels: resumeLabels() })
+  passed(none)
+  assert.equal(none.result.find((x) => x.slug === 'a').decisions, undefined)
+  const fresh = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
+  assert.equal(cmdsOf(fresh, 'decisions').length, 0)
+})
+
+t('learned 1: crew-learned is called once per member report that carries items, with the items, and only then', async () => {
+  const labels = labelsFor({ 'a-tester': done('feat/t'), 'a-builder': done('feat/b', { learned: [ITEM, { ...ITEM, text: 'second fact' }] }) })
+  const r = await runStage([OLD()], { personas: PERSONAS, labels })
+  passed(r)
+  const l = cmdsOf(r, 'crew-learned')
+  assert.equal(l.length, 1, 'the tester reported nothing: no call')
+  has(l[0].prompt, '--slug a')
+  has(l[0].prompt, '--add=')
+  has(l[0].prompt, 'export button lives in ExportMenu')
+  has(l[0].prompt, 'second fact')
+  // the stored items keep the task and the member, so a resume can seed them
+  has(l[0].prompt, 'build-ui')
+  assert.equal(cmdsOf(await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(PLAIN) }), 'crew-learned').length, 0)
+})
+
+// ---------------------------------------------------------------- the knowledge step after the checkpoint
+
+t('knowledge 19: the knowledge writer runs on Sonnet at effort medium', async () => {
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
+  passed(r)
+  const w = callOf(r, 'a-writer')
+  assert.equal(w.opts.model, 'sonnet')
+  assert.equal(w.opts.effort, 'medium')
+  assert.equal(w.opts.agentType, 'truss:writer')
+  // an ordinary writer task keeps its role row
+  const plain = await runStage([OLD('a', { owns: ['docs/**'] })], { personas: PERSONAS, labels: { 'a-planner': PLAN(TW), 'a-writer': done('feat/w'), 'a-qc': PASS } })
+  assert.equal(callOf(plain, 'a-writer').opts.model, 'opus')
+})
+
+const KSHA = 'c0'.repeat(20)
+
+t('knowledge 20: knowledge-commit records the writer commit after it integrates; the QC Knowledge block names the SHA; a skipped step records nothing', async () => {
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
+  passed(r)
+  const kc = cmdsOf(r, 'knowledge-commit')
+  assert.equal(kc.length, 1)
+  has(kc[0].prompt, '--slug a')
+  has(kc[0].prompt, `--sha ${KSHA}`)
+  assert.ok(kc[0].i > integrateAt(r, 'feat/k'), 'after the knowledge branch is integrated')
+  has(callOf(r, 'a-qc').prompt, `Knowledge commit: ${KSHA}`)
+  const skipped = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(PLAIN) })
+  assert.equal(cmdsOf(skipped, 'knowledge-commit').length, 0)
+  hasnt(callOf(skipped, 'a-qc').prompt, 'Knowledge commit:')
+})
+
+t('knowledge 21: a docs-only knowledge commit skips the green re-run; anything else, or no proof of it, runs green again', async () => {
+  const H2 = 'f6'.repeat(20)
+  const integ = (head) => ({ cmd, branch }) => (cmd === 'integrate' && branch === 'feat/k' ? rj(head ? { merged: true, head } : { merged: true }) : undefined)
+  const only = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md', '.claude/agents/product-owner.md'] }) }), runner: integ(H2) })
+  passed(only)
+  assert.equal(greens(only).length, 1, 'no green after a docs-only knowledge commit')
+  assert.equal(only.result.find((x) => x.slug === 'a').head, H2, 'the crew head moves to the integrated knowledge commit')
+  has(callOf(only, 'a-qc').prompt, `Head: ${H2}`)
+  for (const [name, files, runner] of [['a source file', ['docs/features.md', 'src/ui/a.ts'], integ(H2)], ['a non-markdown doc', ['docs/features.md', 'docs/x.json'], integ(H2)], ['no file list', undefined, integ(H2)], ['an empty list', [], integ(H2)], ['no integrated head', ['docs/features.md'], integ(null)]]) {
+    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', files ? { files } : {}) }), runner })
+    passed(r)
+    assert.equal(greens(r).length, 2, name)
+  }
+})
+
+t('knowledge 22: learned items from members after the knowledge step are listed as unrecorded in the crew result, never counted', async () => {
+  const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: wrong\n'
+  const late = { kind: 'persona', text: 'always run the fixer', source: 'qc' }
+  const labels = labelsFor({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-2': done('feat/fix', { learned: [late] }) })
+  const r = await runStage([OLD()], { personas: PERSONAS, labels })
+  passed(r)
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.equal(s.unrecorded.length, 1)
+  assert.equal(s.unrecorded[0].text, 'always run the fixer')
+  assert.equal(s.unrecorded[0].kind, 'persona')
+  assert.deepEqual(s.knowledge, { items: 1, ran: true, sourceChanges: 0 }, 'the late item is not in the count')
+  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 1, 'the step does not rerun')
+  const clean = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
+  assert.equal(clean.result.find((x) => x.slug === 'a').unrecorded, undefined)
+})
+
+t('product 10: the product-answer resume names the asking member earlier branch', async () => {
+  const labels = DECIDING()
+  const r = await runStage([OLD()], { personas: PERSONAS, labels })
+  passed(r)
+  has(callOf(r, 'a-builder-2').prompt, 'Its branch was feat/b.')
 })

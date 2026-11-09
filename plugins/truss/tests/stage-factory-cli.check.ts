@@ -83,7 +83,7 @@ async function runStage(dir, repo, crews, labels, hook = () => {}) {
       const argv = words(line)
       const cmd = [...line.matchAll(/factory\.ts\s+(\S+)/g)].pop()[1]
       const expect = (line.match(/--expect\s+(\S+)/) || [])[1]
-      if (['crew-decision', 'decision-replies', 'decisions'].includes(cmd)) {
+      if (['crew-decision', 'decision-replies', 'decision-ack', 'decision-checkpoint', 'crew-learned', 'decisions'].includes(cmd)) {
         assert.equal(argv[1], FACTORY.replace(/\\/g, '/'), 'the real factory.ts')
         assert.deepEqual(argv.slice(-5), ['--dir', dir, '--repo', repo, '--status-line'], `${cmd}: --dir, --repo and --status-line last`)
         const r = spawnSync(process.execPath, argv.slice(1), { encoding: 'utf8', env: { ...process.env, TRUSS_SAMPLE: undefined } })
@@ -151,8 +151,9 @@ t('cli 1: crew-decision, decisions and decision-replies run on the real factory.
   const made = r.real.filter((x) => x.cmd === 'crew-decision')
   assert.equal(made.length, 1)
   assert.deepEqual(JSON.parse(made[0].stdout.split('\n')[0]), { id: 'd-a-1' })
-  // flags stage.js sent, odd text included (the question starts a word with --all inside, not at its start)
-  assert.ok(made[0].argv.includes('Should the export include archived items? (--all or not)'))
+  // flags stage.js sent: free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
+  assert.ok(made[0].argv.includes('--question=Should the export include archived items? (--all or not)'), made[0].argv.join(' | '))
+  assert.ok(made[0].argv.includes('--answer=Include archived items.'), made[0].argv.join(' | '))
 
   // decisions: {decisions:[...]}; the product owner's brief carries crew b's call and its reply, and stage.js read the object
   const listed = r.real.find((x) => x.cmd === 'decisions')
@@ -171,6 +172,21 @@ t('cli 1: crew-decision, decisions and decision-replies run on the real factory.
   assert.equal(mine.state, 'passed', JSON.stringify(mine).slice(0, 600))
   assert.deepEqual(mine.decisions.map((d) => [d.id, d.reply]), [['d-a-1', 'change']])
   assert.ok(r.calls.some((c) => /^a-builder/.test(c.label) && c.prompt.includes('Main session changed product call d-a-1: Exclude archived items.')), `labels ${r.calls.map((c) => c.label)}`)
+
+  // the reply was acked only after it was applied: the real ack took it, so the late read after QC finds nothing, and there is no late field
+  const acked = r.real.filter((x) => x.cmd === 'decision-ack')
+  assert.equal(acked.length, 1)
+  assert.ok(acked[0].argv.includes('--ids') && acked[0].argv.includes('d-a-1'), acked[0].argv.join(' '))
+  assert.deepEqual(JSON.parse(acked[0].stdout.split('\n')[0]), { acked: ['d-a-1'], already: [] })
+  assert.equal(polled.length, 2, 'the checkpoint read and the late read')
+  assert.deepEqual(JSON.parse(polled[1].stdout.split('\n')[0]), [])
+  assert.equal(mine.late, undefined)
+  assert.equal(r.real.filter((x) => x.cmd === 'decision-checkpoint').length, 1)
+  // the learned item of the re-run member went to the crew store
+  const learned = r.real.filter((x) => x.cmd === 'crew-learned')
+  assert.equal(learned.length, 1)
+  assert.ok(learned[0].argv.some((a) => a.startsWith('--add=') && a.includes('export button lives in ExportMenu')), learned[0].argv.join(' | '))
+  assert.ok(learned[0].argv.includes('--slug') && learned[0].argv.includes('a'))
 
   // the events factory wrote carry the contract fields (docs/events.schema.json is checked in tests/events-schema.check.ts)
   const ev = readEvents(dir)

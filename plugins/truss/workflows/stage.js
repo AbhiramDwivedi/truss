@@ -70,6 +70,8 @@ const MEMBER_SCHEMA = {
     commit: { type: 'string' },
     proof: { type: 'string' },
     text: { type: 'string' },
+    // the files the knowledge writer changed; optional, read only from that writer (a docs-only commit skips the green re-run)
+    files: { type: 'array', items: { type: 'string' } },
     // ADR-0033: facts a later crew will need; optional, a missing field is []
     learned: {
       type: 'array',
@@ -162,8 +164,9 @@ function spawn(role, label, prompt, opts = {}) {
       if (typeof persona.agentType !== 'string' || !persona.agentType || BANNED_TYPES.includes(persona.agentType)) throw new Error(`persona ${opts.persona} has agentType ${persona.agentType}, which is not allowed`)
       agentType = persona.agentType
     } else {
-      // a read-only persona whose body is inlined runs as its inlineType (a read-only agent type), so a judge never gets every tool
-      const inline = persona.readOnly === true && typeof persona.inlineType === 'string' && persona.inlineType && !BANNED_TYPES.includes(persona.inlineType) ? persona.inlineType : null
+      // a read-only persona whose body is inlined runs as its inlineType, else as truss:judge (both read-only agent types), so a judge
+      // never gets every tool; an editing persona that is not loaded runs as general-purpose
+      const inline = persona.readOnly === true ? (typeof persona.inlineType === 'string' && persona.inlineType && !BANNED_TYPES.includes(persona.inlineType) ? persona.inlineType : 'truss:judge') : null
       agentType = inline ?? 'general-purpose'
       prompt = `You are the ${opts.persona} persona. Its definition follows and is your system prompt for this task:\n\n${String(persona.body || '').replace(/\s+$/, '')}\n---\n${prompt}`
     }
@@ -187,8 +190,14 @@ class Stop {
 // ADR-0022 U4: an entry's direction is {label, text}, or null; a missing or malformed one is null
 const directionOf = (entry) => (entry.direction && typeof entry.direction === 'object' && typeof entry.direction.label === 'string' && typeof entry.direction.text === 'string' ? { label: entry.direction.label, text: entry.direction.text } : null)
 
+// a learned item the stage args carry on a resume (factory start puts the stored items there): the same shape runMember pushes
+const seededLearned = (list) =>
+  (Array.isArray(list) ? list : [])
+    .filter((i) => isPlainObject(i) && LEARNED_KINDS.includes(i.kind) && typeof i.text === 'string' && i.text.trim() !== '')
+    .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
+
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: [], decisions: [], asked: new Set(), polling: false, knowledgeRan: false, sourceChanges: [] }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [] }
 }
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
@@ -589,7 +598,7 @@ function resolverPrompt(crew, what, conflicts) {
 function resumeLines(resume) {
   if (!resume) return []
   // ADR-0033: a product answer (the product-owner decided your QUESTION) or a main-session change of one; the note is the text
-  if (resume.reason === 'product answer') return ['The product owner answered your QUESTION:', resume.note, 'Carry on with that answer. Your earlier work on this task is on the crew branch or your earlier branch; build on it.']
+  if (resume.reason === 'product answer') return ['The product owner answered your QUESTION:', resume.note, 'Carry on with that answer. Your earlier work on this task is on the crew branch or your earlier branch; build on it.', ...(resume.branch ? [`Its branch was ${resume.branch}.`] : [])]
   if (resume.reason === 'product change') return [resume.note, 'Your earlier work on this task is already on the crew branch; change it to match, and only that.']
   const lines = resume.reason === 'no report'
     ? ['A member before you returned no report.']
@@ -601,7 +610,7 @@ function resumeLines(resume) {
 // one member chain; a CHECKPOINT or a missing report restarts a fresh member of the same role, up to max(1, reworkAllowance)
 // times. Restarts add no rework spend and call no guardAllowance.
 // ADR-0033: a QUESTION goes to the product-owner persona first (productCall); first is a retry note for the first spawn
-// (a main-session change of an earlier answer). Before each spawn the crew's pending decision replies are read (pollReplies).
+// (a main-session change of an earlier answer). Replies to product calls are not read here: the crew reads them at one checkpoint.
 async function runMember(crew, role, makePrompt, opts, at, first = null) {
   const max = Math.max(1, F.reworkAllowance)
   let resume = first
@@ -610,7 +619,6 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
   let label
   let escalated = ''
   for (;;) {
-    await pollReplies(crew)
     const got = {}
     report = await ask(crew, role, makePrompt(resume), { ...opts, schema: MEMBER_SCHEMA, at, labelOut: got })
     label = got.label
@@ -635,8 +643,26 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
     // member: the stop is the member's own report, which green may re-route (ADR-0027 F-70)
     throw Object.assign(new Stop(tag, escalated ? `${report.text}\n\nThe product owner escalated this question: ${escalated}` : report.text, at), { member: true })
   }
-  for (const item of learnedOf(report)) crew.learned.push({ ...item, task: at, member: label })
+  const fresh = learnedOf(report).map((item) => ({ ...item, task: at, member: label }))
+  if (fresh.length) {
+    // a member that runs after the knowledge step (a stress or QC fixer) has no step left to record its items: they are listed as
+    // unrecorded in the crew result for the run-end reconcile pass, never counted as learned
+    if (crew.pastKnowledge) crew.unrecorded.push(...fresh)
+    else crew.learned.push(...fresh)
+    if (at !== 'knowledge') await recordLearned(crew, fresh)
+  }
   return report
+}
+
+// factory crew-learned: the crew's learned items reach the truss dir, so a resume can seed them. A failure is logged, never stops the crew.
+async function recordLearned(crew, items) {
+  try {
+    const r = await runFactory(crew, `crew-learned --slug ${sh(crew.slug)} --add=${sh(JSON.stringify(items))}`, 'ok')
+    if (!r.met) log(`crew-learned not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`crew-learned failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+  }
 }
 
 // ---------------------------------------------------------------- learned items and crew product calls (ADR-0033)
@@ -728,7 +754,8 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   const question = oneLine(report.text)
   let id = null
   try {
-    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question ${sh(question)} --answer ${sh(answer)} --by product-owner`, 'id')
+    // free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
+    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by product-owner`, 'id')
     if (r.parsed && (typeof r.parsed.id === 'string' || typeof r.parsed.id === 'number') && String(r.parsed.id) !== '') id = String(r.parsed.id)
     else crew.proofs.push(`crew-decision failed: ${r.out}`)
   } catch (err) {
@@ -739,14 +766,56 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   crew.learned.push(item)
   crew.decisions.push({
     id, question, answer, reason, reply: null, note: '', item,
-    // re-runs the asking member on top of the crew branch with a main-session note, and merges the result
-    rerun: async (note) => {
-      const rep = await runMember(crew, role, makePrompt, opts, at, { reason: 'product change', note, branch: '' })
-      crew.proofs.push(`${at}: ${rep.proof} (after a main-session change)`)
-      await integrate(crew, rep.branch, at)
-    },
+    rerun: rerunOf(crew, role, makePrompt, opts, at),
   })
-  return { resume: { reason: 'product answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: '' } }
+  return { resume: { reason: 'product answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: typeof report.branch === 'string' ? report.branch : '' } }
+}
+
+// re-runs the asking task once, as a fix member on top of the integrated crew branch with a main-session note, and integrates the
+// result. Returns whether it ran (false: the task is not among the crew's tasks, so the change cannot be applied here).
+function rerunOf(crew, role, makePrompt, opts, at) {
+  return async (note) => {
+    const rep = await runMember(crew, role, makePrompt, opts, at, { reason: 'product change', note, branch: '' })
+    crew.proofs.push(`${at}: ${rep.proof} (after a main-session change)`)
+    await integrate(crew, rep.branch, at)
+    return true
+  }
+}
+
+// a rerun for a decision rebuilt on a resume: the closure of the first run is gone, so the task is found by name
+function rerunByTask(crew, at) {
+  return async (note) => {
+    const task = crewTasks(crew).find((t) => t.name === at)
+    if (!task) {
+      crew.proofs.push(`a main-session change to the product call at ${at} could not be applied: no task of that name; it goes to merge as a fix`)
+      return false
+    }
+    return rerunOf(crew, task.role, (n) => taskPrompt(crew, task, n), taskOpts(task), at)(note)
+  }
+}
+
+// On a resume the crew's earlier product calls come back from factory decisions --crew: a call whose reply the crew already took
+// keeps that reply; one without goes through the checkpoint like a call of this run. A failure is logged and changes nothing.
+async function restoreDecisions(crew) {
+  try {
+    const r = await runFactory(crew, `decisions --crew ${sh(crew.slug)}`, 'ok')
+    const list = r.parsed && Array.isArray(r.parsed.decisions) ? r.parsed.decisions : []
+    for (const d of list) {
+      if (!isPlainObject(d) || d.crew !== crew.slug || typeof d.id !== 'string' || !d.id || typeof d.question !== 'string' || typeof d.answer !== 'string') continue
+      if (crew.decisions.some((c) => c.id === d.id)) continue
+      const task = typeof d.task === 'string' && d.task ? d.task : 'earlier run'
+      const taken = d.consumed === true && (d.reply === 'ack' || d.reply === 'change')
+      const changed = taken && d.reply === 'change' && typeof d.note === 'string' && d.note.trim() !== ''
+      const answer = changed ? oneLine(d.note, 800) : oneLine(d.answer)
+      const item = { kind: 'product', text: changed ? `${d.question} -> ${answer} (overruled by main session)` : `${d.question} -> ${answer}`, source: changed ? `main session, product call ${d.id}` : 'product-owner persona, crew product call', task, member: 'po' }
+      crew.learned.push(item)
+      crew.asked.add(task)
+      crew.decisions.push({ id: d.id, question: d.question, answer, reason: '', reply: taken ? d.reply : null, note: changed ? answer : '', item, rerun: rerunByTask(crew, task) })
+    }
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`decisions --crew failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+  }
 }
 
 // the replies array factory decision-replies printed: the whole stdout, or its last line that is an array
@@ -766,37 +835,85 @@ function repliesOf(out) {
   return found.filter((x) => isPlainObject(x) && (x.reply === 'ack' || x.reply === 'change'))
 }
 
-// Reads the main session's replies to this crew's product calls, never waiting for one: only when a call is still unanswered.
-// ack is recorded; change replaces the call's learned item and re-runs the asking member once on top of the crew branch.
-// Returns how many calls changed. A failed read is logged in the proofs and never stops the crew.
-async function pollReplies(crew) {
-  if (crew.polling || !crew.decisions.some((d) => d.reply === null)) return 0
-  crew.polling = true
+// The crew's one reply checkpoint, after every member task has integrated and the first green check has passed, before the knowledge
+// step. Nothing else reads replies: a read before a member spawn, in a fix builder or in QC rework would race the integration of the
+// asking member or a parallel one, or loop QC. Only a crew that made a product call reads (a read is a runner spawn).
+//   read (factory decision-replies marks nothing consumed), apply each reply, ack the applied ones (decision-ack), record the
+//   checkpoint (decision-checkpoint, also for a crew with no call), then the green check again when a change re-ran code.
+// ack is recorded; change replaces the call's learned item and re-runs the asking task once on top of the integrated crew branch.
+// A reply the crew cannot read or cannot apply is not acked, so it is still there at the late read. A failed read is logged in the
+// proofs and never stops the crew.
+async function checkpoint(crew) {
+  const changed = crew.decisions.length ? await applyReplies(crew) : 0
+  await markCheckpoint(crew)
+  if (changed) await green(crew)
+}
+
+async function applyReplies(crew) {
   let changed = 0
+  const applied = []
   try {
     const r = await runFactory(crew, `decision-replies --crew ${sh(crew.slug)}`, 'ok')
     for (const x of repliesOf(r.out)) {
       const d = crew.decisions.find((c) => c.id !== null && c.id === String(x.id))
       if (!d || d.reply !== null) continue
-      d.reply = x.reply
-      if (x.reply === 'ack') continue
+      if (x.reply === 'ack') {
+        d.reply = 'ack'
+        applied.push(d.id)
+        continue
+      }
       const note = oneLine(x.note, 800) || 'no note given'
+      if (!(await d.rerun(`Main session changed product call ${d.id}: ${note}`))) continue
+      d.reply = 'change'
       d.note = note
       d.answer = note
       const k = crew.learned.indexOf(d.item)
       d.item = { kind: 'product', text: `${d.question} -> ${note} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
       if (k >= 0) crew.learned[k] = d.item
       else crew.learned.push(d.item)
+      applied.push(d.id)
       changed++
-      await d.rerun(`Main session changed product call ${d.id}: ${note}`)
     }
   } catch (err) {
     if (err instanceof Stop) throw err
     crew.proofs.push(`decision-replies failed: ${err && err.message ? err.message : String(err)}`)
-  } finally {
-    crew.polling = false
+  }
+  if (applied.length) {
+    try {
+      await runFactory(crew, `decision-ack --crew ${sh(crew.slug)} --ids ${sh(applied.join(','))}`, 'acked')
+    } catch (err) {
+      if (err instanceof Stop) throw err
+      log(`decision-ack failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+    }
   }
   return changed
+}
+
+// factory decision-checkpoint: the crew passed its reply checkpoint, so a later reply is the main session's to turn into a fix at merge
+async function markCheckpoint(crew) {
+  crew.checkpointed = true
+  try {
+    const r = await runFactory(crew, `decision-checkpoint --crew ${sh(crew.slug)}`, 'ok')
+    if (!r.met) log(`decision-checkpoint not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`decision-checkpoint failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+  }
+}
+
+// the replies that arrived after the checkpoint, for the crew result's late field. Applies nothing and acks nothing: the main
+// session turns a late change into a fix at merge. Only a crew that passed the checkpoint with product calls reads.
+async function lateReplies(crew) {
+  if (!crew.checkpointed || !crew.decisions.length) return []
+  try {
+    const r = await runFactory(crew, `decision-replies --crew ${sh(crew.slug)}`, 'ok')
+    return repliesOf(r.out)
+      .filter((x) => crew.decisions.some((d) => d.id !== null && d.id === String(x.id) && d.reply === null))
+      .map((x) => ({ id: String(x.id), reply: x.reply, note: oneLine(x.note, 800) }))
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    return []
+  }
 }
 
 // the crew result's decisions field: only on a crew that made product calls. A call nobody answered counts as accepted.
@@ -829,14 +946,18 @@ function integrate(crew, branch, at) {
 async function integrateNow(crew, branch, at) {
   const command = `integrate --slug ${sh(crew.slug)} --branch ${sh(branch)}`
   let r = await runFactory(crew, command, 'merged')
-  if (r.met) return
+  if (r.met) return headOf(r)
   // commits whose Truss-Crew or Truss-Role line git does not parse as a trailer: a stop that names them, never a resolver or a QC role FAIL
   const bad = r.parsed && Array.isArray(r.parsed.trailers) ? r.parsed.trailers.map(String) : []
   if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflictsOf(r), at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
+  return headOf(r)
 }
+
+// the crew head factory integrate printed after a merge, or null when it printed none
+const headOf = (r) => (r.parsed && typeof r.parsed.head === 'string' && r.parsed.head ? r.parsed.head : null)
 
 // ADR-0032: the persona a task's member runs as (a builder or tester task with a persona), else null
 const taskPersona = (task) => (['builder', 'tester'].includes(task.role) && typeof task.persona === 'string' && task.persona ? task.persona : null)
@@ -856,11 +977,14 @@ function personaFor(crew, role, text, at) {
   return pick(named) ?? (pool.length ? pick(pool) : null)
 }
 
+function taskOpts(task) {
+  const persona = taskPersona(task)
+  return { title: task.name, ...(task.role === 'builder' || persona ? { effort: task.effort } : {}), ...(persona ? { persona } : {}) }
+}
+
 async function runTask(crew, task) {
   const at = task.name
-  const persona = taskPersona(task)
-  const opts = { title: task.name, ...(task.role === 'builder' || persona ? { effort: task.effort } : {}), ...(persona ? { persona } : {}) }
-  const report = await runMember(crew, task.role, (note) => taskPrompt(crew, task, note), opts, at)
+  const report = await runMember(crew, task.role, (note) => taskPrompt(crew, task, note), taskOpts(task), at)
   report.task = task.name
   crew.proofs.push(`${task.name}: ${report.proof}`)
   await integrate(crew, report.branch, at)
@@ -1392,7 +1516,7 @@ function knowledgePrompt(crew, resume) {
     `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes by kind: feature, to the feature map; persona, to the Standards or Review checklist of the persona file; product, to the product-owner file; decision, to a new ADR in the ADR directory.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. The persona files get any Standards or Review checklist item the crew learned, and a path they name that the diff moved is fixed. The product-owner file gets the product calls this crew made and any domain truth.`,
     'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Recording nothing for an item is allowed when the code already makes it obvious.',
-    `Commit with the subject \`docs(knowledge): ${crew.slug} learned\` and report DONE.`,
+    `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
   const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
@@ -1401,21 +1525,40 @@ function knowledgePrompt(crew, resume) {
 
 // Runs the writer member that records what the crew learned. Only when a member (or a product call) reported learned items, or the
 // green check saw the diff add, rename or delete non-test source files (sourceChanges, from git), and the crew has code tasks;
-// otherwise skipped with no run. Returns whether the writer ran (its commit is on the crew branch).
+// otherwise skipped with no run. A crew whose tasks are all writer tasks always skips it. The writer edits docs from given items, so
+// it runs on Sonnet at effort medium, not the writer row's Opus; QC (Opus) checks the result.
+// Returns false when it did not run, true when it ran and the crew head needs a green check, 'docs' when the commit changed only
+// markdown files (the writer reports its files; factory integrate printed the new head), so the green check is skipped.
 async function knowledge(crew) {
   if ((!crew.learned.length && !crew.sourceChanges.length) || !hasCodeTasks(crew)) return false
   crew.step = 'knowledge'
-  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned` }, 'knowledge')
+  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
   crew.proofs.push(`knowledge: ${report.proof}`)
-  await integrate(crew, report.branch, 'knowledge')
+  const head = await integrate(crew, report.branch, 'knowledge')
   crew.knowledgeRan = true
+  const sha = typeof report.commit === 'string' && report.commit.trim() ? report.commit.trim() : null
+  if (sha) {
+    crew.knowledgeSha = sha
+    await recordKnowledgeCommit(crew, sha)
+  }
+  const files = Array.isArray(report.files) ? report.files.filter((f) => typeof f === 'string' && f.trim() !== '') : []
+  if (head && files.length && files.every(isMarkdown)) {
+    crew.head = head
+    return 'docs'
+  }
   return true
 }
 
-// the main session's replies to product calls, read at a checkpoint; a change re-runs code, so the green check runs again
-async function checkpoint(crew) {
-  if (await pollReplies(crew)) await green(crew)
+// factory knowledge-commit: the crew's knowledge commit, which factory's owns check exempts. A failure is logged, never stops the crew.
+async function recordKnowledgeCommit(crew, sha) {
+  try {
+    const r = await runFactory(crew, `knowledge-commit --slug ${sh(crew.slug)} --sha ${sh(sha)}`, 'ok')
+    if (!r.met) log(`knowledge-commit not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`knowledge-commit failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+  }
 }
 
 // ADR-0033: the QC brief's Knowledge block, when one of its two rules can apply: the crew has code tasks or made product calls
@@ -1427,6 +1570,7 @@ function knowledgeLines(crew) {
     'Knowledge:',
     `Feature map: ${FEATURE_MAP}`,
     `Product-owner file: ${po || 'none (no product-owner persona)'}`,
+    ...(crew.knowledgeSha ? [`Knowledge commit: ${crew.knowledgeSha} (the docs commit this crew's knowledge step made)`] : []),
     ...(calls.length ? ['Product calls this crew made:', ...calls] : []),
     'If the diff adds or moves user-facing functionality, the feature map must be updated in this diff, and every product call this crew made must appear in the product-owner file; otherwise FAIL, quoting the missing entry.',
     'Never FAIL for missing optional learning: a stack rule, a domain truth or a decision the code already makes obvious.',
@@ -1678,7 +1822,12 @@ async function redStep(crew) {
 
 async function chain(crew) {
   const e = crew.e
+  // a resume restores what the crew learned (seeded from args.learned in makeCrew) and its product calls (factory decisions --crew)
+  if (e.resume) await restoreDecisions(crew)
   if (e.resume === 'merge-ready') {
+    // the earlier run passed the reply checkpoint and the knowledge step; a reply that comes now is late
+    crew.checkpointed = true
+    crew.pastKnowledge = true
     await syncStep(crew)
     await green(crew)
     await scope(crew)
@@ -1701,21 +1850,15 @@ async function chain(crew) {
   }
   await runMembers(crew, tasks)
   await green(crew)
-  // ADR-0033: read the main session's replies to product calls, then record what the crew learned (its commit moves the head)
+  // ADR-0033: the one reply checkpoint (a change re-runs its task and checks green again), then record what the crew learned (its
+  // commit moves the head; a docs-only commit needs no green check). A reply that arrives after this is late: the crew result lists it.
   await checkpoint(crew)
-  if (await knowledge(crew)) await green(crew)
+  const recorded = await knowledge(crew)
+  crew.pastKnowledge = true
+  if (recorded && recorded !== 'docs') await green(crew)
   if (uxOn(crew)) await uxReview(crew)
   if (e.stressTest) await stressTest(crew)
   await scope(crew)
-  // a change that arrives now re-runs the member, checks green again and, when the knowledge step ran, records the corrected answer
-  if (await pollReplies(crew)) {
-    await green(crew)
-    if (crew.knowledgeRan) {
-      await knowledge(crew)
-      await green(crew)
-    }
-    await scope(crew)
-  }
   return qc(crew)
 }
 
@@ -1728,7 +1871,9 @@ async function runCrew(entry) {
     result = stopResult(crew, err)
   }
   await reap(crew)
-  return result
+  // replies that arrived after the checkpoint are not applied here; the main session turns a late change into a fix at merge
+  const late = await lateReplies(crew)
+  return { ...result, ...(late.length ? { late } : {}), ...(crew.unrecorded.length ? { unrecorded: crew.unrecorded } : {}) }
 }
 
 const results = await Promise.all(F.crews.map(runCrew))
