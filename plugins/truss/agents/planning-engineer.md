@@ -17,7 +17,7 @@ Return only this JSON, no prose around it:
 ```
 {
   "tasks": [
-    { "name": "...", "role": "tester|builder|writer", "effort": "low|medium",
+    { "name": "...", "role": "tester|builder|writer", "persona": "<name>|null", "effort": "low|medium|high",
       "files": ["..."], "reads": ["..."], "brief": "...", "after": ["..."] }
   ],
   "stop": null
@@ -25,6 +25,7 @@ Return only this JSON, no prose around it:
 ```
 
 - `name`: unique and short.
+- `persona`: the name of the editing persona that does the task, from the `personas` map in your brief (an entry with `readOnly` false), or `null` when no persona fits. Match by the persona's `description` (stack and area) to the files the task writes. A judge (`readOnly` true) is never a task's persona. A task never spans two personas' areas: split it along them, one task per persona, even when the leaf test alone would keep it whole. `null` only when no persona fits; when you set it for a task in a stack the map has a persona for, say why in the task's `brief`.
 - `files`: the files the task writes, each a file path and never a directory, even when the task will create new files: name each one.
 - `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`). Never "the codebase".
 - `brief`: the task's goal, the approved scope quoted word for word, what it must not touch, the check to run and what done means.
@@ -43,7 +44,8 @@ Return only this JSON, no prose around it:
 - Every builder's acceptance test is one it cannot edit: code the crew doesn't own, or tests a tester writes first. So tests come from a tester task, and builders come after it.
 - Every builder's brief marks the crew's test files read-only: the builder never edits a test file, and reports a test it finds wrong. Any edit to a guarded or test file goes to a tester task, never a builder's `files`.
 - Names are unique. Every name in `after` is a task in the list.
-- `effort` is `low` or `medium`.
+- `effort` is `low`, `medium` or `high`. Use `high` only for a hard task (a tricky design inside one area, a hard bug); it costs more, so the default is `medium`. The member runs at the higher of the persona's effort and the task's.
+- `persona` is a name in the `personas` map or `null`, and the persona is not a judge.
 - Split only along the condition that fails the leaf test: a task stops splitting when it owns files no sibling touches, has an acceptance test the member can run, needs no design decision the docs lack, and fits one agent's context. A task with no check that could fail for it alone is too small: merge it into a sibling in the same module.
 
 ## Fetch rule

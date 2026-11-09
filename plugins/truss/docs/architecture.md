@@ -138,6 +138,8 @@ Only the PM talks to the client. Only foremen message the PM, so a member's ques
 
 **Each task gets the process its size needs ([ADR-0031](adr/0031-right-size-process.md), R-49 to R-52).** The PM sizes every task as `solo`, `lean` or `full` and logs each size with a one-line reason. A `full` crew, the default, has a foreman or a `stage.js` chain, a red record and a QC engineer, as the diagram below shows. A `solo` task is one agent, with no red-then-green test and no QC engineer: the PM reviews its diff and the agent's own proof, then merges it. A `lean` crew has one or two members. The PM chooses whether it gets a QC engineer (`qc`) and a red-then-green test (`red`), records the choice in `plan.json`, and the merge gate follows it. The PM runs solo and lean crews itself; no foreman leads them. Process size does not follow the brief size of [ADR-0008](adr/0008-owner-interview.md).
 
+**Members are persona agents ([ADR-0032](adr/0032-persona-agents.md)).** A persona is a project agent type, `<repo>/.claude/agents/<name>.md`, specialised by stack and area, with a `Standards` section of short, checkable rules. An editing persona does builder and tester work; a read-only judge (always including a `product-owner`) does none. The planning engineer gives every task a persona, and a task never spans two personas' areas. A task spawns as its persona's type, or as `general-purpose` with the persona's body inlined when the session hasn't loaded the file. The QC engineer holds the diff to the Standards of every persona the crew used and every judge, and a violated standard is a FAIL. When the goal needs a stack no persona covers, the design engineer drafts one in plan mode (the hiring step); the client approves it with the plan and `factory persona-install` installs it. `general-purpose` stays only for work with no stack.
+
 | Agent | Started by | Model and effort | Edits files |
 | --- | --- | --- | --- |
 | PM | You, with `/truss:run` | The session's | Only `decisions.md`, `plan.md`, goal files, and the fast-forward in `sequential` mode; also `plan.json` and `plan.md` once the design engineer has drafted them: it sets `approvedAt` and each crew's `status`, and for a mid-run design slice adds the crew, moves its dependants a stage later and sets `clientApproval`. From [ADR-0014](adr/0014-retro-fixes.md) (proposed), `mainEditVerdict` refuses its Edit and Write calls on any other repo file while a run is active |
@@ -1363,7 +1365,7 @@ truss uses kit, worktrees and subagent-limits where they live, in the claude-ops
 
 | Dependency | Range | What truss uses it for |
 | --- | --- | --- |
-| kit | `^0.3.1` | The project manifest init builds on, `kit:init` when the manifest is missing, and the `kit:builder` and `kit:test-writer` member types when kit is loaded |
+| kit | `^0.4.0` | The project manifest init builds on, `kit:init` when the manifest is missing, `kit:persona` (how to write a persona agent file, ADR-0032), and the `kit:builder` and `kit:test-writer` member types where no persona covers an area |
 | worktrees | `^0.8.4` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); it also cleans merged, clean `wf_*` worktrees |
 | subagent-limits | `^0.3.1` | The context budget in every subagent's brief, the `nudgeAtK` checkpoint and `stopAtK` stop, and the `split-work` skill the foreman and planner load |
 
