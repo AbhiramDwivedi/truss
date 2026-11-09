@@ -33,6 +33,7 @@
           "type": { "description": "subagent_type, or general-purpose when unset.", "type": "string", "minLength": 1 },
           "model": { "description": "The model the call asked for, or null.", "type": ["string", "null"] },
           "effort": { "description": "The effort the call asked for, or null.", "type": ["string", "null"] },
+          "persona": { "description": "The persona the stage.js member ran as (truss ADR-0032), or null. Absent on lines written before ADR-0032.", "type": ["string", "null"] },
           "by": { "description": "main for the PM, else the calling agent's spawn name; factory for a workflow crew factory.ts started, workflow:<run id> for an agent a stage.js run started.", "type": "string", "minLength": 1 }
         }
       }
@@ -58,7 +59,9 @@
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
           "label": { "type": "string", "minLength": 1 },
-          "title": { "type": "string", "minLength": 1, "maxLength": 120 }
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "persona": { "description": "The persona the agent runs as, from factory admit --persona (truss ADR-0032); factory finish copies it onto the spawn line.", "type": "string", "minLength": 1 },
+          "high": { "description": "True when stage.js meant the agent to run at effort high (admit --high), so the effort audit lets it through.", "type": "boolean" }
         }
       }
     },

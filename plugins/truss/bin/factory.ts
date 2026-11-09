@@ -1105,10 +1105,11 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
 }
 function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
-  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries)]
+  const found = buildPersonas(c.repo)
+  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, scriptPath: c.scriptPath, crews: entries },
     held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -1283,6 +1284,150 @@ function roleWarnings(c: StartCtx, entries: Obj[], w: Warned): string[] {
     }
   }
   return out
+}
+
+// ==== personas (ADR-0032) ====
+// A persona is a project agent type file <repo>/.claude/agents/<name>.md (symlinks followed). Role stays the pipeline slot;
+// the persona is who does a task: its agent type, model, effort and standards.
+const PERSONA_MODELS = ['opus', 'sonnet']
+const PERSONA_EFFORT_LEVELS = ['low', 'medium', 'high']
+const PERSONA_KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const PERSONA_DESCRIPTION_MAX = 400
+type PersonaDoc = { fm: Record<string, string>; body: string }
+
+// The frontmatter of an agent file as flat key/value strings (a folded or literal block value is joined), and the body after it.
+// undefined when the text opens with no frontmatter block.
+function parsePersonaFile(text: string): PersonaDoc | undefined {
+  const lines = (text.startsWith('﻿') ? text.slice(1) : text).replace(/\r\n?/g, '\n').split('\n')
+  if (lines[0]?.trim() !== '---') return undefined
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
+  if (end < 0) return undefined
+  const fm: Record<string, string> = {}
+  for (let i = 1; i < end; i++) {
+    const m = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(lines[i] as string)
+    if (m === null) continue
+    let v = (m[2] as string).trim()
+    if (v === '' || /^[>|][+-]?$/.test(v)) {
+      const block: string[] = []
+      while (i + 1 < end && /^\s/.test(lines[i + 1] as string)) block.push((lines[++i] as string).trim())
+      v = block.join(v.startsWith('|') ? '\n' : ' ').trim()
+    } else if (/^(["']).*\1$/.test(v)) {
+      v = v.slice(1, -1)
+    }
+    fm[m[1] as string] = v
+  }
+  return { fm, body: lines.slice(end + 1).join('\n').replace(/^\n+/, '').replace(/\s+$/, '') }
+}
+
+// Why a persona file is not valid, or undefined. fileName is the name without .md.
+function personaFault(fileName: string, doc: PersonaDoc | undefined): string | undefined {
+  if (doc === undefined) return 'it has no frontmatter block'
+  const { fm } = doc
+  if (fm.name !== fileName) return `its frontmatter name ${fm.name === undefined ? '(missing)' : fm.name} differs from the file name ${fileName}`
+  if ((fm.description ?? '') === '') return 'it has no description'
+  if (fm.model !== undefined && !PERSONA_MODELS.includes(fm.model)) return `its model ${fm.model} is not opus or sonnet`
+  if (fm.effort !== undefined && !PERSONA_EFFORT_LEVELS.includes(fm.effort)) return `its effort ${fm.effort} is not low, medium or high`
+  return undefined
+}
+
+// An editing persona: no tools line, or a tools line that holds Write or Edit (or all tools).
+function personaReadOnly(fm: Record<string, string>): boolean {
+  if (fm.tools === undefined) return false
+  const tools = fm.tools.replace(/[[\]"']/g, '').split(/[,\s]+/).filter((t) => t !== '')
+  if (tools.length === 0) return false
+  return !tools.some((t) => t === 'Write' || t === 'Edit' || t === '*')
+}
+
+// The personas the stage args carry, from the main checkout's .claude/agents/*.md. loaded: the file is not newer than the session
+// start (the session loads agent types only at start); false too when the start can't be read, the safe side. An unloaded
+// persona carries its body, since stage.js runs it as general-purpose with that body inlined. A malformed file is skipped with a warning.
+function buildPersonas(repo: string): { personas: Obj; warnings: string[] } {
+  const personas: Obj = {}
+  const warnings: string[] = []
+  const dir = `${flat(repo)}/.claude/agents`
+  let names: string[]
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
+  } catch {
+    return { personas, warnings }
+  }
+  const started = sessionStart()
+  for (const n of names) {
+    const file = `${dir}/${n}`
+    const name = n.slice(0, -'.md'.length)
+    let text: string
+    let changed: number
+    try {
+      text = readFileSync(file, 'utf8')
+      changed = statSync(file).mtimeMs // through a symlink: the real file's time
+    } catch (e) {
+      warnings.push(`persona file ${file} is skipped: it can't be read (${(e as Error).message})`)
+      continue
+    }
+    const doc = parsePersonaFile(text)
+    const fault = personaFault(name, doc)
+    if (fault !== undefined || doc === undefined) {
+      warnings.push(`persona file ${file} is skipped: ${fault}`)
+      continue
+    }
+    const loaded = started !== undefined && !(changed > started)
+    personas[name] = {
+      agentType: name, model: doc.fm.model ?? 'sonnet', effort: doc.fm.effort ?? 'medium', file, description: (doc.fm.description as string).slice(0, PERSONA_DESCRIPTION_MAX),
+      readOnly: personaReadOnly(doc.fm), loaded, ...(loaded ? {} : { body: doc.body }),
+    }
+    if (!loaded) {
+      warnings.push(`persona ${name} (${file}) is ${started === undefined ? "not known to be loaded (I can't read the session start)" : 'newer than the session start, so this session has not loaded it'}; its tasks run as general-purpose with its definition inlined. Restart the session to load it`)
+    }
+  }
+  return { personas, warnings }
+}
+
+// factory persona-install --from <dir> --repo <root> [--replace]: copies <dir>/*.md into <root>/.claude/agents/ and commits them.
+function cmdPersonaInstall(f: Flags): Obj {
+  const from = need(f, 'from')
+  const repo = repoOf(f)
+  const replace = f.replace === true
+  let entries: string[]
+  try {
+    entries = readdirSync(from).filter((n) => n.endsWith('.md')).sort()
+  } catch (e) {
+    throw usage(`cannot read --from ${flat(from)}: ${(e as Error).message}`)
+  }
+  const jobs: { name: string; text: string }[] = []
+  for (const n of entries) {
+    const name = n.slice(0, -'.md'.length)
+    if (!PERSONA_KEBAB.test(name)) throw usage(`${n}: the persona name must be kebab-case (lowercase letters, digits, hyphens)`)
+    const fault = personaFault(name, parsePersonaFile(readText(path.join(from, n))))
+    if (fault !== undefined) throw usage(`${n}: ${fault}`)
+    jobs.push({ name, text: readText(path.join(from, n)) })
+  }
+  const target = path.join(repo, '.claude', 'agents')
+  const installed: string[] = []
+  const skipped: string[] = []
+  const written: string[] = []
+  for (const j of jobs) {
+    const to = path.join(target, `${j.name}.md`)
+    if (existsSync(to)) {
+      if (readFileSync(to).equals(readFileSync(path.join(from, `${j.name}.md`)))) continue
+      if (!replace) {
+        skipped.push(j.name)
+        continue
+      }
+    }
+    mkdirSync(target, { recursive: true })
+    copyFileSync(path.join(from, `${j.name}.md`), to)
+    installed.push(j.name)
+    written.push(path.posix.join('.claude', 'agents', `${j.name}.md`))
+  }
+  let commit: string | null = null
+  if (written.length > 0) {
+    gitOrFail(repo, ['add', '--', ...written])
+    if (run(repo, ['diff', '--cached', '--quiet', '--', ...written]).status !== 0) {
+      gitOrFail(repo, ['commit', '-q', '-m', `chore(agents): add personas ${installed.join(', ')}`, '--', ...written])
+      commit = gitOrFail(repo, ['rev-parse', 'HEAD'])
+    }
+  }
+  return { installed, skipped, commit }
 }
 
 // ADR-0024 item 26: the crew's member worktrees, found by their branch names worktree-<run id>-<n> for the crew's runs,
@@ -1868,7 +2013,10 @@ function cmdAdmit(f: Flags): Obj {
     if (parseLabel(label) === undefined) throw usage(`--label ${label} is not a workflow label`)
     const one = title.replace(/\s+/g, ' ').trim().slice(0, 120)
     if (one === '') throw usage('--title is empty')
-    appendEvent(dir, { event: 'title', crew: slug, agent: label, label, title: one })
+    // ADR-0032: --persona names the persona the spawn runs as; recordRun copies it onto the spawn event
+    const persona = str(f, 'persona')
+    if (persona !== undefined && !/^[A-Za-z0-9][\w.-]{0,99}$/.test(persona)) throw usage(`--persona ${persona} is not a persona name`)
+    appendEvent(dir, { event: 'title', crew: slug, agent: label, label, title: one, ...(persona !== undefined ? { persona } : {}), ...(f.high === true ? { high: true } : {}) })
   }
   return a
 }
@@ -2043,7 +2191,15 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     const fam = family(facts.model)
     if (fam !== 'opus' && fam !== 'sonnet') bad(`the transcript model family is ${fam}, not opus or sonnet`)
     if (facts.effort === 'max') bad('effort max')
-    if ((facts.effort === 'high' || facts.effort === 'xhigh') && parsed !== undefined) bad(`effort ${facts.effort} on role ${parsed.role}`)
+    // ADR-0032: admit --persona and --high put the persona and the wish for effort high on the label's title event. A member
+    // that stage.js meant to run at high (a persona, a task effort or a ## Members line) is not an audit finding at high.
+    const titled = events.filter((e) => e.event === 'title' && e.agent === a.label)
+    const personaName = ((): string | null => {
+      for (let i = titled.length - 1; i >= 0; i--) if (typeof titled[i]?.persona === 'string') return titled[i]?.persona
+      return null
+    })()
+    const personaHigh = facts.effort === 'high' && titled.some((e) => e.high === true)
+    if ((facts.effort === 'high' || facts.effort === 'xhigh') && parsed !== undefined && !personaHigh) bad(`effort ${facts.effort} on role ${parsed.role}`)
     if (parsed !== undefined) {
       const why = roleAudit(parsed.role, agentType, facts.tools.map((t) => t.name), roles)
       if (why !== undefined) bad(why)
@@ -2083,7 +2239,7 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     const by = `workflow:${wfRun.id}`
     if (!events.some((e) => e.event === 'spawn' && e.agentId === a.agentId && e.by === by)) {
       const dflt = roleDefaults(roles, parsed.role)
-      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? dflt.model, effort: facts.effort ?? dflt.effort, by })
+      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? dflt.model, effort: facts.effort ?? dflt.effort, persona: personaName, by })
     }
     const marker = markerOf(text)
     if (!events.some((e) => e.event === 'report' && e.crew === slug && e.agent === a.label && (e.marker ?? null) === marker)) {
@@ -2793,7 +2949,7 @@ function cmdDecide(f: Flags): Obj {
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
@@ -2839,6 +2995,8 @@ export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } 
 if (isMain) {
   const { on, argv } = takeStatusFlag(process.argv.slice(2))
   const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
-  process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
+  // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
+  if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
+  else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
   process.exitCode = code
 }

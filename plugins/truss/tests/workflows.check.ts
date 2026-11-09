@@ -166,7 +166,7 @@ function checkSpawns(calls, roles) {
     const r = roles[m[2]]
     assert.ok(r, `role ${m[2]} missing from the table but ${o.label} ran`)
     assert.equal(o.model, r.model, `${o.label} model`)
-    if (m[2] === 'builder') assert.ok(['low', 'medium'].includes(o.effort), `${o.label} effort ${o.effort}`)
+    if (m[2] === 'builder') assert.ok(['low', 'medium', 'high'].includes(o.effort), `${o.label} effort ${o.effort}`)
     else assert.equal(o.effort, r.effort, `${o.label} effort`)
     assert.equal(o.agentType, r.agentType, `${o.label} agentType`)
     assert.notEqual(o.agentType, 'truss:foreman')
@@ -518,10 +518,11 @@ t('stage spawn: a bad runner role stops the crew BLOCKED at red with no agent ca
   stopped(r.res[0], 'BLOCKED', 'red')
   assert.equal(r.calls.length, 0)
 })
-t('stage spawn: a builder task effort of high is never passed to agent(); the crew stops BLOCKED', async () => {
-  const r = await runStage([entry('a')], { labels: base('a', { 'a-planner': PLAN(T1, { ...B1, effort: 'high' }), 'a-planner-2': PLAN(T1, { ...B1, effort: 'high' }) }) })
-  assert.equal(r.res[0].tag, 'BLOCKED')
-  assert.ok(r.calls.every((c) => c.opts.effort !== 'high'))
+// ADR-0032: a builder (or tester, resolver) task may take effort high; max is still never accepted
+t('stage spawn: a builder task effort of high is passed to agent() for the builder (ADR-0032); the planner and other roles never take high', async () => {
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-planner': PLAN(T1, { ...B1, effort: 'high' }) }) })
+  assert.equal(call(r, 'a-builder').opts.effort, 'high')
+  assert.ok(r.calls.filter((c) => !/-builder/.test(String(c.label))).every((c) => c.opts.effort !== 'high'))
 })
 t('stage spawn: a builder takes the task effort (medium over the role low); a tester keeps the role effort over the task', async () => {
   const r = await runStage([entry('a')], { labels: base('a', { 'a-planner': PLAN({ ...T1, effort: 'low' }, { ...B1, effort: 'medium' }) }) })
