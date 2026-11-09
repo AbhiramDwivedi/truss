@@ -245,7 +245,7 @@ t('cd 13: a merged crew is out of --open and has crewStatus merged; a crew finis
   writeFileSync(`${env.dir}/crews/ui/state.json`, JSON.stringify({ state: 'stopped' }))
   const by2 = Object.fromEntries(env.run('decisions').json.decisions.map((d) => [d.id, d.crewStatus]))
   assert.deepEqual(by2, { [a]: 'merged', [w]: 'finished', [s]: 'stopped' })
-  assert.deepEqual(env.run('decisions', { open: true }).json.decisions, [])
+  assert.deepEqual(env.run('decisions', { open: true }).json.decisions.map((d) => d.id), [s], 'a stopped crew with no checkpoint can resume, so its call stays open')
 })
 
 t('cd 14: decision-reply to a crew past its checkpoint (or finished, merged, stopped) adds crewPastCheckpoint and a hint; before, neither key', () => {
@@ -267,6 +267,23 @@ t('cd 14: decision-reply to a crew past its checkpoint (or finished, merged, sto
   const merged = reply(env, w, 'ack')
   assert.equal(merged.json.crewPastCheckpoint, true)
   assert.match(merged.json.hint, /fix at merge/)
+})
+
+t('cd 14b: a stopped crew with no checkpoint is not past it (a resume still applies replies); with a checkpoint it is', () => {
+  const env = mkEnv({ useRealPlugin: true })
+  const a = decide(env, { crew: 'api' }).json.id
+  const w = decide(env, { crew: 'web' }).json.id
+  mkdirSync(`${env.dir}/crews/api`, { recursive: true })
+  writeFileSync(`${env.dir}/crews/api/state.json`, JSON.stringify({ state: 'stopped' }))
+  mkdirSync(`${env.dir}/crews/web`, { recursive: true })
+  writeFileSync(`${env.dir}/crews/web/state.json`, JSON.stringify({ state: 'stopped' }))
+  assert.deepEqual(env.run('decisions', { open: true }).json.decisions.map((d) => d.id), [a, w])
+  const early = reply(env, a, 'ack')
+  assert.equal(early.json.crewPastCheckpoint, undefined)
+  env.run('decision-checkpoint', { crew: 'web' })
+  assert.deepEqual(env.run('decisions', { open: true }).json.decisions.map((d) => d.id), [], 'api has its reply, web is past its checkpoint')
+  const late = reply(env, w, 'ack')
+  assert.equal(late.json.crewPastCheckpoint, true)
 })
 
 t('cd 15: knowledge-commit records the crew\'s knowledge commit sha and a knowledge-commit event; a bad or unknown sha is refused', () => {
