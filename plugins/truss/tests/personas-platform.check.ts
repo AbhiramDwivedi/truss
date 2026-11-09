@@ -5,11 +5,11 @@
 // Run with: node --test tests/personas-platform.check.ts
 
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { mkRepo, mkTrussDir, runCli, tmp } from './fixtures/workflow-run/harness.ts'
+import { crew, mkRepo, mkTrussDir, planObj, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
 const factory = await import('../bin/factory.ts')
@@ -62,6 +62,23 @@ t('start 4: unreadable output, a missing pid, a bad pid and other platforms give
   assert.deepEqual(calls, [])
 })
 
+t('start 6 (review 15): sessionStartOnce memoises the Windows probe per process: two callers launch PowerShell once, not twice', () => {
+  const calls = []
+  const env = { CLAUDE_PID: '31337' }
+  const p = probe((file) => (file === 'pwsh' ? '1762689600123' : undefined), calls)
+  const a = factory.sessionStartOnce(env, 'win32', p)
+  const b = factory.sessionStartOnce(env, 'win32', p)
+  assert.equal(a, 1762689600123)
+  assert.equal(b, a)
+  assert.equal(calls.length, 2, `powershell.exe then pwsh, once: ${JSON.stringify(calls.map((c) => c[0]))}`)
+  const none = []
+  const q = probe(undefined, none)
+  assert.equal(factory.sessionStartOnce({ CLAUDE_PID: '31338' }, 'win32', q), undefined)
+  assert.equal(factory.sessionStartOnce({ CLAUDE_PID: '31338' }, 'win32', q), undefined)
+  assert.equal(none.length, 2, 'an unreadable start is memoised too: the two shells are tried once')
+  assert.notEqual(factory.sessionStartOnce({ CLAUDE_PID: '31339' }, 'win32', probe('1762689600999', [])), a, 'a different pid is a different key')
+})
+
 t('start 5: on Linux the /proc path is kept and the probe is not used', () => {
   const calls = []
   const s = factory.sessionStart({ CLAUDE_PID: String(process.pid) }, 'linux', probe('01:00', calls))
@@ -76,7 +93,7 @@ const agentTools = (name) => {
   const m = /^tools:\s*(.*)$/m.exec(text.split('---')[1])
   return (m?.[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
 }
-const file = (name, tools) => `---\nname: ${name}\ndescription: ${name} area\n${tools === undefined ? '' : `tools: ${tools}\n`}---\n\nBody of ${name}.\n`
+const file = (name, tools) => `---\nname: ${name}\ndescription: ${name} area\n${tools === undefined ? '' : `tools: ${tools}\n`}---\n\nBody of ${name}.\n\n## Standards\n\n- a rule\n`
 
 function personasOf(files) {
   const repo = mkRepo({ files: Object.fromEntries(Object.entries(files).map(([n, text]) => [`.claude/agents/${n}.md`, text])) })
@@ -130,4 +147,46 @@ t('inline 3: agents/judge.md is a neutral read-only host: fixed name, descriptio
   assert.match(fm, /^effort: medium$/m)
   assert.deepEqual(agentTools('judge'), ['Read', 'Grep', 'Glob', 'Bash'])
   assert.ok(text.includes('BLOCKED: no persona definition in the brief'))
+})
+
+// ---------------------------------------------------------------- review 9: roleWarnings covers the judge host; personaFault wants ## Standards
+
+const HOUR = 3_600_000
+function judgeWorld(judgeAge, withPersona = true) {
+  const d = tmp('pp-plugin-')
+  for (const sub of ['bin', 'hooks', 'docs', 'workflows', 'resources', 'retro', 'agents']) if (existsSync(`${PLUGIN}/${sub}`)) cpSync(`${PLUGIN}/${sub}`, `${d}/${sub}`, { recursive: true })
+  for (const n of readdirSync(`${d}/agents`)) utimesSync(`${d}/agents/${n}`, 1_700_000_000, 1_700_000_000)
+  if (judgeAge === null) rmSync(`${d}/agents/judge.md`)
+  else utimesSync(`${d}/agents/judge.md`, judgeAge / 1000, judgeAge / 1000)
+  const repo = mkRepo({ config: { merge: 'sequential', target: 'main' }, files: withPersona ? { '.claude/agents/product-owner.md': file('product-owner', 'Read, Grep, Glob') } : {} })
+  const dir = mkTrussDir()
+  writePlan(dir, planObj([crew('s')]))
+  writeGoal(dir, 's', {})
+  const r = runCli(`${d}/bin/factory.ts`, 'start', ['--stage', 'next', '--dir', dir, '--repo', repo], repo, { TRUSS_SESSION_START: String(Date.now() - HOUR) })
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  return r.json.warnings.map(String)
+}
+
+t('judge 1: a truss:judge.md newer than the session start warns once to restart, naming truss:judge and agents/judge.md', () => {
+  const ws = judgeWorld(Date.now())
+  const mine = ws.filter((w) => w.startsWith('crews s may judge with truss:judge'))
+  assert.equal(mine.length, 1, JSON.stringify(ws))
+  assert.match(mine[0], /agents\/judge\.md/)
+  assert.match(mine[0], /restart the session/)
+})
+
+t('judge 2: a missing agents/judge.md warns; an old one does not', () => {
+  const host = (w) => w.startsWith('crews s may judge with truss:judge')
+  assert.ok(judgeWorld(null).some((w) => host(w) && /missing/.test(w)))
+  assert.ok(!judgeWorld(1_700_000_000_000).some(host))
+})
+
+t('judge 3: a project with no read-only persona is not warned about the judge host', () => {
+  assert.ok(!judgeWorld(Date.now(), false).some((w) => w.startsWith('crews s may judge with truss:judge')))
+})
+
+t('persona 1: a persona file without a ## Standards heading is not a persona: plan-args skips it', () => {
+  const noStd = `---\nname: dev\ndescription: dev area\n---\n\nBody.\n`
+  const p = personasOf({ dev: noStd, ok: file('ok') })
+  assert.deepEqual(Object.keys(p), ['ok'])
 })

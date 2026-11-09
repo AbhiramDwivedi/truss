@@ -38,19 +38,83 @@ const owns = (env) => {
 
 // ---------------------------------------------------------------- owns-check and the knowledge commit
 
-t('scope 1: a knowledge commit that edits the feature map, an ADR, a persona, the product-owner file and a markdown target passes', () => {
-  const { env, wt } = world()
+const FM = (extra = '') => `---\nname: dev\ndescription: dev area\nmodel: sonnet\n${extra}---\n\n`
+const PERSONA_BASE = { '.claude/agents/dev.md': `${FM()}## Standards\n\n- old rule\n`, '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n` }
+// records the head as the crew's knowledge commit, and the given markdown targets as the crew's learned item targets
+const record = (env, wt, targets = []) => {
+  const sha = git(wt, ['rev-parse', 'HEAD'])
+  const r = env.run('knowledge-commit', { slug: 's', sha })
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  if (targets.length) {
+    const items = targets.map((target) => ({ kind: 'feature', text: 'a fact', source: '', target }))
+    assert.equal(env.run('crew-learned', { slug: 's' }, [`--add=${JSON.stringify(items)}`]).status, 0)
+  }
+  return sha
+}
+const ownsFull = (env) => {
+  const r = env.run('owns-check', { slug: 's' })
+  return { status: r.status, outside: r.json.outside ?? [], exempt: r.json.exempt ?? [] }
+}
+
+t('scope 1: a recorded knowledge commit that edits the feature map, an ADR, a persona body, the product-owner file and an item target passes, and owns-check lists them as exempt', () => {
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', ...PERSONA_BASE })
   putFile(wt, 'src/s/a.ts', 'export {}\n', 'work')
-  commitAll(wt, { 'docs/features.md': 'map\n', 'docs/adr/0040-x.md': 'adr\n', '.claude/agents/dev.md': 'persona\n', '.claude/agents/product-owner.md': 'po\n', 'README.md': 'readme\n', 'docs/knowledge/export.md': 'k\n' }, KNOWLEDGE)
-  assert.deepEqual(owns(env), { status: 0, outside: [] })
+  commitAll(wt, { 'docs/features.md': 'map\n', 'docs/adr/0040-x.md': 'adr\n', '.claude/agents/dev.md': `${FM()}## Standards\n\n- old rule\n- new rule\n`, '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new call\n`, 'AGENTS.md': 'agents\n', 'docs/knowledge/export.md': 'k\n' }, KNOWLEDGE)
+  record(env, wt, ['AGENTS.md', 'docs/knowledge/export.md'])
+  const r = ownsFull(env)
+  assert.deepEqual({ status: r.status, outside: r.outside }, { status: 0, outside: [] })
+  assert.deepEqual([...r.exempt].sort(), ['.claude/agents/dev.md', '.claude/agents/product-owner.md', 'AGENTS.md', 'docs/adr/0040-x.md', 'docs/features.md', 'docs/knowledge/export.md'])
 })
 
 t('scope 2: a knowledge commit that edits a .ts target fails; the doc files in the same commit still pass', () => {
   const { env, wt } = world()
   commitAll(wt, { 'docs/features.md': 'map\n', 'src/other/x.ts': 'export const x = 1\n' }, KNOWLEDGE)
-  const r = owns(env)
+  record(env, wt, ['src/other/x.ts'])
+  const r = ownsFull(env)
   assert.equal(r.status, 1)
   assert.deepEqual(r.outside, ['src/other/x.ts'])
+  assert.deepEqual(r.exempt, ['docs/features.md'])
+})
+
+t('scope 2b (review 6): the commit subject alone never counts: a forged subject with no knowledge-commit record exempts nothing; a record for another sha does not either', () => {
+  const { env, wt } = world()
+  commitAll(wt, { 'docs/features.md': 'map\n' }, KNOWLEDGE)
+  assert.deepEqual(ownsFull(env).outside, ['docs/features.md'], 'no record')
+  const other = git(wt, ['rev-parse', 'HEAD~1'])
+  assert.equal(env.run('knowledge-commit', { slug: 's', sha: other }).status, 0)
+  assert.deepEqual(ownsFull(env).outside, ['docs/features.md'], 'a record for a different commit')
+  record(env, wt)
+  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/features.md'] }, 'the record for the commit that changed it')
+})
+
+t('scope 2c (review 6): only .md files are exempt: a featureMap or adrDir file of another extension is not; CLAUDE.md and AGENTS.md are only as item targets', () => {
+  const cfg = { merge: 'sequential', target: 'main', featureMap: 'docs/capabilities.yaml', adrDir: 'decisions' }
+  const { env, wt } = world(cfg)
+  commitAll(wt, { 'docs/capabilities.yaml': 'x: 1\n', 'decisions/0001-q.txt': 'q\n', 'decisions/0002-q.md': 'q\n', 'CLAUDE.md': 'rules\n', 'AGENTS.md': 'r\n' }, KNOWLEDGE)
+  record(env, wt, ['AGENTS.md'])
+  const r = ownsFull(env)
+  assert.deepEqual([...r.outside].sort(), ['CLAUDE.md', 'decisions/0001-q.txt', 'docs/capabilities.yaml'])
+  assert.deepEqual([...r.exempt].sort(), ['AGENTS.md', 'decisions/0002-q.md'])
+})
+
+t('scope 2d (review 6): a change to a persona\'s YAML frontmatter is never exempt, a body-only change is; a new persona file with frontmatter is not', () => {
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', ...PERSONA_BASE })
+  commitAll(wt, {
+    '.claude/agents/dev.md': `${FM('tools: Read, Write, Edit, Bash\n')}## Standards\n\n- old rule\n`, // frontmatter gains a tools line
+    '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new\n`, // body only
+    '.claude/agents/fresh.md': `${FM().replace('name: dev', 'name: fresh')}## Standards\n\n- x\n`,
+  }, KNOWLEDGE)
+  record(env, wt)
+  const r = ownsFull(env)
+  assert.deepEqual([...r.outside].sort(), ['.claude/agents/dev.md', '.claude/agents/fresh.md'])
+  assert.deepEqual(r.exempt, ['.claude/agents/product-owner.md'])
+})
+
+t('scope 2e (review 6): a non-ASCII doc path is exempt: owns-check and the exemption read paths with the same core.quotepath=off', () => {
+  const { env, wt } = world()
+  commitAll(wt, { 'docs/übersicht.md': 'k\n', 'docs/adr/0041-ünï.md': 'adr\n' }, KNOWLEDGE)
+  record(env, wt, ['docs/übersicht.md'])
+  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/adr/0041-ünï.md', 'docs/übersicht.md'] })
 })
 
 t('scope 3: a member code change outside owns still fails, and so does a member edit of a doc path', () => {
@@ -66,24 +130,36 @@ t('scope 4: a doc a member also changed is not exempt, even when the knowledge c
   const { env, wt } = world()
   putFile(wt, 'docs/features.md', 'member\n', 'member edits the map')
   putFile(wt, 'docs/features.md', 'member\nknowledge\n', KNOWLEDGE)
+  record(env, wt)
   assert.deepEqual(owns(env).outside, ['docs/features.md'])
 })
 
-t('scope 5: only a commit with the exact subject for this crew counts: another crew\'s subject or a longer one does not', () => {
+t('scope 5: the record is per crew: another crew\'s knowledge-commit record exempts nothing here', () => {
   const { env, wt } = world()
-  putFile(wt, 'docs/a.md', 'x\n', 'docs(knowledge): other learned')
-  putFile(wt, 'docs/b.md', 'x\n', `${KNOWLEDGE} and more`)
-  assert.deepEqual([...owns(env).outside].sort(), ['docs/a.md', 'docs/b.md'])
+  commitAll(wt, { 'docs/a.md': 'x\n' }, KNOWLEDGE)
+  const sha = git(wt, ['rev-parse', 'HEAD'])
+  assert.equal(env.run('knowledge-commit', { slug: 'other', sha }).status, 0)
+  assert.deepEqual(owns(env).outside, ['docs/a.md'])
 })
 
-t('scope 6: the configured featureMap (any extension) and adrDir are doc paths of the knowledge commit; without the key they are not', () => {
-  const cfg = { merge: 'sequential', target: 'main', featureMap: 'docs/capabilities.yaml', adrDir: 'decisions' }
+t('scope 6: the configured featureMap and adrDir (as .md) are doc paths of the recorded knowledge commit; without the key they are not', () => {
+  const cfg = { merge: 'sequential', target: 'main', featureMap: 'docs/capabilities.md', adrDir: 'decisions' }
   const a = world(cfg)
-  commitAll(a.wt, { 'docs/capabilities.yaml': 'x: 1\n', 'decisions/0001-q.txt': 'q\n' }, KNOWLEDGE)
+  commitAll(a.wt, { 'docs/capabilities.md': 'x\n', 'decisions/0001-q.md': 'q\n' }, KNOWLEDGE)
+  record(a.env, a.wt)
   assert.deepEqual(owns(a.env), { status: 0, outside: [] })
   const b = world()
-  commitAll(b.wt, { 'docs/capabilities.yaml': 'x: 1\n', 'decisions/0001-q.txt': 'q\n' }, KNOWLEDGE)
-  assert.deepEqual([...owns(b.env).outside].sort(), ['decisions/0001-q.txt', 'docs/capabilities.yaml'])
+  commitAll(b.wt, { 'docs/capabilities.md': 'x\n', 'decisions/0001-q.md': 'q\n' }, KNOWLEDGE)
+  record(b.env, b.wt)
+  assert.deepEqual([...owns(b.env).outside].sort(), ['decisions/0001-q.md', 'docs/capabilities.md'])
+})
+
+t('scope 7 (review 14): repoPathOf turns a Windows backslash path into a repo path, then validates it', async () => {
+  const f = await import('../bin/factory.ts')
+  assert.equal(f.repoPathOf('docs\\features.md'), 'docs/features.md')
+  assert.equal(f.repoPathOf('.\\docs\\adr\\'), 'docs/adr')
+  for (const bad of ['..\\x.md', 'a\\..\\..\\x', '\\etc\\passwd', 'C:\\x.md', 'C:/x.md', '/etc/x', 'a\nb', '']) assert.equal(f.repoPathOf(bad), undefined, JSON.stringify(bad))
+  assert.equal(startArgs({ merge: 'sequential', target: 'main', featureMap: 'docs\\caps.md', adrDir: 'docs\\decisions' }).featureMap, 'docs/caps.md')
 })
 
 // ---------------------------------------------------------------- sourceChanges in the green check

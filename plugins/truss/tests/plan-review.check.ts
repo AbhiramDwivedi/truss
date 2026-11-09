@@ -55,7 +55,7 @@ const planArgs = (o = {}) => ({
 const ARCH = (report = 'Plan ready.', extra = {}) => ({ report, planJson: '{"PLANJSON":1}', planMd: '# PLANMD-MARK', ...extra })
 const AGREE = 'REVIEW: agree\nClient: none'
 const PO_BODY = 'You judge the product fit.\nBe strict about realistic data.'
-const DRAFT_FILE = `---\nname: product-owner\ndescription: Judges plan fit\ntools: Read, Grep, Glob\nmodel: opus\n---\n\n${PO_BODY}\n`
+const DRAFT_FILE = `---\nname: product-owner\ndescription: Judges plan fit\ntools: Read, Grep, Glob\nmodel: opus\n---\n\n${PO_BODY}\n\n## Standards\n\n- realistic data\n`
 const withDraft = (name = 'product-owner', file = DRAFT_FILE) => `Plan ready.\n\nPersonas: ${name}: judge\nProduct owner: drafted\n\nPERSONA: ${name}\n\`\`\`\`markdown\n${file}\`\`\`\`\n`
 const PO_PERSONA = { agentType: 'product-owner', model: 'opus', effort: 'medium', file: '/proj/.claude/agents/product-owner.md', description: 'judge', readOnly: true, loaded: true }
 const ACCEPT = 'PO: ACCEPT\n'
@@ -154,6 +154,71 @@ t('po 8: an UNCOVERED line returns before any review; a reply with no PO: line i
   assert.equal(r.result.productOwner.open.length, 1)
 })
 
+t('po 9 (review 1): the revise prompt carries the first plan verbatim: planJson, planMd and the PERSONA blocks of the first report', async () => {
+  const first = { report: withDraft(), planJson: '{"crews":[{"slug":"api","verdict":"extend","owns":["src/api/**"]}],"FIRST":"x y  z"}', planMd: '# First plan\n\n- store: extend (reuses the seam)\n\n| 1 | api | extend |\n' }
+  const r = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
+    'truss-designer': first, 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised plan.', { planJson: first.planJson, planMd: first.planMd }), 'truss-po-2': ACCEPT,
+  })
+  assert.ifError(r.error)
+  const p = r.calls[3].prompt
+  assert.equal(p.split('\n')[0], 'Mode: plan')
+  assert.ok(p.includes(first.planJson), 'planJson verbatim')
+  assert.ok(p.includes(first.planMd), 'planMd verbatim')
+  assert.ok(p.includes('PERSONA: product-owner\n````\n' + DRAFT_FILE.replace(/\n$/, '') + '\n````'), 'the PERSONA block verbatim in a four-backtick fence:\n' + p.slice(-700))
+  assert.ok(p.includes('1. api: only checks the code runs'), 'and the findings')
+  assert.ok(p.indexOf('BRIEF-TEXT') < p.indexOf(first.planJson))
+})
+
+t('po 9b (review 1): a persona draft that holds a four-backtick run is fenced with a longer fence; a first plan with no draft carries no PERSONA line', async () => {
+  const tricky = DRAFT_FILE + '\n````text\ninner\n````\n'
+  const a = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
+    'truss-designer': ARCH(`R\n\nPERSONA: product-owner\n\`\`\`\`\`markdown\n${tricky}\`\`\`\`\`\n`), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised.'), 'truss-po-2': ACCEPT,
+  })
+  assert.ifError(a.error)
+  assert.ok(a.calls[3].prompt.includes('PERSONA: product-owner\n`````\n' + tricky.replace(/\n$/, '') + '\n`````'), a.calls[3].prompt.slice(-500))
+  const b = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
+    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised.'), 'truss-po-2': ACCEPT,
+  })
+  assert.ok(!b.calls[3].prompt.includes('PERSONA:'))
+})
+
+t('po 10 (cost): when the checking engineer already disagrees, the product-owner review is skipped and the result says why', async () => {
+  const r = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), { 'truss-designer': ARCH(), 'truss-checker': 'REVIEW: disagree\nClient: new seam' })
+  assert.ifError(r.error)
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
+  assert.deepEqual(r.result.productOwner, { skipped: 'checking engineer disagrees; plan goes back to step 2' })
+  assert.equal(r.result.stillDisagree, true)
+  assert.deepEqual(r.result.client, ['Client: new seam'])
+  const d = await execPlan(planArgs(), { 'truss-designer': ARCH(withDraft()), 'truss-checker': 'REVIEW: disagree' })
+  assert.deepEqual(d.labels, ['truss-designer', 'truss-checker'], 'with a draft too')
+  assert.deepEqual(d.result.personaDrafts, ['product-owner'], 'the drafts still reach the result')
+})
+
+t('po 11 (review 9): a loaded product-owner persona that is not read-only never judges as its own type: truss:judge with the body inlined', async () => {
+  for (const readOnly of [false, undefined]) {
+    const p = { ...PO_PERSONA, readOnly, body: PO_BODY }
+    if (readOnly === undefined) delete p.readOnly
+    const r = await execPlan(planArgs({ personas: { 'product-owner': p } }), { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
+    assert.ifError(r.error)
+    assert.equal(r.calls[2].opts.agentType, 'truss:judge', `readOnly ${readOnly}`)
+    assert.ok(r.calls[2].prompt.includes(PO_BODY))
+  }
+  const noBody = await execPlan(planArgs({ personas: { 'product-owner': { ...PO_PERSONA, readOnly: false } } }), { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
+  assert.equal(noBody.calls[2].opts.agentType, 'truss:judge')
+  assert.ok(noBody.calls[2].prompt.includes('/proj/.claude/agents/product-owner.md'), 'with no body the brief points at the persona file')
+  const ro = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
+  assert.equal(ro.calls[2].opts.agentType, 'product-owner', 'readOnly true and loaded still runs as its own type')
+})
+
+t('po 12 (review 10): the review brief names the feature map when plan-args found one; without it, no feature-map line', async () => {
+  const withMap = planArgs({ personas: { 'product-owner': PO_PERSONA } })
+  withMap.truss.featureMap = 'docs/features.md'
+  const r = await execPlan(withMap, { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
+  assert.match(r.calls[2].prompt, /Feature map: \/proj\/docs\/features\.md/)
+  const without = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
+  assert.ok(!without.calls[2].prompt.includes('Feature map'))
+})
+
 // ---------------------------------------------------------------- re-check of a revised plan
 
 const PLAN_A = (verdict = 'extend', slugs = ['api', 'ui']) => ({
@@ -209,11 +274,24 @@ t('recheck 5: no product-owner revision means no recheck field', async () => {
   assert.ok(!Object.hasOwn(r.result, 'recheck'))
 })
 
+t('recheck 6 (review 1): a revision that changes a crew\'s owns or modules re-runs the checking engineer, even with the same slugs and verdicts', async () => {
+  const planWith = (crews) => ({ planJson: JSON.stringify({ crews }), planMd: '# Plan\n\n- store: extend (x)\n' })
+  const base = [{ slug: 'api', verdict: 'extend', owns: ['src/api/**'], modules: ['api'] }]
+  for (const [name, changed] of [['owns', [{ ...base[0], owns: ['src/**'] }]], ['modules', [{ ...base[0], modules: ['api', 'db'] }]]]) {
+    const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', planWith(changed)), 'truss-po-2': ACCEPT, 'truss-checker-2': AGREE })
+    assert.ifError(r.error)
+    assert.equal(r.result.recheck.ran, true, `${name} changed`)
+    assert.deepEqual(r.labels.slice(-1), ['truss-checker-2'])
+  }
+  const same = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', planWith([{ slug: 'api', verdict: 'extend', modules: ['api'], owns: ['src/api/**'] }])), 'truss-po-2': ACCEPT })
+  assert.equal(same.result.recheck.ran, false, 'key order alone is no change')
+})
+
 // ---------------------------------------------------------------- plan-write persona drafts
 
 const fenced = (json, md) => `Report.\n\n\`\`\`\`json plan.json\n${json}\n\`\`\`\`\n\n\`\`\`\`markdown plan.md\n${md}\n\`\`\`\`\n`
 const PLAN = JSON.stringify({ ...planObj([crew('arch', { stage: 0, verdict: 'design' })], { approval: 'client', approvedAt: null }), goal: 'g' })
-const file = (name, extra = '') => `---\nname: ${name}\ndescription: ${name} area\nmodel: sonnet\n${extra}---\n\nBody of ${name}.\n`
+const file = (name, extra = '') => `---\nname: ${name}\ndescription: ${name} area\nmodel: sonnet\n${extra}---\n\nBody of ${name}.\n\n## Standards\n\n- a rule\n`
 const block = (name, text, fence = '````markdown') => `PERSONA: ${name}\n${fence}\n${text}${fence.replace(/[^`~]*$/, '')}\n`
 
 function writeWith(report) {
@@ -261,6 +339,24 @@ t('draft 3: a bad name, a missing or unterminated fence, and a file that would n
   assert.match(problems[0], /kebab-case/)
 })
 
+t('draft 3b (review 8): a four-backtick PERSONA block holding a fenced command block is written whole; a three-backtick one closes early and is refused', () => {
+  const inner = `---\nname: java-dev\ndescription: java area\nmodel: sonnet\n---\n\nBody.\n\n## Review checklist\n\nRun:\n\n\`\`\`bash\nmvn -q verify\n\`\`\`\n\n## Standards\n\n- null-safe APIs\n`
+  const ok = writeWith(`${fenced(PLAN, '# md')}\n${block('java-dev', inner, '````markdown')}`)
+  assert.equal(ok.res.status, 0, ok.res.stderr)
+  assert.equal(ok.read('java-dev'), inner)
+  assert.ok(!Object.hasOwn(ok.res.json, 'personaProblems'))
+  const bad = writeWith(`${fenced(PLAN, '# md')}\n${block('java-dev', inner, '```markdown')}`)
+  assert.deepEqual(bad.files, [], 'the truncated file (no ## Standards) is not installed')
+  assert.match(bad.res.json.personaProblems.join('\n'), /Standards/)
+})
+
+t('draft 3c (review 8): a persona draft without a ## Standards heading is a problem, not a draft; so is plan.js\'s view of it (no body check needed)', () => {
+  const noStd = `---\nname: java-dev\ndescription: java area\nmodel: sonnet\n---\n\nBody only.\n`
+  const w = writeWith(`${fenced(PLAN, '# md')}\n${block('java-dev', noStd)}`)
+  assert.deepEqual(w.files, [])
+  assert.match(w.res.json.personaProblems[0], /java-dev is malformed: .*## Standards/)
+})
+
 t('draft 4: a report with no PERSONA lines gives no personas field and no personas directory', () => {
   const w = writeWith(fenced(PLAN, '# md'))
   assert.equal(w.res.status, 0)
@@ -279,7 +375,7 @@ t('draft 5: a refused plan-write (no plan block) writes no drafts', () => {
 // ---------------------------------------------------------------- plan-args carries the personas
 
 t('plan-args 1: truss.personas holds the project personas as factory start builds them', () => {
-  const repo = mkRepo({ files: { '.claude/agents/product-owner.md': `---\nname: product-owner\ndescription: judge\ntools: Read, Grep, Glob\nmodel: opus\n---\n\nBody.\n`, '.claude/agents/java-dev.md': `---\nname: java-dev\ndescription: java\n---\n\nJ.\n` } })
+  const repo = mkRepo({ files: { '.claude/agents/product-owner.md': `---\nname: product-owner\ndescription: judge\ntools: Read, Grep, Glob\nmodel: opus\n---\n\nBody.\n\n## Standards\n\n- s\n`, '.claude/agents/java-dev.md': `---\nname: java-dev\ndescription: java\n---\n\nJ.\n\n## Standards\n\n- s\n` } })
   const dir = mkTrussDir()
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
@@ -290,6 +386,16 @@ t('plan-args 1: truss.personas holds the project personas as factory start build
   assert.equal(p['product-owner'].readOnly, true)
   assert.equal(p['product-owner'].loaded, true)
   assert.equal(p['java-dev'].readOnly, false)
+})
+
+t('plan-args 3 (review 10): plan-args carries truss.featureMap (the key or docs/features.md) only when that file exists in the repo', () => {
+  const brief = `${tmp('brief-')}/brief.md`
+  writeFileSync(brief, 'brief\n')
+  const argsOf = (repo) => runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', mkTrussDir(), '--repo', repo, '--brief-file', brief], repo).json.truss
+  assert.ok(!Object.hasOwn(argsOf(mkRepo()), 'featureMap'))
+  assert.equal(argsOf(mkRepo({ files: { 'docs/features.md': '# map\n' } })).featureMap, 'docs/features.md')
+  assert.equal(argsOf(mkRepo({ config: { featureMap: 'docs/caps.md' }, files: { 'docs/caps.md': '# map\n' } })).featureMap, 'docs/caps.md')
+  assert.ok(!Object.hasOwn(argsOf(mkRepo({ config: { featureMap: 'docs/caps.md' }, files: { 'docs/features.md': '# map\n' } })), 'featureMap'), 'the configured file is what counts')
 })
 
 t('plan-args 2: a repo with no .claude/agents has personas {}', () => {

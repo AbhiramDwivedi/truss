@@ -27,9 +27,14 @@ describe('retro knowledge count', () => {
     assert.equal(out.eventsSkipped, 0)
   })
 
-  test('a crew counts once: its later line (a resume) replaces the earlier one', () => {
+  test('a crew counts once: its later line (a resume) merges into the earlier one', () => {
     const out = events([kn('a', 0, false, '2026-11-09T09:10:00Z'), kn('a', 1, true, '2026-11-09T09:40:00Z')])
     assert.deepEqual(out.runs[0].knowledge, { crews: 1, items: 1, ran: 1, skipped: 0 })
+  })
+
+  test('review 13: a merge-ready resume line (ran false, items 0) after a line that ran keeps ran true and the larger item count', () => {
+    const out = events([kn('a', 2, true, '2026-11-09T09:10:00Z'), kn('a', 0, false, '2026-11-09T09:40:00Z')])
+    assert.deepEqual(out.runs[0].knowledge, { crews: 1, items: 2, ran: 1, skipped: 0 })
   })
 
   test('a log with no knowledge line says not recorded, never 0', () => {
