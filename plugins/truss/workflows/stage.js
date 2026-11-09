@@ -20,6 +20,12 @@ const ARGS = (() => {
 const F = ARGS && ARGS.truss
 if (!F || typeof F !== 'object' || Array.isArray(F)) throw new Error('args.truss is missing: the Workflow gate expands args.trussFile into args.truss; pass args.truss inline when the gate did not run')
 const ROLE_EFFORTS = ['low', 'medium']
+// ADR-0032: builder, tester and resolver members may run at effort high (via a persona, a task effort or ## Members);
+// every other role keeps ROLE_EFFORTS. A persona is a project agent type (args.truss.personas) that routes the task's member.
+const PERSONA_ROLES = ['builder', 'tester', 'resolver']
+const PERSONA_EFFORTS = ['low', 'medium', 'high']
+const effortsFor = (role) => (PERSONA_ROLES.includes(role) ? PERSONA_EFFORTS : ROLE_EFFORTS)
+const PERSONAS = F.personas && typeof F.personas === 'object' && !Array.isArray(F.personas) ? F.personas : {}
 const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
 const TRAILER_ROLE = { tester: 'test-writer', builder: 'builder', writer: 'writer', resolver: 'resolver' }
 
@@ -70,13 +76,14 @@ const PLANNER_SCHEMA = {
         properties: {
           name: { type: 'string' },
           role: { type: 'string', enum: ['tester', 'builder', 'writer'] },
-          effort: { type: 'string', enum: ['low', 'medium'] },
+          effort: { type: 'string', enum: ['low', 'medium', 'high'] },
+          persona: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           files: { type: 'array', items: { type: 'string' } },
           reads: { type: 'array', items: { type: 'string' } },
           brief: { type: 'string' },
           after: { type: 'array', items: { type: 'string' } },
         },
-        required: ['name', 'role', 'effort', 'files', 'reads', 'brief', 'after'],
+        required: ['name', 'role', 'effort', 'persona', 'files', 'reads', 'brief', 'after'],
       },
     },
     stop: {
@@ -98,8 +105,13 @@ function spawn(role, label, prompt, opts = {}) {
   if (!ROLE_EFFORTS.includes(r.effort)) throw new Error(`role ${role} has effort ${r.effort}; only low or medium`)
   if (typeof r.agentType !== 'string' || !r.agentType || BANNED_TYPES.includes(r.agentType)) throw new Error(`role ${role} has agentType ${r.agentType}, which is not allowed`)
   let effort = r.effort
+  const persona = opts.persona ? PERSONAS[opts.persona] : undefined
+  if (opts.persona) {
+    if (!PERSONA_ROLES.includes(role)) throw new Error(`role ${role} may not take persona ${opts.persona}`)
+    if (!persona || persona.readOnly === true) throw new Error(`persona ${opts.persona} is not an editing persona in args.truss.personas`)
+  }
   if (opts.effort !== undefined) {
-    if (role !== 'builder' || !ROLE_EFFORTS.includes(opts.effort)) throw new Error(`role ${role} may not take effort ${opts.effort}`)
+    if ((role !== 'builder' && !persona) || !effortsFor(role).includes(opts.effort)) throw new Error(`role ${role} may not take effort ${opts.effort}`)
     effort = opts.effort
   }
   // ADR-0022 U6 (item 23): the goal file's ## Members line (the entry's members) wins over the roles row and the task effort
@@ -107,11 +119,28 @@ function spawn(role, label, prompt, opts = {}) {
   if (opts.member) {
     const m = opts.member
     if (m.model !== 'opus' && m.model !== 'sonnet') throw new Error(`role ${role} has a ## Members model ${m.model}; only opus or sonnet`)
-    if (!ROLE_EFFORTS.includes(m.effort)) throw new Error(`role ${role} has a ## Members effort ${m.effort}; only low or medium`)
+    if (!effortsFor(role).includes(m.effort)) throw new Error(`role ${role} has a ## Members effort ${m.effort}; only ${effortsFor(role).join(', ')}`)
     model = m.model
     effort = m.effort
   }
-  const o = { label, agentType: r.agentType, model, effort }
+  let agentType = r.agentType
+  // ADR-0032: a persona's model stands, its effort is the higher of its own and the task's, and its type runs the member when this
+  // session loaded it; otherwise general-purpose runs it with the persona file's body as the first lines of the prompt
+  if (persona) {
+    if (persona.model !== 'opus' && persona.model !== 'sonnet') throw new Error(`persona ${opts.persona} has model ${persona.model}; only opus or sonnet`)
+    if (!PERSONA_EFFORTS.includes(persona.effort)) throw new Error(`persona ${opts.persona} has effort ${persona.effort}; only low, medium or high`)
+    model = persona.model
+    const task = opts.effort === undefined ? persona.effort : opts.effort
+    effort = PERSONA_EFFORTS.indexOf(task) > PERSONA_EFFORTS.indexOf(persona.effort) ? task : persona.effort
+    if (persona.loaded === true) {
+      if (typeof persona.agentType !== 'string' || !persona.agentType || BANNED_TYPES.includes(persona.agentType)) throw new Error(`persona ${opts.persona} has agentType ${persona.agentType}, which is not allowed`)
+      agentType = persona.agentType
+    } else {
+      agentType = 'general-purpose'
+      prompt = `You are the ${opts.persona} persona. Its definition follows and is your system prompt for this task:\n\n${String(persona.body || '').replace(/\s+$/, '')}\n---\n${prompt}`
+    }
+  }
+  const o = { label, agentType, model, effort }
   if (opts.schema) o.schema = opts.schema
   if (r.isolation === 'worktree') o.isolation = 'worktree'
   return agent(prompt, o)
@@ -187,11 +216,16 @@ function memberFor(crew, role) {
 async function ask(crew, role, prompt, opts = {}) {
   if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
   const { at, labelOut, title, ...rest } = opts
-  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title))
+  const persona = typeof rest.persona === 'string' && rest.persona ? rest.persona : null
+  if (!persona) delete rest.persona
+  // ADR-0032: the ## Members line applies only to a member with no persona
+  const member = persona ? null : memberFor(crew, role)
+  // whether this member is meant to run at effort high, so factory's audit does not flag it (a persona, task effort or ## Members line)
+  const high = PERSONA_ROLES.includes(role) && ((persona && PERSONAS[persona] && PERSONAS[persona].effort === 'high') || rest.effort === 'high' || (member && member.effort === 'high'))
+  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title), persona, !!high)
   try {
     const label = nextLabel(crew, role)
     if (labelOut) labelOut.label = label
-    const member = memberFor(crew, role)
     return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
   } finally {
     await reap(crew)
@@ -203,8 +237,8 @@ async function ask(crew, role, prompt, opts = {}) {
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 // label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
 // A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; still one call, no retry here.
-async function admit(crew, at, label, title) {
-  const r = await runFactory(crew, `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}` : ''}`, 'admitted')
+async function admit(crew, at, label, title, persona = null, high = false) {
+  const r = await runFactory(crew, `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`, 'admitted')
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
@@ -548,7 +582,8 @@ async function runMember(crew, role, makePrompt, opts, at) {
 }
 
 async function resolveConflicts(crew, what, conflicts, at) {
-  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA, at, title: `Resolve merge for ${crew.slug}` })
+  const persona = personaFor(crew, 'resolver', conflicts.join('\n'), at)
+  const report = await ask(crew, 'resolver', resolverPrompt(crew, what, conflicts), { schema: MEMBER_SCHEMA, at, title: `Resolve merge for ${crew.slug}`, ...(persona ? { persona } : {}) })
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish ${what}: ${report ? report.text : 'no report'}`, at)
 }
 
@@ -573,9 +608,28 @@ async function integrateNow(crew, branch, at) {
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
 }
 
+// ADR-0032: the persona a task's member runs as (a builder or tester task with a persona), else null
+const taskPersona = (task) => (['builder', 'tester'].includes(task.role) && typeof task.persona === 'string' && task.persona ? task.persona : null)
+
+// A resolver or fix member inherits the persona of the task it works for: the task `at` names, else the one task of its role
+// whose files `text` names, else the one persona all of the crew's tasks of its role share; null when none is clear.
+function personaFor(crew, role, text, at) {
+  const tasks = (crew.tasks && crew.tasks.length ? crew.tasks : crew.e.tasks) || []
+  const byAt = tasks.find((t) => t.name === at)
+  if (byAt) return taskPersona(byAt)
+  const pool = tasks.filter((t) => (role === 'resolver' ? ['builder', 'tester'].includes(t.role) : t.role === role))
+  const pick = (list) => {
+    const set = new Set(list.map(taskPersona))
+    return set.size === 1 && !set.has(null) ? [...set][0] : null
+  }
+  const named = text ? pool.filter((t) => (t.files || []).some((f) => namesFile(String(text), f))) : []
+  return pick(named) ?? (pool.length ? pick(pool) : null)
+}
+
 async function runTask(crew, task) {
   const at = task.name
-  const opts = { title: task.name, ...(task.role === 'builder' ? { effort: task.effort } : {}) }
+  const persona = taskPersona(task)
+  const opts = { title: task.name, ...(task.role === 'builder' || persona ? { effort: task.effort } : {}), ...(persona ? { persona } : {}) }
   const report = await runMember(crew, task.role, (note) => taskPrompt(crew, task, note), opts, at)
   report.task = task.name
   crew.proofs.push(`${task.name}: ${report.proof}`)
@@ -611,7 +665,8 @@ async function runMembers(crew, tasks) {
 async function fixBuilder(crew, what, detail, role = 'builder') {
   const at = crew.step
   guardAllowance(crew, at)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), { title: `Fix ${what}` }, at)
+  const persona = personaFor(crew, role, detail, null)
+  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -681,7 +736,8 @@ async function testsBackstop(crew, what) {
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
   const at = crew.step
   const label = `${what}, builder commits on tester files`
-  const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at, title: `Resolve backstop for ${crew.slug}` })
+  const persona = personaFor(crew, 'resolver', lines.join('\n'), null)
+  const report = await ask(crew, 'resolver', backstopPrompt(crew, label, lines), { schema: MEMBER_SCHEMA, at, title: `Resolve backstop for ${crew.slug}`, ...(persona ? { persona } : {}) })
   // ADR-0026 item 51 3: a resolver's QUESTION, PROPOSAL or CHECKPOINT stops the crew with that tag, as runMember does
   if (report && ['QUESTION', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker)) throw new Stop(report.marker, report.text, at)
   if (!report || report.marker !== 'DONE') throw new Stop('BLOCKED', `the resolver did not finish the tests backstop (${label}): ${report ? report.text : 'no report'}`, at)
@@ -734,7 +790,12 @@ function validateTasks(tasks, owns, ownTests = null, guarded = []) {
     if (byName[t.name]) errors.push(`duplicate task name: ${t.name}`)
     else byName[t.name] = t
     if (!['tester', 'builder', 'writer'].includes(t.role)) errors.push(`task ${t.name} has role ${t.role}; use tester, builder or writer`)
-    if (!ROLE_EFFORTS.includes(t.effort)) errors.push(`task ${t.name} has effort ${t.effort}; use low or medium`)
+    if (!PERSONA_EFFORTS.includes(t.effort)) errors.push(`task ${t.name} has effort ${t.effort}; use low, medium or high`)
+    if (t.persona !== undefined && t.persona !== null) {
+      if (typeof t.persona !== 'string') errors.push(`task ${t.name} has persona ${JSON.stringify(t.persona)}; use a persona name or null`)
+      else if (!Object.hasOwn(PERSONAS, t.persona)) errors.push(`task ${t.name} has persona ${t.persona}, which is not a persona of this project (${Object.keys(PERSONAS).join(', ') || 'none defined'}); use one of them or null`)
+      else if (PERSONAS[t.persona] && PERSONAS[t.persona].readOnly === true) errors.push(`task ${t.name} has persona ${t.persona}, which is read-only (a judge); give the task an editing persona or null`)
+    }
     for (const f of t.files || []) {
       if (typeof f !== 'string' || f === '' || f.endsWith('/') || /\\|\/\/|^\/|^\.\//.test(f) || f.split('/').some((seg) => seg === '.' || seg === '..')) errors.push(`task ${t.name} lists file ${f}, which is not a canonical repo-relative path; use forward slashes, no leading / or ./, no // and no . or .. segments`)
       else if (/[*?[{]/.test(f)) errors.push(`task ${t.name} lists file ${f}, which is a glob; list exact file paths`)
@@ -794,6 +855,13 @@ function plannerPrompt(crew, errors) {
   ]
   const dl = directionLines(crew)
   if (dl.length) lines.push('', ...dl)
+  const names = Object.keys(PERSONAS)
+  if (names.length) {
+    lines.push('', "Personas (project agents, each specialised by stack and area). Give every builder and tester task the editing persona whose stack and area fit the task's files; a task never spans two personas' areas, so split it instead; persona is null only when no persona fits. A read-only persona is a judge and never takes a task:")
+    for (const n of names) lines.push(`- ${n}: ${String((PERSONAS[n] && PERSONAS[n].description) || '')} (${PERSONAS[n] && PERSONAS[n].readOnly === true ? 'read-only' : 'editing'})`)
+  } else {
+    lines.push('', 'This project defines no personas: set persona to null on every task.')
+  }
   const answers = e.answers || []
   if (answers.length) lines.push('', 'Answers to earlier stops of this crew:', ...answers.map((a) => `- at ${a.at}: ${a.text}`))
   lines.push('', 'Load the `subagent-limits:split-work` skill before splitting work.')
@@ -1025,6 +1093,19 @@ function uxAnswerLines(crew) {
   return answers.length ? ['Answers to earlier stops of this crew:', ...answers.map((a) => `- at ${a.at}: ${a.text}`), ''] : []
 }
 
+// ADR-0032: the persona files QC holds the diff to: every persona this crew's tasks used, then every read-only persona (a judge,
+// such as a product owner). [] when there are none.
+function standardsLines(crew) {
+  const files = []
+  const add = (n) => {
+    const f = PERSONAS[n] && PERSONAS[n].file
+    if (typeof f === 'string' && f && !files.includes(f)) files.push(f)
+  }
+  for (const t of (crew.tasks && crew.tasks.length ? crew.tasks : crew.e.tasks) || []) if (taskPersona(t) && Object.hasOwn(PERSONAS, taskPersona(t))) add(taskPersona(t))
+  for (const n of Object.keys(PERSONAS)) if (PERSONAS[n] && PERSONAS[n].readOnly === true) add(n)
+  return files.length ? ['Standards: hold the diff to the Standards section of each of these persona files; quote the item you rule on:', ...files.map((f) => `- ${f}`), ''] : []
+}
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -1052,6 +1133,7 @@ function qcPrompt(crew) {
     ...uxAnswerLines(crew),
     `Approved scope: ${scopeOf(e)}`,
     '',
+    ...standardsLines(crew),
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
     "Check the goal file's Non-goals heading against the diff. Work that lands in a non-goal is a finding.",
     '',
