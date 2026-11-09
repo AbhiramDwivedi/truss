@@ -465,7 +465,7 @@ test('start --resume answers: tasks come from the highest-numbered planner resul
   assert.deepEqual(Object.keys(j).sort(), OUTPUT_KEYS)
   assert.equal(j.truss.crews.length, 1)
   const e = j.truss.crews[0]
-  assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
+  assert.deepEqual(Object.keys(e).sort(), [...ENTRY_KEYS, "learned"].sort())
   assert.equal(e.slug, 'x')
   assert.equal(e.resume, 'answers')
   assertTasks(e, plannerTasks, 'planner-10 beats planner-2 numerically, not by journal order')
@@ -623,7 +623,7 @@ test('start --resume stale (no labelled run): appends a fresh factory spawn line
   assert.equal(res.status, 0, `${res.stdout} ${res.stderr}`)
   assert.equal(j.truss.crews.length, 1)
   const e = j.truss.crews[0]
-  assert.deepEqual(Object.keys(e).sort(), ENTRY_KEYS)
+  assert.deepEqual(Object.keys(e).sort(), [...ENTRY_KEYS, "learned"].sort())
   assert.equal(e.resume, 'stale')
   assert.deepEqual(e.tasks, [])
   assert.deepEqual(e.done, [])

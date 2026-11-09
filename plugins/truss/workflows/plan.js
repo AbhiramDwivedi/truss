@@ -103,9 +103,11 @@ function judgeFor(report) {
   const p = PERSONAS['product-owner']
   if (p && typeof p === 'object') {
     const effort = p.effort === 'low' ? 'low' : 'medium' // a plan-time agent never runs above medium
-    if (p.loaded === true && typeof p.agentType === 'string' && p.agentType && !BAD_TYPES.includes(p.agentType)) return { source: 'persona', agentType: p.agentType, model: p.model === 'opus' ? 'opus' : 'sonnet', effort }
-    const host = typeof p.inlineType === 'string' && p.inlineType && !BAD_TYPES.includes(p.inlineType) ? p.inlineType : JUDGE_HOST
-    return { source: 'persona', agentType: host, model: p.model === 'opus' ? 'opus' : 'sonnet', effort, body: String(p.body || '') }
+    // A loaded persona runs as its own type only when it is read-only: a judge that can write must not, so any other persona is
+    // inlined on the neutral host, which holds no write tool.
+    if (p.readOnly === true && p.loaded === true && typeof p.agentType === 'string' && p.agentType && !BAD_TYPES.includes(p.agentType)) return { source: 'persona', agentType: p.agentType, model: p.model === 'opus' ? 'opus' : 'sonnet', effort }
+    const host = p.readOnly === true && typeof p.inlineType === 'string' && p.inlineType && !BAD_TYPES.includes(p.inlineType) ? p.inlineType : JUDGE_HOST
+    return { source: 'persona', agentType: host, model: p.model === 'opus' ? 'opus' : 'sonnet', effort, body: typeof p.body === 'string' ? p.body : '', file: typeof p.file === 'string' ? p.file : '' }
   }
   const draft = draftsOf(report).find((d) => d.name === 'product-owner')
   if (draft) return { source: 'draft', agentType: JUDGE_HOST, model: 'sonnet', effort: 'medium', body: bodyOf(draft.text) }
@@ -121,6 +123,7 @@ function poPrompt(judge, a) {
     `Requirements: ${F.repo}/docs/requirements.md (read it when it exists; every numbered requirement needs an acceptance test)`,
     `Goal files: ${F.dir}/goals/<crew slug>.md (written once the plan is approved; until then the crew goals and acceptance tests are in the plan below)`,
     `Architecture doc: ${F.architecture}`,
+    ...(typeof F.featureMap === 'string' && F.featureMap ? [`Feature map: ${F.repo}/${F.featureMap} (the capabilities that exist; read it to judge whether a criterion matches how the product is used)`] : []),
     '',
     'planJson (crews, acceptance tests):',
     a.planJson,
@@ -130,11 +133,15 @@ function poPrompt(judge, a) {
     '',
     'Reply: first line `PO: ACCEPT` or `PO: REVISE`. On REVISE, then numbered findings, one per line: `<n>. <crew>: <what is wrong>. Fix: <fix>`.',
   ].join('\n')
-  return judge.body === undefined ? brief : `You are the product-owner persona. Its definition follows and is your system prompt for this task:\n\n${judge.body.replace(/\s+$/, '')}\n---\n${brief}`
+  if (judge.body === undefined) return brief
+  // a persona that is loaded but not read-only arrives without its body: the file holds it
+  if (judge.body.trim() === '' && judge.file) return `You are the product-owner persona. Its definition is the text below the frontmatter of ${judge.file}: read that file first, then adopt it as your system prompt for this task.\n---\n${brief}`
+  return `You are the product-owner persona. Its definition follows and is your system prompt for this task:\n\n${judge.body.replace(/\s+$/, '')}\n---\n${brief}`
 }
 
 // What a revision must not change: the verdict lines of plan.md (`<module>: extend|change (...)`) and the crews of plan.json
-// (slug and verdict), each as one comparable string. A plan.json that does not parse gives no crews.
+// (slug, verdict, owns and modules), each as one comparable string. A plan.json that does not parse gives no crews.
+const listOf = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]).map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).sort()
 function shapeOf(plan) {
   const verdicts = linesOf(plan.planMd, /^[-*\s]*`?[^:|`]+`?\s*:\s*(extend|change)\b/i)
     .map((l) => l.replace(/^[-*\s]+/, '').replace(/\s*\(.*$/, '').replace(/`/g, '').replace(/\s+/g, ' ').toLowerCase())
@@ -142,9 +149,31 @@ function shapeOf(plan) {
   let crews = []
   try {
     const j = JSON.parse(plan.planJson)
-    crews = (Array.isArray(j.crews) ? j.crews : []).map((c) => `${c && c.slug}:${c && c.verdict}`).sort()
+    crews = (Array.isArray(j.crews) ? j.crews : []).map((c) => `${c && c.slug}:${c && c.verdict}:${JSON.stringify(listOf(c && c.owns))}:${JSON.stringify(listOf(c && c.modules))}`).sort()
   } catch {}
   return { verdicts: verdicts.join('\n'), crews: crews.join('\n') }
+}
+
+// The revise brief: the findings, and the first plan verbatim (planJson, planMd and the PERSONA drafts of its report), so the
+// second designer edits that plan instead of planning again: slugs, owns, verdicts and drafts stay as they were. A persona file is
+// fenced with a run of backticks longer than any it holds, as the design engineer fences it.
+function reviseNote(first, findings) {
+  const fence = (text) => '`'.repeat(Math.max(4, ...(String(text).match(/`+/g) || []).map((m) => m.length + 1)))
+  const drafts = draftsOf(first.report).map((d) => `PERSONA: ${d.name}\n${fence(d.text)}\n${d.text}\n${fence(d.text)}`)
+  return [
+    'The product owner reviewed the plan and found these acceptance-criteria problems. Revise the plan to fix them. Change only the acceptance criteria, the acceptance tests and the test data: never the verdicts, the crew split or the scope. Keep every other part, and return the whole plan (and any persona drafts) again:',
+    '',
+    ...findings,
+    '',
+    'The plan under review, verbatim. Edit it; do not plan again. Keep every slug, verdict, owns and module as written here:',
+    '',
+    'planJson:',
+    first.planJson,
+    '',
+    'planMd:',
+    first.planMd,
+    ...(drafts.length ? ['', 'Persona drafts from its report, verbatim (return them again, changed only where a finding needs it):', '', ...drafts.flatMap((d) => [d, ''])] : []),
+  ].join('\n')
 }
 
 // One review: { verdict: 'ACCEPT' | 'REVISE' | 'UNCLEAR', findings: ['1. ...'] }.
@@ -187,13 +216,17 @@ let resultLabel = designerLabel
 let productOwner = { skipped: NO_PO }
 let recheck
 const judge = judgeFor(a.report)
-if (judge) {
+// A plan the checking engineer disagrees with goes back to the design engineer (run skill, step 2) whatever the product owner says,
+// so reviewing its acceptance criteria now would be paid for twice.
+if (disagrees()) {
+  productOwner = { skipped: 'checking engineer disagrees; plan goes back to step 2' }
+} else if (judge) {
   phase('Product owner')
   let r = await reviewOnce(judge, poLabel, a)
   let revised = false
   if (r.verdict === 'REVISE') {
     resultLabel = `${designerLabel}-po`
-    const b = await spawn('designer', resultLabel, designerPrompt(['The product owner reviewed the plan and found these acceptance-criteria problems. Revise the plan to fix them. Change only the acceptance criteria, the acceptance tests and the test data: never the verdicts, the crew split or the scope. Keep every other part, and return the whole plan (and any persona drafts) again:', '', ...r.findings].join('\n')), { schema: SCHEMA })
+    const b = await spawn('designer', resultLabel, designerPrompt(reviseNote(a, r.findings)), { schema: SCHEMA })
     if (!b || typeof b.planJson !== 'string') throw new Error(`${resultLabel} returned no plan`)
     const before = shapeOf(a)
     a = b
