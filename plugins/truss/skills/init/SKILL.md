@@ -96,6 +96,7 @@ The keys are declared in `truss-config.schema.json`, at `<this skill's base dir>
 - `writingSkill`: a writing skill the session lists, such as `technical-writer`.
 - `promptOverrides`: truss role (`foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`) to a file directly under `.claude/truss/prompts/`. Propose one only for a file that already exists there, such as `.claude/truss/prompts/qc-engineer.md`. The value is the path, never prompt text, and you don't create or edit the prompt files; they are the client's.
 - `reworkAllowance`: an integer of 0 or more, the number of fresh QC engineers a crew may start after QC engineer FAILs in one run (default 2). The design engineer copies it into a v2 `plan.json`. Propose it only when the file has no `reworkAllowance`; offer 2 and say that leaving it out also means 2.
+- `featureMap` and `adrDir`: where the crew knowledge step records what a crew learned: the feature map (default `docs/features.md`) and the directory for decision ADRs (default the `adr` key, else `docs/adr`). Propose `featureMap` only when the repo already has a feature or capability map at another path; propose `adrDir` only when the ADRs live somewhere other than `adr`. Each is a string path inside the repo (no leading `/`, drive letter, backslash or `..`). Leaving them out keeps the defaults.
 
 Also propose a PM section for the project's `CLAUDE.md`, unless it already has one naming the PM. Show the client this text:
 

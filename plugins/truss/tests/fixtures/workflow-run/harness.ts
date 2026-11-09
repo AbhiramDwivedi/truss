@@ -352,7 +352,7 @@ const typeOk = (t: string, v: unknown): boolean => {
 }
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
-/** Validates `value` against `schema` (keywords: type incl. arrays of types, required, properties, additionalProperties false, enum, const, minLength, maxLength, minimum, integer, items, uniqueItems, allOf, if/then, oneOf, not, boolean schemas, format date-time); returns a list of error strings that name the path and the keyword (e.g. "/: required run"). */
+/** Validates `value` against `schema` (keywords: type incl. arrays of types, required, properties, additionalProperties false, enum, const, minLength, maxLength, pattern, minimum, integer, items, uniqueItems, allOf, if/then, oneOf, not, boolean schemas, format date-time); returns a list of error strings that name the path and the keyword (e.g. "/: required run"). */
 export function validate(schema: any, value: unknown, path = ''): string[] {
   if (schema === true || schema === undefined) return []
   if (schema === false) return [`${path}/: schema is false`]
@@ -367,6 +367,7 @@ export function validate(schema: any, value: unknown, path = ''): string[] {
   if (typeof value === 'string') {
     if (schema.minLength !== undefined && value.length < schema.minLength) errs.push(`${at}: minLength ${schema.minLength}`)
     if (schema.maxLength !== undefined && value.length > schema.maxLength) errs.push(`${at}: maxLength ${schema.maxLength}`)
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) errs.push(`${at}: pattern ${schema.pattern}`)
     if (schema.format === 'date-time' && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(value)) errs.push(`${at}: format date-time`)
   }
   if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) errs.push(`${at}: minimum ${schema.minimum}`)

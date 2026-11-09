@@ -89,7 +89,7 @@ t('po 3: with no persona but a PERSONA: product-owner draft, the draft body is i
   const r = await execPlan(planArgs(), { 'truss-designer': ARCH(withDraft()), 'truss-checker': AGREE, 'truss-po': ACCEPT })
   assert.ifError(r.error)
   const c = r.calls[2]
-  assert.equal(c.opts.agentType, 'truss:checking-engineer') // the read-only checker role's type, never a writing type
+  assert.equal(c.opts.agentType, 'truss:judge') // the neutral read-only host, never a writing type and never the checker's own prompt
   assert.ok(c.prompt.startsWith('You are the product-owner persona. Its definition follows and is your system prompt for this task:\n\n'), c.prompt.slice(0, 120))
   assert.ok(c.prompt.includes(PO_BODY))
   assert.ok(!c.prompt.includes('name: product-owner'), 'the frontmatter is not inlined')
@@ -99,10 +99,10 @@ t('po 3: with no persona but a PERSONA: product-owner draft, the draft body is i
 })
 
 t('po 4: an unloaded read-only product-owner persona runs on its inlineType with its body inlined', async () => {
-  const p = { ...PO_PERSONA, loaded: false, body: PO_BODY, inlineType: 'truss:checking-engineer' }
+  const p = { ...PO_PERSONA, loaded: false, body: PO_BODY, inlineType: 'truss:judge' }
   const r = await execPlan(planArgs({ personas: { 'product-owner': p } }), { 'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': ACCEPT })
   assert.ifError(r.error)
-  assert.equal(r.calls[2].opts.agentType, 'truss:checking-engineer')
+  assert.equal(r.calls[2].opts.agentType, 'truss:judge')
   assert.ok(r.calls[2].prompt.includes(PO_BODY))
 })
 
@@ -152,6 +152,61 @@ t('po 8: an UNCOVERED line returns before any review; a reply with no PO: line i
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po'])
   assert.equal(r.result.productOwner.verdict, 'UNCLEAR')
   assert.equal(r.result.productOwner.open.length, 1)
+})
+
+// ---------------------------------------------------------------- re-check of a revised plan
+
+const PLAN_A = (verdict = 'extend', slugs = ['api', 'ui']) => ({
+  planJson: JSON.stringify({ crews: slugs.map((slug) => ({ slug, verdict })) }),
+  planMd: `# Plan\n\nVerdicts:\n- store: ${verdict} (reuses the seam)\n- web: extend (no new seam)\n\n| 1 | api | ${verdict} |\n`,
+})
+const PO_ARGS = () => planArgs({ personas: { 'product-owner': PO_PERSONA } })
+
+t('recheck 1: the revision brief limits the designer to acceptance criteria, acceptance tests and test data', async () => {
+  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
+  assert.ifError(r.error)
+  const p = r.calls[3].prompt
+  assert.match(p, /Change only the acceptance criteria, the acceptance tests and the test data/)
+  assert.match(p, /never the verdicts, the crew split or the scope/)
+})
+
+t('recheck 2: a revised plan with the same verdict lines and crews is not re-checked; the result says so', async () => {
+  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
+  assert.ifError(r.error)
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2'])
+  assert.equal(r.result.recheck.ran, false)
+})
+
+t('recheck 3: a revision that changes a verdict re-runs the checking engineer once on the revised plan and reports it', async () => {
+  const r = await execPlan(PO_ARGS(), {
+    'truss-designer': ARCH('R', PLAN_A('extend')), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A('change')), 'truss-po-2': ACCEPT,
+    'truss-checker-2': 'REVIEW: disagree\nClient: new seam needs the client',
+  })
+  assert.ifError(r.error)
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2', 'truss-checker-2'])
+  const c = r.calls[5]
+  assert.equal(c.opts.agentType, 'truss:checking-engineer')
+  assert.ok(c.prompt.includes('"verdict":"change"'), 'the re-check sees the revised plan')
+  assert.equal(r.result.recheck.ran, true)
+  assert.deepEqual(r.result.recheck.reviews, ['REVIEW: disagree'])
+  assert.equal(r.result.stillDisagree, true)
+  assert.ok(r.result.client.includes('Client: new seam needs the client'))
+})
+
+t('recheck 4: a revision that changes the crew list re-runs it; a fix run labels it truss-checker-3-2', async () => {
+  const r = await execPlan(planArgs({ fix: true, personas: { 'product-owner': PO_PERSONA } }), {
+    'truss-designer-3': ARCH('R', PLAN_A('extend', ['api'])), 'truss-checker-3': AGREE, 'truss-po-3': REVISE(), 'truss-designer-3-po': ARCH('R2', PLAN_A('extend', ['api', 'ui'])), 'truss-po-4': ACCEPT,
+    'truss-checker-3-2': AGREE,
+  })
+  assert.ifError(r.error)
+  assert.deepEqual(r.labels.slice(-1), ['truss-checker-3-2'])
+  assert.equal(r.result.recheck.ran, true)
+  assert.equal(r.result.stillDisagree, false)
+})
+
+t('recheck 5: no product-owner revision means no recheck field', async () => {
+  const r = await execPlan(planArgs(), { 'truss-designer': ARCH(), 'truss-checker': AGREE })
+  assert.ok(!Object.hasOwn(r.result, 'recheck'))
 })
 
 // ---------------------------------------------------------------- plan-write persona drafts

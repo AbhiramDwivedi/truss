@@ -225,7 +225,10 @@ const stopped = (r, tag, at) => {
   assert.deepEqual(Object.keys(r).sort(), ['at', 'slug', 'state', 'tag', 'text'])
 }
 const passedShape = (r, slug, head, qc, e = entry(slug), deferred = []) => {
-  assert.deepEqual(r, { slug, state: 'passed', head, base: e.base, qc, ...(e.stressTest ? { deferred } : {}) })
+  // ADR-0033: a passed crew also carries knowledge {items, ran, sourceChanges} (tests/crew-knowledge.check.ts pins its values)
+  const { knowledge, ...rest } = r
+  assert.deepEqual(Object.keys(knowledge ?? {}).sort(), ['items', 'ran', 'sourceChanges'])
+  assert.deepEqual(rest, { slug, state: 'passed', head, base: e.base, qc, ...(e.stressTest ? { deferred } : {}) })
 }
 const call = (r, label) => r.calls.find((c) => c.label === label)
 const had = (r, label) => r.calls.some((c) => c.label === label)

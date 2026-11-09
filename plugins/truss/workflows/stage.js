@@ -47,7 +47,7 @@ const PROOF = [
 // ADR-0033: the kinds of a learned item; kind decides the default home of the item when it names no target
 const LEARNED_KINDS = ['feature', 'persona', 'product', 'decision']
 // ADR-0033: what every member's brief asks for in the learned field of its report
-const LEARNED = `Learned items: in the learned field of your report, list each fact a later crew will need, so it need not re-analyse the codebase: new or moved functionality and its entry points; a stack rule or recurring mistake for a persona; a domain or user truth; a design decision. Each item is {kind: ${LEARNED_KINDS.join(' | ')}, text, source, target}: source is a file:line, a command or a finding; target is optional, the repo path the item belongs in (any doc: a README, a runbook, a file under docs/knowledge/, AGENTS.md, CLAUDE.md, a persona file, the product-owner file, an ADR or the architecture doc). Leave the field empty when nothing is new, and list no more than a later crew would miss.`
+const LEARNED = `Learned items: in the learned field of your report, list each fact a later crew will need, so it need not re-analyse the codebase: new or moved functionality and its entry points; a stack rule or recurring mistake for a persona; a domain or user truth; a design decision. Each item is {kind: ${LEARNED_KINDS.join(' | ')}, text, source, target}: source is a file:line, a command or a finding; target is optional, the repo path the item belongs in, and only a markdown file (*.md) can be one: a README, a runbook, a file under docs/knowledge/, AGENTS.md, CLAUDE.md, a persona file, the product-owner file, an ADR or the architecture doc. Never name a code file as a target. Leave the field empty when nothing is new, and list no more than a later crew would miss.`
 
 const REFUSAL ='A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
 const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
@@ -188,7 +188,7 @@ class Stop {
 const directionOf = (entry) => (entry.direction && typeof entry.direction === 'object' && typeof entry.direction.label === 'string' && typeof entry.direction.text === 'string' ? { label: entry.direction.label, text: entry.direction.text } : null)
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: [], decisions: [], asked: new Set(), polling: false, knowledgeRan: false }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: [], decisions: [], asked: new Set(), polling: false, knowledgeRan: false, sourceChanges: [] }
 }
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
@@ -202,8 +202,16 @@ const uxResult = (crew) => ({
   findings: crew.uxReview ? crew.uxReview.findings : [],
 })
 
+// the crew result's knowledge field (the retro's signal for optional learning): how many learned items members reported (a product
+// call's item is not one), whether the knowledge step ran, and how many source files the diff added, renamed or deleted
+// A stopped crew carries it only when something was learned or seen (a crew stopped at red or split never reached the step, so it is no skip).
+const knowledgeResult = (crew, stopped = false) => {
+  const k = { items: crew.learned.filter((i) => i.member !== 'po').length, ran: crew.knowledgeRan, sourceChanges: crew.sourceChanges.length }
+  return stopped && !k.items && !k.ran && !k.sourceChanges ? {} : { knowledge: k }
+}
+
 function stopResult(crew, err) {
-  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew) }
+  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
   if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
   return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
@@ -643,12 +651,13 @@ function learnedOf(report) {
 
 const oneLine = (v, n = 500) => String(v ?? '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, n)
 
-// every crew decision of the run so far, as factory decisions prints it (crew and reply status per call); '' when it gave none
+// every crew decision of the run so far, one JSON line each, from the {decisions: [...]} object factory decisions prints (crew
+// and reply status per call); '' when it gave none or something else
 async function runDecisions(crew) {
   try {
     const r = await runFactory(crew, 'decisions', 'ok')
-    const out = String(r.out || '').replace(/\r/g, '').replace(/^exit -?\d+\n/, '').split('\n').filter((l) => !l.startsWith(STATUS_PREFIX)).join('\n').trim()
-    return out === '[]' || out === '{}' ? '' : clip(out)
+    const list = r.parsed && Array.isArray(r.parsed.decisions) ? r.parsed.decisions.filter(isPlainObject) : []
+    return list.length ? clip(list.map((d) => JSON.stringify(d)).join('\n')) : ''
   } catch (err) {
     if (err instanceof Stop) throw err
     return ''
@@ -1121,6 +1130,7 @@ async function green(crew) {
     if (g.met) {
       if (typeof g.parsed.head !== 'string' || !g.parsed.head) throw new Stop('BLOCKED', `the green check gave no head:\n${g.out}`, 'green')
       crew.head = g.parsed.head
+      crew.sourceChanges = sourceChangesOf(g.parsed)
       return
     }
     const env = envOf(g)
@@ -1241,13 +1251,9 @@ async function scope(crew) {
   crew.step = 'scope'
   const r = await runFactory(crew, `owns-check --slug ${sh(crew.slug)}`, 'ok')
   if (r.met) return
-  let outside = r.parsed && Array.isArray(r.parsed.outside) ? r.parsed.outside : []
-  // ADR-0033: the files the knowledge step edits (feature map, persona files, product-owner file, ADR dir, item targets) are not
-  // the crew's code; they never fail the owns check
-  if (crew.knowledgeRan && outside.length) {
-    outside = outside.filter((f) => !knowledgeOwns(crew, String(f)))
-    if (!outside.length) return
-  }
+  // ADR-0033: factory owns-check itself leaves out the doc files the crew's knowledge commit alone changed (bin/factory.ts
+  // knowledgeDocs); stage.js exempts nothing, so whatever it still lists is outside
+  const outside = r.parsed && Array.isArray(r.parsed.outside) ? r.parsed.outside : []
   const names = outside.length ? outside.join(', ') : r.out
   throw new Stop('QUESTION', `Files changed outside the crew owns: ${names}. Extend owns?`, 'scope')
 }
@@ -1359,17 +1365,23 @@ const productOwnerFile = () => {
   const f = PERSONAS['product-owner'] && PERSONAS['product-owner'].file
   return typeof f === 'string' && f ? repoRel(f) : null
 }
-// whether a changed file is one the knowledge step may edit
-function knowledgeOwns(crew, file) {
-  return file === FEATURE_MAP || file.startsWith(`${ADR_DIR}/`) || crewPersonaFiles(crew).includes(file) || file === productOwnerFile() || crew.learned.some((i) => i.target && repoRel(i.target).replace(/^\.\//, '') === file)
+// the well-formed entries of the green check's sourceChanges: source files the crew diff added, renamed or deleted
+function sourceChangesOf(parsed) {
+  const list = parsed && Array.isArray(parsed.sourceChanges) ? parsed.sourceChanges : []
+  return list
+    .filter((c) => isPlainObject(c) && (c.status === 'A' || c.status === 'D' || c.status === 'R') && typeof c.path === 'string' && c.path && (c.status !== 'R' || (typeof c.from === 'string' && c.from)))
+    .map((c) => ({ status: c.status, path: c.path, ...(c.status === 'R' ? { from: c.from } : {}) }))
 }
+const isMarkdown = (p) => /\.md$/i.test(String(p))
 
 function knowledgePrompt(crew, resume) {
   const e = crew.e
-  const items = crew.learned.map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}` : ''}; from ${i.member}, task ${i.task})`)
+  const items = crew.learned.map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}${isMarkdown(i.target) ? '' : ' (not markdown: skip it and list it in your report)'}` : ''}; from ${i.member}, task ${i.task})`)
+  const moved = crew.sourceChanges.map((c) => (c.status === 'A' ? `- added ${c.path}` : c.status === 'D' ? `- deleted ${c.path}` : `- renamed ${c.from} -> ${c.path}`))
   const body = [
     `Task: record what crew ${crew.slug} learned`,
     `Learned items: ${items.length ? `\n${items.join('\n')}` : 'none reported'}`,
+    ...(moved.length ? [`Source files the diff added, renamed or deleted (from git diff --name-status -M; tests, fixtures and docs left out):\n${moved.join('\n')}\nGive each user-facing capability among them a feature-map entry, and fix the feature-map entries and persona paths that name a deleted or renamed file. A file that is only an internal helper needs none.`] : []),
     `Diff range: ${e.base}...${crew.head || 'HEAD'} (git diff ${e.base}...${crew.head || 'HEAD'}, in the crew checkout)`,
     `Feature map: ${FEATURE_MAP}`,
     `Persona files the crew used: ${crewPersonaFiles(crew).join(', ') || 'none'}`,
@@ -1377,7 +1389,7 @@ function knowledgePrompt(crew, resume) {
     `ADR directory: ${ADR_DIR}`,
     '',
     'Why: a later crew must find where functionality lives, what a persona must know and what the product owner decided from these docs, not by analysing the codebase again.',
-    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path, whatever it is. An item with no target goes by kind: feature, to the feature map; persona, to the Standards or Review checklist of the persona file; product, to the product-owner file; decision, to a new ADR in the ADR directory.`,
+    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes by kind: feature, to the feature map; persona, to the Standards or Review checklist of the persona file; product, to the product-owner file; decision, to a new ADR in the ADR directory.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. The persona files get any Standards or Review checklist item the crew learned, and a path they name that the diff moved is fixed. The product-owner file gets the product calls this crew made and any domain truth.`,
     'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Recording nothing for an item is allowed when the code already makes it obvious.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\` and report DONE.`,
@@ -1387,10 +1399,11 @@ function knowledgePrompt(crew, resume) {
   return `Knowledge: crew ${crew.slug}\n${memberPrompt(crew, 'writer', { start, body, noLearned: true })}`
 }
 
-// Runs the writer member that records what the crew learned. Only when a member (or a product call) reported learned items and the
-// crew has code tasks; otherwise skipped with no run. Returns whether the writer ran (its commit is on the crew branch).
+// Runs the writer member that records what the crew learned. Only when a member (or a product call) reported learned items, or the
+// green check saw the diff add, rename or delete non-test source files (sourceChanges, from git), and the crew has code tasks;
+// otherwise skipped with no run. Returns whether the writer ran (its commit is on the crew branch).
 async function knowledge(crew) {
-  if (!crew.learned.length || !hasCodeTasks(crew)) return false
+  if ((!crew.learned.length && !crew.sourceChanges.length) || !hasCodeTasks(crew)) return false
   crew.step = 'knowledge'
   const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned` }, 'knowledge')
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
@@ -1491,7 +1504,7 @@ async function qc(crew) {
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length

@@ -97,9 +97,9 @@ t('inline 1: a read-only persona carries inlineType, an editing persona does not
     'dev-write': file('dev-write', 'Read, Write, Edit, Bash'),
   })
   assert.equal(p['judge-bash'].readOnly, true)
-  assert.equal(p['judge-bash'].inlineType, 'truss:checking-engineer')
-  assert.equal(p['judge-plain'].inlineType, 'truss:sizing-engineer')
-  assert.equal(p['judge-web'].inlineType, 'truss:checking-engineer')
+  assert.equal(p['judge-bash'].inlineType, 'truss:judge')
+  assert.equal(p['judge-plain'].inlineType, 'truss:judge')
+  assert.equal(p['judge-web'].inlineType, 'truss:judge')
   assert.ok(!Object.hasOwn(p['dev-all'], 'inlineType'))
   assert.ok(!Object.hasOwn(p['dev-write'], 'inlineType'))
   for (const type of new Set(['judge-bash', 'judge-plain', 'judge-web'].map((n) => p[n].inlineType))) {
@@ -117,6 +117,17 @@ t('inline 2: inlineType is present on an unloaded and a loaded read-only persona
     const r = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', dir, '--repo', repo, '--brief-file', brief], repo, { TRUSS_SESSION_START: String(start) })
     const j = r.json.truss.personas.judge
     assert.equal(j.loaded, loaded)
-    assert.equal(j.inlineType, 'truss:sizing-engineer')
+    assert.equal(j.inlineType, 'truss:judge')
   }
+})
+
+t('inline 3: agents/judge.md is a neutral read-only host: fixed name, description, tools, model, effort, and the BLOCKED reply', () => {
+  const text = readFileSync(`${PLUGIN}/agents/judge.md`, 'utf8')
+  const fm = text.split('---')[1]
+  assert.match(fm, /^name: judge$/m)
+  assert.match(fm, /^description: Runs a read-only judge persona whose definition is inlined at the top of its brief\. Never writes, edits, commits or pushes\. Started by truss workflows only\.$/m)
+  assert.match(fm, /^model: sonnet$/m)
+  assert.match(fm, /^effort: medium$/m)
+  assert.deepEqual(agentTools('judge'), ['Read', 'Grep', 'Glob', 'Bash'])
+  assert.ok(text.includes('BLOCKED: no persona definition in the brief'))
 })

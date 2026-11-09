@@ -71,7 +71,7 @@ async function exec(args, o = {}) {
       if (out === undefined) {
         const plain = expect === 'red' ? { ok: true } : { ok: true, head: HEAD }
         out =
-          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : cmd === 'crew-decision' ? rj({ id: `d${n + 1}` }) : cmd === 'decision-replies' ? rj([]) : cmd === 'decisions' ? rj([]) : rj({ merged: true })
+          cmd === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 }) : cmd === 'reap' ? rj({ reaped: [], skipped: [] }) : cmd === 'check' ? rj(plain) : cmd === 'integrate' ? rj({ merged: true }) : cmd === 'owns-check' ? rj({ ok: true, outside: [] }) : cmd === 'tests-check' ? rj({ ok: true, tests: [] }) : cmd === 'crew-decision' ? rj({ id: `d${n + 1}` }) : cmd === 'decision-replies' ? rj([]) : cmd === 'decisions' ? rj({ decisions: [] }) : rj({ merged: true })
       }
       await ticks(1)
       return out
@@ -274,15 +274,80 @@ t('knowledge 11: a knowledge writer that ends BLOCKED stops the crew', async () 
   assert.equal(s.at, 'knowledge')
 })
 
-t('knowledge 12: files the knowledge step changes outside the crew owns do not fail the scope check', async () => {
-  const runner = ({ cmd }) => (cmd === 'owns-check' ? rj({ ok: false, outside: ['docs/features.md', '.claude/agents/frontend-ui-developer.md', '.claude/agents/product-owner.md', 'docs/adr/0040-x.md'] }, 2) : undefined)
-  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(), runner })
+t('knowledge 12: the scope check is factory owns-check alone: stage.js exempts nothing, so a knowledge-step file it reports stops the crew', async () => {
+  // factory owns-check exempts the knowledge commit's doc files itself (tests/knowledge-scope.check.ts); whatever it still lists is outside
+  const bad = (out) => ({ cmd }) => (cmd === 'owns-check' ? rj({ ok: false, outside: out }, 2) : undefined)
+  for (const out of [['docs/features.md'], ['docs/features.md', 'src/other.ts'], ['src/other.ts']]) {
+    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(), runner: bad(out) })
+    const s = r.result.find((x) => x.slug === 'a')
+    assert.equal(s.state, 'stopped', out.join(','))
+    assert.equal(s.at, 'scope')
+    for (const f of out) has(s.text, f)
+  }
+})
+
+t('knowledge 12b: the brief tells the writer to skip a learned item whose target is not a markdown file and to list it in its report', async () => {
+  const labels = labelsFor({ 'a-builder': done('feat/b', { learned: [{ ...ITEM, target: 'docs/knowledge/export.md' }, { kind: 'decision', text: 'queue exports', source: 'src/q.ts:3', target: 'src/q.ts' }] }) })
+  const r = await runStage([OLD()], { personas: PERSONAS, labels })
+  const p = callOf(r, 'a-writer').prompt
+  has(p, 'target: docs/knowledge/export.md')
+  assert.ok(/queue exports[^\n]*target: src\/q\.ts \(not markdown: skip it and list it in your report\)/.test(p), p)
+  assert.ok(!/export button[^\n]*not markdown/.test(p), 'a markdown target is not flagged')
+  has(p, 'Only a markdown file (*.md) is a target')
+  hasnt(p, 'whatever it is')
+})
+
+// ---------------------------------------------------------------- new or moved source files start the step
+
+const CHANGES = [{ status: 'A', path: 'src/export/menu.ts' }, { status: 'R', path: 'src/ui/b.ts', from: 'src/old/b.ts' }, { status: 'D', path: 'src/legacy.py' }]
+const greenWith = (sourceChanges) => ({ cmd, expect }) => (cmd === 'check' && expect === 'green' ? rj({ ok: true, head: HEAD, sourceChanges }) : undefined)
+
+t('knowledge 15: with no learned item, source files the diff added, renamed or deleted start the step; the brief lists them and asks for feature-map entries', async () => {
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(PLAIN), runner: greenWith(CHANGES) })
   passed(r)
-  const bad = (out) => async ({ cmd }) => (cmd === 'owns-check' ? rj({ ok: false, outside: out }, 2) : undefined)
-  const r2 = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(), runner: bad(['docs/features.md', 'src/other.ts']) })
-  const s = r2.result.find((x) => x.slug === 'a')
+  const p = callOf(r, 'a-writer').prompt
+  assert.ok(p.startsWith('Knowledge: crew a\n'))
+  has(p, 'Learned items: none reported')
+  has(p, 'Source files the diff added, renamed or deleted')
+  has(p, 'added src/export/menu.ts')
+  has(p, 'renamed src/old/b.ts -> src/ui/b.ts')
+  has(p, 'deleted src/legacy.py')
+  has(p, 'feature-map entry')
+  assert.equal(greens(r).length, 2, 'green again on the knowledge commit')
+  assert.deepEqual(r.result.find((x) => x.slug === 'a').knowledge, { items: 0, ran: true, sourceChanges: 3 })
+})
+
+t('knowledge 16: no source change and no learned item: the step is skipped; a malformed sourceChanges entry counts for nothing', async () => {
+  for (const sc of [undefined, [], 'junk', [{ status: 'M', path: 'src/a.ts' }, { status: 'A' }, null, 5]]) {
+    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(PLAIN), runner: greenWith(sc) })
+    passed(r)
+    assert.ok(!r.labels.includes('a-writer'), JSON.stringify(sc))
+    assert.deepEqual(r.result.find((x) => x.slug === 'a').knowledge, { items: 0, ran: false, sourceChanges: 0 })
+  }
+})
+
+t('knowledge 17: a crew of only writer tasks skips the step even when source files changed', async () => {
+  const labels = { 'a-planner': PLAN(TW), 'a-writer': done('feat/w'), 'a-qc': PASS }
+  const r = await runStage([OLD('a', { owns: ['docs/**'] })], { personas: PERSONAS, labels, runner: greenWith(CHANGES) })
+  passed(r)
+  assert.ok(!r.calls.some((c) => c.prompt.startsWith('Knowledge: crew')))
+})
+
+t('knowledge 18: the crew result records how many learned items members reported and whether the step ran, on a passed and a stopped crew', async () => {
+  const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-builder': done('feat/b', { learned: [ITEM, { ...ITEM, text: 'second' }] }) }) })
+  assert.deepEqual(r.result.find((x) => x.slug === 'a').knowledge, { items: 2, ran: true, sourceChanges: 0 })
+  const none = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(PLAIN) })
+  assert.deepEqual(none.result.find((x) => x.slug === 'a').knowledge, { items: 0, ran: false, sourceChanges: 0 })
+  // a product call's item is not a member's learned item
+  const asked = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: DECIDE\nInclude archived items.\nReason: r' }) })
+  assert.deepEqual(asked.result.find((x) => x.slug === 'a').knowledge, { items: 0, ran: true, sourceChanges: 0 })
+  // stopped before the step with nothing learned: it never reached the step, so it is no skip and carries no field; one that had learned something does
+  const early = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-builder': done('feat/b', { marker: 'BLOCKED', text: 'no' }) }) })
+  assert.ok(!Object.hasOwn(early.result.find((x) => x.slug === 'a'), 'knowledge'))
+  const stopped = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor(), runner: ({ cmd }) => (cmd === 'owns-check' ? rj({ ok: false, outside: ['x.ts'] }, 2) : undefined) })
+  const s = stopped.result.find((x) => x.slug === 'a')
   assert.equal(s.state, 'stopped')
-  has(s.text, 'src/other.ts')
+  assert.deepEqual(s.knowledge, { items: 1, ran: true, sourceChanges: 0 })
 })
 
 // ---------------------------------------------------------------- QC brief
@@ -415,7 +480,7 @@ t('product 5: the second product call of a crew sees the earlier ones', async ()
 })
 
 t("product 5b: the brief carries every crew's decisions from factory decisions, and the rule to follow or escalate on them", async () => {
-  const other = JSON.stringify([{ id: 'x7', crew: 'b', task: 'build-api', question: 'Do exports include archived items?', answer: 'No, archived items are excluded', reply: 'ack' }])
+  const other = JSON.stringify({ decisions: [{ id: 'x7', crew: 'b', task: 'build-api', question: 'Do exports include archived items?', answer: 'No, archived items are excluded', reply: 'ack' }] })
   const runner = ({ cmd }) => (cmd === 'decisions' ? { exit: 0, stdout: other } : undefined)
   const labels = labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: ESCALATE\ncontradicts crew b' })
   const r = await runStage([OLD()], { personas: PERSONAS, labels, runner })

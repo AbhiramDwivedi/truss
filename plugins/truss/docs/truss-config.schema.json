@@ -17,6 +17,18 @@
       "type": "string",
       "minLength": 1
     },
+    "featureMap": {
+      "description": "0.23.0. The feature map, relative to the repo root, that the crew knowledge step updates (truss ADR-0033). Default docs/features.md. A path inside the repo: no leading slash, drive letter, backslash or .. segment.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
+    "adrDir": {
+      "description": "0.23.0. The directory the crew knowledge step writes decision ADRs to, relative to the repo root. Default: the adr key, else docs/adr. A path inside the repo, as featureMap is.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
     "agentCap": {
       "description": "Deprecated and ignored since truss 0.7.0. Still accepted so older configs validate.",
       "type": "integer",

@@ -97,21 +97,18 @@ const bodyOf = (text) => {
 
 // Who judges: the project's product-owner persona, else the product-owner draft in this plan's report, else nobody.
 // A judge that is not loaded as its own type runs on a read-only agent type with its definition inlined, never on a type that can write.
+// The neutral read-only host (agents/judge.md): it takes the inlined persona as its instructions and holds no write tool.
+const JUDGE_HOST = 'truss:judge'
 function judgeFor(report) {
-  const readOnlyHost = () => {
-    const r = F.roles && F.roles.checker
-    return r && typeof r.agentType === 'string' && r.agentType && !BAD_TYPES.includes(r.agentType) ? r : undefined
-  }
   const p = PERSONAS['product-owner']
   if (p && typeof p === 'object') {
     const effort = p.effort === 'low' ? 'low' : 'medium' // a plan-time agent never runs above medium
     if (p.loaded === true && typeof p.agentType === 'string' && p.agentType && !BAD_TYPES.includes(p.agentType)) return { source: 'persona', agentType: p.agentType, model: p.model === 'opus' ? 'opus' : 'sonnet', effort }
-    const host = typeof p.inlineType === 'string' && p.inlineType && !BAD_TYPES.includes(p.inlineType) ? p.inlineType : readOnlyHost() && readOnlyHost().agentType
-    if (host) return { source: 'persona', agentType: host, model: p.model === 'opus' ? 'opus' : 'sonnet', effort, body: String(p.body || '') }
+    const host = typeof p.inlineType === 'string' && p.inlineType && !BAD_TYPES.includes(p.inlineType) ? p.inlineType : JUDGE_HOST
+    return { source: 'persona', agentType: host, model: p.model === 'opus' ? 'opus' : 'sonnet', effort, body: String(p.body || '') }
   }
   const draft = draftsOf(report).find((d) => d.name === 'product-owner')
-  const r = readOnlyHost()
-  if (draft && r && (r.model === 'opus' || r.model === 'sonnet') && (r.effort === 'low' || r.effort === 'medium')) return { source: 'draft', agentType: r.agentType, model: r.model, effort: r.effort, body: bodyOf(draft.text) }
+  if (draft) return { source: 'draft', agentType: JUDGE_HOST, model: 'sonnet', effort: 'medium', body: bodyOf(draft.text) }
   return undefined
 }
 
@@ -134,6 +131,20 @@ function poPrompt(judge, a) {
     'Reply: first line `PO: ACCEPT` or `PO: REVISE`. On REVISE, then numbered findings, one per line: `<n>. <crew>: <what is wrong>. Fix: <fix>`.',
   ].join('\n')
   return judge.body === undefined ? brief : `You are the product-owner persona. Its definition follows and is your system prompt for this task:\n\n${judge.body.replace(/\s+$/, '')}\n---\n${brief}`
+}
+
+// What a revision must not change: the verdict lines of plan.md (`<module>: extend|change (...)`) and the crews of plan.json
+// (slug and verdict), each as one comparable string. A plan.json that does not parse gives no crews.
+function shapeOf(plan) {
+  const verdicts = linesOf(plan.planMd, /^[-*\s]*`?[^:|`]+`?\s*:\s*(extend|change)\b/i)
+    .map((l) => l.replace(/^[-*\s]+/, '').replace(/\s*\(.*$/, '').replace(/`/g, '').replace(/\s+/g, ' ').toLowerCase())
+    .sort()
+  let crews = []
+  try {
+    const j = JSON.parse(plan.planJson)
+    crews = (Array.isArray(j.crews) ? j.crews : []).map((c) => `${c && c.slug}:${c && c.verdict}`).sort()
+  } catch {}
+  return { verdicts: verdicts.join('\n'), crews: crews.join('\n') }
 }
 
 // One review: { verdict: 'ACCEPT' | 'REVISE' | 'UNCLEAR', findings: ['1. ...'] }.
@@ -174,6 +185,7 @@ const disagrees = () => reviews.some((l) => /^REVIEW:\s*disagree\b/i.test(l))
 // a second REVISE stays in the result as open findings for the PM to rule on. The checking engineer's review above is of the first plan.
 let resultLabel = designerLabel
 let productOwner = { skipped: NO_PO }
+let recheck
 const judge = judgeFor(a.report)
 if (judge) {
   phase('Product owner')
@@ -181,14 +193,30 @@ if (judge) {
   let revised = false
   if (r.verdict === 'REVISE') {
     resultLabel = `${designerLabel}-po`
-    const b = await spawn('designer', resultLabel, designerPrompt(['The product owner reviewed the plan and found these acceptance-criteria problems. Revise the plan to fix them, keep every other part, and return the whole plan (and any persona drafts) again:', '', ...r.findings].join('\n')), { schema: SCHEMA })
+    const b = await spawn('designer', resultLabel, designerPrompt(['The product owner reviewed the plan and found these acceptance-criteria problems. Revise the plan to fix them. Change only the acceptance criteria, the acceptance tests and the test data: never the verdicts, the crew split or the scope. Keep every other part, and return the whole plan (and any persona drafts) again:', '', ...r.findings].join('\n')), { schema: SCHEMA })
     if (!b || typeof b.planJson !== 'string') throw new Error(`${resultLabel} returned no plan`)
+    const before = shapeOf(a)
     a = b
     revised = true
     r = await reviewOnce(judge, poLabel2, a)
+    // The revision may only touch acceptance criteria. When its verdict lines or crew list differ from the first plan anyway,
+    // the checking engineer's review of the first plan no longer covers it, so it reviews the revised plan once.
+    const after = shapeOf(a)
+    const changed = []
+    if (before.verdicts !== after.verdicts) changed.push('verdict lines')
+    if (before.crews !== after.crews) changed.push('crew list')
+    if (changed.length) {
+      const text = await spawn('checker', `${checkerLabel}-2`, checkerPrompt(a))
+      if (text == null) throw new Error(`${checkerLabel}-2 returned nothing`)
+      addClient(text)
+      const rr = linesOf(text, /^REVIEW:/)
+      recheck = { ran: true, reason: `the revised plan changed its ${changed.join(' and ')}`, reviews: rr, stillDisagree: rr.some((l) => /^REVIEW:\s*disagree\b/i.test(l)) }
+    } else {
+      recheck = { ran: false, reason: 'the revised plan kept the first plan\'s verdict lines and crew list' }
+    }
   }
   productOwner = { judge: judge.source, verdict: r.verdict, revised, open: r.verdict === 'ACCEPT' ? [] : r.findings }
 }
 const personaDrafts = draftsOf(a.report).map((d) => d.name)
 
-return { designerLabel: resultLabel, reviews, client, stillDisagree: disagrees(), productOwner, ...(personaDrafts.length ? { personaDrafts } : {}) }
+return { designerLabel: resultLabel, reviews, client, stillDisagree: recheck && recheck.ran ? recheck.stillDisagree : disagrees(), productOwner, ...(recheck ? { recheck } : {}), ...(personaDrafts.length ? { personaDrafts } : {}) }

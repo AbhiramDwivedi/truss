@@ -14,7 +14,7 @@ import { FIXTURES, mktmp, NR, retro, runCounts, snapshot } from './retro-counts-
 const PRE = join(FIXTURES, 'retro-pre040')
 const NEW = join(FIXTURES, 'retro-040')
 const TOP_KEYS = ['leftovers', 'leftoverDetails', 'retro', 'dir', 'split', 'runs', 'qcFiles', 'plan', 'eventsSkipped', 'eventsOutsideRuns'].sort()
-const RUN_KEYS = ['started', 'goal', 'decisions', 'freeform', 'recommendations', 'messages', 'spawns', 'stalls', 'escalations', 'qcs', 'allowancesSpent', 'fetches', 'refusals', 'extendPasses', 'defaultDecisions', 'openClientActions'].sort()
+const RUN_KEYS = ['started', 'goal', 'decisions', 'freeform', 'recommendations', 'messages', 'spawns', 'stalls', 'escalations', 'qcs', 'allowancesSpent', 'knowledge', 'fetches', 'refusals', 'extendPasses', 'defaultDecisions', 'openClientActions'].sort()
 
 const cache = new Map()
 const out = (path: string) => {

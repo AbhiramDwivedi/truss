@@ -172,6 +172,23 @@ function configOf(repo: string): Obj {
 }
 const intOr = (v: unknown, dflt: number, min: number): number => (Number.isInteger(v) && (v as number) >= min ? (v as number) : dflt)
 
+// A path key of truss.json (featureMap, adrDir): a non-empty string that is relative and stays inside the repo (no `..` segment, no
+// drive letter, no backslash), as a clean repo-relative path with no leading ./ or trailing /; undefined for anything else.
+export function repoPathOf(v: unknown): string | undefined {
+  if (typeof v !== 'string' || v.trim() === '' || /[\r\n\\]/.test(v) || v.startsWith('/') || /^[A-Za-z]:/.test(v)) return undefined
+  if (v.split('/').some((s) => s === '..')) return undefined
+  const clean = v.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '')
+  return clean === '' ? undefined : clean
+}
+// The knowledge step's doc keys (ADR-0033) as stage.js args: only the ones set to a valid path. adrDir falls back to `adr`, the
+// ADR directory key init already writes.
+function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
+  const cfg = configOf(repo)
+  const featureMap = repoPathOf(cfg.featureMap)
+  const adrDir = repoPathOf(cfg.adrDir) ?? repoPathOf(cfg.adr)
+  return { ...(featureMap === undefined ? {} : { featureMap }), ...(adrDir === undefined ? {} : { adrDir }) }
+}
+
 // The crew worktree path <repo>/.claude/worktrees/truss-<slug>.
 export function crewWorktree(repo: string, slug: string): string {
   return `${repo}/.claude/worktrees/truss-${slug}`
@@ -778,9 +795,34 @@ function cmdCheck(f: Flags): Obj {
   const known = exit === 0 ? [] : catalogHits(text)
   writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }
+  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}) }
   if (!ok) throw refuse(body)
   return body
+}
+
+// ADR-0033: the non-test source files the crew's diff (merge-base with the target ... HEAD) adds, renames or deletes, from
+// `git diff --name-status -M`, so the knowledge step runs for new or moved functionality even when no member reported a learned
+// item. A source file has a code extension and is not a test, a fixture, a doc (docs/, doc/) or under .claude/. A plain edit is no
+// change. Best effort: when the target or the diff can't be read the list is empty. At most 100 entries.
+function sourceChangesOf(cwd: string, f: Flags): Obj[] {
+  const code = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|kts|rb|php|cs|c|cc|cpp|h|hpp|swift|scala|vue|svelte|sh|sql)$/
+  const source = (p: string): boolean => code.test(p) && !isTestPath(p) && !/^(docs?|\.claude)\//.test(p)
+  let out: string
+  try {
+    out = gitOrFail(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${baseOf(cwd, settingsOf(repoOf(f)).target)}...HEAD`])
+  } catch {
+    return []
+  }
+  const changes: Obj[] = []
+  for (const line of out.split('\n')) {
+    const [st, a, b] = line.split('\t')
+    const status = st?.[0]
+    if (a === undefined || (status !== 'A' && status !== 'D' && status !== 'R')) continue
+    if (status === 'R') {
+      if (b !== undefined && (source(a) || source(b))) changes.push({ status, path: b, from: a })
+    } else if (source(a)) changes.push({ status, path: a })
+  }
+  return changes.slice(0, 100)
 }
 
 // ADR-0012 Decision 10: the catalog entries a failed check's output hits, in catalog order, each with the first line that hits it.
@@ -966,9 +1008,32 @@ function cmdOwnsCheck(f: Flags): Obj {
     for (let k = 0; k < segs.length; k++) if (path.matchesGlob(segs.slice(k).join('/'), rest)) return true
     return false
   }
-  const outside = files.filter((file) => !owns.some((g) => owned(file, g)))
+  const exempt = knowledgeDocs(c)
+  const outside = files.filter((file) => !owns.some((g) => owned(file, g)) && !exempt.has(file))
   if (outside.length > 0) throw refuse({ ok: false, outside })
   return { ok: true }
+}
+
+// ADR-0033: the files the crew's knowledge commit (subject `docs(knowledge): <slug> learned`) may change outside the crew's owns.
+// A file is exempt only when that commit is the only non-merge commit of the crew that changed it, and it is a doc path: the
+// feature map (featureMap, default docs/features.md), a file under the ADR directory (adrDir, default docs/adr), a persona or
+// the product-owner file (.claude/agents/*.md), or any *.md file (an item target such as a README, AGENTS.md, CLAUDE.md or docs/**).
+// A code file the knowledge commit changed, or any file another commit changed, is not exempt.
+function knowledgeDocs(c: { repo: string; slug: string; wt: string; target: string }): Set<string> {
+  const subject = `docs(knowledge): ${c.slug} learned`
+  const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%s', `${baseOf(c.wt, c.target)}..HEAD`])
+  const byKnowledge = new Set<string>()
+  const byOthers = new Set<string>()
+  for (const chunk of out.split('\0').slice(1)) {
+    const lines = chunk.split('\n')
+    const files = lines.slice(1).map((l) => l.trim()).filter(Boolean)
+    for (const file of files) (lines[0] === subject ? byKnowledge : byOthers).add(file)
+  }
+  const keys = docKeysOf(c.repo)
+  const featureMap = keys.featureMap ?? 'docs/features.md'
+  const adrDir = keys.adrDir ?? 'docs/adr'
+  const isDoc = (file: string): boolean => file === featureMap || file.startsWith(`${adrDir}/`) || /^\.claude\/agents\/[^/]+\.md$/.test(file) || file.endsWith('.md')
+  return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
 }
 
 // Guarded = every file a `Truss-Role: test-writer` commit in <base>..HEAD touched, whatever its name, plus every existing path
@@ -1155,7 +1220,7 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), scriptPath: c.scriptPath, crews: entries },
     held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -1416,14 +1481,12 @@ function personaReadOnly(fm: Record<string, string>): boolean {
 }
 
 // The agent type that hosts a read-only persona whose body is inlined (it is not loaded, or only a draft exists): a plugin type that
-// is always loaded and whose tools hold neither Write nor Edit, so an inlined judge never gets write tools. The persona's own
-// tools line picks the closest: no Bash asked for, no Bash given. Neither type is a neutral host (each keeps its own system
-// prompt under the inlined body); the plugin has no generic read-only agent type.
-const READ_ONLY_HOST = 'truss:checking-engineer' // Read, Grep, Glob, Bash
-const READ_ONLY_HOST_NO_SHELL = 'truss:sizing-engineer' // Read, Grep, Glob
-function personaInlineType(fm: Record<string, string>): string {
-  const tools = (fm.tools ?? '').replace(/[[\]"']/g, '').split(/[,\s]+/).filter((x) => x !== '')
-  return tools.every((x) => x === 'Read' || x === 'Grep' || x === 'Glob') ? READ_ONLY_HOST_NO_SHELL : READ_ONLY_HOST
+// is always loaded and whose tools hold neither Write nor Edit, so an inlined judge never gets write tools. It is
+// truss:judge (agents/judge.md; Read, Grep, Glob, Bash): a neutral host whose only instruction is to adopt the persona definition at
+// the top of the brief, so no other role's system prompt competes with it.
+const READ_ONLY_HOST = 'truss:judge'
+function personaInlineType(): string {
+  return READ_ONLY_HOST
 }
 
 // The personas the stage args carry, from the main checkout's .claude/agents/*.md. loaded: the file is not newer than the session
@@ -1462,7 +1525,7 @@ function buildPersonas(repo: string): { personas: Obj; warnings: string[] } {
     const readOnly = personaReadOnly(doc.fm)
     personas[name] = {
       agentType: name, model: doc.fm.model ?? 'sonnet', effort: doc.fm.effort ?? 'medium', file, description: (doc.fm.description as string).slice(0, PERSONA_DESCRIPTION_MAX),
-      readOnly, ...(readOnly ? { inlineType: personaInlineType(doc.fm) } : {}), loaded, ...(loaded ? {} : { body: doc.body }),
+      readOnly, ...(readOnly ? { inlineType: personaInlineType() } : {}), loaded, ...(loaded ? {} : { body: doc.body }),
     }
     if (!loaded) {
       warnings.push(`persona ${name} (${file}) is ${started === undefined ? "not known to be loaded (I can't read the session start)" : 'newer than the session start, so this session has not loaded it'}; its tasks run as general-purpose with its definition inlined. Restart the session to load it`)
@@ -2383,6 +2446,14 @@ function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj
     if (spender === undefined) continue
     const agent = spender.name.replace(/\.md$/, '')
     if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent })
+  }
+  // ADR-0033: one knowledge line per crew and run, from the result's knowledge field (the retro's signal for optional learning)
+  for (const c of crews) {
+    const slug = String(c.slug)
+    const k = results?.find((r) => r.slug === slug)?.knowledge
+    if (!isObj(k) || !Number.isInteger(k.items) || k.items < 0 || typeof k.ran !== 'boolean') continue
+    if (events.some((e) => e.event === 'knowledge' && e.crew === slug && e.run === wfRun.id)) continue
+    appendEvent(dir, { event: 'knowledge', crew: slug, run: wfRun.id, items: k.items, ran: k.ran, sourceChanges: Number.isInteger(k.sourceChanges) && k.sourceChanges >= 0 ? k.sourceChanges : 0 })
   }
 }
 
