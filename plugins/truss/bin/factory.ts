@@ -421,7 +421,7 @@ function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')),
+      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas,
     },
     brief,
   }
@@ -465,7 +465,53 @@ function cmdPlanWrite(f: Flags): Obj {
   writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
   writeFileSync(`${dir}/plan.md`, md as string)
   const left = retirePlanRun(f, dir, run_.id)
-  return left.length > 0 ? { written: true, leftWorktrees: left } : { written: true }
+  const drafts = writePersonaDrafts(dir, message)
+  return { written: true, ...(left.length > 0 ? { leftWorktrees: left } : {}), ...(drafts.personas.length > 0 ? { personas: drafts.personas } : {}), ...(drafts.problems.length > 0 ? { personaProblems: drafts.problems } : {}) }
+}
+
+// The `PERSONA: <name>` lines of a design engineer's report, each followed by its whole file in one fenced block. A block that is
+// malformed (the name is not kebab-case, no fence follows, the fence never closes, the file would not install) is a problem, not a draft.
+export function personaDrafts(report: string): { drafts: { name: string; text: string }[]; problems: string[] } {
+  const lines = report.replace(/\r\n?/g, '\n').split('\n')
+  const drafts: { name: string; text: string }[] = []
+  const problems: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^PERSONA:\s*`?([^`\s]*)`?\s*$/.exec(lines[i] as string)
+    if (m === null) continue
+    const name = m[1] as string
+    let j = i + 1
+    while (j < lines.length && (lines[j] as string).trim() === '') j++
+    const open = /^(`{3,}|~{3,})/.exec(lines[j] ?? '')
+    if (open === null) {
+      problems.push(`PERSONA: ${name || '(no name)'} has no fenced block after it; not written`)
+      continue
+    }
+    const fence = open[1] as string
+    let k = j + 1
+    while (k < lines.length && !((lines[k] as string).trim().startsWith(fence[0] as string) && /^(`+|~+)$/.test((lines[k] as string).trim()) && (lines[k] as string).trim().length >= fence.length)) k++
+    if (k >= lines.length) {
+      problems.push(`PERSONA: ${name || '(no name)'} has a fenced block that never closes; not written`)
+      continue
+    }
+    i = k
+    const text = lines.slice(j + 1, k).join('\n') + '\n'
+    const fault = !PERSONA_KEBAB.test(name) ? 'the persona name must be kebab-case (lowercase letters, digits, hyphens)' : personaFault(name, parsePersonaFile(text))
+    if (fault !== undefined) problems.push(`PERSONA: ${name || '(no name)'} is malformed: ${fault}; not written`)
+    else drafts.push({ name, text })
+  }
+  return { drafts, problems }
+}
+// Writes each draft of the report to <dir>/personas/<name>.md (a later draft of the same name wins); lists them with their paths.
+function writePersonaDrafts(dir: string, report: string): { personas: { name: string; path: string }[]; problems: string[] } {
+  const { drafts, problems } = personaDrafts(report)
+  const personas: { name: string; path: string }[] = []
+  if (drafts.length > 0) mkdirSync(`${dir}/personas`, { recursive: true })
+  for (const d of drafts) {
+    const p = `${dir}/personas/${d.name}.md`
+    writeFileSync(p, d.text)
+    if (!personas.some((x) => x.name === d.name)) personas.push({ name: d.name, path: p })
+  }
+  return { personas, problems }
 }
 
 // The plan run's worktrees (worktree-<run>-<n>) are done once its plan is written: each is retired, its tip archived when the target
@@ -1171,18 +1217,49 @@ function memberWarnings(c: StartCtx, entries: Obj[]): string[] {
 }
 
 // The start time of the session, in ms since the epoch, or undefined when it can't be read: TRUSS_SESSION_START (a test
-// override), else on Linux the start time of the CLAUDE_PID process (/proc/<pid>/stat field 22 over the tick rate, plus btime).
-// macOS and Windows have no /proc and truss reads no system process table, so there it is undefined, and the caller warns that it
+// override), else the start time of the CLAUDE_PID process: on Linux /proc/<pid>/stat field 22 over the tick rate, plus btime;
+// on macOS the elapsed time `ps -o etime= -p <pid>` (locale-free, 1 s resolution, so one more second is taken off); on Windows
+// PowerShell's Get-Process start time as epoch ms. Only that one process is asked about, never a scan of the process table, and
+// every command runs through an argument array, never a shell string. Unreadable is undefined, and the caller warns that it
 // can't tell (the safe side: a restart prompt, never a silent pass).
-// Never the /proc/<pid> inode mtime, never the transcript (--continue keeps the old one).
-export function sessionStart(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform): number | undefined {
+// Never the /proc/<pid> inode mtime, never the transcript (--continue keeps the old one). A session-start hook was not used: it
+// fires on clear and compact too, which do not reload agents, and the factory cannot tell which session wrote which stamp.
+export type StartProbe = { exec: (file: string, args: string[]) => string | undefined; now: () => number }
+const REAL_PROBE: StartProbe = {
+  exec: (file, args) => {
+    const r = spawnSync(file, args, { encoding: 'utf8', timeout: 8000, windowsHide: true })
+    return r.error === undefined && r.status === 0 ? r.stdout : undefined
+  },
+  now: () => Date.now(),
+}
+// "[[dd-]hh:]mm:ss" as seconds, or undefined.
+function etimeSeconds(text: string): number | undefined {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d{2})$/.exec(text.trim())
+  if (m === null) return undefined
+  return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3]) * 60 + Number(m[4])
+}
+export function sessionStart(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform, probe: StartProbe = REAL_PROBE): number | undefined {
   const o = env.TRUSS_SESSION_START
   if (o !== undefined && o !== '') {
     const n = Number(o)
     return Number.isFinite(n) ? n : undefined
   }
   const pid = env.CLAUDE_PID
-  if (pid === undefined || !/^\d+$/.test(pid) || platform !== 'linux') return undefined
+  if (pid === undefined || !/^\d+$/.test(pid)) return undefined
+  if (platform === 'darwin') {
+    const secs = etimeSeconds(probe.exec('ps', ['-o', 'etime=', '-p', pid]) ?? '')
+    return secs === undefined ? undefined : probe.now() - (secs + 1) * 1000
+  }
+  if (platform === 'win32') {
+    const script = `([DateTimeOffset](Get-Process -Id ${pid}).StartTime).ToUnixTimeMilliseconds()`
+    for (const shell of ['powershell.exe', 'pwsh']) {
+      const out = probe.exec(shell, ['-NoProfile', '-NonInteractive', '-Command', script])
+      const n = /^\d{10,}$/.test((out ?? '').trim()) ? Number((out as string).trim()) : NaN
+      if (Number.isFinite(n)) return n
+    }
+    return undefined
+  }
+  if (platform !== 'linux') return undefined
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
     // comm (field 2) may hold spaces and parentheses: count fields from after the last ")". Field 3 is the first after it.
@@ -1338,6 +1415,17 @@ function personaReadOnly(fm: Record<string, string>): boolean {
   return !tools.some((t) => t === 'Write' || t === 'Edit' || t === '*')
 }
 
+// The agent type that hosts a read-only persona whose body is inlined (it is not loaded, or only a draft exists): a plugin type that
+// is always loaded and whose tools hold neither Write nor Edit, so an inlined judge never gets write tools. The persona's own
+// tools line picks the closest: no Bash asked for, no Bash given. Neither type is a neutral host (each keeps its own system
+// prompt under the inlined body); the plugin has no generic read-only agent type.
+const READ_ONLY_HOST = 'truss:checking-engineer' // Read, Grep, Glob, Bash
+const READ_ONLY_HOST_NO_SHELL = 'truss:sizing-engineer' // Read, Grep, Glob
+function personaInlineType(fm: Record<string, string>): string {
+  const tools = (fm.tools ?? '').replace(/[[\]"']/g, '').split(/[,\s]+/).filter((x) => x !== '')
+  return tools.every((x) => x === 'Read' || x === 'Grep' || x === 'Glob') ? READ_ONLY_HOST_NO_SHELL : READ_ONLY_HOST
+}
+
 // The personas the stage args carry, from the main checkout's .claude/agents/*.md. loaded: the file is not newer than the session
 // start (the session loads agent types only at start); false too when the start can't be read, the safe side. An unloaded
 // persona carries its body, since stage.js runs it as general-purpose with that body inlined. A malformed file is skipped with a warning.
@@ -1371,9 +1459,10 @@ function buildPersonas(repo: string): { personas: Obj; warnings: string[] } {
       continue
     }
     const loaded = started !== undefined && !(changed > started)
+    const readOnly = personaReadOnly(doc.fm)
     personas[name] = {
       agentType: name, model: doc.fm.model ?? 'sonnet', effort: doc.fm.effort ?? 'medium', file, description: (doc.fm.description as string).slice(0, PERSONA_DESCRIPTION_MAX),
-      readOnly: personaReadOnly(doc.fm), loaded, ...(loaded ? {} : { body: doc.body }),
+      readOnly, ...(readOnly ? { inlineType: personaInlineType(doc.fm) } : {}), loaded, ...(loaded ? {} : { body: doc.body }),
     }
     if (!loaded) {
       warnings.push(`persona ${name} (${file}) is ${started === undefined ? "not known to be loaded (I can't read the session start)" : 'newer than the session start, so this session has not loaded it'}; its tasks run as general-purpose with its definition inlined. Restart the session to load it`)
@@ -2944,9 +3033,127 @@ function cmdDecide(f: Flags): Obj {
   return { ok: true, form, line }
 }
 
+// ==== crew decisions ====
+
+// A crew's product calls reach the main session as they happen, and the crew never waits. State is one small file per decision
+// under <dir>/crew-decisions/: <id>.json (the call), <id>.reply.json (the main session's reply), <id>.consumed (the crew took the
+// reply). Each file is made once with the exclusive flag, so the id counter, the reply hand-over and two crews polling at the same
+// time need no lock: a second claimant gets EEXIST and skips.
+const CREW_DECISIONS = (dir: string): string => `${dir}/crew-decisions`
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim()
+type CrewDecision = { id: string; ts: string; crew: string; task: string; question: string; answer: string; by: string }
+type DecisionReply = { id: string; crew: string; reply: 'ack' | 'change'; note: string | null }
+
+function readDecision(dir: string, id: string): CrewDecision {
+  const p = `${CREW_DECISIONS(dir)}/${id}.json`
+  if (!/^d-[a-z0-9-]+-\d+$/.test(id) || !existsSync(p)) throw usage(`no crew decision ${id} in this run`)
+  return readJson(p) as CrewDecision
+}
+function readReply(dir: string, id: string): DecisionReply | undefined {
+  const p = `${CREW_DECISIONS(dir)}/${id}.reply.json`
+  return existsSync(p) ? (readJson(p) as DecisionReply) : undefined
+}
+
+// factory crew-decision --crew <slug> --task <id> --question <q> --answer <a> --by <who>: the crew lead (or a member) records a
+// product call it made and went on. Appends the decide line, writes a crew-decision event, prints {id}.
+function cmdCrewDecision(f: Flags): Obj {
+  const dir = dirOf(f)
+  const crew = need(f, 'crew')
+  if (!SLUG.test(crew)) throw usage(`--crew ${crew} is not a crew slug`)
+  const v: Record<string, string> = {}
+  for (const k of ['task', 'question', 'answer', 'by']) {
+    v[k] = oneLine(need(f, k))
+    if (v[k] === '') throw usage(`--${k} is empty`)
+  }
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
+  const cdir = CREW_DECISIONS(dir)
+  mkdirSync(cdir, { recursive: true })
+  const taken = readdirSync(cdir).filter((n) => new RegExp(`^d-${crew}-\\d+\\.json$`).test(n)).length
+  for (let n = taken + 1; n < taken + 10000; n++) {
+    const id = `d-${crew}-${n}`
+    const rec: CrewDecision = { id, ts: new Date().toISOString(), crew, task: v.task as string, question: v.question as string, answer: v.answer as string, by: v.by as string }
+    try {
+      writeFileSync(`${cdir}/${id}.json`, JSON.stringify(rec) + '\n', { flag: 'wx' })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw e
+    }
+    appendDecisionLine(dir, `- ${localTime(Date.now())} | PO crew ${crew}: ${rec.question} | ${rec.answer} | ${rec.by} | decided`)
+    appendEvent(dir, { event: 'crew-decision', id, crew, task: rec.task, question: rec.question, answer: rec.answer, by: rec.by })
+    return { id }
+  }
+  throw usage(`no free decision id for crew ${crew}`)
+}
+
+// factory decision-reply <id> ack|change [--note <text>]: the main session answers a crew's call. change needs a note.
+function cmdDecisionReply(f: Flags): Obj {
+  const dir = dirOf(f)
+  const id = need(f, 'id')
+  const verdict = need(f, 'reply')
+  if (verdict !== 'ack' && verdict !== 'change') throw usage(`the reply must be ack or change, got ${verdict}`)
+  const rawNote = str(f, 'note')
+  const note = rawNote === undefined ? null : oneLine(rawNote)
+  if (verdict === 'change' && (note === null || note === '')) throw usage('a change reply needs --note: say what the crew should do instead')
+  const d = readDecision(dir, id)
+  const cdir = CREW_DECISIONS(dir)
+  if (existsSync(`${cdir}/${id}.consumed`)) throw usage(`crew decision ${id} already has a reply that crew ${d.crew} took`)
+  const rec: DecisionReply = { id, crew: d.crew, reply: verdict, note: note === '' ? null : note }
+  writeFileSync(`${cdir}/${id}.reply.json`, JSON.stringify(rec) + '\n')
+  appendEvent(dir, { event: 'decision-reply', id, crew: d.crew, reply: verdict, note: rec.note })
+  return { id, reply: verdict }
+}
+
+// factory decision-replies --crew <slug>: a crew's replies it has not taken yet, as [{id, reply, note}]; each is marked taken.
+function cmdDecisionReplies(f: Flags): Obj {
+  const dir = dirOf(f)
+  const crew = need(f, 'crew')
+  const cdir = CREW_DECISIONS(dir)
+  const out: { id: string; reply: string; note: string | null }[] = []
+  const names = existsSync(cdir) ? readdirSync(cdir).filter((n) => n.endsWith('.reply.json')).sort(byDecisionId) : []
+  for (const n of names) {
+    const r = readJson(`${cdir}/${n}`) as DecisionReply
+    if (r.crew !== crew) continue
+    try {
+      writeFileSync(`${cdir}/${r.id}.consumed`, '', { flag: 'wx' })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw e
+    }
+    out.push({ id: r.id, reply: r.reply, note: r.note })
+  }
+  return out as unknown as Obj
+}
+// d-<crew>-<n> in the order they were made: by crew, then n as a number.
+function byDecisionId(a: string, b: string): number {
+  const split = (s: string): [string, number] => {
+    const m = /^d-(.*)-(\d+)\./.exec(s)
+    return [m?.[1] ?? s, Number(m?.[2] ?? 0)]
+  }
+  const [ca, na] = split(a)
+  const [cb, nb] = split(b)
+  return ca < cb ? -1 : ca > cb ? 1 : na - nb
+}
+
+// factory decisions [--open] [--crew <slug>]: the run's crew decisions in the order they were made, each with its reply status;
+// --open keeps the ones with no reply yet. One read of a small directory, cheap to poll.
+function cmdDecisions(f: Flags): Obj {
+  const dir = dirOf(f)
+  const cdir = CREW_DECISIONS(dir)
+  const only = str(f, 'crew')
+  const files = existsSync(cdir) ? readdirSync(cdir).filter((n) => /^d-.*-\d+\.json$/.test(n)) : []
+  const list = files.map((n) => {
+    const d = readJson(`${cdir}/${n}`) as CrewDecision
+    const r = readReply(dir, d.id)
+    return { ...d, reply: r?.reply ?? null, note: r?.note ?? null, consumed: existsSync(`${cdir}/${d.id}.consumed`) }
+  }).filter((d) => (only === undefined || d.crew === only) && (f.open !== true || d.reply === null))
+  list.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : byDecisionId(`${a.id}.`, `${b.id}.`)))
+  return { decisions: list }
+}
+
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
+  'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
@@ -2955,13 +3162,33 @@ const COMMANDS: Record<string, (f: Flags) => Obj> = {
   },
 }
 
+// `decision-reply <id> ack|change [--note T]` takes two words before or among its flags: each word that is not a flag or a flag's
+// value becomes the next of `names` as a flag.
+function positionalsToFlags(argv: string[], names: string[]): string[] {
+  const out: string[] = []
+  let n = 0
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i] as string
+    if (a.startsWith('--')) {
+      out.push(a)
+      const next = argv[i + 1]
+      if (next !== undefined && !next.startsWith('--')) out.push(argv[++i] as string)
+    } else if (n < names.length) {
+      out.push(`--${names[n++]}`, a)
+    } else {
+      out.push(a)
+    }
+  }
+  return out
+}
+
 // Runs one command and returns what it printed and its exit code.
 export function main(argv: string[]): { body: Obj; code: number } {
   try {
     const [command, ...rest] = argv
     const fn = command === undefined ? undefined : COMMANDS[command]
     if (fn === undefined) throw usage(`unknown command: ${command ?? '(none)'}; commands: ${Object.keys(COMMANDS).join(', ')}`)
-    return { body: fn(parseFlags(rest)), code: 0 }
+    return { body: fn(parseFlags(command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : rest)), code: 0 }
   } catch (e) {
     if (e instanceof CliError) return { body: e.body, code: e.code }
     return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }

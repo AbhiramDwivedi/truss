@@ -349,6 +349,7 @@ async function runPlan(o = {}) {
   return r
 }
 const AGREE = 'Notes\nREVIEW: agree\nClient: none'
+const NO_PO = { skipped: 'the project has no product-owner persona and no draft of one in this plan' }
 
 t('plan: the first call is truss-designer with first prompt line exactly "Mode: plan", then the brief', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
@@ -385,14 +386,14 @@ t('plan: the checker is truss-checker and its prompt carries planJson, planMd an
 t('plan: agree returns {designerLabel, reviews, client, stillDisagree} with no reconcile', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: agree'], client: [], stillDisagree: false })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: agree'], client: [], stillDisagree: false, productOwner: NO_PO })
 })
 t('plan: REVIEW: disagree returns after one designer and one checker: stillDisagree true, no designer-2 or checker-2', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': 'REVIEW: disagree\nWHY-CHECKER-ONE\nClient: none' } })
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
   assert.ok(!had(r, 'truss-designer-2'), 'designer-2 ran')
   assert.ok(!had(r, 'truss-checker-2'), 'checker-2 ran')
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: NO_PO })
 })
 t('plan: a disagree never starts a second designer or checker even when they would answer', async () => {
   const dis = 'REVIEW: disagree\nClient: none'
@@ -414,7 +415,7 @@ t('plan: an Client: line never stops the script (the result still comes back)', 
 t('plan: a fix run labels designer-3 and checker-3 and never reconciles', async () => {
   const r = await runPlan({ fix: true, labels: { 'truss-designer-3': ARCH(), 'truss-checker-3': 'REVIEW: disagree\nClient: none' } })
   assert.deepEqual(r.labels, ['truss-designer-3', 'truss-checker-3'])
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: NO_PO })
 })
 t('plan: an designer that returns null makes the script throw', async () => {
   const r = await runPlan({ allowError: true, labels: { 'truss-designer': null } })
