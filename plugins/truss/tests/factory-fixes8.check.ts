@@ -202,10 +202,11 @@ t('r4: factory exports no process scan or stopper and reads no other process\'s 
   assert.doesNotMatch(src, /\/cwd`|\/environ`|\bps -A|lsof|Win32_Process|taskkill/)
 })
 
-t('r5: the session start time is read from /proc on Linux only; on macOS and Windows it is unknown (the caller then warns), and the test override works everywhere', () => {
+t('r5: the session start time is read from /proc on Linux, by ps on macOS and PowerShell on Windows (ADR-0033; tests/personas-platform.check.ts); when that read gives nothing it is unknown (the caller then warns), and the test override works everywhere', () => {
   const env = { CLAUDE_PID: String(process.pid) }
+  const none = { exec: () => undefined, now: () => Date.now() }
   for (const os of ['darwin', 'win32']) {
-    assert.equal(factory.sessionStart(env, os), undefined, os)
+    assert.equal(factory.sessionStart(env, os, none), undefined, os)
     assert.equal(factory.sessionStart({ ...env, TRUSS_SESSION_START: '1234' }, os), 1234, os)
   }
   if (linux) {

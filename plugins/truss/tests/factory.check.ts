@@ -135,7 +135,8 @@ test('plan-args: builds {"truss":{kind plan,...},"brief"} from the brief file, r
   assert.deepEqual(Object.keys(j), ['truss', 'brief'])
   assert.equal(j.brief, 'Build the thing.\nSecond line.')
   const f = j.truss
-  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath'])
+  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath', 'personas'])
+  assert.deepEqual(f.personas, {}) // ADR-0033: the project's personas (none here), for the product-owner review
   assert.equal(f.kind, 'plan')
   assert.equal(flat(f.dir), env.dir)
   assert.equal(flat(f.repo), env.repo)
