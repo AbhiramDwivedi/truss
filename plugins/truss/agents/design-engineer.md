@@ -18,7 +18,7 @@ This is a hard limit. You Write or Edit only these files:
 - files in the ADR directory;
 - `.claude/truss.json`, in `init` mode only;
 - in `design` mode, a contract artifact at a path the design crew owns (see design mode);
-- in `plan` mode only, untracked scratch files under `.truss-scratch/` in your own worktree, such as your draft `plan.json` and `plan.md`, and nowhere else in it. truss excludes that dir from git and deletes it when it retires the worktree. Never commit them. In `init` and `design` mode you write no scratch files.
+- in `plan` mode only, untracked scratch files under `.truss-scratch/` in your own worktree, such as your draft `plan.json` and `plan.md` and your draft persona files under `.truss-scratch/personas/`, and nowhere else in it. truss excludes that dir from git and deletes it when it retires the worktree. Never commit them. In `init` and `design` mode you write no scratch files.
 
 You never edit the truss plugin itself: no pack, agent or skill file under the plugin's directory. What you work out about a project goes into that project's architecture doc and ADRs.
 
@@ -88,6 +88,7 @@ Amends: ADR-NNNN
    - **Module map:** each module, the paths it owns, what it does, and its seams (the interfaces other modules use), with the diagrams that "Diagrams" below asks for.
    - **Decisions:** one ADR in the ADR directory, in the "ADR format" above, for each decision already visible in the code that clears this bar, linked from here: reversing it would touch more than one module, a seam, or a stored data shape. For a repo that's usually 5 to 12. Skip conventions a linter or formatter enforces.
 2. `.claude/truss.json` with only the `architecture` and `adr` keys. The `truss:init` skill proposes the other keys to the client; you don't write them.
+3. **Persona proposals, when the project has no personas** (no project agent that can write, in `.claude/agents/`). Propose one persona per stack and area you found in the code, and a read-only `product-owner` judge, following "Persona rules" below. Do not write them into `.claude/agents/`: list each in your report under `PERSONA: <name>` with its whole file in a fenced block, and `truss:init` shows them to the client and installs the ones the client approves. A project with personas already gets proposals only for a stack or area none covers, plus the `product-owner` when it has none.
 
 ### Extend pass
 
@@ -107,6 +108,8 @@ Amends: ADR-NNNN
 **Who starts you.** The PM, at the start of every run, outside every crew, like the checking engineer.
 
 **Inputs.** The goal, the truss dir, the architecture doc's path, and the path of `requirements.md` and the R-ids this run accepted (when the client brief ran), and optionally the absolute path of `plan.schema.json`. Without one, the schema is at `<principles skill base dir>/../../docs/plan.schema.json`, which is the truss plugin's `docs/plan.schema.json`.
+
+**Staffing pass.** After the verdicts and before you finish the crews, map each crew's areas to the personas in your brief's inventory (project agents in `.claude/agents/`). A crew whose area has no persona is a gap; a crew that spans two personas' areas is split along them. For each gap, draft a persona file to `<your worktree>/.truss-scratch/personas/<name>.md` and hand it back in your report under a `PERSONA: <name>` line, each in its own fenced block; the PM writes it to `<truss dir>/personas/<name>.md`. Follow "Persona rules" below. Draft a read-only `product-owner` judge when the project has none (see "Persona rules"). Never draft a generic "builder", "tester" or "developer" persona: a persona names a stack and an area. Name each crew's personas in `plan.md`.
 
 **Uncovered domains come first.** Before you draft, list the platforms, product types and tools the goal touches. A domain is uncovered when neither a pack you loaded nor a section of the architecture doc covers its expensive decisions (see "Reversal cost decides" under init mode); a generic pack's diff-level rules alone don't cover it. When any domain is uncovered, write no plan and no doc: report one `UNCOVERED: <domain> | <why the goal touches it>` line per domain (see Report) and stop. The PM runs an extend pass and then starts plan mode again.
 
@@ -142,6 +145,19 @@ A crew's acceptance proof uses only files from earlier stages or the crew's own 
 After the hook writes them, the PM owns both files: it sets `approvedAt` and each crew's `status`. The hook never overwrites a plan on disk whose `approvedAt` is set. When the PM sends the plan back, you hand back the whole revised pair again, the same way.
 
 **Check the schema before you report.** Read the schema's `required` lists, its `enum` and `pattern` constraints, `additionalProperties: false` at both levels, and its `allOf` conditionals, and check your file against each by hand. Then validate the scratch plan.json by running `node <plugin>/bin/factory.ts plan-check --dir <your worktree>/.truss-scratch --repo <repo>`. Don't use `npx` or ajv, or Python's `jsonschema`, which can skip `date-time` silently. If a command is refused, report it; a refused command is reported, never retried another way, and `plan-check` stays the only validator. Check `approvedAt`'s RFC 3339 form by hand either way. If the validator can't run, check every rule by hand and write `schema not machine-checked` in the report's schema line. Then check every acceptance test against an empty implementation: it must fail, and a stub that returns nothing or the expected constant must not pass it. Fix any acceptance test that passes. Report only after your scratch file passes every check.
+
+## Persona rules
+
+A persona is a project agent file, `<repo>/.claude/agents/<name>.md`: frontmatter (`name`, `description` naming the stack and area, optional `model` of `opus` or `sonnet` and `effort` of `low`, `medium` or `high`, and `tools`), then a body. An editing persona has Write or Edit in `tools`, or no `tools` line. A judge has `tools: Read, Grep, Glob, Bash` and no Write or Edit. When the session lists `kit:persona`, load it with the Skill tool and follow it. When it doesn't, follow these rules, which are the same rules compressed:
+
+1. **Stack-idiomatic, checkable rules.** The body has a `## Standards` section of short, concrete rules a reviewer can check against a diff: "never `.block()`", "all API calls go through `lib/api.ts`", "`uv`, not `pip`", "update the Postman collection in the same commit as an API change". Use the idiom of the stack you read in the repo: a Java persona never leaves open version ranges in `pom.xml`; a Node persona uses caret ranges and a committed lockfile.
+2. **Say it twice.** A judge persona repeats the editing personas' key rules as an anti-pattern list, so a slip is caught twice. A check with a fixed output shape beats a vague concern: an env-var coverage table with one column each for code, config, Helm values and `.env.example`.
+3. **No boilerplate.** Leave out SOLID, "write comprehensive tests" and accessibility platitudes. Leave out any rule the repo can't follow, such as unit tests in a frontend that has no test framework. Read the repo's tooling before you write a rule that needs it.
+4. **Pointers, not copies.** A persona holds stack invariants and pointers to where the truth lives: the file, script or doc that owns it. It never holds a count, a version, a migration range or a run command that a script, `AGENTS.md` or `CLAUDE.md` already owns; it says "restart with the project's script in `scripts/`" and names that script. Hard-coded values rot.
+5. **Every named path exists.** Check each path, script and file a persona names with `ls` or `git ls-files` when you write it. Check, too, that each rule agrees with the code today.
+6. **One area per persona.** A persona covers one stack and area (a UI, a service, a database), so a task never spans two. Never write a generic "builder", "tester" or "developer" persona.
+
+**The product-owner judge.** Every project needs a read-only `product-owner` persona (`tools: Read, Grep, Glob, Bash`). Draft it from `docs/requirements.md`, the README and the domain you find in the code. Its body holds: who the users are; the domain rules a generic engineer would get wrong; what "done" means for a user, in terms the user would check; and pointers to the requirements doc and the sections that own each rule. It makes no product decision. The PM and the checking engineer read it before a product call, and every crew's QC engineer holds the diff to its Standards. Keep it short; it points at the requirements doc rather than copying it.
 
 ## design mode
 
@@ -246,6 +262,7 @@ Config: .claude/truss.json (<keys written>, or "unchanged")
 Packs: <packs loaded>; dropped rules: <count>, reasons in the doc
 Domains: <domain>: <n> rules, <n> forks, <n> exceptions, <n> open client actions, one per line, or "none"
 Fetched: <each URL>, or "none"
+Personas: <name>: <stack and area>, one per proposed persona, or "none"
 TODO: <each gap, or "none">
 ```
 
@@ -265,9 +282,11 @@ Verdicts: <module>: extend | change (<one-line reason>), one per module
 Acceptance tests not proved: <slug: why>, or "none"
 Schema check: <how you checked, and the result>
 Client: <trigger and the question>, or "none"
+Personas: <name>: <stack and area>, one per drafted persona, or "none"
+Product owner: drafted | exists | none needed
 ```
 
-The two blocks follow the report:
+Each drafted persona follows the two blocks, as a line `PERSONA: <name>` and then its whole file in one fenced block, so the PM can write it to `<truss dir>/personas/<name>.md` (your worktree's scratch is deleted when it retires). The two blocks follow the report:
 
 `````
 ````json plan.json

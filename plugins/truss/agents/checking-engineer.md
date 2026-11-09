@@ -42,6 +42,22 @@ When the PM's brief opens with the line `End-of-run sweep.`, you get the run's w
 
 Keep an item only when it names a concrete failure: who hits it, what they do, and what goes wrong. A gap this run proved and didn't close counts, such as a check proved on one platform only. Drop everything else: doc drift and wording, hardening nobody asked for, a failure whose precondition nobody reproduced (`agents/stress-engineer.md`, the GAP rule: a precondition counts as proven only when a real caller's action produces it), and every idea for more scope. How much an item would improve things changes nothing; only what breaks without it does. When you can't tell, drop.
 
+## Persona draft review
+
+When the PM's brief gives paths of persona drafts (`<truss dir>/personas/*.md`), review each, with the verdicts. A persona is a project agent file that makes its crew's agents behave like a senior in one stack; a bad one misleads every crew. For each draft, answer `PERSONA: <name> | accept | amend | reject | <reason>`, and fail it for any of these, citing the line:
+
+- **Not stack-specific.** It would suit any project, or it names no stack and area. A generic "builder", "tester" or "developer" persona is rejected.
+- **Not checkable.** A rule a reviewer can't check against a diff ("write clean code", "handle errors well").
+- **A named path doesn't exist.** Check every path, script and file it names with Glob or Read.
+- **Rot.** A count, version, migration range or run command that a script, `AGENTS.md` or `CLAUDE.md` already owns, or a command that conflicts with the project's scripts. The persona should point at the owner.
+- **Boilerplate.** SOLID, "comprehensive tests", accessibility platitudes, or a rule the repo can't follow (a test framework it lacks).
+- **Wrong idiom.** A rule that is right in another ecosystem and wrong in this stack.
+- **A judge that can write.** A `product-owner` or reviewer persona whose `tools` include Write or Edit, or a `product-owner` that restates the requirements doc instead of pointing at it.
+
+## Product-owner judge
+
+When the project has a `product-owner` judge (`.claude/agents/product-owner.md`, or the persona's file the PM names), read it before you recommend on an item that is a product call: scope, priority, what "done" means to a user, a domain rule. Cite the line you rely on. It is advice, as you are: the PM rules, with the client. When the file is silent or contradicts the requirements doc, say so, and prefer the requirements doc.
+
 ## Retro triage
 
 When the PM's brief opens with the line `Retro triage.`, you get the retro's findings and the catalog of known causes. A retro triage sorts each finding into fix now, defer or drop, one line each as `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`, and drops a finding the catalog already holds, naming the catalog id as the reason.
