@@ -657,8 +657,9 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
 // factory crew-learned: the crew's learned items reach the truss dir, so a resume can seed them. A failure is logged, never stops the crew.
 async function recordLearned(crew, items) {
   try {
-    const r = await runFactory(crew, `crew-learned --slug ${sh(crew.slug)} --add=${sh(JSON.stringify(items))}`, 'ok')
-    if (!r.met) log(`crew-learned not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+    // factory prints {slug, added, total}
+    const r = await runFactory(crew, `crew-learned --slug ${sh(crew.slug)} --add=${sh(JSON.stringify(items))}`, 'added')
+    if (!r.parsed || r.parsed.added === undefined) log(`crew-learned not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     log(`crew-learned failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
@@ -893,7 +894,8 @@ async function applyReplies(crew) {
 async function markCheckpoint(crew) {
   crew.checkpointed = true
   try {
-    const r = await runFactory(crew, `decision-checkpoint --crew ${sh(crew.slug)}`, 'ok')
+    // factory prints {crew, checkpoint: true}
+    const r = await runFactory(crew, `decision-checkpoint --crew ${sh(crew.slug)}`, 'checkpoint')
     if (!r.met) log(`decision-checkpoint not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
   } catch (err) {
     if (err instanceof Stop) throw err
@@ -1553,8 +1555,9 @@ async function knowledge(crew) {
 // factory knowledge-commit: the crew's knowledge commit, which factory's owns check exempts. A failure is logged, never stops the crew.
 async function recordKnowledgeCommit(crew, sha) {
   try {
-    const r = await runFactory(crew, `knowledge-commit --slug ${sh(crew.slug)} --sha ${sh(sha)}`, 'ok')
-    if (!r.met) log(`knowledge-commit not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+    // factory prints {slug, sha}
+    const r = await runFactory(crew, `knowledge-commit --slug ${sh(crew.slug)} --sha ${sh(sha)}`, 'sha')
+    if (!r.parsed || typeof r.parsed.sha !== 'string') log(`knowledge-commit not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     log(`knowledge-commit failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)

@@ -353,6 +353,7 @@ async function runPlan(o = {}) {
 }
 const AGREE = 'Notes\nREVIEW: agree\nClient: none'
 const NO_PO = { skipped: 'the project has no product-owner persona and no draft of one in this plan' }
+const DISAGREE_PO = { skipped: 'checking engineer disagrees; plan goes back to step 2' }
 
 t('plan: the first call is truss-designer with first prompt line exactly "Mode: plan", then the brief', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
@@ -396,7 +397,7 @@ t('plan: REVIEW: disagree returns after one designer and one checker: stillDisag
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
   assert.ok(!had(r, 'truss-designer-2'), 'designer-2 ran')
   assert.ok(!had(r, 'truss-checker-2'), 'checker-2 ran')
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: NO_PO })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: DISAGREE_PO })
 })
 t('plan: a disagree never starts a second designer or checker even when they would answer', async () => {
   const dis = 'REVIEW: disagree\nClient: none'
@@ -418,7 +419,7 @@ t('plan: an Client: line never stops the script (the result still comes back)', 
 t('plan: a fix run labels designer-3 and checker-3 and never reconciles', async () => {
   const r = await runPlan({ fix: true, labels: { 'truss-designer-3': ARCH(), 'truss-checker-3': 'REVIEW: disagree\nClient: none' } })
   assert.deepEqual(r.labels, ['truss-designer-3', 'truss-checker-3'])
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: NO_PO })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: DISAGREE_PO })
 })
 t('plan: an designer that returns null makes the script throw', async () => {
   const r = await runPlan({ allowError: true, labels: { 'truss-designer': null } })
