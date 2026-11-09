@@ -162,7 +162,9 @@ function spawn(role, label, prompt, opts = {}) {
       if (typeof persona.agentType !== 'string' || !persona.agentType || BANNED_TYPES.includes(persona.agentType)) throw new Error(`persona ${opts.persona} has agentType ${persona.agentType}, which is not allowed`)
       agentType = persona.agentType
     } else {
-      agentType = 'general-purpose'
+      // a read-only persona whose body is inlined runs as its inlineType (a read-only agent type), so a judge never gets every tool
+      const inline = persona.readOnly === true && typeof persona.inlineType === 'string' && persona.inlineType && !BANNED_TYPES.includes(persona.inlineType) ? persona.inlineType : null
+      agentType = inline ?? 'general-purpose'
       prompt = `You are the ${opts.persona} persona. Its definition follows and is your system prompt for this task:\n\n${String(persona.body || '').replace(/\s+$/, '')}\n---\n${prompt}`
     }
   }

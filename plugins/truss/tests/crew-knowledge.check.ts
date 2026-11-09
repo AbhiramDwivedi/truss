@@ -359,6 +359,19 @@ t('product 2: a persona that is not loaded runs the product call as general-purp
   has(po.prompt, 'Product call: crew a')
 })
 
+t('product 2b: an inlined read-only persona runs as its inlineType, whatever value it has; without one it falls back to general-purpose', async () => {
+  const labels = labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: DECIDE\nyes\nReason: r' })
+  for (const inlineType of ['truss:readonly-judge', 'other:viewer']) {
+    const r = await runStage([OLD()], { personas: { ...PERSONAS, 'product-owner': { ...PO_NOT_LOADED, inlineType } }, labels })
+    passed(r)
+    assert.equal(callOf(r, 'a-po').opts.agentType, inlineType)
+    has(callOf(r, 'a-po').prompt, 'BODY-PO line one')
+  }
+  // a loaded persona keeps its own type even when it carries an inlineType
+  const loaded = await runStage([OLD()], { personas: { ...PERSONAS, 'product-owner': { ...PERSONAS['product-owner'], inlineType: 'truss:readonly-judge' } }, labels })
+  assert.equal(callOf(loaded, 'a-po').opts.agentType, 'product-owner')
+})
+
 t('product 3: ESCALATE stops the crew with the member QUESTION and the product owner reason; the member is not re-run', async () => {
   const labels = labelsFor({ 'a-builder': ASK, 'a-po': 'PO: ESCALATE\nThis is a billing-model question, another crew\'s area.' })
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
