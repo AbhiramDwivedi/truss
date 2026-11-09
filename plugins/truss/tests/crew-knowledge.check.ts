@@ -786,14 +786,20 @@ t('knowledge 20: knowledge-commit records the writer commit after it integrates;
 
 t('knowledge 21: a docs-only knowledge commit skips the green re-run; anything else, or no proof of it, runs green again', async () => {
   const H2 = 'f6'.repeat(20)
-  const integ = (head) => ({ cmd, branch }) => (cmd === 'integrate' && branch === 'feat/k' ? rj(head ? { merged: true, head } : { merged: true }) : undefined)
-  const only = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md', '.claude/agents/product-owner.md'] }) }), runner: integ(H2) })
+  // the skip trusts the factory's git diff (knowledge-commit docsOnly), never the writer's own report
+  const integ = (head, kc) => ({ cmd, branch }) => (cmd === 'integrate' && branch === 'feat/k' ? rj(head ? { merged: true, head } : { merged: true }) : cmd === 'knowledge-commit' && kc !== undefined ? kc : undefined)
+  const docs = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md'], docsOnly: true })
+  const only = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md'] }) }), runner: integ(H2, docs) })
   passed(only)
   assert.equal(greens(only).length, 1, 'no green after a docs-only knowledge commit')
   assert.equal(only.result.find((x) => x.slug === 'a').head, H2, 'the crew head moves to the integrated knowledge commit')
   has(callOf(only, 'a-qc').prompt, `Head: ${H2}`)
-  for (const [name, files, runner] of [['a source file', ['docs/features.md', 'src/ui/a.ts'], integ(H2)], ['a non-markdown doc', ['docs/features.md', 'docs/x.json'], integ(H2)], ['no file list', undefined, integ(H2)], ['an empty list', [], integ(H2)], ['no integrated head', ['docs/features.md'], integ(null)]]) {
-    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', files ? { files } : {}) }), runner })
+  const kc = cmdsOf(only, 'knowledge-commit')[0]
+  has(kc.prompt, `--base=${HEAD}`)
+  has(kc.prompt, `--head=${H2}`)
+  const no = rj({ slug: 'a', sha: KSHA, files: ['docs/features.md', 'src/ui/a.ts'], docsOnly: false })
+  for (const [name, runner] of [['the factory says docsOnly false', integ(H2, no)], ['the factory fails', integ(H2, rj({ error: 'boom' }, 1))], ['no docsOnly in the result', integ(H2, rj({ slug: 'a', sha: KSHA }))], ['no integrated head', integ(null, docs)]]) {
+    const r = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor({ 'a-writer': done('feat/k', { files: ['docs/features.md'] }) }), runner })
     passed(r)
     assert.equal(greens(r).length, 2, name)
   }

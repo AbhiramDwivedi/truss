@@ -3369,7 +3369,8 @@ function cmdDecisionCheckpoint(f: Flags): Obj {
 }
 
 // factory knowledge-commit --slug <slug> --sha <sha>: records the commit that holds the crew's knowledge step, the one commit
-// owns-check lets change docs outside the crew's owns. Prints {slug, sha} with the full sha.
+// owns-check lets change docs outside the crew's owns. Prints {slug, sha} with the full sha. With --base and --head (shas) it also
+// prints files (git diff --name-only base head) and docsOnly, true only when that list is non-empty and every path ends in .md.
 function cmdKnowledgeCommit(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -3385,7 +3386,14 @@ function cmdKnowledgeCommit(f: Flags): Obj {
     writeFileSync(`${CREW_STATE(dir, slug)}/knowledge-commit.json`, JSON.stringify({ shas: [...shas, sha] }) + '\n')
     appendEvent(dir, { event: 'knowledge-commit', crew: slug, sha })
   }
-  return { slug, sha }
+  const base = str(f, 'base')
+  const head = str(f, 'head')
+  if (base === undefined || head === undefined) return { slug, sha }
+  for (const [name, v] of [['base', base], ['head', head]]) if (!/^[0-9a-f]{7,64}$/.test(v)) throw usage(`--${name} ${v} is not a commit sha`)
+  const d = run(repoOf(f), ['-c', 'core.quotepath=off', 'diff', '--name-only', base, head])
+  if (d.status !== 0) throw usage(`git diff ${base} ${head} failed: ${d.err || d.out}`)
+  const files = d.out.split('\n').map((l) => l.trim()).filter(Boolean)
+  return { slug, sha, files, docsOnly: files.length > 0 && files.every((p) => /\.md$/i.test(p)) }
 }
 
 // factory crew-learned --slug <slug> --add=<json array>: appends the learned items of one member report to the crew's list. The list

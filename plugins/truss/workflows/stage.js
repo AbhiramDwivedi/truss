@@ -70,7 +70,7 @@ const MEMBER_SCHEMA = {
     commit: { type: 'string' },
     proof: { type: 'string' },
     text: { type: 'string' },
-    // the files the knowledge writer changed; optional, read only from that writer (a docs-only commit skips the green re-run)
+    // the files the knowledge writer changed; optional, informational only: it does not decide the green skip (factory knowledge-commit does, from git)
     files: { type: 'array', items: { type: 'string' } },
     // ADR-0033: facts a later crew will need; optional, a missing field is []
     learned: {
@@ -1530,22 +1530,24 @@ function knowledgePrompt(crew, resume) {
 // otherwise skipped with no run. A crew whose tasks are all writer tasks always skips it. The writer edits docs from given items, so
 // it runs on Sonnet at effort medium, not the writer row's Opus; QC (Opus) checks the result.
 // Returns false when it did not run, true when it ran and the crew head needs a green check, 'docs' when the commit changed only
-// markdown files (the writer reports its files; factory integrate printed the new head), so the green check is skipped.
+// markdown files (factory knowledge-commit decides that from the git diff of the step; integrate printed the new head), so the green check is skipped.
 async function knowledge(crew) {
   if ((!crew.learned.length && !crew.sourceChanges.length) || !hasCodeTasks(crew)) return false
   crew.step = 'knowledge'
+  const before = crew.head
   const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
   crew.proofs.push(`knowledge: ${report.proof}`)
   const head = await integrate(crew, report.branch, 'knowledge')
   crew.knowledgeRan = true
   const sha = typeof report.commit === 'string' && report.commit.trim() ? report.commit.trim() : null
+  let recorded = null
   if (sha) {
     crew.knowledgeSha = sha
-    await recordKnowledgeCommit(crew, sha)
+    recorded = await recordKnowledgeCommit(crew, sha, before, head)
   }
-  const files = Array.isArray(report.files) ? report.files.filter((f) => typeof f === 'string' && f.trim() !== '') : []
-  if (head && files.length && files.every(isMarkdown)) {
+  // factory decides docs-only from the git diff of the knowledge step, never from the writer's report
+  if (head && recorded && recorded.docsOnly === true) {
     crew.head = head
     return 'docs'
   }
@@ -1553,14 +1555,20 @@ async function knowledge(crew) {
 }
 
 // factory knowledge-commit: the crew's knowledge commit, which factory's owns check exempts. A failure is logged, never stops the crew.
-async function recordKnowledgeCommit(crew, sha) {
+// Returns the parsed result ({slug, sha, files, docsOnly} when base and head are given), or null.
+async function recordKnowledgeCommit(crew, sha, base, head) {
   try {
-    // factory prints {slug, sha}
-    const r = await runFactory(crew, `knowledge-commit --slug ${sh(crew.slug)} --sha ${sh(sha)}`, 'sha')
-    if (!r.parsed || typeof r.parsed.sha !== 'string') log(`knowledge-commit not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+    const range = base && head ? ` --base=${sh(base)} --head=${sh(head)}` : ''
+    const r = await runFactory(crew, `knowledge-commit --slug ${sh(crew.slug)} --sha ${sh(sha)}${range}`, 'sha')
+    if (!r.parsed || typeof r.parsed.sha !== 'string') {
+      log(`knowledge-commit not confirmed: crew ${crew.slug}: ${clip(r.out, 300)}`)
+      return null
+    }
+    return r.parsed
   } catch (err) {
     if (err instanceof Stop) throw err
     log(`knowledge-commit failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+    return null
   }
 }
 
