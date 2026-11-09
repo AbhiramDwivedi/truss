@@ -443,6 +443,8 @@ On `VERDICT: FAIL`, send the findings back to the foreman, apart from those rule
 
 A crew counts as merged when its branch is in the branch the next stage builds on: the target in `sequential` mode, the integration branch in `single` mode. Set its `status` to `"merged"` then, and not before (section 6). The stage gate holds the next stage until every crew in this one is `merged` or `dropped`.
 
+`finish`, `land` and `plan-write` retire the worktrees and branches truss made once their work is merged or superseded. Never keep a backup branch, by rename or otherwise. To keep a tip for reference, run `git update-ref refs/truss/archive/<run>/<name> <sha>`; `finish` prunes it after 30 days, like the other archive refs.
+
 **Workflow crews.** For a Workflow crew the gate is `finish`: it applies this gate in code, merges the target into the crew branch, fast-forwards the target and sets `status` to `merged`. Never merge such a crew by hand. Read its output: `merged` crews are done. `rework: conflict` and `rework: reqc` go back through `start --slug <slug> --resume merge-ready --transcript <T>` and a new `Workflow(stage.js)` run, whose first step redoes the merge and lets a resolver settle any conflict before the checks and QC engineer. A crew under `blocked` (the target is checked out dirty) waits for the client; run `finish` again after the answer. `refused` and `audit` entries go to the client. The gate text in this section is the foreman path's rule, and `single` mode is always the foreman path.
 
 **sequential**, one crew at a time, stage by stage and in the order of the plan within a stage, or the order the foremen agreed between them. For each crew:
