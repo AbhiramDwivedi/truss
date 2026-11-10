@@ -135,7 +135,7 @@ test('wiring 025: start refuses the linked crew with awaiting client and the id 
   const stopped = [...(j.held ?? []), ...(j.refused ?? [])].find((x: any) => x.slug === 'linked')
   assert.ok(stopped, `linked is neither held nor refused: ${r.stdout.slice(0, 600)}`)
   assert.ok(String(stopped.why ?? stopped.reason).includes(`awaiting client: ${BLOCK_ID}`), JSON.stringify(stopped))
-  assert.ok((j.entries ?? []).some((e: any) => e.slug === 'free'), `free did not start: ${r.stdout.slice(0, 600)}`)
+  assert.ok((j.truss?.crews ?? []).some((e: any) => e.slug === 'free'), `free did not start: ${r.stdout.slice(0, 600)}`)
   const plan = readPlan(env.dir)
   assert.equal(plan.crews.find((c: any) => c.slug === 'linked').status, 'planned')
   assert.equal(plan.crews.find((c: any) => c.slug === 'free').status, 'running')
