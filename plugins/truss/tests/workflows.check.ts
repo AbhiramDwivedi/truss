@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as reg from '../hooks/register.ts'
+import { parseLabel } from '../bin/factory.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, qcRuling } = reg
 
@@ -1517,4 +1518,36 @@ t('workflows 025: the prompt the qc agent receives carries the long-term cost pa
 t('workflows 025: the prompt the checker agent receives carries the long-term cost paragraph', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
   has(call(r, 'truss-checker').prompt, LTC_PARAGRAPH)
+})
+// Labels are routed by role so the test does not name the labels it is checking.
+const poLabels = () => {
+  let designs = 0
+  let reviews = 0
+  const crews = (slugs) => ({ report: 'Plan ready.', planJson: JSON.stringify({ crews: slugs.map((slug) => ({ slug })) }), planMd: '# PLANMD-MARK' })
+  const handler = (label) => {
+    if (/designer/.test(label)) return () => (designs++ === 0 ? crews(['a']) : crews(['a', 'b']))
+    if (/checker/.test(label)) return () => AGREE
+    return () => (reviews++ === 0 ? 'PO: REVISE\n1. a: the criteria only prove the code runs. Fix: add realistic data' : 'PO: ACCEPT')
+  }
+  return new Proxy({}, {
+    has: () => true,
+    get: (_, label) => (typeof label === 'string' ? handler(label) : undefined),
+    getOwnPropertyDescriptor: (_, label) => ({ configurable: true, enumerable: true, writable: true, value: handler(String(label)) }),
+  })
+}
+t('plan.js: every label it spawns parses to slug truss', async () => {
+  for (const fix of [false, true]) {
+    const args = planArgs({ fix })
+    args.truss.personas = { 'product-owner': { readOnly: true, loaded: true, agentType: 'proj:product-owner', model: 'sonnet', effort: 'low' } }
+    const r = await exec('plan.js', args, { labels: poLabels() })
+    if (r.error) throw r.error
+    assert.deepEqual(r.unscripted, [])
+    assert.equal(r.result.recheck?.ran, true, 'the revision changed the crew list, so the checking engineer re-checks')
+    assert.ok(r.labels.length >= 6, `designer, checker, po, revision, po, re-check all ran: ${r.labels.join(', ')}`)
+    for (const label of r.labels) {
+      const p = parseLabel(label)
+      assert.ok(p, `${fix ? 'fix run' : 'normal run'}: label ${label} does not parse`)
+      assert.equal(p.slug, 'truss', `${fix ? 'fix run' : 'normal run'}: label ${label} parses to slug ${p.slug}`)
+    }
+  }
 })
