@@ -12,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict, unbannered } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
+import { budgetsOf, lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from './knowledge.ts'
+import type { KCfg } from './knowledge.ts'
 import type { Catalog } from '../retro/catalog.ts'
 
 // retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
@@ -191,6 +193,37 @@ function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
   const featureMap = repoPathOf(cfg.featureMap)
   const adrDir = repoPathOf(cfg.adrDir) ?? repoPathOf(cfg.adr)
   return { ...(featureMap === undefined ? {} : { featureMap }), ...(adrDir === undefined ? {} : { adrDir }) }
+}
+// ADR-0035: the path-scoped knowledge keys of truss.json, each a valid repo path or its default.
+export function knowledgeCfgOf(repo: string): KCfg {
+  const cfg = configOf(repo)
+  return {
+    featureMap: repoPathOf(cfg.featureMap) ?? 'docs/features.md',
+    productDecisions: repoPathOf(cfg.productDecisions) ?? 'docs/knowledge/product-decisions.md',
+    knowledgeDir: repoPathOf(cfg.knowledgeDir) ?? 'docs/knowledge',
+    rulesDir: repoPathOf(cfg.rulesDir) ?? '.claude/rules',
+    agentsIndex: repoPathOf(cfg.agentsIndex) ?? 'AGENTS.md',
+    budgets: budgetsOf(cfg.knowledgeBudgets),
+  }
+}
+// The stage args (and plan-args) that carry the knowledge layout, next to featureMap: a path key only when its file or dir exists,
+// `rules` ([{path, paths}]) only when there are rule files.
+function knowledgeArgsOf(repo: string, withRules: boolean): Obj {
+  const k = knowledgeCfgOf(repo)
+  const out: Obj = {}
+  if (existsSync(`${repo}/${k.productDecisions}`)) out.productDecisions = k.productDecisions
+  if (existsSync(`${repo}/${k.agentsIndex}`)) out.agentsIndex = k.agentsIndex
+  if (existsSync(`${repo}/${k.rulesDir}`)) out.rulesDir = k.rulesDir
+  if (existsSync(`${repo}/${k.knowledgeDir}`)) out.knowledgeDir = k.knowledgeDir
+  if (withRules && out.rulesDir !== undefined) {
+    try {
+      const rules = knowledgeRulesIndex(repo, k).rules
+      if (rules.length > 0) out.rules = rules
+    } catch {
+      // not a git repo or git failed: the crew runs without the rules list
+    }
+  }
+  return out
 }
 
 // The crew worktree path <repo>/.claude/worktrees/truss-<slug>.
@@ -446,6 +479,7 @@ function cmdPlanArgs(f: Flags): Obj {
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
       scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
+      ...knowledgeArgsOf(repo, false),
     },
     brief,
   }
@@ -1057,8 +1091,13 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
     const now = run(c.wt, ['show', `HEAD:${file}`])
     return frontmatter(was.status === 0 ? was.out : '') === frontmatter(now.status === 0 ? now.out : '')
   }
+  // ADR-0035: the rules dir, the knowledge dir, the agents index and the product-decisions file join the doc set. A persona's
+  // frontmatter is still never the knowledge step's to edit, whatever else names the file.
+  const kc = knowledgeCfgOf(c.repo)
   const isDoc = (file: string): boolean =>
-    file.toLowerCase().endsWith('.md') && (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file)) && (!isPersona(file) || frontmatterKept(file))
+    file.toLowerCase().endsWith('.md') &&
+    (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
+    (!isPersona(file) || frontmatterKept(file))
   return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
 }
 
@@ -1246,7 +1285,7 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
     held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -3459,10 +3498,33 @@ function cmdDecisions(f: Flags): Obj {
   return { decisions: list }
 }
 
+// ==== knowledge (ADR-0035) ====
+
+// `knowledge-lint [--base=<sha>] [--repo R]`: exit 0 whether or not it found failures; the caller reads `ok`.
+function cmdKnowledgeLint(f: Flags): Obj {
+  const repo = repoOf(f)
+  const base = str(f, 'base')
+  if (f.base === true || base === '') throw usage('--base needs a value')
+  if (base !== undefined && (base.startsWith('-') || run(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0)) throw usage(`--base ${base} is not a commit of ${repo}`)
+  return knowledgeLint(repo, knowledgeCfgOf(repo), base)
+}
+// `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
+function cmdKnowledgeMigrate(f: Flags): Obj {
+  const repo = repoOf(f)
+  if (typeof f.apply === 'string' && f.apply !== 'true') throw usage('--apply takes no value')
+  return knowledgeMigrate(repo, knowledgeCfgOf(repo), f.apply === true || f.apply === 'true')
+}
+// `rules-index`: every rule file and its `paths` globs.
+function cmdRulesIndex(f: Flags): Obj {
+  const repo = repoOf(f)
+  return knowledgeRulesIndex(repo, knowledgeCfgOf(repo))
+}
+
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
+  'knowledge-lint': cmdKnowledgeLint, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,

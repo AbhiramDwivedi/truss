@@ -29,6 +29,43 @@
       "minLength": 1,
       "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
     },
+    "productDecisions": {
+      "description": "0.24.0. The file that holds the crew product calls, relative to the repo root (truss ADR-0035). Default docs/knowledge/product-decisions.md. A path inside the repo, as featureMap is.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
+    "knowledgeDir": {
+      "description": "0.24.0. The directory of lazy knowledge docs (one topic per file, frontmatter sources and verified), relative to the repo root. Default docs/knowledge. A path inside the repo, as featureMap is.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
+    "rulesDir": {
+      "description": "0.24.0. The directory of path-scoped rule files (frontmatter paths, sources, verified), relative to the repo root. Default .claude/rules. A path inside the repo, as featureMap is.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
+    "agentsIndex": {
+      "description": "0.24.0. The always-loaded index of pointers that CLAUDE.md imports with @AGENTS.md, relative to the repo root. Default AGENTS.md. A path inside the repo, as featureMap is.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+    },
+    "knowledgeBudgets": {
+      "description": "0.24.0. Line budgets that knowledge-lint checks (truss ADR-0035). Defaults: agentsIndex 60, persona 120, personaStandards 15 (list items under ## Standards), rule 40, featureEntry 6, doc 150. Over budget is a failure for agentsIndex, persona, personaStandards and rule (always-loaded files) and a warning for featureEntry and doc.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agentsIndex": { "type": "integer", "minimum": 0 },
+        "persona": { "type": "integer", "minimum": 0 },
+        "personaStandards": { "type": "integer", "minimum": 0 },
+        "rule": { "type": "integer", "minimum": 0 },
+        "featureEntry": { "type": "integer", "minimum": 0 },
+        "doc": { "type": "integer", "minimum": 0 }
+      }
+    },
     "agentCap": {
       "description": "Deprecated and ignored since truss 0.7.0. Still accepted so older configs validate.",
       "type": "integer",
