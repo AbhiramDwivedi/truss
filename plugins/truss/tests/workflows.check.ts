@@ -1435,3 +1435,77 @@ t('stage briefs: the tester and builder prompts tell the member to build only th
   has(call(r, 'a-tester').prompt, M1)
   has(call(r, 'a-builder').prompt, M1)
 })
+
+// ---------------------------------------------------------------- wave 2 (contract-025 section 3, A0 workflow edits)
+
+const admitOnly = (answer) => ({ cmd }) => (cmd === 'admit' ? answer : undefined)
+const admitCalls = (r) => r.calls.filter((c) => c.runner?.cmd === 'admit')
+
+t('workflows 025: admit budget hold stops the crew BLOCKED with "BLOCKED: budget: <why>" and no member runs', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly(rj({ admitted: false, budget: true, scope: 'run', spentUsd: 9, limitUsd: 5, why: 'WHY-BUDGET-MARK 9 of 5 USD' })) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.ok(res.text.startsWith('BLOCKED: budget: '), res.text)
+  has(res.text, 'WHY-BUDGET-MARK 9 of 5 USD')
+  assert.ok(!res.text.includes('held by admission'), res.text)
+  assert.equal(admitCalls(r).length, 1, 'a budget hold is not retried')
+})
+t('workflows 025: admit awaiting-client hold stops the crew BLOCKED with "BLOCKED: awaiting client: <why>"', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly(rj({ admitted: false, awaiting: true, why: 'awaiting client: E-WHY-AWAIT-MARK' })) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.ok(res.text.startsWith('BLOCKED: awaiting client: '), res.text)
+  has(res.text, 'E-WHY-AWAIT-MARK')
+  assert.equal(admitCalls(r).length, 1, 'an awaiting hold is not retried')
+})
+t('workflows 025: admit exit 2 "store busy" twice makes exactly two admit runner calls, then a stop', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly({ exit: 2, stdout: 'store busy' }) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.equal(admitCalls(r).length, 2)
+  assert.ok(r.calls.every((c) => c.runner?.cmd === 'admit'), 'no other call follows the stop')
+})
+t('workflows 025: admit exit 2 "store busy" once, then admitted, goes on and the crew passes', async () => {
+  const runner = ({ cmd, slug, n }) => (cmd === 'admit' && slug === 'a' && n === 0 ? { exit: 2, stdout: 'store busy' } : undefined)
+  const r = await runStage([entry('a')], { labels: base(), runner })
+  assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
+  assert.ok(admitCalls(r).length >= 3, 'the retry is one extra admit call, then the later spawns admit as before')
+})
+t('workflows 025: the qc prompt carries "Work type: <wt>." from the entry', async () => {
+  const r = await runStage([entry('a', { workType: 'docs' })], { labels: base() })
+  assert.ok(call(r, 'a-qc').prompt.split('\n').includes('Work type: docs.'), call(r, 'a-qc').prompt)
+})
+t('workflows 025: the qc prompt says "Work type: none." when the entry has no workType', async () => {
+  const r = await runStage([entry('a')], { labels: base() })
+  assert.ok(call(r, 'a-qc').prompt.split('\n').includes('Work type: none.'), call(r, 'a-qc').prompt)
+})
+t('workflows 025: qc copies the LONG-TERM-COST lines of a PASS report into the result as longTermCosts', async () => {
+  const L1 = 'LONG-TERM-COST: new public flag --x | later: every caller keeps it | reversal: costly'
+  const L2 = 'LONG-TERM-COST: new dependency foo | later: upgrades | reversal: cheap'
+  const text = `${PASS}\n## Notes\n${L1}\n  - ${L2}\nnot a line: LONG-TERM-COST: mid-line mention | later: x | reversal: cheap\n`
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-qc': text }) })
+  const res = r.res[0]
+  assert.equal(res.state, 'passed', JSON.stringify(res))
+  assert.ok(Array.isArray(res.longTermCosts), 'longTermCosts is an array')
+  assert.equal(res.longTermCosts.length, 2, JSON.stringify(res.longTermCosts))
+  has(res.longTermCosts[0], L1)
+  has(res.longTermCosts[1], L2)
+})
+t('workflows 025: a qc PASS with no LONG-TERM-COST line has no longTermCosts entries', async () => {
+  const r = await runStage([entry('a')], { labels: base() })
+  assert.deepEqual(r.res[0].longTermCosts ?? [], [])
+})
+t('workflows 025: the designer prompt says version is 4 and that every crew gets a workType, required when unattended', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  const p = r.calls[0].prompt
+  has(p, 'version is 4')
+  has(p, 'give every crew a workType (one of ')
+  has(p, 'in an unattended run it is required')
+})
+t('workflows 025: the checker prompt asks to check each crew workType fits its work', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  has(call(r, 'truss-checker').prompt, "Check each crew's workType fits its work: a crew that changes behaviour is not docs or refactor.")
+})
