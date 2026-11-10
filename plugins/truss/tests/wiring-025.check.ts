@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
-  REAL_FACTORY, REAL_PLUGIN, assertOneLine, crew, mkEnv, planObj, pluginCopy, readPlan, runCli, tmp, validate, validateEvent, writeGoal, writePlan,
+  REAL_FACTORY, REAL_PLUGIN, appendEvent, assertOneLine, crew, factorySpawn, mkEnv, mkRun, planObj, pluginCopy, readPlan, runCli, tmp, validate, validateEvent, writeGoal, writePlan,
 } from './fixtures/workflow-run/harness.ts'
 
 const BIN = `${REAL_PLUGIN}/bin`
@@ -313,4 +313,31 @@ test('wiring 025: the config schema accepts notify, pricing, budget, workTypes a
   assert.notDeepEqual(validate(schema, { ...cfg, notify: 5 }), [], 'a non-string notify is accepted')
   assert.notDeepEqual(validate(schema, { ...cfg, intake: { sources: ['svn'] } }), [], 'an unknown intake source is accepted')
   assert.notDeepEqual(validate(schema, { ...cfg, intake: { bogus: 1 } }), [], 'an unknown intake key is accepted')
+})
+
+/** A finish world: crew s running, its stage run, and a second plan run whose agents carry `planLabels` (label -> agentType). Returns finish's audit list. */
+function auditOf(planLabels: [string, string][]): { label: string; why: string }[] {
+  const env = mkEnv({ config: { merge: 'sequential', target: 'main' } })
+  writePlan(env.dir, planObj([crew('s', { status: 'running', owns: ['src/s/**'], acceptanceTest: 'true' })], { approvedAt: '2026-10-01T00:00:00.000Z' }))
+  appendEvent(env.dir, factorySpawn('s', new Date(Date.now() - 3 * 3600_000).toISOString()))
+  const agent = { metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', startTs: '2026-10-29T09:00:00.000Z' }
+  const run = mkRun(env.transcripts, 'wf_1', [{ ...agent, label: 's-builder', metaModel: 'sonnet', model: 'claude-sonnet-5-5', result: 'built it' }])
+  mkRun(env.transcripts, 'wf_plan', planLabels.map(([label, agentType]) => ({ ...agent, label, agentType })))
+  const resFile = `${env.dir}/result.json`
+  writeFileSync(resFile, JSON.stringify([]))
+  const j = assertOneLine(env.run('finish', { transcript: run.dir, result: resFile }))
+  return j.audit ?? []
+}
+
+test("wiring 025: the session audit counts a plan run labelled truss-designer, truss-checker, truss-po, truss-designer-2, truss-po-2 and truss-checker-2 as truss's", () => {
+  const audit = auditOf([
+    ['truss-designer', 'truss:design-engineer'], ['truss-checker', 'truss:checking-engineer'], ['truss-po', 'truss:judge'],
+    ['truss-designer-2', 'truss:design-engineer'], ['truss-po-2', 'truss:judge'], ['truss-checker-2', 'truss:checking-engineer'],
+  ])
+  assert.deepEqual(audit.filter((a) => a.label.startsWith('wf_plan/')), [], `the plan run is flagged: ${JSON.stringify(audit)}`)
+})
+
+test('wiring 025: the session audit still flags a plan run with the label truss-designer-po', () => {
+  const audit = auditOf([['truss-designer', 'truss:design-engineer'], ['truss-designer-po', 'truss:judge']])
+  assert.ok(audit.some((a) => a.label.startsWith('wf_plan/')), `the unparsable label is not flagged: ${JSON.stringify(audit)}`)
 })
