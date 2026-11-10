@@ -176,35 +176,41 @@ function readOwner(lock: string, fs?: FsLike): any {
   }
 }
 
-// Copied from resources/index.ts takeOver: renames a stale lock to a unique name, checks it is the stale one, renames back if not.
-// On win32 a rename can fail for a moment while a scanner holds a handle, so it is retried there.
+// Removes a stale lock. Unlike resources/index.ts takeOver it never moves the lock aside: a rename of a lock that turned live
+// would open a window where the path is free while its owner is still in f (and strand the owner's release). Instead one
+// breaker at a time holds the mutex <lock>.break, re-reads the owner and removes the lock only if it is still the one
+// judged stale (same token). Only a breaker removes a lock it does not own, so a live owner's lock is never disturbed.
+// On win32 the removal retries, since a scanner can hold a handle for a moment.
 function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platform, fs?: FsLike): boolean {
-  const moved = `${lock}.stale-${process.pid}-${randomUUID()}`
-  const rename = fn(fs, 'renameSync')
-  for (let attempt = 0; ; attempt++) {
-    try {
-      rename(lock, moved)
-      break
-    } catch (e: any) {
-      if (platform === 'win32' && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES') && attempt < 5) {
-        sleepSync(20)
-        continue
+  const brk = `${lock}.break`
+  try {
+    fn(fs, 'mkdirSync')(brk)
+  } catch (e: any) {
+    if (e.code === 'EEXIST') {
+      // another breaker is working; one that died holding the mutex is cleared once it is old
+      try {
+        if (Date.now() - fn(fs, 'statSync')(brk).mtimeMs > OWNERLESS_MS) fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+      } catch {
+        // gone already
       }
-      return false
-    }
-  }
-  const o = readOwner(moved, fs)
-  const tok = o && typeof o.token === 'string' ? o.token : null
-  if (tok !== seenToken) {
-    try {
-      rename(moved, lock)
-    } catch {
-      fn(fs, 'rmSync')(moved, { recursive: true, force: true })
     }
     return false
   }
-  fn(fs, 'rmSync')(moved, { recursive: true, force: true })
-  return true
+  try {
+    const o = readOwner(lock, fs)
+    const tok = o && typeof o.token === 'string' ? o.token : null
+    if (tok !== seenToken) return false
+    fn(fs, 'rmSync')(lock, { recursive: true, force: true, ...(platform === 'win32' ? { maxRetries: 5, retryDelay: 20 } : {}) })
+    return true
+  } catch {
+    return false
+  } finally {
+    try {
+      fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+    } catch {
+      // a leftover mutex is cleared once it is old
+    }
+  }
 }
 
 // Runs f holding the lock <dir>/locks/<name>.lock and returns its result. Waits up to waitMs, retrying every 25 ms, then throws StoreBusy.
