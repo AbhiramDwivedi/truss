@@ -176,7 +176,7 @@ function intake(f: Flags): Obj {
         added.push(id)
         if (c.state === 'triage' && dir !== undefined) {
           try {
-            escalate(repo, dir, { kind: 'intake-triage', title: `Triage intake item ${id}: ${c.title}`, detail: `The issue's author ${c.author ?? 'unknown'} is not a collaborator.`, ref: `queue:${id}` })
+            escalate(repo, dir, { kind: 'intake-triage', title: `Triage intake item ${id}`, detail: `The issue's author ${c.author ?? 'unknown'} is not a collaborator.\n${dataNotice(c.title, c.title)}`, ref: `queue:${id}` })
           } catch (e) {
             errors.push({ source, error: `escalate failed for ${id}: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}` })
           }
@@ -248,7 +248,8 @@ function queueNext(f: Flags): Obj {
   if (!claimed) return { item: null }
   const file = `${dir}/unattended.json`
   if (existsSync(file)) {
-    const cur = readJson(file)
+    let cur: unknown = {}
+    try { cur = readJson(file) } catch { /* corrupt file: the claim is already written, rewrite the file with the item id */ }
     writeJsonAtomic(file, { ...(isObj(cur) ? cur : {}), item: claimed.id })
   }
   return { item: { id: claimed.id, title: claimed.title, text: claimed.text, source: claimed.source, url: claimed.url }, dataNotice: dataNotice(claimed.title, claimed.text) }
