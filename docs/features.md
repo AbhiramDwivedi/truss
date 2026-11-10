@@ -25,7 +25,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Intake queue
 
-- What: `plugins/truss/bin/queue.ts` keeps one JSON item per queued job at `<shared>/queue/items/<Q-id>.json` (id `Q-` plus sha12 of the key); every write runs under the `queue` lock. `queue-next` checks the budget, releases stale claims (`by: "stale"`), returns this session's claimed or running item, else claims the oldest `new` item, and writes its id into `<dir>/unattended.json` only if that file exists. The session id is the basename of `--dir`. `intake` and `unattended` events carry crew `main`, since the events schema requires a crew. An md key is `md:` plus sha16 of the item text and truss never writes `docs/queue.md`: editing a line adds a new item, so drop the old one with `queue-set --state dropped`.
+- What: `plugins/truss/bin/queue.ts` keeps one JSON item per queued job at `<shared>/queue/items/<Q-id>.json` (id `Q-` plus sha12 of the key); every write runs under the `queue` lock. `queue-next` checks the budget, releases stale claims (`by: "stale"`), returns this session's claimed or running item, else claims the oldest `new` item, and writes its id into `<dir>/unattended.json` only if that file exists. The session id is the basename of `--dir`. `intake` and `unattended` events carry crew `main`, since the events schema requires a crew. An md key is `md:` plus sha16 of the item text and truss never writes the md file it reads: editing a line adds a new item, so drop the old one with `queue-set --state dropped`.
 - Entry points: `plugins/truss/bin/queue.ts` (`QUEUE_COMMANDS`), `plugins/truss/tests/queue.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0040](../plugins/truss/docs/adr/0040-intake-queue.md).
