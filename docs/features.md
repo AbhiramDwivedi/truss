@@ -16,12 +16,26 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`, `truss-workflow-scripts`.
 - Docs: [store](knowledge/store.md).
 
-## Contract-025 module stubs (inbox, guard, cost, worktypes, ledger, queue)
+## Contract-025 module stubs (inbox, guard, cost, worktypes, ledger)
 
-- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` and `worktypes` already feed admission and `plan-check`.
-- Entry points: `plugins/truss/bin/inbox.ts`, `guard.ts`, `cost.ts`, `worktypes.ts`, `ledger.ts`, `queue.ts`.
+- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` and `worktypes` already feed admission and `plan-check`. `queue` left this list: it is filled in (next entry).
+- Entry points: `plugins/truss/bin/inbox.ts`, `guard.ts`, `cost.ts`, `worktypes.ts`, `ledger.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Stub modules").
+
+## Intake queue
+
+- What: `plugins/truss/bin/queue.ts` keeps one JSON item per queued job at `<shared>/queue/items/<Q-id>.json` (id `Q-` plus sha12 of the key); every write runs under the `queue` lock. `queue-next` checks the budget, releases stale claims (`by: "stale"`), returns this session's claimed or running item, else claims the oldest `new` item, and writes its id into `<dir>/unattended.json` only if that file exists. The session id is the basename of `--dir`. `intake` and `unattended` events carry crew `main`, since the events schema requires a crew. An md key is `md:` plus sha16 of the item text and truss never writes `docs/queue.md`: editing a line adds a new item, so drop the old one with `queue-set --state dropped`.
+- Entry points: `plugins/truss/bin/queue.ts` (`QUEUE_COMMANDS`), `plugins/truss/tests/queue.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0040](../plugins/truss/docs/adr/0040-intake-queue.md).
+
+## Unattended brief
+
+- What: while `<truss dir>/unattended.json` exists, `truss:brief` records source `{kind: "intake", id}` and writes its own goal sentence. A large item goes to triage. A standard item runs `remaining` instead of `next`, marks branches the facts don't settle `by: "default"` and files a non-blocking `client-question` (`--ref brief:<sid>:<branch>`, `--title-file`); it skips the closing question and logs `Defaults filled: R-<n> (<branch>, E-<id>)`.
+- Entry points: `plugins/truss/skills/brief/SKILL.md` ("Unattended brief"), `plugins/truss/tests/brief-unattended.check.ts`, `plugins/truss/tests/unattended.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0039](../plugins/truss/docs/adr/0039-unattended-start.md), [ADR-0040](../plugins/truss/docs/adr/0040-intake-queue.md).
 
 ## Plan work type
 
