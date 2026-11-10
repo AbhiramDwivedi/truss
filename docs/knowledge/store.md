@@ -11,7 +11,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 27d25ea836ad8c232abdbdb51cc2f49f6988b9c3
+verified: 7d10a66fab5091e5117223da7c94f18274180715
 ---
 
 # Store, holds and contract-025 stubs
@@ -44,7 +44,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Stub modules
 
-`inbox`, `guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures; a replacing crew keeps these exports exactly:
+`inbox`, `guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` is now implemented); a replacing crew keeps these exports exactly:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
