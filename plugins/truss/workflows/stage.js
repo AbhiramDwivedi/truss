@@ -85,9 +85,13 @@ const LEARNED = `Learned items: in the learned field of your report, list each f
 // `{,x}`, and an unbalanced or malformed brace group is literal. No negation; a dot and `[` are literal. This copy must pass
 // tests/fixtures/glob-vectors.json with the factory's matcher (stage.js is a workflow script and cannot import factory code).
 const flatPath = (p) => String(p).replace(/\\/g, '/')
-// the brace expansion of a glob: one glob per alternative (the glob itself when it has no valid brace group)
+// the brace expansion of a glob: one glob per alternative (the glob itself when it has no valid brace group). A glob with more than
+// MAX_BRACE_GROUPS groups, or whose expansion would pass MAX_BRACE_ALTS alternatives, is invalid: null, counted before expanding.
+const MAX_BRACE_GROUPS = 8
+const MAX_BRACE_ALTS = 256
 function braceAlternatives(glob) {
   const parts = [['']]
+  let count = 1
   let lit = ''
   let i = 0
   while (i < glob.length) {
@@ -101,6 +105,8 @@ function braceAlternatives(glob) {
       continue
     }
     parts.push([lit], alts)
+    count *= alts.length
+    if ((parts.length - 1) / 2 > MAX_BRACE_GROUPS || count > MAX_BRACE_ALTS) return null
     lit = ''
     i = close + 1
   }
@@ -127,7 +133,8 @@ function globBody(glob) {
 const globRegExpCache = new Map()
 function ruleGlobRegExp(glob) {
   if (globRegExpCache.has(glob)) return globRegExpCache.get(glob)
-  const re = new RegExp(`^(?:${braceAlternatives(flatPath(glob)).map(globBody).join('|')})$`, 'u')
+  const alts = braceAlternatives(flatPath(glob))
+  const re = alts ? new RegExp(`^(?:${alts.map(globBody).join('|')})$`, 'u') : /(?!)/u // an invalid glob matches nothing
   globRegExpCache.set(glob, re)
   return re
 }
@@ -164,10 +171,14 @@ function globsOverlap(taskGlob, ruleGlob) {
     const eb = literalExt(r)
     return !(ea && eb && ea !== eb)
   }
-  const rs = braceAlternatives(flatPath(ruleGlob)).map(plainGlob)
-  return braceAlternatives(flatPath(taskGlob)).map(plainGlob).some((t) => rs.some((r) => one(t, r)))
+  // each side is at most MAX_BRACE_ALTS alternatives, so the pairs stay at 256 x 256; an invalid glob on either side overlaps nothing
+  const ra = braceAlternatives(flatPath(ruleGlob))
+  const ta = braceAlternatives(flatPath(taskGlob))
+  if (!ra || !ta) return false
+  const rs = ra.map(plainGlob)
+  return ta.map(plainGlob).some((t) => rs.some((r) => one(t, r)))
 }
-const isGlob = (f) => hasWildcard(f) || braceAlternatives(f).length > 1
+const isGlob = (f) => hasWildcard(f) || (braceAlternatives(f) || []).length !== 1
 // the rule files (repo-relative paths) whose `paths` globs match any of the task's files, in rule order, once each. A planner's
 // task file may carry `\` separators: it is matched as `/`.
 function rulesFor(rules, files) {
@@ -1684,11 +1695,18 @@ function sourceChangesOf(parsed) {
 }
 const isMarkdown = (p) => /\.md$/i.test(String(p))
 // ADR-0035: a file every session loads whole: CLAUDE.md, CLAUDE.local.md or AGENTS.md in any directory, the agents index, a persona file
+// the path form alwaysLoaded compares: `/` separators, the repo root and a leading `./` dropped, lower case (the root is
+// normalised the same way, so `C:\repo\x` and `C:/repo/x` agree)
+function loadedForm(p) {
+  const root = `${flatPath(F.repo).replace(/\/+$/, '')}/`.toLowerCase()
+  const f = flatPath(p).toLowerCase()
+  return plainGlob(f.startsWith(root) ? f.slice(root.length) : f)
+}
 function alwaysLoaded(p) {
-  const f = plainGlob(flatPath(repoRel(p)))
+  const f = loadedForm(p)
   const base = f.slice(f.lastIndexOf('/') + 1)
-  if (/^(CLAUDE|CLAUDE\.local|AGENTS)\.md$/i.test(base) || f === plainGlob(repoRel(AGENTS_INDEX)) || f.startsWith('.claude/agents/')) return true
-  return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && plainGlob(flatPath(repoRel(x.file))) === f)
+  if (/^(claude|claude\.local|agents)\.md$/.test(base) || f === loadedForm(AGENTS_INDEX) || f.startsWith('.claude/agents/')) return true
+  return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && loadedForm(x.file) === f)
 }
 
 function knowledgePrompt(crew, resume) {
@@ -1730,7 +1748,7 @@ function knowledgePrompt(crew, resume) {
     `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every rule or knowledge doc you create or edit.`,
     `A new knowledge or rule file is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
     `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to ${RULES_DIR}/<area>.md.`,
-    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the text when it is a description, raise a design PROPOSAL when an ADR\'s decision no longer holds.',
+    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the descriptive text in the architecture doc and the feature map (module map entries, paths, how a module works), never edit an existing ADR, and raise a design PROPOSAL instead when an ADR\'s decision no longer holds.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
@@ -1823,7 +1841,7 @@ async function knowledgeLint(crew) {
     const count = (v, listed) => (Number.isInteger(v) && v >= listed ? v : null)
     const predatingCount = count(r.parsed.predatingCount, failures.filter((x) => !isNewFinding(x)).length)
     const warningCount = count(r.parsed.warningCount, warnings.length)
-    crew.lint = { ran: true, failures, warnings, ...(predatingCount !== null ? { predatingCount } : {}), ...(warningCount !== null ? { warningCount } : {}) }
+    crew.lint = { ran: true, failures, warnings, ...(r.parsed.baseFallback === true ? { baseFallback: true } : {}), ...(predatingCount !== null ? { predatingCount } : {}), ...(warningCount !== null ? { warningCount } : {}) }
   } catch (err) {
     if (err instanceof Stop) throw err
     log(`knowledge-lint failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
@@ -1837,6 +1855,7 @@ const lintItem = (x) => `- [${x.check}] ${x.path}: ${x.message}`
 // the lint caps its predating and warning lists and gives the full counts; a line for what the cap left out, or none
 const notListed = (count, listed) => (Number.isInteger(count) && count > listed ? [`- and ${count - listed} more not listed (${count} in all)`] : [])
 
+const BASE_FALLBACK_LINE = "The lint base is the crew's red-record head, not the fork point; a failure marked predating may be the crew's own. Check the knowledge files by hand."
 // the QC brief's lint block; [] when the lint was skipped
 function lintLines(crew) {
   const l = crew.lint
@@ -1847,9 +1866,11 @@ function lintLines(crew) {
   const old = l.failures.filter((x) => !isNewFinding(x))
   const oldN = l.predatingCount ?? old.length
   const warnN = l.warningCount ?? l.warnings.length
-  if (!fresh.length && !oldN && !warnN) return ['Knowledge lint (factory knowledge-lint): no failures and no warnings.', '']
+  const fallback = l.baseFallback ? [BASE_FALLBACK_LINE] : []
+  if (!fresh.length && !oldN && !warnN) return ['Knowledge lint (factory knowledge-lint): no failures and no warnings.', ...fallback, '']
   return [
     'Knowledge lint (factory knowledge-lint):',
+    ...fallback,
     ...(fresh.length ? ["New failures (this crew's diff caused them; FAIL on each, quoting it):", ...fresh.map(lintItem)] : []),
     ...(oldN ? ['Failures that predate this crew (list them in your report for the main session; never FAIL for them):', ...old.map(lintItem), ...notListed(oldN, old.length)] : []),
     ...(warnN ? ['Warnings (list them in your report; never FAIL for them):', ...l.warnings.map(lintItem), ...notListed(warnN, l.warnings.length)] : []),
