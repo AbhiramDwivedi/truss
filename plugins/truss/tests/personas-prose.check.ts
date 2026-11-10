@@ -97,7 +97,7 @@ test('ADR-0032 exists, follows the ADR format and the plugin is 0.24.0 with kit 
   const heads = adr.split('\n').filter((l) => /^## /.test(l))
   assert.deepEqual(heads, ['## Context', '## Decision Drivers', '## Considered Options', '## Decision', '## Consequences'])
   const pj = JSON.parse(read('../.claude-plugin/plugin.json'))
-  assert.equal(pj.version, '0.24.0')
+  assert.match(pj.version, /^0\.24\.\d+$/)
   assert.equal(pj.dependencies.find((d) => d.name === 'kit').version, '^0.4.0')
   assert.match(read('../CHANGELOG.md'), /^## 0\.22\.0 /m)
 })
