@@ -417,9 +417,9 @@ async function ask(crew, role, prompt, opts = {}) {
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   let r = await runFactory(crew, cmd, 'admitted')
-  // exit 2 "store busy": another process holds the crew store for a moment; one retry after 2 s, then the stop below
+  // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
+  // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
   if (r.exit === 2 && /store busy/.test(r.out)) {
-    if (typeof setTimeout === 'function') await new Promise((done) => setTimeout(done, 2000))
     r = await runFactory(crew, cmd, 'admitted')
   }
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
