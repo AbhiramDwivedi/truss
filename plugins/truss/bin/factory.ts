@@ -451,11 +451,8 @@ function cmdPlanWrite(f: Flags): Obj {
     if (existing === undefined) no('kept the existing plan: it is not a readable plan')
     else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
   }
-  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
-  writeFileSync(`${dir}/plan.md`, md as string)
-  const left = retirePlanRun(f, dir, run_.id)
-  const drafts = writePersonaDrafts(dir, message)
-  // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result
+  // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
+  // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
     .filter((l) => l.type === 'started' && typeof l.label === 'string' && /^truss-(designer|checker)/.test(l.label))
     .flatMap((l) => {
@@ -463,6 +460,10 @@ function cmdPlanWrite(f: Flags): Obj {
       return r === undefined ? [] : [typeof r === 'string' ? r : isObj(r) && typeof r.report === 'string' ? r.report : JSON.stringify(r)]
     })
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
+  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
+  writeFileSync(`${dir}/plan.md`, md as string)
+  const left = retirePlanRun(f, dir, run_.id)
+  const drafts = writePersonaDrafts(dir, message)
   return { written: true, longTermCosts, ...(left.length > 0 ? { leftWorktrees: left } : {}), ...(drafts.personas.length > 0 ? { personas: drafts.personas } : {}), ...(drafts.problems.length > 0 ? { personaProblems: drafts.problems } : {}) }
 }
 

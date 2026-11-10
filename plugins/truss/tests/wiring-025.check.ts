@@ -158,6 +158,21 @@ test('wiring 025: admit still holds when escalate throws', () => {
   assert.ok(existsSync(log) && readFileSync(log, 'utf8').includes('escalate'), 'the hold tried to escalate, and the throw did not stop it')
 })
 
+test('wiring 025: plan-write writes no plan when ltcPlan throws, so approve cannot pass an unguarded plan', () => {
+  const plugin = stubbedPlugin()
+  renameSync(`${plugin}/bin/guard.ts`, `${plugin}/bin/guard-real.ts`)
+  writeFileSync(`${plugin}/bin/guard.ts`, `export * from './guard-real.ts'\nexport function ltcPlan() { throw new Error('ltcPlan is stubbed to throw') }\n`)
+  const env = mkEnv({ config: CONFIG })
+  const plan = planObj([crew('alpha')], { version: 4, approvedAt: null })
+  const report = `Report.\n\n\`\`\`\`json plan.json\n${JSON.stringify(plan)}\n\`\`\`\`\n\n\`\`\`\`markdown plan.md\nthe plan\n\`\`\`\`\n`
+  const { dir } = mkRun(env.transcripts, 'wf_plan', [{ id: 'aarch', label: 'truss-designer', agentType: 'truss:design-engineer', metaModel: 'opus', result: report, startTs: '2026-10-29T10:00:00.000Z' }])
+  const r = runIn(plugin, env, 'plan-write', { transcript: dir, label: 'truss-designer' })
+  assert.notEqual(r.status, 0, `plan-write must fail: ${r.stdout} ${r.stderr}`)
+  assert.equal(existsSync(`${env.dir}/plan.json`), false, 'no plan.json is written')
+  assert.equal(existsSync(`${env.dir}/plan.md`), false, 'no plan.md is written')
+  assert.notEqual(runIn(plugin, env, 'approve', { by: 'client' }).status, 0, 'approve finds no plan to approve')
+})
+
 test('wiring 025: factory re-exports the moved helpers', async () => {
   const store = await import(`${BIN}/store.ts`)
   const factory = await import(REAL_FACTORY)
