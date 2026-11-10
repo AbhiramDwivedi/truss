@@ -204,5 +204,5 @@ test('ADR-0033 exists, follows the ADR format and names A-D', () => {
   for (const h of ['### A.', '### B.', '### C.', '### D.']) assert.ok(adr.includes(h), h)
   assert.match(adr, /context bloat|bloat the context/)
   assert.match(adr, /separate goal after this one merges/)
-  assert.equal(JSON.parse(read('../.claude-plugin/plugin.json')).version, '0.23.0')
+  assert.equal(JSON.parse(read('../.claude-plugin/plugin.json')).version, '0.24.0')
 })

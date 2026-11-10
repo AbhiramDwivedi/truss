@@ -64,6 +64,85 @@ const RUNNER_SCHEMA = { type: 'object', properties: { exit: { type: 'number' }, 
 const STATUS_PREFIX = 'truss-status: '
 const FEATURE_MAP = typeof F.featureMap === 'string' && F.featureMap ? F.featureMap : 'docs/features.md'
 const ADR_DIR = (typeof F.adrDir === 'string' && F.adrDir ? F.adrDir : 'docs/adr').replace(/\/+$/, '')
+// ADR-0035: the path-scoped knowledge layout. The stage args name a path only when its file or dir exists (factory start); these
+// defaults are what the knowledge step creates when it does not.
+const strArg = (v, dflt) => (typeof v === 'string' && v ? v : dflt)
+const dirArg = (v, dflt) => strArg(v, dflt).replace(/\/+$/, '')
+const PRODUCT_DECISIONS = strArg(F.productDecisions, 'docs/knowledge/product-decisions.md')
+const AGENTS_INDEX = strArg(F.agentsIndex, 'AGENTS.md')
+const RULES_DIR = dirArg(F.rulesDir, '.claude/rules')
+const KNOWLEDGE_DIR = dirArg(F.knowledgeDir, 'docs/knowledge')
+// the line budgets the lint enforces; the stage args may carry the project's knowledgeBudgets, the defaults fill what they omit
+const BUDGETS = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150, ...Object.fromEntries(Object.entries(F.knowledgeBudgets !== null && typeof F.knowledgeBudgets === 'object' && !Array.isArray(F.knowledgeBudgets) ? F.knowledgeBudgets : {}).filter(([, v]) => Number.isInteger(v) && v > 0)) }
+
+// rule globs: begin
+// ADR-0035: the glob dialect of a rule file's `paths`: `**`, `*`, `?` and `/`-separated paths. `*` and `?` stop at `/`; `**/` is zero
+// or more directories; a trailing slash and double star is everything below; no braces, no negation, a dot is no special case. This copy must pass
+// tests/fixtures/glob-vectors.json with the factory's matcher (stage.js is a workflow script and cannot import factory code).
+const globRegExpCache = new Map()
+function ruleGlobRegExp(glob) {
+  if (globRegExpCache.has(glob)) return globRegExpCache.get(glob)
+  let s = ''
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i]
+    if (ch === '*' && glob[i + 1] === '*') {
+      const rest = glob.slice(i + 2)
+      if (rest.startsWith('/')) {
+        s += '(?:.*/)?'
+        i += 2
+      } else {
+        s += '.*'
+        i++
+      }
+    } else if (ch === '*') s += '[^/]*'
+    else if (ch === '?') s += '[^/]'
+    else s += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  const re = new RegExp(`^${s}$`)
+  globRegExpCache.set(glob, re)
+  return re
+}
+const hasWildcard = (p) => /[*?]/.test(p)
+function globMatches(glob, path) {
+  return typeof glob === 'string' && typeof path === 'string' && ruleGlobRegExp(glob).test(path)
+}
+// the directory part of a glob before its first wildcard segment ('src/ui' for a glob that goes on with a double star), and its literal extension, if any
+const staticDirs = (g) => {
+  const parts = g.split('/')
+  const out = []
+  for (const part of parts.slice(0, -1)) {
+    if (hasWildcard(part)) break
+    out.push(part)
+  }
+  return out
+}
+const literalExt = (g) => {
+  const last = g.slice(g.lastIndexOf('/') + 1)
+  const m = /\.([A-Za-z0-9]+)$/.exec(last)
+  return m && !hasWildcard(m[1]) ? m[1] : null
+}
+// a task file that is itself a glob overlaps a rule glob when their literal directory prefixes nest and their extensions do not differ
+function globsOverlap(taskGlob, ruleGlob) {
+  const a = staticDirs(taskGlob)
+  const b = staticDirs(ruleGlob)
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return false
+  const ea = literalExt(taskGlob)
+  const eb = literalExt(ruleGlob)
+  return !(ea && eb && ea !== eb)
+}
+// the rule files (repo-relative paths) whose `paths` globs match any of the task's files, in rule order, once each
+function rulesFor(rules, files) {
+  if (!Array.isArray(rules)) return []
+  const out = []
+  for (const r of rules) {
+    if (!r || typeof r.path !== 'string' || !r.path || !Array.isArray(r.paths) || out.includes(r.path)) continue
+    const hit = r.paths.some((g) => typeof g === 'string' && g && (files || []).some((f) => typeof f === 'string' && f && (hasWildcard(f) ? globsOverlap(f, g) : globMatches(g, f))))
+    if (hit) out.push(r.path)
+  }
+  return out
+}
+// rule globs: end
 const MEMBER_SCHEMA = {
   type: 'object',
   properties: {
@@ -200,7 +279,7 @@ const seededLearned = (list) =>
     .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [] }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
 }
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
@@ -525,6 +604,9 @@ function taskPrompt(crew, task, note) {
   const e = crew.e
   const answers = answersFor(crew, task.name)
   const body = [`Task: ${task.name}`, `Files you may change: ${task.files.join(', ')}`, `Files to read: ${(task.reads || []).join(', ') || 'none'}`]
+  // ADR-0035: the rule files whose `paths` match the task's files; only when one matches. Kept until an eval shows rules load natively in member worktrees.
+  const ruleFiles = rulesFor(F.rules, task.files)
+  if (ruleFiles.length) body.push(`Context for your files: ${ruleFiles.join(', ')}. Read each one unless it is already in your context.`)
   // ADR-0019 item 16: a builder's read-only list, the tester task files (or the entry's ownTests when no tester task has any)
   if (task.role === 'builder') {
     const tf = testerFiles(crew)
@@ -732,7 +814,6 @@ async function runDecisions(crew) {
 
 function productCallPrompt(crew, report, role, at, all) {
   const e = crew.e
-  const po = PERSONAS['product-owner']
   // factory decisions lists every crew's calls; when it gave nothing, this crew's own earlier calls stand in
   const earlier = all ? all.split('\n') : crew.decisions.map((d) => `- ${d.question} | ${d.answer}`)
   return [
@@ -745,12 +826,12 @@ function productCallPrompt(crew, report, role, at, all) {
     `Goal file: ${e.goalFile}`,
     `Approved scope: ${scopeOf(e)}`,
     `Files this crew owns: ${(Array.isArray(e.owns) ? e.owns : []).join(', ') || 'none'}`,
-    `Product-owner file: ${po.file}`,
+    `Product decisions file: ${productOwnerFile()}`,
     `Product calls of this run so far, from every crew (factory decisions: each call's crew and reply status):${earlier.length ? `\n${earlier.join('\n')}` : ' none'}`,
     '',
-    'Read the goal file, the product-owner file and the requirements the goal file names, then decide.',
+    'Read the goal file, the product decisions file and the requirements the goal file names, then decide.',
     "Follow an earlier call, from any crew, that settles the question. Reply PO: ESCALATE when your answer would contradict an earlier call from another crew: crews run in parallel and must not decide the same thing two ways.",
-    'Escalate (reply PO: ESCALATE) when any of these holds: the question is not a product question; it is outside the crew\'s approved scope; it touches another crew\'s area; it hits a client approval trigger in the goal file; or neither the product-owner file nor the requirements settle it. Never guess a product answer.',
+    'Escalate (reply PO: ESCALATE) when any of these holds: the question is not a product question; it is outside the crew\'s approved scope; it touches another crew\'s area; it hits a client approval trigger in the goal file; or neither the product decisions file nor the requirements settle it. Never guess a product answer.',
     '',
     'Reply with no other text. Either:',
     'PO: DECIDE',
@@ -1271,6 +1352,10 @@ function plannerPrompt(crew, errors) {
   ]
   const dl = directionLines(crew)
   if (dl.length) lines.push('', ...dl)
+  // ADR-0035: the agents index and the rules index, so a task's reads can name the rule files that match its files
+  if (typeof F.agentsIndex === 'string' && F.agentsIndex) lines.push('', `Agents index: ${F.agentsIndex}`)
+  const rules = Array.isArray(F.rules) ? F.rules.filter((r) => r && typeof r.path === 'string' && r.path && Array.isArray(r.paths)) : []
+  if (rules.length) lines.push('', "Rules index (area rules, each loaded for the files its globs match). List a rule file in a task's reads when one of its globs matches one of the task's files:", ...rules.map((r) => `- ${r.path}: ${r.paths.join(', ')}`))
   const names = Object.keys(PERSONAS)
   if (names.length) {
     lines.push('', "Personas (project agents, each specialised by stack and area). Give every builder and tester task the editing persona whose stack and area fit the task's files; a task never spans two personas' areas, so split it instead; persona is null only when no persona fits. A read-only persona is a judge and never takes a task:")
@@ -1547,10 +1632,10 @@ function crewPersonaFiles(crew) {
   }
   return files
 }
-const productOwnerFile = () => {
-  const f = PERSONAS['product-owner'] && PERSONAS['product-owner'].file
-  return typeof f === 'string' && f ? repoRel(f) : null
-}
+const ruleFilesOf = (rules) => (Array.isArray(rules) ? rules.filter((r) => r && typeof r.path === 'string' && r.path).map((r) => r.path) : [])
+// ADR-0035: where the crew product calls live. It was the product-owner persona file, which is always loaded; calls now go to a lazy
+// knowledge file, and the persona keeps only its judging rules.
+const productOwnerFile = () => repoRel(PRODUCT_DECISIONS)
 // the well-formed entries of the green check's sourceChanges: source files the crew diff added, renamed or deleted
 function sourceChangesOf(parsed) {
   const list = parsed && Array.isArray(parsed.sourceChanges) ? parsed.sourceChanges : []
@@ -1571,13 +1656,34 @@ function knowledgePrompt(crew, resume) {
     `Diff range: ${e.base}...${crew.head || 'HEAD'} (git diff ${e.base}...${crew.head || 'HEAD'}, in the crew checkout)`,
     `Feature map: ${FEATURE_MAP}`,
     `Persona files the crew used: ${crewPersonaFiles(crew).join(', ') || 'none'}`,
-    `Product-owner file: ${productOwnerFile() || 'none'}`,
+    `Product decisions file: ${productOwnerFile()}`,
+    `Agents index: ${AGENTS_INDEX}`,
+    `Rules directory: ${RULES_DIR}`,
+    `Knowledge directory: ${KNOWLEDGE_DIR}`,
+    ...(ruleFilesOf(F.rules).length ? [`Rule files that exist: ${ruleFilesOf(F.rules).join(', ')}`] : []),
     `ADR directory: ${ADR_DIR}`,
     '',
     'Why: a later crew must find where functionality lives, what a persona must know and what the product owner decided from these docs, not by analysing the codebase again.',
-    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes by kind: feature, to the feature map; persona, to the Standards or Review checklist of the persona file; product, to the product-owner file; decision, to a new ADR in the ADR directory.`,
-    `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. The persona files get any Standards or Review checklist item the crew learned, and a path they name that the diff moved is fixed. The product-owner file gets the product calls this crew made and any domain truth.`,
-    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Recording nothing for an item is allowed when the code already makes it obvious.',
+    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes where the table below says: a feature item is a capability; a persona item is an area-scoped rule or a cross-cutting persona rule; a product item is a product call; a decision item is a decision.`,
+    '',
+    'Where each item goes:',
+    '| Item | Goes to |',
+    '|---|---|',
+    `| Area-scoped stack rule or invariant | \`${RULES_DIR}/<area>.md\`, with \`paths\` globs |`,
+    '| Cross-cutting persona rule | the persona file, under `## Standards` |',
+    `| Capability | the feature map (${FEATURE_MAP}) |`,
+    `| Product call | the product decisions file (${productOwnerFile()}) |`,
+    `| Decision | a new ADR in ${ADR_DIR} |`,
+    '| Anything else | nowhere |',
+    '',
+    `A rule file is lowercase ASCII kebab-case (\`${RULES_DIR}/export-ui.md\`), with frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\` and \`/\`, no braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
+    `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. A persona file gets a Standards item the crew learned only when it holds for every task of that persona, and a path a persona file names that the diff moved is fixed. The product decisions file gets the product calls this crew made and any domain truth.`,
+    'Every fact you write cites its source path or hunk; drop a fact you cannot cite.',
+    'Reconcile before you add: read what the doc says about the topic, then edit or delete an entry the diff supersedes or contradicts; never append a duplicate or a second entry on the same fact.',
+    `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every rule or knowledge doc you create or edit.`,
+    `A new knowledge or rule file is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
+    `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to ${RULES_DIR}/<area>.md.`,
+    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
@@ -1630,19 +1736,77 @@ async function recordKnowledgeCommit(crew, sha, base, head) {
 
 // ADR-0033: the QC brief's Knowledge block, when one of its two rules can apply: the crew has code tasks or made product calls
 function knowledgeLines(crew) {
-  if (!hasCodeTasks(crew) && !crew.decisions.length) return []
-  const po = productOwnerFile()
+  if (!hasCodeTasks(crew) && !crew.decisions.length) return lintLines(crew)
   const calls = crew.decisions.map((d) => `- ${d.question} | ${d.answer}${d.reply === 'change' ? ' (overruled by main session)' : ''}`)
   return [
     'Knowledge:',
     `Feature map: ${FEATURE_MAP}`,
-    `Product-owner file: ${po || 'none (no product-owner persona)'}`,
+    `Product decisions file: ${productOwnerFile()}`,
     ...(crew.knowledgeSha ? [`Knowledge commit: ${crew.knowledgeSha} (the docs commit this crew's knowledge step made)`] : []),
     ...(calls.length ? ['Product calls this crew made:', ...calls] : []),
-    'If the diff adds or moves user-facing functionality, the feature map must be updated in this diff, and every product call this crew made must appear in the product-owner file; otherwise FAIL, quoting the missing entry.',
+    'If the diff adds or moves user-facing functionality, the feature map must be updated in this diff, and every product call this crew made must appear in the product decisions file; otherwise FAIL, quoting the missing entry.',
     'Never FAIL for missing optional learning: a stack rule, a domain truth or a decision the code already makes obvious.',
     '',
+    ...lintLines(crew),
   ]
+}
+
+// ADR-0035: factory knowledge-lint, once before QC (again only when the head moved). It needs a runner call, so it runs only when the
+// crew has code tasks or the stage args name a knowledge file or dir; otherwise it is skipped with no run and no QC block.
+const knowledgeFilesExist = () => ruleFilesOf(F.rules).length > 0 || ['productDecisions', 'agentsIndex', 'rulesDir', 'knowledgeDir'].some((k) => typeof F[k] === 'string' && F[k] !== '') || (typeof F.featureMap === 'string' && F.featureMap !== '')
+const lintEntries = (v) => (Array.isArray(v) ? v.filter((x) => isPlainObject(x) && typeof x.check === 'string' && x.check && typeof x.path === 'string' && x.path).map((x) => ({ check: x.check, path: x.path, message: typeof x.message === 'string' ? x.message : '', ...(typeof x.new === 'boolean' ? { new: x.new } : {}) })) : null)
+
+async function knowledgeLint(crew) {
+  if (!hasCodeTasks(crew) && !knowledgeFilesExist()) return
+  if (crew.lint && crew.lintHead === crew.head) return
+  crew.lintHead = crew.head
+  try {
+    const r = await runFactory(crew, `knowledge-lint --base=${sh(crew.e.base)}`, 'ok')
+    const failures = r.parsed ? lintEntries(r.parsed.failures) : null
+    const warnings = r.parsed ? lintEntries(r.parsed.warnings ?? []) : null
+    if (!failures || !warnings) {
+      log(`knowledge-lint did not run: crew ${crew.slug}: ${clip(r.out, 300)}`)
+      crew.lint = { ran: false }
+      return
+    }
+    crew.lint = { ran: true, failures, warnings }
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`knowledge-lint failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+    crew.lint = { ran: false }
+  }
+}
+
+// a failure counts as new unless the lint says it was already there at the crew base (new: false); without --base every one is new
+const isNewFinding = (x) => x.new !== false
+const lintItem = (x) => `- [${x.check}] ${x.path}: ${x.message}`
+
+// the QC brief's lint block; [] when the lint was skipped
+function lintLines(crew) {
+  const l = crew.lint
+  if (!l) return []
+  if (!l.ran) return ['Knowledge lint did not run. Check the knowledge rules above by hand.', '']
+  const fresh = l.failures.filter(isNewFinding)
+  const old = l.failures.filter((x) => !isNewFinding(x))
+  if (!fresh.length && !old.length && !l.warnings.length) return ['Knowledge lint (factory knowledge-lint): no failures and no warnings.', '']
+  return [
+    'Knowledge lint (factory knowledge-lint):',
+    ...(fresh.length ? ["New failures (this crew's diff caused them; FAIL on each, quoting it):", ...fresh.map(lintItem)] : []),
+    ...(old.length ? ['Failures that predate this crew (list them in your report for the main session; never FAIL for them):', ...old.map(lintItem)] : []),
+    ...(l.warnings.length ? ['Warnings (list them in your report; never FAIL for them):', ...l.warnings.map(lintItem)] : []),
+    '',
+  ]
+}
+
+// the crew result's knowledgeLint field: what the lint left for the main session. Absent when it was skipped, did not run (the log
+// and the QC brief say so) or found nothing.
+function lintResult(crew) {
+  const l = crew.lint
+  if (!l || !l.ran) return {}
+  const fresh = l.failures.filter(isNewFinding)
+  const old = l.failures.filter((x) => !isNewFinding(x))
+  if (!fresh.length && !old.length && !l.warnings.length) return {}
+  return { knowledgeLint: { ran: true, ...(fresh.length ? { failures: fresh } : {}), ...(old.length ? { predating: old } : {}), ...(l.warnings.length ? { warnings: l.warnings } : {}) } }
 }
 
 function qcPrompt(crew) {
@@ -1710,13 +1874,14 @@ async function qc(crew) {
     await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
+    await knowledgeLint(crew)
     let j = await runQc(crew)
     if (!j.verdict) {
       j = await runQc(crew)
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length

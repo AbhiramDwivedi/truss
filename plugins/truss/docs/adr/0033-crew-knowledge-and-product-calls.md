@@ -1,5 +1,7 @@
 # ADR-0033: crew knowledge capture, crew-level product calls and a product-owner plan review
 
+Amended by ADR-0035 (path-scoped knowledge): crew product calls go to `docs/knowledge/product-decisions.md`, not `product-owner.md`, and the knowledge step routes, reconciles and is linted as that ADR says.
+
 Status: accepted, 2026-11-09
 Decided by: client ruling, 2026-11-09 (learning is captured automatically and kept in the repo; product calls are made at crew level; the plan is reviewed before any work starts)
 Amends: ADR-0032 Decision 9 (the product-owner judge advises the crew lead, not only the PM); the run skill's "Adopt what the run learned" pass

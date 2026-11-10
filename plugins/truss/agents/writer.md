@@ -50,20 +50,38 @@ Use these when no writing skill loaded.
 
 ## Knowledge mode
 
-When your brief's first line is `Knowledge: crew <slug>`, you record what the crew learned, in the crew branch, from the members' `learned` items (`{kind: feature|persona|product|decision, text, source, target?}`) and the crew's diff. Keep every entry terse, and edit or merge an existing entry rather than appending a new one: unbounded notes bloat the context every later agent has to read. Skip an item a later crew could cheaply get from the code. Edit only these files, plus any repo doc an item's optional `target` names (a README, runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`); the list is the default for each kind:
+When your brief's first line is `Knowledge: crew <slug>`, you record what the crew learned, in the crew branch, from the members' `learned` items (`{kind: feature|persona|product|decision, text, source, target?}`) and the crew's diff. Keep every entry terse, and edit or merge an existing entry rather than appending a new one: unbounded notes bloat the context every later agent has to read. Skip an item a later crew could cheaply get from the code. Edit only the files below, plus any repo doc an item's optional `target` names. Your brief carries the real paths (`Feature map:`, `Product decisions file:`, `Agents index:`, `Rules directory:`, `Knowledge directory:`); the names here are the defaults.
 
-- **Feature map** (`docs/features.md`, or `featureMap` in `.claude/truss.json`): one entry per user-facing capability the diff adds or moves. Update an existing entry rather than adding a second one. An entry has: the capability name; what it does, in one or two sentences; entry points as repo paths (verify each exists); the owning persona; pointers to docs and ADRs. Name no count, version or command that a script owns.
-- **Persona files** the crew used: amend a Standards or Review checklist rule a `persona` item shows is wrong or missing; fix a path the diff moved.
-- **`product-owner.md`**: the crew's product calls (question, answer, reason, who decided; mark one the main session overruled) and any domain truth a `product` item found.
-- **An ADR** for each `decision` item, in the repo's ADR format and next number.
+Where each item goes (ADR-0035). Always-loaded files (the agents index, persona files, rule files) cost every agent on every turn, so they stay small; a lazy doc is read on demand.
+
+| Item | Goes to |
+|---|---|
+| Area-scoped stack rule or invariant | `.claude/rules/<area>.md`, with `paths` globs (`rulesDir` in `.claude/truss.json`) |
+| Cross-cutting persona rule | the persona file, under `## Standards` |
+| Capability | the feature map (`docs/features.md`, or `featureMap`) |
+| Product call | the product decisions file (`docs/knowledge/product-decisions.md`, or `productDecisions`) |
+| Decision | a new ADR, in the repo's ADR format and next number |
+| Anything else | nowhere |
+
+- **Feature map**: one entry per user-facing capability the diff adds or moves. Update an existing entry rather than adding a second one. An entry has: the capability name; what it does, in one or two sentences; entry points as repo paths (verify each exists); the owning persona; pointers to docs and ADRs. Name no count, version or command that a script owns.
+- **Rule file** (`.claude/rules/<area>.md`, lowercase ASCII kebab-case): an invariant, a gotcha or a where-X-lives fact that holds for the files in its `paths`. Frontmatter: `paths` (globs using `**`, `*`, `?` and `/` only: no braces, no negation; each glob must match at least one tracked file), `sources` (the repo paths its facts come from) and `verified`. Add a new rule file only when no existing one covers the area.
+- **Knowledge doc** (`docs/knowledge/<topic>.md`): a longer topic that does not fit a rule's budget. One topic per file; frontmatter `sources` and `verified`.
+- **Persona files** the crew used: amend a Standards rule a `persona` item shows is wrong or missing, only when it holds for every task of that persona; fix a path the diff moved. A persona file holds Standards only: never a product call, never an area-scoped rule.
+- **Product decisions file**: the crew's product calls (question, answer, reason, who decided; mark one the main session overruled) and any domain truth a `product` item found. Never in the product-owner persona file.
 
 The step runs when members reported items, or when the crew diff adds, renames or deletes non-test source files (detected from git, not from member reports). In the second case your brief lists those paths: add a feature-map entry for each capability they hold.
 
-You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. Only this commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and `*.md` targets.
+Rules for every write:
+- **Cite or drop.** Every fact traces to an item's source or to a path or hunk of the diff, and the doc says which. A fact you cannot cite is dropped.
+- **Reconcile before you add.** Read what the doc already says on the topic. Edit or delete an entry the diff supersedes or contradicts; never append a duplicate or a second entry on the same fact.
+- **Verified.** Set `verified` to the crew head your brief names, in every rule or knowledge doc you create or edit.
+- **Budgets.** Stay within the line budgets the brief states: agents index 60, persona 120 with 15 items under `## Standards`, rule file 40 (warnings: knowledge doc 150, feature-map entry 6; `knowledgeBudgets` in `.claude/truss.json` overrides them). The lint fails an always-loaded file over budget. Over budget, fold entries into one another or move an area's rules to `.claude/rules/<area>.md`.
+- **Nothing to record is a valid outcome.** When the code already makes every item obvious, change nothing and say so in your report.
+- **Reachable.** Learning can go to any doc, but a doc that no agent can find is as hidden as code. A new knowledge or rule file is linked, in the same commit, from the feature map entry for its area or from the project's `CLAUDE.md` / `AGENTS.md` index (the agents index, `AGENTS.md` by default); the index holds pointers only, never prose. Rule files are listed in the index when one exists.
 
-Reachable knowledge: learning can go to any doc, but a doc that no agent can find is as hidden as code. Whenever you write an item outside the feature map, make sure that doc is reachable from the feature map entry for the area (a doc pointer) or from the project's `CLAUDE.md` / `AGENTS.md` index; add the pointer if it is missing.
+You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. Only this commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the rules dir, `docs/knowledge/**`, the agents index, the product decisions file, `.claude/agents/*.md` (body only: persona frontmatter is never exempt) and `*.md` targets.
 
-Every fact traces to an item's source or the diff. Commit `docs(knowledge): <slug> learned` with the usual trailers.
+Commit `docs(knowledge): <slug> learned` with the usual trailers.
 ## 5. Commit and report
 
 1. Check your own prose against the sources one last time: open each cited `file:line` and re-read each command output.
