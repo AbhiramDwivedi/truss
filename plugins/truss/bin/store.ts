@@ -192,6 +192,7 @@ function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platf
         const st = fn(fs, 'statSync')(brk) as any
         if (Date.now() - st.mtimeMs > OWNERLESS_MS) {
           // re-check just before the removal: a mutex released and re-taken in the gap is a different directory
+          // (the stat-to-remove gap that remains is a few microseconds and a mutex this old is abandoned)
           const again = fn(fs, 'statSync')(brk) as any
           if (again.ino === st.ino && again.mtimeMs === st.mtimeMs) fn(fs, 'rmSync')(brk, { recursive: true, force: true })
         }
@@ -205,6 +206,9 @@ function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platf
     const o = readOwner(lock, fs)
     const tok = o && typeof o.token === 'string' ? o.token : null
     if (tok !== seenToken) return false
+    // an ownerless lock was judged stale by age: re-check that age under the mutex, so a new holder that mkdir'd a fresh dir
+    // after the old one was removed is not taken for the abandoned one
+    if (seenToken === null && Date.now() - (fn(fs, 'statSync')(lock) as any).mtimeMs <= OWNERLESS_MS) return false
     fn(fs, 'rmSync')(lock, { recursive: true, force: true, ...(platform === 'win32' ? { maxRetries: 5, retryDelay: 20 } : {}) })
     return true
   } catch {
