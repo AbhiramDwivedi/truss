@@ -30,23 +30,13 @@ const retro = (): NonNullable<typeof retroMods> => {
 
 // ==== core ====
 
-export class CliError extends Error {
-  code: number
-  body: Record<string, unknown>
-  constructor(code: number, body: Record<string, unknown>) {
-    super(typeof body.error === 'string' ? body.error : JSON.stringify(body))
-    this.code = code
-    this.body = body
-  }
-}
-const usage = (message: string): CliError => new CliError(2, { error: message })
-const refuse = (body: Record<string, unknown>): CliError => new CliError(1, body)
-
-type Flags = Record<string, string | boolean | string[]>
-type Obj = Record<string, any>
+// ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
+import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares } from './store.ts'
+import type { Flags, Obj } from './store.ts'
+export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
+export type { Flags, Obj }
 
 const PLUGIN = path.dirname(path.dirname(fileURLToPath(import.meta.url))).replace(/\\/g, '/')
-const flat = (p: string): string => String(p).replace(/\\/g, '/')
 
 // Flags as `--key value` or `--key=value` (the `=` form is the safe one for a value that starts with `--`); a flag with no value
 // is true; a repeated flag becomes a list.
@@ -64,24 +54,6 @@ function parseFlags(argv: string[]): Flags {
   }
   return flags
 }
-const str = (f: Flags, key: string): string | undefined => {
-  const v = f[key]
-  if (v === undefined) return undefined
-  if (typeof v !== 'string') throw usage(`--${key} needs a value`)
-  return v
-}
-const need = (f: Flags, key: string): string => {
-  const v = str(f, key)
-  if (v === undefined || v === '') throw usage(`missing --${key}`)
-  return v
-}
-const listOf = (f: Flags, key: string): string[] => {
-  const v = f[key]
-  if (v === undefined) return []
-  if (v === true) throw usage(`--${key} needs a value`)
-  return Array.isArray(v) ? v : [String(v)]
-}
-
 // Runs git in `cwd` and returns status, trimmed stdout and stderr.
 function run(cwd: string, args: string[]): { status: number; out: string; err: string } {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -110,39 +82,6 @@ const dirOf = (f: Flags): string => {
   return flat(d)
 }
 
-const readText = (p: string): string => {
-  try {
-    return readFileSync(p, 'utf8')
-  } catch (e) {
-    throw usage(`cannot read ${flat(p)}: ${(e as Error).message}`)
-  }
-}
-const readJson = (p: string): any => {
-  const text = readText(p)
-  try {
-    return JSON.parse(text.startsWith('﻿') ? text.slice(1) : text)
-  } catch {
-    throw usage(`${flat(p)} is not JSON`)
-  }
-}
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
-
-// A Workflow label as {slug, role, n}: strip a trailing -<n> (n >= 2) first, the last segment is the role, the rest the slug. Undefined when it has no role segment.
-export function parseLabel(label: string): { slug: string; role: string; n: number } | undefined {
-  if (typeof label !== 'string') return undefined
-  let rest = label
-  let n = 1
-  const m = /-(\d+)$/.exec(rest)
-  if (m) {
-    n = Number(m[1])
-    if (n < 2) return undefined
-    rest = rest.slice(0, m.index)
-  }
-  const cut = rest.lastIndexOf('-')
-  if (cut <= 0 || cut === rest.length - 1) return undefined
-  return { slug: rest.slice(0, cut), role: rest.slice(cut + 1), n }
-}
-
 // The plan object from D/plan.json (usage error when missing or unreadable).
 export function loadPlan(dir: string): Obj {
   const plan = readJson(`${dir}/plan.json`)
@@ -167,25 +106,8 @@ export function settingsOf(repo: string): { merge: string; target: string; sourc
   const target = hasTarget ? cfg.target : run(repo, ['branch', '--show-current']).out
   return { merge: hasMerge ? cfg.merge : 'sequential', target, source: hasMerge && hasTarget ? '.claude/truss.json' : hasMerge || hasTarget ? 'mixed' : 'default' }
 }
-// The repo's .claude/truss.json as an object ({} when absent).
-function configOf(repo: string): Obj {
-  const p = `${repo}/.claude/truss.json`
-  if (!existsSync(p)) return {}
-  const v = readJson(p)
-  return isObj(v) ? v : {}
-}
 const intOr = (v: unknown, dflt: number, min: number): number => (Number.isInteger(v) && (v as number) >= min ? (v as number) : dflt)
 
-// A path key of truss.json (featureMap, adrDir): a non-empty string that is relative and stays inside the repo (no `..` segment, no
-// drive letter), as a clean repo-relative path with no leading ./ or trailing /; undefined for anything else. A Windows backslash
-// is a separator: it is turned into `/` first, then the path is checked.
-export function repoPathOf(v: unknown): string | undefined {
-  if (typeof v !== 'string' || v.trim() === '' || /[\r\n]/.test(v)) return undefined
-  const p = v.trim().replace(/\\/g, '/')
-  if (p.startsWith('/') || /^[A-Za-z]:/.test(p) || p.split('/').some((s) => s === '..')) return undefined
-  const clean = p.replace(/^(\.\/)+/, '').replace(/\/+$/, '')
-  return clean === '' ? undefined : clean
-}
 // The knowledge step's doc keys (ADR-0033) as stage.js args: only the ones set to a valid path. adrDir falls back to `adr`, the
 // ADR directory key init already writes.
 function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
@@ -718,23 +640,6 @@ export const ENV_PATTERNS: RegExp[] = [
   /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
   /error while loading shared libraries: /, // the dynamic loader: a system library is missing
 ]
-// The package name of a bare import specifier (`@scope/name/sub` -> `@scope/name`, `name/sub` -> `name`).
-const packageName = (spec: string): string => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
-// True when the package.json nearest to `from` (walking up) declares `pkg` in any dependency list.
-function declares(from: string, pkg: string): boolean {
-  for (let d = path.dirname(from); ; d = path.dirname(d)) {
-    const p = `${d}/package.json`
-    if (existsSync(p)) {
-      try {
-        const j = JSON.parse(readFileSync(p, 'utf8'))
-        return ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].some((k) => isObj(j?.[k]) && Object.hasOwn(j[k], pkg))
-      } catch {
-        return false
-      }
-    }
-    if (path.dirname(d) === d) return false
-  }
-}
 // The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
 // ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
 // nearest to <file> declares x: the dependency is declared but not installed. An undeclared package is a code failure.
