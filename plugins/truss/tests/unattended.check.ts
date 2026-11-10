@@ -165,6 +165,43 @@ test('unattended: the hook fails open on a read error', async () => {
   assert.ok(body.includes('rootOf('), 'the handler does not use rootOf')
 })
 
+test('unattended: the registered AskUserQuestion handler refuses while the file exists and passes the call on when absent', async () => {
+  const mod = await import('../hooks/register.ts')
+  const common = tmp('unatt-handler-')
+  const trussDir = mod.trussDir(common, undefined, 's1')
+  mkdirSync(trussDir, { recursive: true })
+  const $: any = {
+    process: { run: async () => ({ exitCode: 0, stdout: `${common}\n`, stderr: '' }) },
+    session: { cwd: async () => common, id: async () => 's1' },
+    env: { get: async () => undefined },
+    clock: { after: () => ({ cancel() {} }) },
+    ui: { log: () => {} },
+    fs: { exists: async (p: string) => existsSync(p), read: async (p: string) => readFileSync(p, 'utf8'), stat: async (p: string) => ({ realPath: p }), write: async () => {} },
+    state: { get: async () => ({ value: undefined, version: 0 }), set: async () => ({ isSet: true, version: 1 }) },
+  }
+  let handler: any
+  const on: any = (...a: any[]) => {
+    if (a[1] && typeof a[1] === 'object' && Array.isArray(a[1].tool) && a[1].tool.includes('AskUserQuestion')) handler = a[a.length - 1]
+    const chain: any = { catch: () => chain }
+    return chain
+  }
+  mod.register(on)
+  assert.ok(handler, 'the AskUserQuestion handler was not registered')
+  const nexts: any[] = []
+  const next = async (ev: any) => (nexts.push(ev), { passed: ev })
+  const ask = { tool: 'AskUserQuestion', questions: [] }
+  const free = await handler($, ask, next)
+  assert.equal(nexts.length, 1, 'no unattended.json: the call goes on to next')
+  assert.equal(free.deny, undefined, JSON.stringify(free))
+  writeFileSync(`${trussDir}/unattended.json`, '{"since":"x","item":null}\n')
+  const held = await handler($, ask, next)
+  assert.equal(nexts.length, 1, 'with unattended.json the call must not reach next')
+  assert.ok(typeof held?.deny === 'string' && held.deny.startsWith(DENY_START), JSON.stringify(held))
+  const sub = await handler($, { ...ask, agentId: 'agent-1' }, next)
+  assert.equal(nexts.length, 2, 'a subagent call goes on to next')
+  assert.equal(sub.deny, undefined)
+})
+
 /** A private copy of the plugin whose bin/inbox.ts keeps the real exports and overrides blockingFor: it logs every call and blocks only (U_SESSION, U_SLUG). */
 function stubbedPlugin(): string {
   const d = tmp('unatt-plugin-')
