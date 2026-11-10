@@ -205,8 +205,7 @@ function resolveItem(f: Flags): Obj {
   const code = need(f, 'code')
   if (!DECISIONS.includes(decision)) throw usage(`--decision must be one of ${DECISIONS.join(', ')}`)
   if (by !== 'client' && by !== 'pm') throw usage('--by must be client or pm')
-  const noteFile = str(f, 'note-file')
-  const note = (noteFile !== undefined ? readText(noteFile).trim() : (str(f, 'note') ?? '')).slice(0, 4000)
+  const note = (textOf(f, 'note') ?? '').slice(0, 4000)
   const rawRaise = str(f, 'raise-usd')
   let raiseUsd: number | undefined
   if (rawRaise !== undefined) {

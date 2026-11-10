@@ -8,13 +8,13 @@ import { configOf } from './store.ts'
 type Ops = { spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown; kill: (pid: number, signal: string) => unknown }
 
 /** Kills the process `pid` and its whole tree: taskkill /T /F on win32, else the process group (the child is detached, so it leads one). */
-export function killTree(pid: number, platform: string, ops: Ops): void {
+export function killTree(pid: number, platform: string = process.platform, ops: Ops): void {
   if (platform === 'win32') ops.spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true })
   else ops.kill(-pid, 'SIGKILL')
 }
 
 /** The environment of the notify command. The title is left out on win32: cmd.exe expands %VAR% before it parses the command. */
-export function notifyEnv(row: Record<string, any>, repo: string, platform: string, base: Record<string, string | undefined>): Record<string, string | undefined> {
+export function notifyEnv(row: Record<string, any>, repo: string, platform: string = process.platform, base: Record<string, string | undefined>): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...base, TRUSS_INBOX_ID: String(row.id), TRUSS_INBOX_KIND: String(row.kind), TRUSS_INBOX_REPO: repo }
   if (platform !== 'win32') env.TRUSS_INBOX_TITLE = String(row.title ?? '')
   return env
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const pid = child.pid
   const done = new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => {
-      if (pid !== undefined) killTree(pid, process.platform, { spawnSync, kill: (p, s) => process.kill(p, s as NodeJS.Signals) })
+      try { if (pid !== undefined) killTree(pid, process.platform, { spawnSync, kill: (p, s) => process.kill(p, s as NodeJS.Signals) }) } catch {}
       resolve('notify timed out after 10 s')
     }, 10000)
     child.on('error', (e) => (clearTimeout(timer), resolve(`notify did not start: ${e.message}`)))
