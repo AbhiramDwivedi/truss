@@ -43,7 +43,7 @@ Claude Code exposes no spend API to a plugin. What it does write is transcripts.
 - **Row shape:** `{v: 1, ts, sid, agentId|null, model, speed, msgId, in, out, think, cr, cw5m, cw1h, web}` (`cost.ts:34-49`). `cw5m` and `cw1h` come from `usage.cache_creation` when the line has it, and otherwise all cache-write tokens count as `cw5m` (`cost.ts:46-47`).
 - **Cross-check.** The sweep keeps the newest `cost-state` estimate in the cursor as `ccEstimate` (`cost.ts:104-108`, `:156`). `factory cost` reports it as `claudeCodeEstimateUsd`.
 
-When the lock stays busy, a caller that needs a verdict (`budgetVerdict`, `crewCost`) reads `usage.jsonl` as it stands and counts `found` from the transcripts (`sweepOrRead`, `cost.ts:164-172`). A held lock never blocks a verdict. Until a first sweep has finished (no `usage-cursor.json`), `usage.jsonl` is missing or partial, so a busy lock there is unknown spend: `budgetVerdict` holds and `crewCost` returns `usd: null` (`usage sweep still running`) instead of writing a too-low cost into the append-only ledger. After a first sweep, a busy read may lag by rows not yet swept and is accepted.
+When the lock stays busy, a caller that needs a verdict (`budgetVerdict`, `crewCost`) reads `usage.jsonl` as it stands and counts `found` from the transcripts (`sweepOrRead`, `cost.ts:163-175`). A held lock never blocks a verdict. Until a first sweep has finished (no `usage-cursor.json`), `usage.jsonl` is missing or partial, so a busy lock there is unknown spend: `budgetVerdict` holds and `crewCost` returns `usd: null` (`usage sweep still running`) instead of writing a too-low cost into the append-only ledger. After a first sweep, a busy read may lag by rows not yet swept and is accepted.
 
 ### 2. Attribution at read time
 
