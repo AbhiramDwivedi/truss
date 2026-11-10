@@ -100,8 +100,8 @@ function putTranscript(env: Env, lines: string[], sid = env.sid): void {
 }
 const addTranscript = (env: Env, lines: string[]): void => appendFileSync(transcriptOf(env), lines.join('\n') + '\n')
 /** The fixture transcript with the placeholders filled. */
-const fixtureLines = (id: string, code: string, ts: string): string[] =>
-  readFileSync(`${FIX}/slash-command.jsonl`, 'utf8').split('\n').filter(Boolean).map((l) => l.replaceAll('__ID__', id).replaceAll('__CODE__', code).replaceAll('__TS__', ts))
+const fixtureLines = (id: string, code: string, ts: string, file = 'slash-command.jsonl'): string[] =>
+  readFileSync(`${FIX}/${file}`, 'utf8').split('\n').filter(Boolean).map((l) => l.replaceAll('__ID__', id).replaceAll('__CODE__', code).replaceAll('__TS__', ts))
 
 const notifyCmd = (script: string, ...args: string[]): string => [process.execPath, script, ...args].map((a) => `"${flat(a)}"`).join(' ')
 const recordedRows = (file: string): any[] => (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [])
@@ -599,6 +599,32 @@ test('inbox: resolve by client refuses an isSidechain line, an isMeta line and a
   refused('a line missing the decision, the code or the id')
   // control: a human line after the open op qualifies
   putTranscript(env, [human(text, ts)])
+  const ok = resolveOf(env, a.id, 'approve', 'client', a.code)
+  assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
+})
+
+test('inbox: resolve by client refuses a task-notification line and a compact summary (agent text is not a human prompt)', () => {
+  const env = mkInbox()
+  const a = raise(env, 'scope-change', ['--crew', 'c1'])
+  const ts = afterOpen(env, a.id)
+  const refused = (label: string) => {
+    const r = resolveOf(env, a.id, 'approve', 'client', a.code)
+    assertOneLine(r)
+    assert.equal(r.status, 1, `${label}: ${r.stdout} ${r.stderr}`)
+    assert.equal(listOf(env, ['--open']).open, 1, `${label}: the item is still open`)
+  }
+  const lines = fixtureLines(a.id, a.code, ts, 'non-human.jsonl')
+  putTranscript(env, [lines[0]])
+  refused('origin.kind task-notification')
+  putTranscript(env, [lines[1]])
+  refused('isCompactSummary')
+  const body = typed(a.id, a.code)
+  putTranscript(env, [human(body, ts, { isVisibleInTranscriptOnly: true })])
+  refused('isVisibleInTranscriptOnly')
+  putTranscript(env, [human(body, ts, { origin: { kind: 'task-notification' } })])
+  refused('origin.kind other than human')
+  // control: origin.kind human qualifies
+  putTranscript(env, [human(body, ts, { origin: { kind: 'human' } })])
   const ok = resolveOf(env, a.id, 'approve', 'client', a.code)
   assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
 })
