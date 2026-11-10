@@ -261,40 +261,13 @@ test('wiring 025: no new bin module, workflow script, wave-2 test or truss prose
 
 // ---------------------------------------------------------------------------------------------------------------
 
-// contract-025 section 3, "The paragraph", byte for byte.
-const PARAGRAPH = `Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line \`LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible\`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.`
-
-/** The text of `function name(` in a workflow script, up to the next top-level declaration. */
-function bodyOf(src: string, name: string): { start: number; end: number } {
-  const start = src.indexOf(`function ${name}(`)
-  assert.ok(start >= 0, `function ${name} is missing`)
-  const next = src.slice(start + 1).search(/\n(?:async function|function|const|let|var|export|\/\/ -{10})/)
-  return { start, end: next < 0 ? src.length : start + 1 + next }
-}
-
-/** The paragraph must sit in the function, or in a const declared above it that the function names. Source escapes (\`, \', \") are undone first. */
-function carries(file: string, fn: string): void {
-  const raw = readFileSync(file, 'utf8').replace(/\\(['"`])/g, '$1')
-  const body = bodyOf(raw, fn)
-  const at = raw.indexOf(PARAGRAPH)
-  assert.ok(at >= 0, `${file} does not hold the long-term cost paragraph byte for byte`)
-  if (at >= body.start && at < body.end) return
-  const decl = [...raw.slice(0, at).matchAll(/\b(?:const|let|var)\s+(\w+)\s*=/g)].pop()
-  assert.ok(decl, `the paragraph in ${file} is outside ${fn} and not held in a named constant`)
-  assert.ok(new RegExp(`\\b${decl[1]}\\b`).test(raw.slice(body.start, body.end)), `${fn} does not use ${decl[1]}, which holds the paragraph`)
-}
-
+// The paragraph is asserted on the prompts the stubbed agent() receives, in tests/workflows.check.ts; this test runs those two cases.
 test('wiring 025: qcPrompt and checkerPrompt carry the long-term cost paragraph', () => {
-  carries(`${REAL_PLUGIN}/workflows/stage.js`, 'qcPrompt')
-  carries(`${REAL_PLUGIN}/workflows/plan.js`, 'checkerPrompt')
-  const stage = readFileSync(`${REAL_PLUGIN}/workflows/stage.js`, 'utf8')
-  const qc = bodyOf(stage, 'qcPrompt')
-  assert.ok(stage.slice(qc.start, qc.end).includes('Work type: '), 'qcPrompt has no "Work type: <wt or none>." line')
-  const plan = readFileSync(`${REAL_PLUGIN}/workflows/plan.js`, 'utf8').replace(/\\(['"`])/g, '$1')
-  const ck = bodyOf(plan, 'checkerPrompt')
-  assert.ok(plan.slice(ck.start, ck.end).includes("Check each crew's workType fits its work: a crew that changes behaviour is not docs or refactor."), 'checkerPrompt has no workType line')
+  const r = spawnSync(process.execPath, ['--test', '--test-name-pattern=the prompt the (qc|checker) agent receives carries the long-term cost paragraph', `${REAL_PLUGIN}/tests/workflows.check.ts`], { encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined } })
+  assert.equal(r.status, 0, (r.stdout ?? '') + (r.stderr ?? ''))
+  assert.match(r.stdout, /pass 2\b/, 'both prompt cases ran')
+  assert.match(r.stdout, /fail 0\b/)
 })
-
 test('wiring 025: the events schema accepts each new kind', () => {
   const base = { v: 1, ts: NOW, crew: 'alpha' }
   const rows: Record<string, any> = {
