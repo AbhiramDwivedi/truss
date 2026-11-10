@@ -462,6 +462,11 @@ Everything for a session lives under one folder:
   resources/groups/<pgid>.json  ADR-0015 (proposed), factory.ts heavy: a heavy run's process group,
                              kept while the group may have live processes; factory.ts reap deletes it
   resources/parallelism.json ADR-0015 (proposed), PM: {"parallelism": n}, the effective parallelism
+  usage.jsonl                ADR-0038, bin/cost.ts sweep: one row per assistant message (msgId-deduped), append-only;
+                             crew attribution is computed on every read, never stored in a row
+  usage-cursor.json          ADR-0038, bin/cost.ts sweep: {files:{<path key>:{offset}}, project, ccEstimate:{usd,ts}|null};
+                             its absence means no sweep has finished, so a busy lock counts as unknown spend
+  locks/usage                ADR-0038, the lock a sweep holds (cost.ts:56-66)
 ```
 
 **Stored shapes.** `brief.json` ([ADR-0008](adr/0008-owner-interview.md), Decisions 2, 5 and 7) is the client brief's state, rewritten by the PM with Write after each round: a string `goal`, a `size` of `small`, `standard` or `large`, arrays `packs`, `opened` and `requirements` (the R-ids this run accepted), an object `visits` (`{ "by": "fact" | "client" | "closed" | "default", "note" }` per branch id) and a boolean `stopped`; `cli.ts` exits 2 on a state file without them (Seam 5). The CLI takes the state path as an argument, so another goal can use its own file; only `<truss dir>/brief.json` is fixed.
