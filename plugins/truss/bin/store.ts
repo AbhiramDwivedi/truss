@@ -178,14 +178,14 @@ function readOwner(lock: string, fs?: FsLike): any {
 
 // Deviates from contract-025 section 2 line 83 (rename the stale lock aside, then remove it): renaming a lock aside can move a
 // lock that has just turned live, so the .break mutex below replaces the rename. Behaviour is unchanged by this note.
-// Removes a stale lock. Unlike resources/index.ts takeOver it never moves the lock aside: a rename of a lock that turned live
-// would open a window where the path is free while its owner is still in f (and strand the owner's release). Instead one
+// Removes a stale lock. It never moves the lock aside: a rename of a lock that turned live would open a window where the
+// path is free while its owner is still in f (and strand the owner's release). resources/index.ts takeHeavySlot uses it too. Instead one
 // breaker at a time holds the mutex <lock>.break, re-reads the owner and removes the lock only if it is still the one
 // judged stale (same token). Only a breaker removes a lock it does not own, and only one judged stale: a dead owner on this
 // host, an ownerless lock past OWNERLESS_MS, or any lock past STALE_AGE_MS. The age rule can break a live owner's lock that
 // has been held longer than STALE_AGE_MS; a live owner within that age is never disturbed.
 // On win32 the removal retries, since a scanner can hold a handle for a moment.
-function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platform, fs?: FsLike): boolean {
+export function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platform, fs?: FsLike): boolean {
   const brk = `${lock}.break`
   try {
     fn(fs, 'mkdirSync')(brk)
