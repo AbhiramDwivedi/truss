@@ -476,7 +476,7 @@ function memberPrompt(crew, role, parts) {
   const e = crew.e
   const lines = [`You are the ${role} for crew ${crew.slug}. ${BRAVE}`, '']
   lines.push(...parts.start)
-  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '')
+  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. Drift (tidying, reformatting, renames, unrelated refactors, "while I am here" edits) never goes into the diff and is never reported as a proposal. A meaningful change beyond it (a better approach, a stale design, a broken assumption elsewhere, a real defect) is never left out: surface it in your report.', '')
   const dl = directionLines(crew)
   if (dl.length) lines.push(...dl, '')
   lines.push(`Acceptance test: ${acceptanceOf(e)}`, '')
@@ -1577,7 +1577,7 @@ function knowledgePrompt(crew, resume) {
     'Why: a later crew must find where functionality lives, what a persona must know and what the product owner decided from these docs, not by analysing the codebase again.',
     `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes by kind: feature, to the feature map; persona, to the Standards or Review checklist of the persona file; product, to the product-owner file; decision, to a new ADR in the ADR directory.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. The persona files get any Standards or Review checklist item the crew learned, and a path they name that the diff moved is fixed. The product-owner file gets the product calls this crew made and any domain truth.`,
-    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Recording nothing for an item is allowed when the code already makes it obvious.',
+    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Recording nothing for an item is allowed when the code already makes it obvious. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the text when it is a description, raise a design PROPOSAL when an ADR\'s decision no longer holds.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
