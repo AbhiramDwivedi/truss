@@ -10,7 +10,7 @@ import { StoreBusy, configOf, flat, isObj, need, parseLabel, readJson, readJsonl
 import type { Flags, Obj } from './store.ts'
 
 export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string }
-export type SweepOut = { rows: number; files: number; bad: number; found: number; unswept?: true }
+export type SweepOut = { rows: number; files: number; bad: number; found: number; busy?: true }
 type SweepOpts = { platform?: NodeJS.Platform; waitMs?: number }
 
 const CHUNK = 4 * 1024 * 1024 // a transcript is read in chunks of this size, each cut at its last newline
@@ -160,7 +160,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
   )
 }
 
-/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). With no cursor yet no sweep has finished, so usage.jsonl is missing or partial: the result says `unswept`. budgetVerdict reads that as it stands (contract-025 section 4); crewCost returns null for it, so the ledger never gets a too-low cost. */
+/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). The result then says `busy`, because usage.jsonl may lag (or, before a first sweep, be missing or partial). budgetVerdict reads it as it stands and accepts the lag (contract-025 section 4); crewCost returns null on any busy lock, so the append-only ledger never gets a too-low cost. */
 function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
   try {
     return sweep(dir, repo, opts)
@@ -168,7 +168,7 @@ function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
     if (!(e instanceof StoreBusy)) throw e
     const tr = transcriptsOf(path.basename(flat(dir)))
     const out: SweepOut = { rows: 0, files: 0, bad: 0, found: (tr.main === null ? 0 : 1) + tr.agents.length }
-    if (!existsSync(`${flat(dir)}/usage-cursor.json`)) out.unswept = true
+    out.busy = true
     return out
   }
 }
@@ -325,7 +325,7 @@ const raiseFor = (raises: { ref: string; raiseUsd: number }[], ref: string): num
 
 /** The crew's spend in USD, or null with the reason it can't be priced. */
 export function crewCost(dir: string, repo: string, slug: string): { usd: number | null; why?: string } {
-  if (sweepOrRead(dir, repo, { waitMs: 1000 }).unswept === true) return { usd: null, why: 'usage sweep still running' }
+  if (sweepOrRead(dir, repo, { waitMs: 1000 }).busy === true) return { usd: null, why: 'usage sweep busy' }
   const slugs = slugsOf(planOf(dir))
   if (!slugs.includes(slug)) slugs.push(slug)
   const of = attributor(dir, repo, slugs, process.platform)

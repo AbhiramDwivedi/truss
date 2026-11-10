@@ -11,7 +11,7 @@
 // process.platform) and the sweep cursor as a JSON file in the session dir whose object keys that hold a "/" are the transcript paths.
 
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import path from 'node:path'
@@ -353,6 +353,25 @@ test('cost: a busy usage lock before the first sweep does not hold and crewCost 
   }
 })
 
+test('cost: a busy usage lock after a first sweep gives crewCost usd null with why usage sweep busy', async () => {
+  const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
+  lay(w, ['budget'])
+  assert.equal(cost(w).status, 0)
+  assert.equal(existsSync(`${w.dir}/usage-cursor.json`), true, 'a first sweep has finished')
+  const lock = `${w.dir}/locks/usage.lock`
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(`${lock}/owner.json`, JSON.stringify({ pid: process.pid, host: hostname(), token: 'planted', since: Date.now() }))
+  try {
+    const c = await realCost()
+    const cc = withRoot(w, () => c.crewCost(w.dir, w.repo, 'bcrew'))
+    assert.deepEqual(cc, { usd: null, why: 'usage sweep busy' })
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
+  const c2 = await realCost()
+  near(withRoot(w, () => c2.crewCost(w.dir, w.repo, 'bcrew')).usd, 5.2, 'with the lock free crewCost prices the crew')
+})
+
 test('cost: no transcripts gives a hold', async () => {
   const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
   mkdirSync(w.root, { recursive: true })
@@ -409,6 +428,124 @@ test('cost: win32 cursor keys are lowercased paths', async () => {
   assert.ok(win.every((k) => k === k.toLowerCase()), `every win32 key is lowercase: ${JSON.stringify(win)}`)
   const mac = keysOf('darwin')
   assert.ok(mac.some((k) => k.includes('Proj-Key-ABC')), `darwin keeps the case: ${JSON.stringify(mac)}`)
+})
+
+// ---- attribution rule 2, run and session scopes, work-type limits, win32 worktree match ----
+
+const spawnEvent = (w: W, agentId: string, crewSlug: string): void => appendFileSync(`${w.dir}/events.jsonl`, JSON.stringify({ v: 1, ts: new Date().toISOString(), event: 'spawn', agentId, crew: crewSlug }) + '\n')
+
+test('cost: a spawn event attributes the agent rows to its crew (rule 2)', () => {
+  // agent-bcrew has the description bcrew-builder, but bcrew is not a plan slug, so only the spawn event can name the crew
+  const w = world({ config: cfg({ pricing: pricing() }), crews: ['other'] })
+  lay(w, ['budget'])
+  const r0 = cost(w)
+  assert.equal(crewOf(r0.json, 'other')?.usd ?? null, null, 'without the event the rows are not the crew')
+  spawnEvent(w, 'bcrew', 'other')
+  const r = cost(w)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  near(crewOf(r.json, 'other')?.usd, 5.2, 'other usd')
+})
+
+test('cost: a spawn event wins over a mismatched description and over a worktreePath (rule 2 before rules 3 and 4)', () => {
+  const w = world({ config: cfg({ pricing: pricing() }), crews: ['bcrew', 'wtcrew', 'other'] })
+  lay(w, ['budget', 'wt'])
+  const r0 = cost(w)
+  near(crewOf(r0.json, 'bcrew')?.usd, 5.2, 'by its description the row is bcrew')
+  near(crewOf(r0.json, 'wtcrew')?.usd, 2, 'by its worktreePath the row is wtcrew')
+  spawnEvent(w, 'bcrew', 'other')
+  spawnEvent(w, 'wt1', 'other')
+  const r = cost(w)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  near(crewOf(r.json, 'other')?.usd, 7.2, 'both agents now belong to the spawned crew')
+  assert.equal(crewOf(r.json, 'bcrew')?.usd ?? null, null, 'not bcrew')
+  assert.equal(crewOf(r.json, 'wtcrew')?.usd ?? null, null, 'not wtcrew')
+})
+
+test('cost: runUsd counts only the rows after approvedAt', async () => {
+  // rows: main 9.1 (06:00-06:05), wf 2.0 (06:10), wt 2.0 (06:11), late 1.0 (06:12); approved at 06:10:30 the run holds wt and late, 3.0
+  const mk = (runUsd: number): W => {
+    const w = world({ config: cfg({ pricing: pricing(), budget: { runUsd } }), crews: ['wtcrew'] })
+    writePlan(w.dir, planObj([crew('wtcrew')], { approvedAt: '2026-11-10T06:10:30.000Z' }))
+    lay(w, ['main', 'wf', 'wt', 'late'])
+    return w
+  }
+  const c = await realCost()
+  const a = mk(2.9)
+  const v = withRoot(a, () => c.budgetVerdict(a.dir, a.repo, planOf(a), 'wtcrew'))
+  assert.equal(v.held, true, JSON.stringify(v))
+  assert.equal(v.scope, 'run')
+  near(v.spentUsd, 3, 'run spend counts the two rows after approvedAt only')
+  assert.equal(v.limitUsd, 2.9)
+  const b = mk(3.5)
+  const u = withRoot(b, () => c.budgetVerdict(b.dir, b.repo, planOf(b), 'wtcrew'))
+  assert.equal(u.held, false, `3.0 after approvedAt is under 3.5, though the session spent 14.1: ${JSON.stringify(u)}`)
+})
+
+test('cost: sessionUsd with plan null and slug null counts every row (queue-next)', async () => {
+  const mk = (sessionUsd: number): W => {
+    const w = world({ config: cfg({ pricing: pricing(), budget: { sessionUsd } }) })
+    lay(w, ['main', 'wf', 'wt', 'late'])
+    return w
+  }
+  const c = await realCost()
+  const a = mk(14)
+  const v = withRoot(a, () => c.budgetVerdict(a.dir, a.repo, null, null))
+  assert.equal(v.held, true, JSON.stringify(v))
+  assert.equal(v.scope, 'session')
+  near(v.spentUsd, 14.1, 'session spend')
+  assert.equal(v.limitUsd, 14)
+  const b = mk(15)
+  assert.equal(withRoot(b, () => c.budgetVerdict(b.dir, b.repo, null, null)).held, false)
+})
+
+test('cost: workTypes crewUsd below the crew limit is the limit, with scope workType and the workType raise ref', async () => {
+  const budget = { crewUsd: 100, workTypes: { docs: { crewUsd: 5 } } }
+  const mk = (b: unknown, scale = 1): W => {
+    const w = world({ config: cfg({ pricing: pricing({ scale }), budget: b }) })
+    writePlan(w.dir, planObj([crew('bcrew', { workType: 'docs' })]))
+    lay(w, ['budget'])
+    return w
+  }
+  const c = await realCost()
+  const a = mk(budget)
+  const v = withRoot(a, () => c.budgetVerdict(a.dir, a.repo, planOf(a), 'bcrew'))
+  assert.equal(v.held, true, JSON.stringify(v))
+  assert.deepEqual({ scope: v.scope, limitUsd: v.limitUsd }, { scope: 'workType', limitUsd: 5 })
+  near(v.spentUsd, 5.2, 'spentUsd')
+  // a work-type limit above the crew limit is not used
+  const hi = mk({ crewUsd: 5, workTypes: { docs: { crewUsd: 100 } } })
+  const vh = withRoot(hi, () => c.budgetVerdict(hi.dir, hi.repo, planOf(hi), 'bcrew'))
+  assert.deepEqual({ held: vh.held, scope: vh.scope, limitUsd: vh.limitUsd }, { held: true, scope: 'crew', limitUsd: 5 })
+  // the raise ref is budget:<session>:workType:<slug>: a private copy whose budgetRaises answers to it and to the crew ref with different sums
+  const d = tmp('cost-plugin-')
+  cpSync(pluginCopy(), d, { recursive: true })
+  renameSync(`${d}/bin/inbox.ts`, `${d}/bin/inbox-real.ts`)
+  writeFileSync(`${d}/bin/inbox.ts`, `export * from './inbox-real.ts'\nexport function budgetRaises(repo, session) { return [{ ref: 'budget:' + session + ':workType:bcrew', raiseUsd: 3 }, { ref: 'budget:' + session + ':crew:bcrew', raiseUsd: 50 }] }\n`)
+  const x = mk(budget, 2)
+  const c2 = await import(pathToFileURL(`${d}/bin/cost.ts`).href)
+  const vx = withRoot(x, () => c2.budgetVerdict(x.dir, x.repo, planOf(x), 'bcrew'))
+  assert.equal(vx.held, true, JSON.stringify(vx))
+  assert.deepEqual({ scope: vx.scope, limitUsd: vx.limitUsd }, { scope: 'workType', limitUsd: 8 })
+  near(vx.spentUsd, 10.4, 'spentUsd at doubled prices')
+})
+
+test('cost: on win32 the worktreePath match is case-insensitive', () => {
+  const w = world({ config: cfg({ pricing: pricing() }), crews: ['wtcrew'] })
+  lay(w, ['wt'])
+  const mpath = `${w.root}/${w.key}/${w.sid}/subagents/agent-wt1.meta.json`
+  const m = JSON.parse(readFileSync(mpath, 'utf8'))
+  m.worktreePath = wtOf(w, 'wtcrew').toUpperCase()
+  writeFileSync(mpath, JSON.stringify(m))
+  const script = fileURLToPath(new URL('./fixtures/cost/crewcost-platform.ts', import.meta.url))
+  const run = (fake: string): any => {
+    const r = spawnSync(process.execPath, [script, `${REAL_PLUGIN}/bin/cost.ts`, w.dir, w.repo, 'wtcrew', fake], { cwd: w.repo, env: { ...process.env, ...w.env }, encoding: 'utf8', windowsHide: true })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    return JSON.parse(r.stdout.trim().split('\n').pop() as string)
+  }
+  const win = run('win32')
+  near(win.usd, 2, `win32 matches the upper-cased worktreePath: ${JSON.stringify(win)}`)
+  const other = run('native')
+  if (process.platform !== 'win32') assert.equal(other.usd, null, `without win32 the upper-cased path does not match: ${JSON.stringify(other)}`)
 })
 
 // ---- the PO cases ruled at 00:39 ----
