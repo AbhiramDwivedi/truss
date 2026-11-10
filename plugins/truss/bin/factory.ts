@@ -893,9 +893,15 @@ function cmdDoctor(f: Flags): Obj {
     known.push({ id: e.id, pass: r.pass })
     if (!r.pass) rulings.push({ id: e.id, fix: e.fix })
   }
+  // a malformed .claude/truss.json is one failed probe, so the other probes still print
+  let cfg: Obj = {}
+  try {
+    cfg = configOf(repo)
+  } catch (e) {
+    probes.push({ name: 'config', kind: 'config', pass: false, detail: e instanceof CliError && typeof e.body.error === 'string' ? e.body.error : (e as Error).message })
+  }
   const failed = probes.filter((p) => !p.pass).map((p) => p.name)
   // contract-025 section 4: with a budget set, a model the roles use that no pricing key covers can't be priced, so every spend would hold
-  const cfg = configOf(repo)
   const warnings: string[] = []
   if (isObj(cfg.budget)) {
     const keys = isObj(cfg.pricing) ? Object.keys(cfg.pricing) : []
