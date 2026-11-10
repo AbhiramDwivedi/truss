@@ -199,6 +199,9 @@ const designerLabel = fix ? 'truss-designer-3' : 'truss-designer'
 const checkerLabel = fix ? 'truss-checker-3' : 'truss-checker'
 const poLabel = fix ? 'truss-po-3' : 'truss-po'
 const poLabel2 = fix ? 'truss-po-4' : 'truss-po-2'
+// Labels read as truss-<role>-<n> or truss-<role>; a "-po" or "-2" suffix on a numbered label parses to another slug.
+const reviseLabel = fix ? 'truss-designer-4' : 'truss-designer-2'
+const recheckLabel = fix ? 'truss-checker-4' : 'truss-checker-2'
 
 phase('Plan')
 let a = await spawn('designer', designerLabel, designerPrompt(), { schema: SCHEMA })
@@ -233,7 +236,7 @@ if (disagrees()) {
   let r = await reviewOnce(judge, poLabel, a)
   let revised = false
   if (r.verdict === 'REVISE') {
-    resultLabel = `${designerLabel}-po`
+    resultLabel = reviseLabel
     const b = await spawn('designer', resultLabel, designerPrompt(reviseNote(a, r.findings)), { schema: SCHEMA })
     if (!b || typeof b.planJson !== 'string') throw new Error(`${resultLabel} returned no plan`)
     const before = shapeOf(a)
@@ -247,8 +250,8 @@ if (disagrees()) {
     if (before.verdicts !== after.verdicts) changed.push('verdict lines')
     if (before.crews !== after.crews) changed.push('crew list')
     if (changed.length) {
-      const text = await spawn('checker', `${checkerLabel}-2`, checkerPrompt(a))
-      if (text == null) throw new Error(`${checkerLabel}-2 returned nothing`)
+      const text = await spawn('checker', recheckLabel, checkerPrompt(a))
+      if (text == null) throw new Error(`${recheckLabel} returned nothing`)
       addClient(text)
       const rr = linesOf(text, /^REVIEW:/)
       recheck = { ran: true, reason: `the revised plan changed its ${changed.join(' and ')}`, reviews: rr, stillDisagree: rr.some((l) => /^REVIEW:\s*disagree\b/i.test(l)) }
