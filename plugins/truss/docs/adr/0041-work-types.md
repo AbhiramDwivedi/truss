@@ -85,11 +85,6 @@ TODO: name the PM and sizing-engineer prompt lines that pass `factory worktypes`
 - An unattended run cannot merge a bug fix without a red test, or a migration without the full process and a stress test, unless the plan lies about the work type.
 - Attended runs are unchanged: a v4 plan without `workType` still passes `plan-check` (`tests/worktypes.check.ts:111`).
 - **Mislabelled work types.** The floor trusts the label. A behaviour change labelled `refactor` or `docs` gets the `solo` floor, and only the checking engineer can catch the wrong label (contract-025 section 9, risk 11).
-- **A full-process bugfix crew fails `plan-check`.** `bugfix` requires `red: true` on the crew, but ADR-0031 Decision 1 allows `red` only on a lean crew (`bin/factory.ts:609`). Run against `plan-check`:
-  - `{workType: "bugfix", process: "full"}` gives `alpha: bugfix requires red`;
-  - adding `red: true` gives `alpha: red is lean only`;
-  - only `{workType: "bugfix", process: "lean", red: true, qc: true}` passes.
-
-  A full crew always runs a red check, so the `requires red` rule should count `full` (and an absent `process`) as satisfying it. Until it does, a bug fix can only be sized `lean`. TODO: fix `workTypeErrors` (`bin/worktypes.ts:63`) to treat a full crew as red, and add the case to `tests/worktypes.check.ts`.
+- **A full-process bugfix crew counts as red.** `bugfix` requires `red: true` on the crew, but ADR-0031 Decision 1 allows `red` only on a lean crew (`bin/factory.ts:609`), and a full crew always runs a red check. `workTypeErrors` (`bin/worktypes.ts:63`) therefore does not ask for `red` when the process is `full` (or absent, which counts as `full`). A lean bugfix crew still needs `red: true`. The case is not yet in `tests/worktypes.check.ts`, which the tester owns.
 - The work-type list lives in two places: `WORK_TYPES` in `bin/factory.ts:540` and the keys of the built-ins in `bin/worktypes.ts:10-17`. Adding a work type means changing both, and the message text in `bin/worktypes.ts:58`.
 - Tests: `tests/worktypes.check.ts` covers each built-in rule, each loosening refusal, unknown keys and work types, `factory worktypes`, the R-62 example and its unattended pair.
