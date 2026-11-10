@@ -28,7 +28,9 @@ Applies to every change in every project, whatever its language or domain. It as
    Test: a secret scanner (for example `gitleaks detect`) or a grep for key patterns finds nothing new in the diff.
 12. Code is written for a current requirement, not a guessed future one (YAGNI).
    Test: every new parameter, option, abstraction or extension point in the diff has a caller in the same diff or in existing code.
-13. A behavior change ships with a test that fails without the change.
+13. A behavior change or bug fix ships with a test that fails without the change.
    Test: the diff adds or changes a test that exercises the changed behavior, and reverting the source change makes that test fail.
 14. Dead code goes in the same change that makes it dead.
    Test: no function, file or flag the diff stops using is left in place; a search for its name finds no remaining definition.
+15. A new dependency is added only when neither the language's standard library nor a dependency the project already has does the job, and the change says why.
+   Test: each package the diff adds to a manifest is named in the approved scope or has a `Why:` line in its commit message, and no existing manifest entry or standard-library API already does that job.

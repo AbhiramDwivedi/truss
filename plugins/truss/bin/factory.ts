@@ -12,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict, unbannered } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
+import { budgetsOf, lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from './knowledge.ts'
+import type { KCfg } from './knowledge.ts'
 import type { Catalog } from '../retro/catalog.ts'
 
 // retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
@@ -191,6 +193,40 @@ function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
   const featureMap = repoPathOf(cfg.featureMap)
   const adrDir = repoPathOf(cfg.adrDir) ?? repoPathOf(cfg.adr)
   return { ...(featureMap === undefined ? {} : { featureMap }), ...(adrDir === undefined ? {} : { adrDir }) }
+}
+// ADR-0035: the path-scoped knowledge keys of truss.json, each a valid repo path or its default.
+export function knowledgeCfgOf(repo: string): KCfg {
+  const cfg = configOf(repo)
+  return {
+    featureMap: repoPathOf(cfg.featureMap) ?? 'docs/features.md',
+    productDecisions: repoPathOf(cfg.productDecisions) ?? 'docs/knowledge/product-decisions.md',
+    knowledgeDir: repoPathOf(cfg.knowledgeDir) ?? 'docs/knowledge',
+    rulesDir: repoPathOf(cfg.rulesDir) ?? '.claude/rules',
+    agentsIndex: repoPathOf(cfg.agentsIndex) ?? 'AGENTS.md',
+    budgets: budgetsOf(cfg.knowledgeBudgets),
+  }
+}
+// The stage args (and plan-args) that carry the knowledge layout, next to featureMap: a path key set to a valid path in truss.json
+// always (stage.js and the lint must use the same path even before the file exists), a default one only when its file or dir
+// exists; `rules` ([{path, paths}]) only when there are rule files; in the stage args, `knowledgeBudgets` (all six, defaults filled
+// in) whenever truss.json sets it.
+function knowledgeArgsOf(repo: string, withRules: boolean): Obj {
+  const k = knowledgeCfgOf(repo)
+  const cfg = configOf(repo)
+  const out: Obj = {}
+  for (const key of ['productDecisions', 'agentsIndex', 'rulesDir', 'knowledgeDir'] as const) {
+    if (repoPathOf(cfg[key]) !== undefined || existsSync(`${repo}/${k[key]}`)) out[key] = k[key]
+  }
+  if (withRules && isObj(cfg.knowledgeBudgets)) out.knowledgeBudgets = k.budgets
+  if (withRules && out.rulesDir !== undefined) {
+    try {
+      const rules = knowledgeRulesIndex(repo, k).rules
+      if (rules.length > 0) out.rules = rules
+    } catch {
+      // not a git repo or git failed: the crew runs without the rules list
+    }
+  }
+  return out
 }
 
 // The crew worktree path <repo>/.claude/worktrees/truss-<slug>.
@@ -446,6 +482,7 @@ function cmdPlanArgs(f: Flags): Obj {
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
       scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
+      ...knowledgeArgsOf(repo, false),
     },
     brief,
   }
@@ -1057,8 +1094,13 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
     const now = run(c.wt, ['show', `HEAD:${file}`])
     return frontmatter(was.status === 0 ? was.out : '') === frontmatter(now.status === 0 ? now.out : '')
   }
+  // ADR-0035: the rules dir, the knowledge dir, the agents index and the product-decisions file join the doc set. A persona's
+  // frontmatter is still never the knowledge step's to edit, whatever else names the file.
+  const kc = knowledgeCfgOf(c.repo)
   const isDoc = (file: string): boolean =>
-    file.toLowerCase().endsWith('.md') && (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file)) && (!isPersona(file) || frontmatterKept(file))
+    file.toLowerCase().endsWith('.md') &&
+    (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
+    (!isPersona(file) || frontmatterKept(file))
   return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
 }
 
@@ -1246,7 +1288,7 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
     held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -3459,10 +3501,71 @@ function cmdDecisions(f: Flags): Obj {
   return { decisions: list }
 }
 
+// ==== knowledge (ADR-0035) ====
+
+// `knowledge-lint [--base=<sha>] [--repo R] [--slug S [--dir D]]`: exit 0 whether or not it found failures; the caller reads `ok`.
+// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the worktree's truss.json (the repo's when the
+// worktree has none); with no --base the base is `git merge-base <target> HEAD` there, and when that does not resolve, the head
+// of the crew's red record in --dir (the crew's head when its red check ran, so a later base than the fork point: the output then
+// carries `baseFallback: true`). Without --slug it lints the repo's own checkout, against --base when given. The output carries
+// `base` whenever the lint ran against one.
+function cmdKnowledgeLint(f: Flags): Obj {
+  const repo = repoOf(f)
+  let at = repo
+  let base = str(f, 'base')
+  let fallback = false
+  if (f.base === true || base === '') throw usage('--base needs a value')
+  // the full sha a ref names in the linted checkout, or undefined
+  const commitOf = (ref: string): string | undefined => {
+    if (ref.startsWith('-')) return undefined
+    const r = run(at, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+    return r.status === 0 && r.out !== '' ? r.out : undefined
+  }
+  if (f.slug !== undefined) {
+    const slug = str(f, 'slug')
+    if (slug === undefined || !SLUG.test(slug)) throw usage(`--slug ${String(f.slug)} is not a crew slug`)
+    at = crewWorktree(repo, slug)
+    if (!existsSync(at)) throw usage(`no crew worktree for ${slug} at ${at}`)
+    if (base === undefined) {
+      const target = settingsOf(repo).target
+      const mb = target === '' || target.startsWith('-') ? undefined : run(at, ['merge-base', target, 'HEAD'])
+      if (mb !== undefined && mb.status === 0 && mb.out !== '') base = mb.out
+      else {
+        const first = mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
+        const red = f.dir === undefined ? undefined : redRecord(dirOf(f), slug)
+        const head = typeof red?.head === 'string' ? red.head : ''
+        const second = f.dir === undefined ? 'no --dir, so no red record was read' : red === undefined ? `no red record for ${slug} in ${dirOf(f)}/checks` : head === '' ? `the red record for ${slug} names no head` : commitOf(head) !== undefined ? '' : `the red record head ${head} is not a commit of ${at}`
+        if (second !== '') throw usage(`no base for crew ${slug}: ${first}, and ${second}; pass --base`)
+        base = head
+        fallback = true
+      }
+    }
+  }
+  if (base !== undefined) {
+    const sha = commitOf(base)
+    if (sha === undefined) throw usage(`--base ${base} is not a commit of ${at}`)
+    base = sha
+  }
+  const kcfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
+  return { ...knowledgeLint(at, kcfg, base), ...(base === undefined ? {} : { base }), ...(fallback ? { baseFallback: true } : {}) }
+}
+// `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
+function cmdKnowledgeMigrate(f: Flags): Obj {
+  const repo = repoOf(f)
+  if (typeof f.apply === 'string' && f.apply !== 'true') throw usage('--apply takes no value')
+  return knowledgeMigrate(repo, knowledgeCfgOf(repo), f.apply === true || f.apply === 'true')
+}
+// `rules-index`: every rule file and its `paths` globs.
+function cmdRulesIndex(f: Flags): Obj {
+  const repo = repoOf(f)
+  return knowledgeRulesIndex(repo, knowledgeCfgOf(repo))
+}
+
 // ==== main ====
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
+  'knowledge-lint': cmdKnowledgeLint, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,

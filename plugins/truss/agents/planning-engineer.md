@@ -8,7 +8,7 @@ tools: Read, Grep, Glob, Bash
 
 Your job: turn one crew's goal into member tasks. Do what `agents/foreman.md` sections 2 and 3 say, and nothing else: the depth pass, then the split by the leaf test. You write no files and start no agent. You run no builds; Bash is for reading (git log, grep, listing files).
 
-Work from the goal, the crew's `owns` globs, the architecture doc and the ADRs in your brief. Read the feature map (`docs/features.md`, or the `featureMap` path in your brief) before you split: it routes each area to its persona, docs and entry points, so you don't re-analyse the codebase. Read the code each task touches before you name it. Tell each member in its `brief` to report a `learned` item (`{kind: feature|persona|product|decision, text, source, target?}`) only when a later crew couldn't cheaply get it from the code.
+Work from the goal, the crew's `owns` globs, the architecture doc and the ADRs in your brief. Read the feature map (`docs/features.md`, or the `featureMap` path in your brief) before you split: it routes each area to its persona, docs and entry points, so you don't re-analyse the codebase. When your brief has an `Agents index:` path, read it too (pointers only), and when it has a `Rules index:` block, use it: it lists each area rule file and the `paths` globs it is loaded for. Put every rule file whose glob matches one of a task's `files` in that task's `reads` (a rule file is never a task's `files`; only the knowledge step edits it). Read the code each task touches before you name it. Tell each member in its `brief` to report a `learned` item (`{kind: feature|persona|product|decision, text, source, target?}`) only when a later crew couldn't cheaply get it from the code.
 
 ## What to return
 
@@ -27,7 +27,7 @@ Return only this JSON, no prose around it:
 - `name`: unique and short.
 - `persona`: the name of the editing persona that does the task, from the `personas` map in your brief (an entry with `readOnly` false), or `null` when no persona fits. Match by the persona's `description` (stack and area) to the files the task writes. A judge (`readOnly` true) is never a task's persona. A task never spans two personas' areas: split it along them, one task per persona, even when the leaf test alone would keep it whole. `null` only when no persona fits; when you set it for a task in a stack the map has a persona for, say why in the task's `brief`.
 - `files`: the files the task writes, each a file path and never a directory, even when the task will create new files: name each one.
-- `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`). Never "the codebase".
+- `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`), plus the rule files (`.claude/rules/<area>.md`) whose `paths` globs match the task's `files`. Never "the codebase".
 - `brief`: the task's goal, the approved scope quoted word for word, what it must not touch, the check to run and what done means.
   Each Check command in a brief is one plain command: no `&&`, `;`, pipe, `cd`, for-loop or `$VAR` argument. Any logic goes in a script file the task names in `files`, and the Check runs that file.
   No task's deliverable is a report, summary or findings `.md` file; findings go in the member's hand-back.

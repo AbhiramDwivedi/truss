@@ -124,6 +124,7 @@ function poPrompt(judge, a) {
     `Goal files: ${F.dir}/goals/<crew slug>.md (written once the plan is approved; until then the crew goals and acceptance tests are in the plan below)`,
     `Architecture doc: ${F.architecture}`,
     ...(typeof F.featureMap === 'string' && F.featureMap ? [`Feature map: ${F.repo}/${F.featureMap} (the capabilities that exist; read it to judge whether a criterion matches how the product is used)`] : []),
+    ...(typeof F.productDecisions === 'string' && F.productDecisions ? [`Product decisions: ${F.repo}/${F.productDecisions} (the product calls made so far; read it so the review does not contradict one)`] : []),
     '',
     'planJson (crews, acceptance tests):',
     a.planJson,
