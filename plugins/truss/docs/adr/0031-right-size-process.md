@@ -3,6 +3,7 @@
 Status: accepted, 2026-11-08
 Decided by: client ruling, 2026-11-08 (R-49 to R-54, confirmed in the client brief)
 Amends: ADR-0009 Decisions 1 and 3; ADR-0001 section 8 (the plan file)
+Amended by: ADR-0041 (a crew's work type sets the least process the PM may give it)
 
 ## Context
 
