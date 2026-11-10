@@ -5,8 +5,10 @@
 //   2. taskPrompt: one `Context for your files:` line, only when a rule matches a task file
 //   3. knowledgePrompt: routing table, reconcile, verified, budgets, nowhere
 //   4. productOwnerFile(): args.truss.productDecisions, default docs/knowledge/product-decisions.md
-//   5. factory knowledge-lint --base=<base> runs once before QC; the QC brief gets the results; only new failures fail the crew;
-//      a lint that cannot run never stops the crew
+//   5. factory knowledge-lint --slug=<crew> runs once before QC, on the crew worktree with the factory's merge base; the QC brief
+//      gets the results and the full counts; only new failures fail the crew; a lint that cannot run, or whose output does not
+//      parse, never stops the crew, and QC is told which
+//   6. a product item never targets an always-loaded file; a knowledgeBudgets value of 0 is kept
 // Run with: node --test tests/knowledge-stage.check.ts
 
 import assert from 'node:assert/strict'
@@ -86,6 +88,51 @@ t('glob 1: the inline vectors pass (** at the start, middle and end, * stops at 
   for (const [glob, path, match] of VECTORS) assert.equal(globMatches(glob, path), match, `${glob} vs ${path}`)
 })
 
+// the dialect of bin/knowledge.ts globToRegExp that the first stage.js copy missed, and the brace alternation of 0.24.0
+const DIALECT_VECTORS = [
+  ['src/', 'src/a.ts', true],
+  ['src/', 'src', false],
+  ['src/a/', 'src/a/b/c.ts', true],
+  ['src/a/', 'src/ab.ts', false],
+  ['./src/*.ts', 'src/a.ts', true],
+  ['/src/*.ts', 'src/a.ts', true],
+  ['src\\ui\\*.ts', 'src/ui/a.ts', true],
+  ['src/ui/*.ts', 'src\\ui\\a.ts', true],
+  ['a**', 'abc', true],
+  ['a**', 'a/b', false],
+  ['**b', 'a/b', false],
+  ['src/**', 'src', false],
+  ['**/', 'a/b', true],
+  ['src/?.ts', 'src/é.ts', true],
+  ['src/?.ts', 'src/😀.ts', true],
+  ['src/**/*.{ts,tsx}', 'src/a/b.tsx', true],
+  ['src/**/*.{ts,tsx}', 'src/b.ts', true],
+  ['src/**/*.{ts,tsx}', 'src/b.js', false],
+  ['src/**/*.{ts,tsx}', 'src/b.{ts,tsx}', false],
+  ['{src,lib}/**', 'lib/a/b.ts', true],
+  ['{src,lib}/**', 'src/a.ts', true],
+  ['{src,lib}/**', 'test/a.ts', false],
+  ['{src,lib}/**', 'src', false],
+  ['a{b', 'a{b', true],
+  ['a{b', 'ab', false],
+  ['a}b', 'a}b', true],
+  ['{,x}y', 'y', true],
+  ['{,x}y', 'xy', true],
+  ['{,x}y', 'zy', false],
+  // malformed groups are literal: one alternative, an empty one other than {,x}, and the outer brace of a nested group
+  ['{a}.ts', '{a}.ts', true],
+  ['{a,}.ts', '{a,}.ts', true],
+  ['{a,}.ts', 'a.ts', false],
+  ['{a,{b,c}}', '{a,b}', true],
+  ['{a,{b,c}}', '{a,c}', true],
+  ['{a,{b,c}}', 'a', false],
+]
+
+t('glob 1b: the knowledge.ts dialect: trailing and leading slashes, ./, backslashes, whole-segment double star, code points, braces', () => {
+  const { globMatches } = matcher()
+  for (const [glob, path, match] of DIALECT_VECTORS) assert.equal(globMatches(glob, path), match, `${glob} vs ${path}`)
+})
+
 t('glob 2: the shared vectors in tests/fixtures/glob-vectors.json pass, when the file exists', () => {
   const file = `${PLUGIN}/tests/fixtures/glob-vectors.json`
   if (!existsSync(file)) return
@@ -113,6 +160,19 @@ t('glob 3: rulesFor returns the rule paths whose globs match a task file, once e
   // malformed entries count for nothing
   assert.deepEqual(rulesFor([null, { path: 'x.md' }, { path: 'y.md', paths: 'src/**' }, { paths: ['src/**'] }], ['src/a.ts']), [])
   assert.deepEqual(rulesFor(undefined, ['src/a.ts']), [])
+})
+
+t('glob 4: rulesFor takes a planner task file with backslashes as slashes, and a brace rule glob overlaps by any alternative', () => {
+  const { rulesFor } = matcher()
+  const rules = [
+    { path: '.claude/rules/ui.md', paths: ['src/ui/**/*.tsx'] },
+    { path: '.claude/rules/code.md', paths: ['{src,lib}/**/*.{ts,tsx}'] },
+  ]
+  assert.deepEqual(rulesFor(rules, ['src\\ui\\a\\b.tsx']), ['.claude/rules/ui.md', '.claude/rules/code.md'])
+  assert.deepEqual(rulesFor(rules, ['lib\\x.ts']), ['.claude/rules/code.md'])
+  assert.deepEqual(rulesFor(rules, ['lib\\**']), ['.claude/rules/code.md'])
+  assert.deepEqual(rulesFor(rules, ['lib/**/*.css']), [])
+  assert.deepEqual(rulesFor(rules, ['./src/ui/**']), ['.claude/rules/ui.md', '.claude/rules/code.md'])
 })
 
 // ---------------------------------------------------------------- stage.js harness (as tests/crew-knowledge.check.ts)
@@ -163,7 +223,7 @@ async function exec(args, o = {}) {
   let result
   let error
   try {
-    result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, () => {}, structuredClone(args), {})
+    result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, o.log ?? (() => {}), structuredClone(args), {})
   } catch (e) {
     error = e
   }
@@ -282,6 +342,41 @@ t('knowledge prompt: the old routing (product to the product-owner file) is gone
   hasnt(p, '.claude/agents/product-owner.md')
 })
 
+t('knowledge prompt: a knowledgeBudgets value of 0 is kept, not replaced by the default', async () => {
+  const r = await runStage([OLD()], { labels: labelsFor(), truss: { knowledgeBudgets: { rule: 0, persona: -1, doc: 1.5 } } })
+  const p = callOf(r, 'a-writer').prompt
+  has(p, 'rule file 0')
+  has(p, 'persona 120')
+  has(p, 'knowledge doc over 150')
+})
+
+t('learned 1: the member brief never offers an always-loaded file as a product call target; area rules go to a rule file, the feature map or an ADR', async () => {
+  const r = await runStage([OLD()], { labels: labelsFor(), truss: { productDecisions: 'kb/calls.md' } })
+  const p = callOf(r, 'a-builder').prompt
+  has(p, "A product item's target is only the product decisions file (kb/calls.md), never CLAUDE.md, AGENTS.md or a persona file.")
+  has(p, "An area rule's target is a rule file under .claude/rules, the feature map (docs/features.md) or an ADR")
+  hasnt(p, 'AGENTS.md, CLAUDE.md, a persona file, the product-owner file')
+})
+
+t('learned 2: a product item that names an always-loaded target is redirected to the product decisions file; other kinds keep their target', async () => {
+  const items = [
+    { kind: 'product', text: 'CALL-ROOT', source: 's:1', target: 'CLAUDE.md' },
+    { kind: 'product', text: 'CALL-SUB', source: 's:2', target: 'src/ui/AGENTS.md' },
+    { kind: 'product', text: 'CALL-PERSONA', source: 's:3', target: '.claude/agents/product-owner.md' },
+    { kind: 'product', text: 'CALL-INDEX', source: 's:4', target: 'ctx/INDEX.md' },
+    { kind: 'product', text: 'CALL-OK', source: 's:5', target: 'docs/knowledge/billing.md' },
+    { kind: 'feature', text: 'FEAT-ROOT', source: 's:6', target: 'CLAUDE.md' },
+  ]
+  const r = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b', { learned: items }) }), truss: { agentsIndex: 'ctx/INDEX.md' } })
+  const p = callOf(r, 'a-writer').prompt
+  has(p, 'a product item never goes into an always-loaded file (CLAUDE.md, AGENTS.md, the agents index or a persona file): ignore that target and record the call in the product decisions file.')
+  const line = (text) => p.split('\n').find((l) => l.includes(text)) || ''
+  const redirect = '(always loaded: a product call never goes there; record it in docs/knowledge/product-decisions.md instead)'
+  for (const text of ['CALL-ROOT', 'CALL-SUB', 'CALL-PERSONA', 'CALL-INDEX']) has(line(text), redirect)
+  hasnt(line('CALL-OK'), 'always loaded')
+  hasnt(line('FEAT-ROOT'), 'always loaded')
+})
+
 // ---------------------------------------------------------------- productOwnerFile
 
 const PO_PERSONA = { agentType: 'product-owner', model: 'opus', effort: 'medium', file: '/proj/.claude/agents/product-owner.md', description: 'Judges the product fit', readOnly: true, loaded: true }
@@ -323,12 +418,14 @@ const FAIL_OLD = { check: 'missing-source', path: 'docs/knowledge/legacy.md', me
 const WARN = { check: 'stale', path: 'docs/knowledge/export.md', message: 'src/export.ts changed since verified', new: true }
 const lintOut = (failures, warnings = []) => ({ cmd }) => (cmd === 'knowledge-lint' ? rj({ ok: failures.length === 0, failures, warnings }) : undefined)
 
-t('lint 1: it runs once, before QC, as factory knowledge-lint --base=<the crew base>', async () => {
+t('lint 1: it runs once, before QC, as factory knowledge-lint --slug=<crew>, on the crew worktree, with no start-time --base', async () => {
   const r = await runStage([OLD()], { labels: labelsFor(PLAIN) })
   assert.equal(stateOf(r).state, 'passed')
   const l = lints(r)
   assert.equal(l.length, 1)
-  has(l[0].prompt, `knowledge-lint --base=${BASE}`)
+  has(l[0].prompt, `bin/factory.ts knowledge-lint --slug=a --dir /proj/.truss --repo /proj --status-line`)
+  hasnt(l[0].prompt, '--base')
+  hasnt(l[0].prompt, BASE)
   assert.ok(l[0].i < r.calls.findIndex((c) => c.label === 'a-qc'), 'before QC')
 })
 
@@ -374,11 +471,10 @@ t('lint 6: the crew result lists the failures that predate it and the warnings, 
   assert.ok(!Object.hasOwn(stateOf(clean), 'knowledgeLint'), 'a clean lint adds nothing')
 })
 
-t('lint 7: a lint that fails to run (garbage, a usage error, a thrown runner) never stops the crew; QC is told it did not run', async () => {
+t('lint 7: a lint that fails to run (a usage error, no runner result, a thrown runner) never stops the crew; QC is told it did not run', async () => {
   const cases = [
-    () => ({ exit: 0, stdout: 'not json' }),
     () => ({ exit: 2, stdout: 'usage: factory knowledge-lint' }),
-    () => rj({ ok: true, failures: 'junk', warnings: [] }),
+    () => null,
     () => {
       throw new Error('runner died')
     },
@@ -388,9 +484,53 @@ t('lint 7: a lint that fails to run (garbage, a usage error, a thrown runner) ne
     assert.equal(stateOf(r).state, 'passed', JSON.stringify(r.result).slice(0, 400))
     const p = callOf(r, 'a-qc').prompt
     has(p, 'Knowledge lint did not run.')
+    hasnt(p, 'could not be parsed')
     hasnt(p, 'New failures')
     assert.ok(!Object.hasOwn(stateOf(r), 'knowledgeLint'), 'the result adds nothing: the log and the QC brief say it did not run')
   }
+})
+
+t('lint 7b: a lint that ran but whose output does not parse (garbage, a malformed body, a stdout the runner cut short) is reported as such, and logged', async () => {
+  const cut = JSON.stringify({ ok: false, failures: [FAIL_NEW], warnings: [WARN] }).slice(0, 60)
+  const cases = [
+    () => ({ exit: 0, stdout: 'not json' }),
+    () => rj({ ok: true, failures: 'junk', warnings: [] }),
+    () => ({ exit: 0, stdout: cut }),
+    // a cut stdout whose exit the runner got wrong: the status line still says the command ran
+    () => ({ exit: 1, stdout: cut, status: 'truss-status: {"ok":false}' }),
+  ]
+  for (const bad of cases) {
+    const logs = []
+    const r = await exec(
+      { truss: { kind: 'stage', dir: '/proj/.truss', repo: '/proj', plugin: PLUGIN, target: 'main', reworkAllowance: 2, roles: ROLES, scriptPath: STAGE, crews: [OLD()] } },
+      { labels: labelsFor(PLAIN), runner: ({ cmd }) => (cmd === 'knowledge-lint' ? bad() : undefined), log: (m) => logs.push(String(m)) },
+    )
+    if (r.error) throw r.error
+    assert.equal(stateOf(r).state, 'passed', JSON.stringify(r.result).slice(0, 400))
+    const p = callOf(r, 'a-qc').prompt
+    has(p, 'Knowledge lint output could not be parsed. Check the knowledge rules above by hand.')
+    hasnt(p, 'did not run')
+    hasnt(p, 'New failures')
+    assert.ok(!Object.hasOwn(stateOf(r), 'knowledgeLint'))
+    assert.ok(logs.some((m) => m.startsWith('knowledge-lint output could not be parsed: crew a')), logs.join('\n'))
+  }
+})
+
+t('lint 11: capped lists: the counts reach QC as a not-listed line and the crew result as predatingCount and warningCount', async () => {
+  const out = { ok: false, failures: [FAIL_NEW, FAIL_OLD], warnings: [WARN], predatingCount: 40, warningCount: 12 }
+  const r = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: ({ cmd }) => (cmd === 'knowledge-lint' ? rj(out) : undefined) })
+  const p = callOf(r, 'a-qc').prompt
+  has(p, '- [missing-source] docs/knowledge/legacy.md: src/gone.ts is not tracked\n- and 39 more not listed (40 in all)')
+  has(p, '- [stale] docs/knowledge/export.md: src/export.ts changed since verified\n- and 11 more not listed (12 in all)')
+  assert.deepEqual(stateOf(r).knowledgeLint, { ran: true, failures: [FAIL_NEW], predating: [FAIL_OLD], warnings: [WARN], predatingCount: 40, warningCount: 12 })
+  // counts equal to the lists add no line; a count below the list length is ignored
+  const even = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: ({ cmd }) => (cmd === 'knowledge-lint' ? rj({ ...out, predatingCount: 1, warningCount: 0 }) : undefined) })
+  hasnt(callOf(even, 'a-qc').prompt, 'not listed')
+  // only predating failures, every one cut by the cap: the heading still shows
+  const none = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: ({ cmd }) => (cmd === 'knowledge-lint' ? rj({ ok: true, failures: [], warnings: [], predatingCount: 3, warningCount: 0 }) : undefined) })
+  const q = callOf(none, 'a-qc').prompt
+  has(q, 'Failures that predate this crew (list them in your report for the main session; never FAIL for them):\n- and 3 more not listed (3 in all)')
+  hasnt(q, 'no failures and no warnings')
 })
 
 t('lint 8: malformed entries inside failures and warnings are dropped', async () => {
