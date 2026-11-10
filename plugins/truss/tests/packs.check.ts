@@ -134,7 +134,7 @@ for (const name of PACKS) {
 // ---------- 5. topics from ADR section 2 (loose, case-insensitive) ----------
 
 const TOPICS: Record<(typeof PACKS)[number], (string | RegExp)[]> = {
-  core: ['cohesion', 'coupling', 'interface', 'contract', /fail[ -]fast/, 'idempotent', 'observab', /secure|security default/, 'yagni'],
+  core: ['cohesion', 'coupling', 'interface', 'contract', /fail[ -]fast/, 'idempotent', 'observab', /secure|security default/, 'yagni', /dependenc/],
   service: ['config', 'environment', 'stateless', 'health'],
   frontend: ['component', 'accessibility', /budget/],
   data: ['idempotent', 'schema', 'raw', 'lineage', 'backfill', 'quality'],

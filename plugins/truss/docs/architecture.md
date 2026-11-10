@@ -1233,7 +1233,7 @@ Nothing. The state, the replay ring, the requests and the transcript live in the
 
 **P19 binds the plugin, not `ui/`** (R-11, `docs/requirements.md:81`). The plugin stays erasable TypeScript on Node built-ins only. `ui/` is its own package with its own `package.json` and lockfile. Its runtime dependencies are `@anthropic-ai/claude-agent-sdk`, `marked` and `mermaid` (exactly `12.2.0`, [ADR-0028](adr/0028-ui-rework.md) section 5); its dev dependencies are `@playwright/test` and `@axe-core/playwright`. Its server code is still erasable TypeScript, run by Node 24 as is. No file in `ui/` imports the plugin, and the plugin imports nothing from `ui/`.
 
-**Core pack: all 14 rules adopted.** Rule 1: each module exports from its `index.ts` only. Rule 3: ui-server takes `StateSource` and `SessionControl` as interfaces, which `http.check.ts` implements. Rule 6: every POST body and query is checked at ui-server. Rule 7: a repeated answer POST leaves the same state. Rule 10: the server binds `127.0.0.1` and refuses requests without the token.
+**Core pack: all 15 rules adopted.** Rule 1: each module exports from its `index.ts` only. Rule 3: ui-server takes `StateSource` and `SessionControl` as interfaces, which `http.check.ts` implements. Rule 6: every POST body and query is checked at ui-server. Rule 7: a repeated answer POST leaves the same state. Rule 10: the server binds `127.0.0.1` and refuses requests without the token.
 
 **Frontend pack.**
 

@@ -48,8 +48,9 @@ Run every command in the foreground, with an explicit Bash timeout up to 600000;
 7. Check that the diff doesn't edit the architecture doc or the ADR directory. Crews never edit them; a design change goes to the PM as `PROPOSAL:`. A crew diff that does is a finding: list it under Findings as a `QUESTION:` for the PM. The one exception is a design crew (its goal file says verdict `design`), whose job is writing the ADRs and the architecture-doc change.
 8. Check that no builder touched the acceptance tests: `git log --format='%H %(trailers:key=Truss-Role,valueonly)' <base>..<branch> -- <acceptance test files>`. Every member commit carries a `Truss-Role:` trailer. A commit with role `builder` in that list is a FAIL; but a pure rename (`R100`) of an acceptance-test file is no touch and the guard follows the new path, and a rename with any edit is a touch, so it is a FAIL for a builder or resolver.
 9. Check that new code reuses what exists or names its consumer. For each new function, export, option or file, find existing code that already does the job, or a caller (its consumer) in the same diff or in existing code. If there is neither, it is a finding.
-10. Check the goal file's `Non-goals` heading against the diff. Work that lands in a non-goal is a finding.
-11. Answer the five rubric questions, each with evidence:
+10. Check that every hunk traces to the task: a hunk that only reformats, renames or reorders lines the task didn't change is a finding, unless the project's formatter or a hook produced it (compare `git diff <base>...<branch>` with `git diff -w`). Check each manifest addition against core rule 15. A bug fix that adds a null or empty guard, or a catch, without saying why the value occurs is a finding.
+11. Check the goal file's `Non-goals` heading against the diff. Work that lands in a non-goal is a finding.
+12. Answer the five rubric questions, each with evidence:
    - It works.
    - It is understood at the boxes-and-arrows level: you can say which parts talk to which, and the code agrees.
    - It was tested end to end, through the real flow.
