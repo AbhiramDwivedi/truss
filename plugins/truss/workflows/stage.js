@@ -583,6 +583,28 @@ const answersFor = (crew, name) => {
   return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) &&((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
 }
 
+// the earlier member branch a resumed task (or `fix, <what>`) carries over from a run before this one: the factory lists it in
+// entry.prior only when the crew branch lacks its commits (factory.ts priorBranches); '' when none
+const priorOf = (crew, at) => {
+  const p = (Array.isArray(crew.e.prior) ? crew.e.prior : []).find((x) => x && x.at === at && typeof x.branch === 'string')
+  return p ? p.branch : ''
+}
+
+// a member's first step. --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch
+// equals the crew branch and the harness reaps the worktree as unchanged (bug 26). prev: the branch an earlier member of this
+// task committed on before it stopped (QUESTION, BLOCKED, PROPOSAL, CHECKPOINT). The new member's worktree forks from the
+// session checkout, not from that branch, so the step merges it too after the crew branch, or its commits are lost.
+function firstStep(e, prev) {
+  const crewMerge = `git merge --no-ff -m "merge ${e.branch}" ${e.branch}`
+  const tail = [`Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  if (typeof prev !== 'string' || prev === '' || prev === e.branch) return [`Your first step, before anything else: ${crewMerge}`, ...tail]
+  return [
+    `Your first step, before anything else: ${crewMerge}, then git merge --no-ff -m "merge ${prev}" ${prev}`,
+    `The second merge brings in the commits an earlier member made for this task on its branch ${prev}; the crew branch does not have them yet. Never drop either side: if either merge conflicts, run git merge --abort and stop with marker BLOCKED, naming the conflicting files.`,
+    ...tail,
+  ]
+}
+
 // the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1).
 // ADR-0026 item 51 4: the Head line names crew.head once the run has moved it, entry.head before that.
 const testsCheckExtra = (crew, ...lines) => {
@@ -674,8 +696,7 @@ function taskPrompt(crew, task, note) {
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
   if (note) body.push('', ...resumeLines(note))
-  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, (note && note.branch) || priorOf(crew, task.name))
   return memberPrompt(crew, task.role, { start, body })
 }
 
@@ -707,7 +728,8 @@ const namesFile = (finding, file) => finding.includes(file) || (file.includes('*
 // the paths a finding names that are not a tester file (nor a tester file's basename): its code half
 const namesCode = (finding, tf) => pathsIn(finding).some((p) => !tf.some((file) => p === file || (file.includes('*') && globToRegExp(file).test(p)) || file.endsWith(`/${p}`)))
 
-function fixPrompt(crew, what, detail, role = 'builder') {
+// prev: the branch of an earlier member of this fix that stopped (a restart in this run), else entry.prior's `fix, <what>`
+function fixPrompt(crew, what, detail, role = 'builder', prev = '') {
   const e = crew.e
   const tf = testerFiles(crew)
   const body = [`Task: fix, ${what}`]
@@ -720,8 +742,7 @@ function fixPrompt(crew, what, detail, role = 'builder') {
   body.push('', 'Fix this, and only this:', detail)
   const answers = answersFor(crew, null)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
-  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, prev || priorOf(crew, `fix, ${what}`))
   return memberPrompt(crew, role, { start, body, debug: true })
 }
 
@@ -786,7 +807,8 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
   if (report.marker !== 'DONE') {
     const tag = ['QUESTION', 'BLOCKED', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker) ? report.marker : 'BLOCKED'
     // member: the stop is the member's own report, which green may re-route (ADR-0027 F-70)
-    throw Object.assign(new Stop(tag, escalated ? `${report.text}\n\nThe product owner escalated this question: ${escalated}` : report.text, at), { member: true })
+    // branch: the member's own branch, for a successor that must carry its commits (greenFix); never in the crew result
+    throw Object.assign(new Stop(tag, escalated ? `${report.text}\n\nThe product owner escalated this question: ${escalated}` : report.text, at), { member: true, branch: typeof report.branch === 'string' ? report.branch : '' })
   }
   const fresh = learnedOf(report).map((item) => ({ ...item, task: at, member: label }))
   if (fresh.length) {
@@ -1217,11 +1239,12 @@ async function runMembers(crew, tasks) {
 }
 
 // fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
-async function fixBuilder(crew, what, detail, role = 'builder') {
+// prev: a branch an earlier fix member committed on before it stopped (greenFix's code half), merged in the first step
+async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
   const at = crew.step
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
+  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -1491,7 +1514,8 @@ async function greenFix(crew, what, detail) {
     await fixBuilder(crew, `${what}, tester file named by the fix builder`, said, 'tester')
     await testsBackstop(crew, what)
     if (!namesCode(String(err.text), tf)) return
-    await fixBuilder(crew, `${what}, the code half of the fix builder's report`, said)
+    // the stopped fix builder may have committed code on its branch already; the code-half builder carries it on
+    await fixBuilder(crew, `${what}, the code half of the fix builder's report`, said, 'builder', typeof err.branch === 'string' ? err.branch : '')
   }
   await testsBackstop(crew, what)
 }
@@ -1760,7 +1784,7 @@ function knowledgePrompt(crew, resume) {
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, resume ? resume.branch : '')
   return `Knowledge: crew ${crew.slug}\n${memberPrompt(crew, 'writer', { start, body, noLearned: true })}`
 }
 
