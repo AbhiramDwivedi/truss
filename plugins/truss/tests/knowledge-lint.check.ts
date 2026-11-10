@@ -75,6 +75,7 @@ const lint = (env, extra = []) => {
   return assertOneLine(r)
 }
 const checks = (list) => list.map((f) => `${f.check}:${f.path}`).sort()
+const CLEAN = { ok: true, failures: [], warnings: [], predatingCount: 0, warningCount: 0 }
 const commit = (repo, files, msg = 'edit') => {
   for (const [rel, text] of Object.entries(files)) putFile(repo, rel, text)
   git(repo, ['add', '-A'])
@@ -95,7 +96,7 @@ function goodWorld(over = {}, cfg) {
 t('lint 1: a clean layout is ok, with empty failures and warnings; the output is one JSON line and the exit is 0', () => {
   const { env } = goodWorld()
   const j = lint(env)
-  assert.deepEqual(j, { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(j, CLEAN)
 })
 
 t('lint 2: dead-glob fails a rule whose paths glob matches no tracked file, and passes a live one', () => {
@@ -149,7 +150,7 @@ t('lint 6: with no agents index, rule files are not checked for a listing; knowl
   git(env.repo, ['rm', '-q', 'AGENTS.md'])
   git(env.repo, ['commit', '-q', '-m', 'rm index'])
   const j = lint(env)
-  assert.deepEqual(j, { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(j, CLEAN)
 })
 
 t('lint 7: over-budget fails the always-loaded files (agents index, persona, persona Standards, rule) past their budgets and passes at the budget; the message says how to fix it', () => {
@@ -161,7 +162,7 @@ t('lint 7: over-budget fails the always-loaded files (agents index, persona, per
   })
   assert.equal(countLines(readFileSync(`${at.env.repo}/AGENTS.md`, 'utf8')), 60)
   assert.equal(countLines(readFileSync(`${at.env.repo}/.claude/rules/src.md`, 'utf8')), 40)
-  assert.deepEqual(lint(at.env), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(at.env), CLEAN)
 
   const over = goodWorld({
     'AGENTS.md': `- [auth](docs/knowledge/auth.md)\n- \`.claude/rules/src.md\`\n${lines(59)}`,
@@ -202,7 +203,7 @@ t('lint 9: knowledgeBudgets in truss.json override the defaults, per key; a bad 
 t('lint 10: line counts tolerate CRLF (a CRLF file is not over budget by a stray CR, and counts the same as LF)', () => {
   const body = Array.from({ length: 60 }, (_, i) => (i === 0 ? '- [auth](docs/knowledge/auth.md)' : i === 1 ? '- `.claude/rules/src.md`' : `l${i}`)).join('\r\n') + '\r\n'
   const { env } = goodWorld({ 'AGENTS.md': body })
-  assert.deepEqual(lint(env), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(env), CLEAN)
   const { env: env2 } = goodWorld({ 'AGENTS.md': body + 'extra\r\n' })
   assert.deepEqual(checks(lint(env2).failures), ['over-budget:AGENTS.md'])
 })
@@ -218,12 +219,12 @@ t('lint 11: persona-calls fails a persona that holds product-call entries (a Pro
   const loose = goodWorld({ '.claude/agents/product-owner.md': PERSONA('## Domain\n\n- **Question:** keep history? -> yes\n') })
   assert.deepEqual(checks(lint(loose.env).failures), ['persona-calls:.claude/agents/product-owner.md'])
   const ok = goodWorld({ '.claude/agents/product-owner.md': PERSONA('Judge fit.\n\n## Standards\n\n- be strict\n\nProduct calls are recorded in `docs/knowledge/product-decisions.md`.\n') })
-  assert.deepEqual(lint(ok.env), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(ok.env), CLEAN)
 })
 
 t('lint 12: stale without --base is a warning: commits touched a source since verified; an unknown or missing verified is a warning too; a fresh doc is clean', () => {
   const { env, sha } = goodWorld()
-  assert.deepEqual(lint(env), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(env), CLEAN)
   commit(env.repo, { 'src/b/c.ts': 'export const c = 1\n' })
   let j = lint(env)
   assert.equal(j.ok, true)
@@ -249,7 +250,7 @@ t('lint 13: stale with --base is a failure when a source changed in base..HEAD a
   j = lint(env, ['--base', base])
   assert.deepEqual(checks(j.failures), ['stale:.claude/rules/src.md'])
   commit(env.repo, { '.claude/rules/src.md': `${fm({ paths: ['src/**'], sources: ['src/a.ts'], verified: head1 })}\n- a rule\n` })
-  assert.deepEqual(lint(env, [`--base=${base}`]), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(env, [`--base=${base}`]), CLEAN)
   const same = lint(env, [`--base=${git(env.repo, ['rev-parse', 'HEAD'])}`])
   assert.equal(same.ok, true)
 })
@@ -295,7 +296,7 @@ t('lint 16: knowledgeDir, rulesDir and agentsIndex are configurable; the lint re
 
 t('lint 17: a repo with no knowledge files at all is ok', () => {
   const env = world({ 'src/a.ts': 'x\n' })
-  assert.deepEqual(lint(env), { ok: true, failures: [], warnings: [] })
+  assert.deepEqual(lint(env), CLEAN)
 })
 
 t('lint 18: non-ASCII file names are matched, not quoted away (core.quotepath off)', () => {
@@ -305,9 +306,115 @@ t('lint 18: non-ASCII file names are matched, not quoted away (core.quotepath of
   assert.deepEqual(checks(j.warnings), ['stale:.claude/rules/src.md'], 'the file was added after verified, so only stale is said')
 })
 
+// ---------------------------------------------------------------- 0.24.0 review fixes
+
+const PERSONA_OF = (name, body) => `${fm({ name, description: 'd', model: 'sonnet' })}\n${body}`
+const STANDARDS = (n) => `## Standards\n\n${Array.from({ length: n }, (_, i) => `- rule ${i}`).join('\n')}\n`
+
+t('lint 19: new keys on the subject too: a second dead glob in one rule, a second missing path in one feature map, a second persona call and a second budget kind on one persona are new; the same ones (a call re-wrapped) are not', () => {
+  const callA = '- Q: skip login? A: yes. Decided by: PM\n'
+  const { env } = goodWorld({
+    '.claude/rules/src.md': `${fm({ paths: ['src/**', 'old/**'] })}\n- r\n`,
+    'docs/features.md': '# Features\n\n## A\n\nEntry `src/a.ts`, `src/gone.ts`.\n',
+    '.claude/agents/dev.md': PERSONA_OF('dev', `${STANDARDS(16)}\n## Product calls\n\n${callA}`),
+    '.claude/agents/qa.md': PERSONA_OF('qa', `## Product calls\n\n- Q: export csv?   A: no.\n`),
+  })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  commit(env.repo, {
+    '.claude/rules/src.md': `${fm({ paths: ['src/**', 'old/**', 'new/**'] })}\n- r\n`,
+    'docs/features.md': '# Features\n\n## A\n\nEntry `src/a.ts`, `src/gone.ts`, `src/gone2.ts`.\n',
+    '.claude/agents/dev.md': PERSONA_OF('dev', `${STANDARDS(16)}\n## Product calls\n\n${callA}- Q: dark mode? A: later.\n\n${lines(130)}`),
+    '.claude/agents/qa.md': PERSONA_OF('qa', `## Product calls\n\n- Q: export\n  csv? A: no.\n`),
+  })
+  const j = lint(env, [`--base=${base}`])
+  const flags = (c, p, re) => j.failures.filter((f) => f.check === c && f.path === p && re.test(f.message)).map((f) => f.new)
+  assert.deepEqual(flags('dead-glob', '.claude/rules/src.md', /"old\/\*\*"/), [false])
+  assert.deepEqual(flags('dead-glob', '.claude/rules/src.md', /"new\/\*\*"/), [true], 'a second dead glob in the same rule')
+  assert.deepEqual(flags('missing-source', 'docs/features.md', /"src\/gone\.ts"/), [false])
+  assert.deepEqual(flags('missing-source', 'docs/features.md', /"src\/gone2\.ts"/), [true], 'a second dead path in the same feature map')
+  assert.deepEqual(flags('persona-calls', '.claude/agents/dev.md', /2 product-call entries/), [true], 'a second call in the same persona')
+  assert.deepEqual(flags('persona-calls', '.claude/agents/qa.md', /1 product-call entry/), [false], 'the same call, only re-wrapped')
+  assert.deepEqual(flags('over-budget', '.claude/agents/dev.md', /Standards items/), [false])
+  assert.deepEqual(flags('over-budget', '.claude/agents/dev.md', /lines, budget 120/), [true], 'a second budget kind on the same persona')
+  assert.equal(j.predatingCount, 4)
+})
+
+t('lint 20: a heading that only mentions product calls (judging rules) is not persona-calls and migrate leaves it; a heading that is a log of calls is', () => {
+  const judging = '## How I judge product calls\n\n- prefer the smaller scope\n- ask who the user is\n\n### Making product decisions\n\n- write the reason down\n'
+  const { env } = goodWorld({ '.claude/agents/product-owner.md': PERSONA_OF('product-owner', judging) })
+  assert.deepEqual(lint(env), CLEAN)
+  assert.deepEqual(env.run('knowledge-migrate').json.moves, [])
+  for (const head of ['## Product call log', '### Product decisions (crew)', '## **Product calls**', '## Crew product calls']) {
+    const w = goodWorld({ '.claude/agents/product-owner.md': PERSONA_OF('product-owner', `${judging}\n${head}\n\n- skip login -> yes\n`) })
+    const f = lint(w.env).failures
+    assert.deepEqual(checks(f), ['persona-calls:.claude/agents/product-owner.md'], head)
+    assert.match(f[0].message, /1 product-call entry/, head)
+  }
+})
+
+t('lint 21: a rule file linked from the feature map is reachable even when the agents index does not list it', () => {
+  const { env } = goodWorld({
+    '.claude/rules/ui.md': `${fm({ paths: ['src/**'] })}\n- r\n`,
+    'docs/features.md': '# Features\n\n## UI\n\nRules: [ui](../.claude/rules/ui.md).\n',
+  })
+  assert.deepEqual(lint(env), CLEAN)
+  const { env: env2 } = goodWorld({ '.claude/rules/ui.md': `${fm({ paths: ['src/**'] })}\n- r\n` })
+  assert.deepEqual(checks(lint(env2).failures), ['unreachable:.claude/rules/ui.md'])
+})
+
+t('lint 22: every new failure is listed; predating failures and warnings are capped at 20 each, with predatingCount and warningCount as the true totals', () => {
+  const globs = (from, n) => Array.from({ length: n }, (_, i) => `dead${from + i}/**`)
+  const entries = Array.from({ length: 25 }, (_, i) => `## E${i}\n\nl1\nl2\nl3\nl4\nl5\nl6\n`).join('\n')
+  const { env } = goodWorld({ '.claude/rules/src.md': `${fm({ paths: ['src/**', ...globs(0, 25)] })}\n- r\n`, 'docs/features.md': `# F\n\n${entries}` })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  commit(env.repo, { '.claude/rules/src.md': `${fm({ paths: ['src/**', ...globs(0, 25), ...globs(100, 22)] })}\n- r\n` })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.equal(j.failures.filter((f) => f.new).length, 22, 'new failures are never capped')
+  assert.equal(j.failures.filter((f) => !f.new).length, 20)
+  assert.equal(j.predatingCount, 25)
+  assert.equal(j.warnings.length, 20)
+  assert.equal(j.warningCount, 25)
+  for (const f of [...j.failures, ...j.warnings]) assert.deepEqual(Object.keys(f).sort(), ['check', 'message', 'new', 'path'])
+  const plain = lint(env)
+  assert.equal(plain.failures.length, 47, 'without --base every failure is new')
+  assert.equal(plain.predatingCount, 0)
+})
+
+t('lint 23: --slug lints the crew worktree (working tree and HEAD) with the base at merge-base <target> HEAD; --base still wins; with no merge-base the red record head is the base; a bad slug is a usage error', () => {
+  const { env } = goodWorld({ '.claude/rules/src.md': `${fm({ paths: ['src/**', 'old/**'] })}\n- r\n` })
+  const forked = git(env.repo, ['rev-parse', 'HEAD'])
+  const wt = addCrewWorktree(env.repo, 's')
+  // the crew adds a dead glob of its own and has an uncommitted rule file
+  commit(wt, { '.claude/rules/src.md': `${fm({ paths: ['src/**', 'old/**', 'crew/**'] })}\n- r\n` })
+  putFile(wt, 'docs/knowledge/wip.md', `${fm({})}\n# W\n`)
+  // the target moves on with a dead glob the crew then merges in
+  commit(env.repo, { '.claude/rules/main.md': `${fm({ paths: ['main/**'] })}\n- r\n`, 'AGENTS.md': `${BASE_FILES['AGENTS.md']}- \`.claude/rules/main.md\`\n` })
+  git(wt, ['merge', '-q', '--no-edit', 'main'])
+  const flag = (j, p, re) => j.failures.find((f) => f.path === p && re.test(f.message))?.new
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(flag(j, '.claude/rules/src.md', /"crew\/\*\*"/), true, 'the crew worktree is linted, not the main checkout')
+  assert.equal(flag(j, '.claude/rules/src.md', /"old\/\*\*"/), false)
+  assert.equal(flag(j, '.claude/rules/main.md', /"main\/\*\*"/), false, 'merged in from the target, so it predates the crew at merge-base')
+  assert.ok(j.failures.some((f) => f.check === 'unreachable' && f.path === 'docs/knowledge/wip.md') === false, 'an untracked file is not linted')
+  const main = lint(env)
+  assert.ok(!main.failures.some((f) => /crew\/\*\*/.test(f.message)), 'without --slug the main checkout is linted')
+  const given = lint(env, ['--slug', 's', `--base=${forked}`])
+  assert.equal(flag(given, '.claude/rules/main.md', /"main\/\*\*"/), true, '--base is used when given')
+  // no merge-base: the target does not resolve, so the head of the crew red record is the base
+  writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
+  assertUsageError(env.run('knowledge-lint', { slug: 's' }))
+  putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: forked, tail: '' }) + '\n')
+  const red = lint(env, ['--slug', 's'])
+  assert.equal(flag(red, '.claude/rules/main.md', /"main\/\*\*"/), true)
+  assert.equal(flag(red, '.claude/rules/src.md', /"old\/\*\*"/), false)
+  assertUsageError(env.run('knowledge-lint', { slug: 'nope' }))
+  assertUsageError(env.run('knowledge-lint', { slug: 'Bad Slug' }))
+})
+
 // ---------------------------------------------------------------- rules-index
 
-t('rules-index 1: lists every rule file with its paths globs, sorted; a rule with no paths lists an empty array; nested rules and uncommitted files count; the output is one JSON line', () => {
+t('rules-index 1: lists every tracked rule file with its paths globs, sorted; a rule with no paths lists an empty array; nested rules count, an untracked file does not; the output is one JSON line', () => {
   const env = world({
     '.claude/rules/b.md': `${fm({ paths: ['src/**', '"lib/*.ts"'] })}\n- r\n`,
     '.claude/rules/a.md': '---\npaths:\n  - docs/**\n---\n- r\n',
@@ -323,10 +430,13 @@ t('rules-index 1: lists every rule file with its paths globs, sorted; a rule wit
       { path: '.claude/rules/a.md', paths: ['docs/**'] },
       { path: '.claude/rules/b.md', paths: ['src/**', 'lib/*.ts'] },
       { path: '.claude/rules/c.md', paths: [] },
-      { path: '.claude/rules/e.md', paths: ['e/**'] },
       { path: '.claude/rules/sub/d.md', paths: ['x/**'] },
     ],
   })
+  // ADR-0035 review: an untracked rule file in the main checkout is in no crew's worktree, so it stays out of the stage args too
+  writePlan(env.dir, planObj([crew('s')]))
+  writeGoal(env.dir, 's', {})
+  assert.ok(!assertOneLine(env.run('start', { stage: 'next' })).truss.rules.some((r) => r.path === '.claude/rules/e.md'))
   assert.deepEqual(world({ 'a.txt': 'x\n' }).run('rules-index').json, { rules: [] })
   const custom = world({ 'pol/x.md': `${fm({ paths: ['a/**'] })}\n`, '.claude/rules/y.md': 'x\n' }, { merge: 'sequential', target: 'main', rulesDir: 'pol' })
   assert.deepEqual(custom.run('rules-index').json, { rules: [{ path: 'pol/x.md', paths: ['a/**'] }] })
@@ -524,6 +634,23 @@ t('args 4: plan-args carries productDecisions, agentsIndex, rulesDir and knowled
   assert.equal(all.rulesDir, '.claude/rules')
   assert.equal(all.knowledgeDir, 'docs/knowledge')
   assert.ok(!Object.hasOwn(all, 'rules'))
+})
+
+t('args 6: a path key set in truss.json is passed even when its file or dir does not exist yet, so stage.js and the lint agree; plan-args too', () => {
+  const cfg = { merge: 'sequential', target: 'main', productDecisions: 'notes/pd.md', agentsIndex: 'ctx/INDEX.md', rulesDir: 'policy', knowledgeDir: 'ctx/topics' }
+  const a = startArgs(cfg, {})
+  assert.deepEqual([a.productDecisions, a.agentsIndex, a.rulesDir, a.knowledgeDir], ['notes/pd.md', 'ctx/INDEX.md', 'policy', 'ctx/topics'])
+  assert.ok(!Object.hasOwn(a, 'rules'), 'no rule files yet')
+  const brief = `${tmp('brief-')}/brief.md`
+  writeFileSync(brief, 'brief\n')
+  const p = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', mkTrussDir(), '--repo', mkRepo({ config: cfg }), '--brief-file', brief], tmp('cwd-')).json.truss
+  assert.deepEqual([p.productDecisions, p.agentsIndex, p.rulesDir, p.knowledgeDir], ['notes/pd.md', 'ctx/INDEX.md', 'policy', 'ctx/topics'])
+})
+
+t('args 7: knowledgeBudgets reaches the stage args (all six, defaults filled in, 0 kept) whenever truss.json sets it, and is absent otherwise', () => {
+  const a = startArgs({ merge: 'sequential', target: 'main', knowledgeBudgets: { rule: 0, doc: 99, persona: 'x' } }, {})
+  assert.deepEqual(a.knowledgeBudgets, { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 0, featureEntry: 6, doc: 99 })
+  assert.ok(!Object.hasOwn(startArgs({ merge: 'sequential', target: 'main' }, {}), 'knowledgeBudgets'))
 })
 
 t('args 5: plan.js poPrompt names the product-decisions file when plan-args carried it, and no such line without it', async () => {

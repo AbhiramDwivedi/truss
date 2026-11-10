@@ -206,15 +206,18 @@ export function knowledgeCfgOf(repo: string): KCfg {
     budgets: budgetsOf(cfg.knowledgeBudgets),
   }
 }
-// The stage args (and plan-args) that carry the knowledge layout, next to featureMap: a path key only when its file or dir exists,
-// `rules` ([{path, paths}]) only when there are rule files.
+// The stage args (and plan-args) that carry the knowledge layout, next to featureMap: a path key set to a valid path in truss.json
+// always (stage.js and the lint must use the same path even before the file exists), a default one only when its file or dir
+// exists; `rules` ([{path, paths}]) only when there are rule files; in the stage args, `knowledgeBudgets` (all six, defaults filled
+// in) whenever truss.json sets it.
 function knowledgeArgsOf(repo: string, withRules: boolean): Obj {
   const k = knowledgeCfgOf(repo)
+  const cfg = configOf(repo)
   const out: Obj = {}
-  if (existsSync(`${repo}/${k.productDecisions}`)) out.productDecisions = k.productDecisions
-  if (existsSync(`${repo}/${k.agentsIndex}`)) out.agentsIndex = k.agentsIndex
-  if (existsSync(`${repo}/${k.rulesDir}`)) out.rulesDir = k.rulesDir
-  if (existsSync(`${repo}/${k.knowledgeDir}`)) out.knowledgeDir = k.knowledgeDir
+  for (const key of ['productDecisions', 'agentsIndex', 'rulesDir', 'knowledgeDir'] as const) {
+    if (repoPathOf(cfg[key]) !== undefined || existsSync(`${repo}/${k[key]}`)) out[key] = k[key]
+  }
+  if (withRules && isObj(cfg.knowledgeBudgets)) out.knowledgeBudgets = k.budgets
   if (withRules && out.rulesDir !== undefined) {
     try {
       const rules = knowledgeRulesIndex(repo, k).rules
@@ -3500,13 +3503,33 @@ function cmdDecisions(f: Flags): Obj {
 
 // ==== knowledge (ADR-0035) ====
 
-// `knowledge-lint [--base=<sha>] [--repo R]`: exit 0 whether or not it found failures; the caller reads `ok`.
+// `knowledge-lint [--base=<sha>] [--repo R] [--slug S [--dir D]]`: exit 0 whether or not it found failures; the caller reads `ok`.
+// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the repo's truss.json; with no --base the base
+// is `git merge-base <target> HEAD` there, and when that does not resolve, the head of the crew's red record in --dir (the
+// crew's head when its red check ran). Without --slug it lints the repo's own checkout, against --base when given.
 function cmdKnowledgeLint(f: Flags): Obj {
   const repo = repoOf(f)
-  const base = str(f, 'base')
+  let at = repo
+  let base = str(f, 'base')
   if (f.base === true || base === '') throw usage('--base needs a value')
-  if (base !== undefined && (base.startsWith('-') || run(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0)) throw usage(`--base ${base} is not a commit of ${repo}`)
-  return knowledgeLint(repo, knowledgeCfgOf(repo), base)
+  if (f.slug !== undefined) {
+    const slug = str(f, 'slug')
+    if (slug === undefined || !SLUG.test(slug)) throw usage(`--slug ${String(f.slug)} is not a crew slug`)
+    at = crewWorktree(repo, slug)
+    if (!existsSync(at)) throw usage(`no crew worktree for ${slug} at ${at}`)
+    if (base === undefined) {
+      const target = settingsOf(repo).target
+      const mb = target === '' || target.startsWith('-') ? undefined : run(at, ['merge-base', target, 'HEAD'])
+      if (mb !== undefined && mb.status === 0 && mb.out !== '') base = mb.out
+      else {
+        const red = f.dir === undefined ? undefined : redRecord(dirOf(f), slug)
+        if (typeof red?.head !== 'string' || red.head === '') throw usage(`no base for crew ${slug}: git merge-base ${target || '<no target>'} HEAD failed in ${at} and no red record names the crew's head; pass --base`)
+        base = red.head
+      }
+    }
+  }
+  if (base !== undefined && (base.startsWith('-') || run(at, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0)) throw usage(`--base ${base} is not a commit of ${at}`)
+  return knowledgeLint(at, knowledgeCfgOf(repo), base)
 }
 // `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
 function cmdKnowledgeMigrate(f: Flags): Obj {

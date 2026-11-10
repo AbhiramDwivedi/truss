@@ -67,15 +67,19 @@ The knowledge writer sends each item by this table:
 
 And it follows these rules: every written fact cites its source path or hunk, or it is dropped; reconcile before adding (edit or delete a superseded entry, never append a duplicate); set `verified` to the crew head on every doc it edits; stay within the budgets; "nothing to record" is a valid outcome; a new knowledge or rule file is linked from the feature map or the agents index.
 
-### D. The lint (`factory knowledge-lint [--base=<sha>]`)
+### D. The lint (`factory knowledge-lint [--slug=<crew>] [--base=<sha>]`)
 
-All checks are deterministic and git-based (`git -c core.quotepath=off ls-files`, paths normalised to `/`): `dead-glob`, `missing-source`, `stale`, `unreachable`, `over-budget` and `persona-calls`. The output is `{ok, failures, warnings}` and the exit code is 0 even when `ok` is false. With `--base`, each finding carries `new: true|false`: false when the same `{check, path}` also fails against the tree at the base, so a crew is not failed for what it inherited.
+All checks are deterministic and git-based (`git -c core.quotepath=off ls-files`, paths normalised to `/`): `dead-glob`, `missing-source`, `stale`, `unreachable`, `over-budget` and `persona-calls`. A knowledge doc or a rule file is reachable when the feature map or the agents index links it (rule files are checked only when the project has an agents index). A persona's product-call section is a heading whose text starts with "Product calls", "Product decisions" or "Product call log" (optionally "Crew" first); a heading that only mentions them, such as "How I judge product calls", holds judging rules and is not flagged.
+
+With `--slug`, the lint reads the crew's worktree (`.claude/worktrees/truss-<slug>`): its tracked files as they are in the working tree, and its `HEAD`. With no `--base` the base is then `git merge-base <target> HEAD` in that worktree (the target as `factory settings` gives it), so a crew that merged the target in is not blamed for what the merge brought; when that does not resolve, the base is the head of the crew's red record in `--dir`, and with neither it is a usage error. Without `--slug` it reads the repo's own checkout, against `--base` when given.
+
+The output is `{ok, failures, warnings, predatingCount, warningCount}`, each finding `{check, path, message, new}`, and the exit code is 0 even when `ok` is false. With a base, `new` is false when the same check on the same path with the same subject (the dead glob or missing path, the budget kind, the persona's call texts with whitespace and case folded) also fails against the tree at the base, so a crew is not failed for what it inherited but is failed for a second dead glob in a rule that already had one. Every `new: true` failure is listed; the `new: false` failures and the warnings are each capped at 20, and `predatingCount` and `warningCount` carry the true totals.
 
 `stage.js` runs it once before QC (again only if the head moved) through `runFactory` and puts the results in the QC brief. QC fails the crew on `new: true` failures only; a failure that predates the crew and every warning is listed in the crew result (`knowledgeLint`) for the main session. A lint that cannot run is logged and never stops the crew; QC is told "Knowledge lint did not run". It is skipped silently when the crew has no code tasks and the stage args name no knowledge file.
 
 ### E. Delivery to the members
 
-`factory start` puts `rules` (`[{path, paths}]`), `productDecisions`, `agentsIndex`, `rulesDir` and `knowledgeDir` into the stage args, each omitted when its file or directory does not exist. A task whose files match a rule's globs gets one line, `Context for your files: <rule paths>. Read each one unless it is already in your context.`, and the planner reads the agents index and the rules index so a task's `reads` includes the matching rules. `stage.js` is a workflow script and cannot import factory code, so it carries its own matcher for the glob dialect (`**`, `*`, `?` and `/`-separated paths; no braces, no negation). That matcher and the factory's must both pass every vector in `tests/fixtures/glob-vectors.json`.
+`factory start` puts `rules` (`[{path, paths}]`, tracked rule files only), `productDecisions`, `agentsIndex`, `rulesDir` and `knowledgeDir` into the stage args. A path key set in `.claude/truss.json` is always passed, even before its file or directory exists, so `stage.js` and the lint use the same path; a key left at its default is omitted when its file or directory does not exist. `knowledgeBudgets` (all six, defaults filled in, 0 allowed) goes into the stage args whenever `.claude/truss.json` sets it. A task whose files match a rule's globs gets one line, `Context for your files: <rule paths>. Read each one unless it is already in your context.`, and the planner reads the agents index and the rules index so a task's `reads` includes the matching rules. `stage.js` is a workflow script and cannot import factory code, so it carries its own matcher for the glob dialect (`**`, `*`, `?`, `/`-separated paths and brace alternation; no negation). A brace group `{a,b}` is a `{`, then no `{` or `}`, then `}`, with at least one `,`; its alternatives are literal text or globs and may hold `/`. There is no nesting, an unbalanced `{` or `}` is literal, and an alternative may be empty only in the form `{,x}` (any other empty alternative makes the group literal). That matcher and the factory's must both pass every vector in `tests/fixtures/glob-vectors.json`.
 
 The knowledge commit's owns exemption grows to the rules dir, `<knowledgeDir>/**`, the agents index and the product decisions file, for `.md` files only. A persona's frontmatter is still never exempt.
 
@@ -87,7 +91,7 @@ Checks read git, not the filesystem tree, so symlinks and case do not change the
 
 - Capital One Context Specs as a dependency or a file format.
 - A model-judged staleness check.
-- Brace and negation globs. The dialect is what both matchers can implement the same way.
+- Negation globs and nested braces. The dialect is what both matchers can implement the same way.
 - Rewriting the client's `CLAUDE.md` or an existing `AGENTS.md`. Init proposes; it never rewords.
 - Auto-deleting a stale doc. The lint reports; a crew's writer or the client edits.
 

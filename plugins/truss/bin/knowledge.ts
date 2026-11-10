@@ -10,7 +10,7 @@ export const DEFAULT_BUDGETS: Budgets = { agentsIndex: 60, persona: 120, persona
 // The knowledge keys of truss.json after the caller validated each path (factory.ts repoPathOf).
 export type KCfg = { featureMap: string; productDecisions: string; knowledgeDir: string; rulesDir: string; agentsIndex: string; budgets: Budgets }
 export type Finding = { check: string; path: string; message: string; new: boolean }
-export type LintResult = { ok: boolean; failures: Finding[]; warnings: Finding[] }
+export type LintResult = { ok: boolean; failures: Finding[]; warnings: Finding[]; predatingCount: number; warningCount: number }
 
 const flat = (p: string): string => String(p).replace(/\\/g, '/')
 
@@ -30,14 +30,35 @@ export function budgetsOf(raw: unknown): Budgets {
 // The dialect (shared with stage.js through tests/fixtures/glob-vectors.json): paths are `/`-separated and the glob is anchored at
 // the repo root. `*` is any run of characters but `/`, `?` is one character but `/`, a whole segment `**` is any number of
 // segments (`a/**/b` also matches `a/b`; a trailing `a/**` needs at least one more segment). Dotfiles are matched like any other
-// name. Anything else, `[`, `{` and `!` included, is literal. A leading `./` is dropped, `\` is `/`, a trailing `/` means `/**`.
-// Case-sensitive. Characters are code points, so `?` matches one non-ASCII character.
-export function globToRegExp(glob: string): RegExp {
-  let g = flat(glob).replace(/^(\.\/)+/, '').replace(/^\/+/, '')
+// name. A brace group `{a,b,c}` is alternation: the glob matches when any of its expansions does (an alternative may hold `/`,
+// `*`, `?` or `**`). A group is a `{`, then no `{` or `}`, then `}`, with at least one `,`, so there is no nesting: in `{a,{b}}`
+// the first `{` meets another `{` first and is literal, `{b}` has no `,` and is literal, and the last `}` is literal. An
+// alternative may be empty only in the form `{,x}` (two alternatives, the first empty); any other empty alternative makes the group
+// literal. An unbalanced `{` or `}` is literal, and so are `[`, `!` and a `,` outside a group. A leading `./` is dropped, `\` is
+// `/`, a trailing `/` means `/**`. Case-sensitive. Characters are code points, so `?` matches one non-ASCII character.
+export function expandBraces(glob: string): string[] {
+  const chars = Array.from(glob)
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== '{') continue
+    let j = i + 1
+    while (j < chars.length && chars[j] !== '{' && chars[j] !== '}') j++
+    if (chars[j] !== '}') continue
+    const alts = chars.slice(i + 1, j).join('').split(',')
+    if (alts.length < 2) continue
+    const emptyOk = alts.length === 2 && alts[0] === '' && alts[1] !== ''
+    if (!emptyOk && alts.some((a) => a === '')) continue
+    // chars before i hold no group (each `{` there was literal), so only the rest is expanded further
+    const pre = chars.slice(0, i).join('')
+    return expandBraces(chars.slice(j + 1).join('')).flatMap((post) => alts.map((a) => `${pre}${a}${post}`))
+  }
+  return [glob]
+}
+function globSource(glob: string): string {
+  const g = flat(glob).replace(/^(\.\/)+/, '').replace(/^\/+/, '')
   const dir = g.endsWith('/')
   const segs = g.split('/').filter((s) => s !== '')
   if (dir) segs.push('**')
-  let re = '^'
+  let re = ''
   segs.forEach((seg, i) => {
     const last = i === segs.length - 1
     if (seg === '**') {
@@ -47,10 +68,13 @@ export function globToRegExp(glob: string): RegExp {
     for (const ch of Array.from(seg)) re += ch === '*' ? '[^/]*' : ch === '?' ? '[^/]' : ch.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&')
     if (!last) re += '/'
   })
-  return new RegExp(`${re}$`, 'u')
+  return re
+}
+export function globToRegExp(glob: string): RegExp {
+  return new RegExp(`^(?:${expandBraces(flat(glob)).map(globSource).join('|')})$`, 'u')
 }
 export const globMatch = (glob: string, p: string): boolean => globToRegExp(glob).test(flat(p))
-const hasWild = (s: string): boolean => /[*?]/.test(s)
+const hasWild = (s: string): boolean => /[*?]/.test(s) || expandBraces(s).length > 1
 
 // ==== frontmatter ====
 // A small YAML subset: `key: value`, `key: [a, b]` (also over several lines) and `key:` followed by `- item` lines. Undefined when
@@ -222,7 +246,9 @@ const standardsItems = (text: string): number => {
 
 // ==== product calls in a persona ====
 export type Span = { start: number; end: number }
-const PRODUCT_HEAD = /^(#{1,6})\s+.*\bproduct\s+(?:calls?|decisions?)\b/i
+// A heading that names a log of calls: its text starts with "Product calls", "Product decisions" or "Product call log" (an optional
+// "Crew" first, emphasis allowed). A heading that only mentions them, such as "How I judge product calls", holds judging rules.
+const PRODUCT_HEAD = /^(#{1,6})\s+(?:\*\*|__|\*|_)?(?:crew\s+)?product\s+(?:calls?|decisions?)(?:\s+log)?(?![\w-])/i
 const LOOSE_CALL = [
   /^ {0,3}[-*+]\s+(?:\*\*)?(?:question|q)(?:\*\*)?\s*[:.]/i,
   /^ {0,3}[-*+]\s+(?:\*\*)?product call\b/i,
@@ -285,11 +311,15 @@ const personaFiles = (files: string[]): string[] => files.filter((f) => /^\.clau
 const bodyFrom = (text: string): number => parseFrontmatter(text)?.end ?? 0
 
 // ==== lint ====
-type Raw = { severity: 'failure' | 'warning'; check: string; path: string; message: string }
+// `subjects` say what a finding is about beyond its file: the dead glob or missing path, the budget kind, the normalised call
+// texts. A finding is new when one of its subjects did not fail the same check on the same path at the base. `stale` has none:
+// it is computed against the base already.
+type Raw = { severity: 'failure' | 'warning'; check: string; path: string; message: string; subjects?: string[] }
+const callKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 function structural(tree: Tree, cfg: KCfg): Raw[] {
   const out: Raw[] = []
-  const add = (severity: Raw['severity'], check: string, p: string, message: string): void => { out.push({ severity, check, path: p, message }) }
+  const add = (severity: Raw['severity'], check: string, p: string, message: string, subjects: string[] = ['']): void => { out.push({ severity, check, path: p, message, subjects }) }
   const files = tree.files
   const set = new Set(files)
   const under = (dir: string): string[] => files.filter((f) => f.startsWith(`${dir}/`) && f.toLowerCase().endsWith('.md')).sort()
@@ -305,47 +335,49 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
     if (rules.includes(f)) {
       for (const g of asList(fm.data.paths)) {
         const re = globToRegExp(g)
-        if (!files.some((x) => re.test(x))) add('failure', 'dead-glob', f, `paths glob "${g}" matches no tracked file: fix or remove it`)
+        if (!files.some((x) => re.test(x))) add('failure', 'dead-glob', f, `paths glob "${g}" matches no tracked file: fix or remove it`, [g])
       }
     }
-    for (const s of asList(fm.data.sources)) if (!isTrackedSource(s, files, set)) add('failure', 'missing-source', f, `sources path "${s}" is not tracked: fix it or drop the fact it backs`)
+    for (const s of asList(fm.data.sources)) if (!isTrackedSource(s, files, set)) add('failure', 'missing-source', f, `sources path "${s}" is not tracked: fix it or drop the fact it backs`, [s])
   }
 
   let mapText: string | undefined
   if (exists(cfg.featureMap)) {
     mapText = text(cfg.featureMap)
-    for (const t of featurePaths(mapText)) if (!isTrackedSource(t, files, set)) add('failure', 'missing-source', cfg.featureMap, `the feature map names code path "${t}", which is not tracked: fix or drop the entry`)
+    for (const t of featurePaths(mapText)) if (!isTrackedSource(t, files, set)) add('failure', 'missing-source', cfg.featureMap, `the feature map names code path "${t}", which is not tracked: fix or drop the entry`, [t])
     for (const e of featureEntries(mapText)) {
-      if (e.lines > cfg.budgets.featureEntry) add('warning', 'over-budget', cfg.featureMap, `feature entry "${e.name}" is ${e.lines} lines, budget ${cfg.budgets.featureEntry}: point to a doc in ${cfg.knowledgeDir}/ instead of listing details`)
+      if (e.lines > cfg.budgets.featureEntry) add('warning', 'over-budget', cfg.featureMap, `feature entry "${e.name}" is ${e.lines} lines, budget ${cfg.budgets.featureEntry}: point to a doc in ${cfg.knowledgeDir}/ instead of listing details`, [`featureEntry:${e.name}`])
     }
   }
 
+  // a knowledge doc or a rule file is reachable when the feature map or the agents index links it (ADR-0035 C); rule files are
+  // checked only when the project has an agents index
   const indexText = exists(cfg.agentsIndex) ? text(cfg.agentsIndex) : undefined
   const linked = new Set<string>([...(mapText === undefined ? [] : linkTargets(mapText, cfg.featureMap)), ...(indexText === undefined ? [] : linkTargets(indexText, cfg.agentsIndex))])
-  const inIndex = indexText === undefined ? new Set<string>() : linkTargets(indexText, cfg.agentsIndex)
   for (const d of docs) if (!linked.has(d)) add('failure', 'unreachable', d, `no link to it from ${cfg.featureMap} or ${cfg.agentsIndex}: add a markdown link or a backticked path`)
-  if (indexText !== undefined) for (const r of rules) if (!inIndex.has(r)) add('failure', 'unreachable', r, `rule file is not listed in ${cfg.agentsIndex}: add a pointer line for it`)
+  if (indexText !== undefined) for (const r of rules) if (!linked.has(r)) add('failure', 'unreachable', r, `rule file is not linked from ${cfg.agentsIndex} or ${cfg.featureMap}: add a pointer line for it`)
 
   if (indexText !== undefined) {
     const n = countLines(indexText)
-    if (n > cfg.budgets.agentsIndex) add('failure', 'over-budget', cfg.agentsIndex, `${n} lines, budget ${cfg.budgets.agentsIndex}: keep pointers only and move detail to ${cfg.knowledgeDir}/<topic>.md`)
+    if (n > cfg.budgets.agentsIndex) add('failure', 'over-budget', cfg.agentsIndex, `${n} lines, budget ${cfg.budgets.agentsIndex}: keep pointers only and move detail to ${cfg.knowledgeDir}/<topic>.md`, ['agentsIndex'])
   }
   for (const p of personas) {
     const t = text(p)
     const n = countLines(t)
-    if (n > cfg.budgets.persona) add('failure', 'over-budget', p, `${n} lines, budget ${cfg.budgets.persona}: move area rules to ${cfg.rulesDir}/<area>.md`)
+    if (n > cfg.budgets.persona) add('failure', 'over-budget', p, `${n} lines, budget ${cfg.budgets.persona}: move area rules to ${cfg.rulesDir}/<area>.md`, ['persona'])
     const s = standardsItems(t)
-    if (s > cfg.budgets.personaStandards) add('failure', 'over-budget', p, `${s} Standards items, budget ${cfg.budgets.personaStandards}: fold entries into fewer cross-cutting rules and move area rules to ${cfg.rulesDir}/<area>.md`)
-    const calls = callSpans(splitLines(t), bodyFrom(t), cfg.productDecisions).entries.length
-    if (calls > 0) add('failure', 'persona-calls', p, `${calls} product-call entr${calls === 1 ? 'y' : 'ies'} in the persona: run \`factory knowledge-migrate\` to move them to ${cfg.productDecisions}`)
+    if (s > cfg.budgets.personaStandards) add('failure', 'over-budget', p, `${s} Standards items, budget ${cfg.budgets.personaStandards}: fold entries into fewer cross-cutting rules and move area rules to ${cfg.rulesDir}/<area>.md`, ['personaStandards'])
+    const pl = splitLines(t)
+    const calls = callSpans(pl, bodyFrom(t), cfg.productDecisions).entries.map((e) => callKey(pl.slice(e.start, e.end).join('\n')))
+    if (calls.length > 0) add('failure', 'persona-calls', p, `${calls.length} product-call entr${calls.length === 1 ? 'y' : 'ies'} in the persona: run \`factory knowledge-migrate\` to move them to ${cfg.productDecisions}`, calls)
   }
   for (const r of rules) {
     const n = countLines(text(r))
-    if (n > cfg.budgets.rule) add('failure', 'over-budget', r, `${n} lines, budget ${cfg.budgets.rule}: split by area or fold entries into fewer rules`)
+    if (n > cfg.budgets.rule) add('failure', 'over-budget', r, `${n} lines, budget ${cfg.budgets.rule}: split by area or fold entries into fewer rules`, ['rule'])
   }
   for (const d of docs) {
     const n = countLines(text(d))
-    if (n > cfg.budgets.doc) add('warning', 'over-budget', d, `${n} lines, budget ${cfg.budgets.doc}: fold entries into fewer, or split the topic`)
+    if (n > cfg.budgets.doc) add('warning', 'over-budget', d, `${n} lines, budget ${cfg.budgets.doc}: fold entries into fewer, or split the topic`, ['doc'])
   }
   return out
 }
@@ -385,7 +417,8 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
     if (doc.verified === undefined) { out.push({ severity: 'warning', check: 'stale', path: doc.path, message: 'sources are set but `verified` is not: set it to the sha the doc was last checked at' }); continue }
     const ok = /^[0-9a-f]{4,40}$/i.test(doc.verified) && git(repo, ['rev-parse', '--verify', '--quiet', `${doc.verified}^{commit}`]).status === 0
     if (!ok) { out.push({ severity: 'warning', check: 'stale', path: doc.path, message: `\`verified\` ${doc.verified} is not a known commit: re-check the doc and set it to the head` }); continue }
-    const specs = doc.sources.map((s) => `:(${hasWild(s) ? 'glob' : 'literal'})${flat(s).replace(/^(\.\/)+/, '').replace(/\/+$/, '')}`)
+    // git pathspecs have no braces, so a brace source is passed as its expansions
+    const specs = doc.sources.flatMap((s) => expandBraces(flat(s).replace(/^(\.\/)+/, '').replace(/\/+$/, ''))).map((s) => `:(${/[*?]/.test(s) ? 'glob' : 'literal'})${s}`)
     const r = git(repo, ['log', '--format=%H', `${doc.verified}..HEAD`, '--', ...specs])
     const n = nameLines(r.out).length
     if (r.status === 0 && n > 0) out.push({ severity: 'warning', check: 'stale', path: doc.path, message: `${n} commit(s) touched its sources since \`verified\` ${doc.verified.slice(0, 12)}: re-check the doc and set \`verified\` to the head` })
@@ -393,22 +426,27 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
   return out
 }
 
+// How many predating failures and warnings the output lists; predatingCount and warningCount carry the true totals.
+export const LIST_CAP = 20
 export function lint(repo: string, cfg: KCfg, base?: string): LintResult {
   const head = headTree(repo)
-  let raw = [...structural(head, cfg), ...staleRaw(repo, head, cfg, base)]
-  const key = (r: { check: string; path: string }): string => `${r.check}\0${r.path}`
-  let atBase = new Set<string>()
-  if (base !== undefined) atBase = new Set(structural(baseTree(repo, base), cfg).map(key))
-  const fin = (r: Raw): Finding => ({ check: r.check, path: r.path, message: r.message, new: base === undefined || r.check === 'stale' || !atBase.has(key(r)) })
+  const raw = [...structural(head, cfg), ...staleRaw(repo, head, cfg, base)]
+  const keys = (r: Raw): string[] => (r.subjects ?? ['']).map((s) => `${r.check}\0${r.path}\0${s}`)
+  const atBase = new Set<string>(base === undefined ? [] : structural(baseTree(repo, base), cfg).flatMap(keys))
+  const fin = (r: Raw): Finding => ({ check: r.check, path: r.path, message: r.message, new: base === undefined || r.check === 'stale' || keys(r).some((k) => !atBase.has(k)) })
   const order = (a: Finding, b: Finding): number => (a.check < b.check ? -1 : a.check > b.check ? 1 : a.path < b.path ? -1 : a.path > b.path ? 1 : a.message < b.message ? -1 : a.message > b.message ? 1 : 0)
   const failures = raw.filter((r) => r.severity === 'failure').map(fin).sort(order)
   const warnings = raw.filter((r) => r.severity === 'warning').map(fin).sort(order)
-  return { ok: failures.length === 0, failures, warnings }
+  // every new failure in full; the predating ones and the warnings capped, in the same order
+  let kept = 0
+  const listed = failures.filter((f) => f.new || kept++ < LIST_CAP)
+  return { ok: failures.length === 0, failures: listed, warnings: warnings.slice(0, LIST_CAP), predatingCount: failures.filter((f) => !f.new).length, warningCount: warnings.length }
 }
 
 // ==== rules-index ====
+// Tracked rule files only: an untracked file in the checkout is not in any crew's worktree.
 export function rulesIndex(repo: string, cfg: KCfg): { rules: { path: string; paths: string[] }[] } {
-  const r = git(repo, ['ls-files', '--cached', '--others', '--exclude-standard'])
+  const r = git(repo, ['ls-files', '--cached'])
   if (r.status !== 0) throw new Error(`git ls-files failed in ${repo}`)
   const names = [...new Set(nameLines(r.out))].filter((f) => f.startsWith(`${cfg.rulesDir}/`) && f.toLowerCase().endsWith('.md') && existsSync(`${repo}/${f}`)).sort()
   return { rules: names.map((p) => { const fm = parseFrontmatter(readFileSync(`${repo}/${p}`, 'utf8')); return { path: p, paths: fm ? asList(fm.data.paths) : [] } }) }
