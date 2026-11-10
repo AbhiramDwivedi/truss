@@ -86,7 +86,8 @@ function mdCands(repo: string, cfg: Obj): Cand[] {
     const m = /^\s*[-*] \[ \] (.+)$/.exec(lines[i])
     if (!m) continue
     const parts = [m[1].trim()]
-    while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) parts.push(lines[++i].trim())
+    const indent = /^\s*/.exec(lines[i])![0].length
+    while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1]) && /^\s*/.exec(lines[i + 1])![0].length > indent && !/^\s*[-*] \[ \] (.+)$/.test(lines[i + 1])) parts.push(lines[++i].trim())
     const text = parts.join('\n')
     out.push({ key: `md:${sha(norm(text), 16)}`, title: parts[0].slice(0, 200), text: text.slice(0, 4000), url: null, author: null, state: 'new', source: 'md' })
   }
