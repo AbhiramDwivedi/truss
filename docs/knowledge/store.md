@@ -11,7 +11,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 2c0bc9f24b4f236a1e19cc38d7befada01bd39bd
+verified: 2e014597e3e0867f9e840984b0b4f17c817e746f
 ---
 
 # Store, holds and contract-025 stubs
