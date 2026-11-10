@@ -704,6 +704,20 @@ test('escalations: a stopped result writes one tag line per crew and run; finish
   for (const e of tags) assert.deepEqual(validateEvent(e), [])
 })
 
+test('knowledge signal: a result with a knowledge field writes one knowledge line per crew and run; finish twice adds none; no field adds none', () => {
+  const w = scenario([{ slug: 's' }, { slug: 'q' }, { slug: 'p' }])
+  writeFileSync(w.resFile, JSON.stringify([
+    { slug: 's', state: 'stopped', tag: 'BLOCKED', text: 'webkit cannot launch', at: 'green', knowledge: { items: 0, ran: false, sourceChanges: 0 } },
+    { slug: 'q', state: 'passed', head: w.c.q.head, base: w.c.q.base, qc: 'q-qc', knowledge: { items: 2, ran: true, sourceChanges: 3 } },
+    { slug: 'p', state: 'passed', head: w.c.p.head, base: w.c.p.base, qc: 'p-qc' },
+  ]))
+  w.finish()
+  w.finish()
+  const lines = readEvents(w.env.dir).filter((e) => e.event === 'knowledge')
+  assert.deepEqual(lines.map((e) => [e.crew, e.items, e.ran, e.sourceChanges, e.run]).sort(), [['q', 2, true, 3, 'wf_1'], ['s', 0, false, 0, 'wf_1']])
+  for (const e of lines) assert.deepEqual(validateEvent(e), [], JSON.stringify(e))
+})
+
 test('escalations: the QC FAIL that takes the counted FAILs past reworkAllowance gets one allowance-spent line; a re-plan resets the count', () => {
   const fail = (c) => qcReport({ verdict: 'FAIL', head: c.head, patch: c.patch })
   const mk = (line) => {

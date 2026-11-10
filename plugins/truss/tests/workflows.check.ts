@@ -78,7 +78,7 @@ async function exec(file, args, o = {}) {
         const cut = mh[1].indexOf(' -- ')
         m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
       } else {
-        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|decision-ack|decisions)\b([^\n`]*)/)
       }
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
@@ -86,7 +86,7 @@ async function exec(file, args, o = {}) {
       }
       const cmd = m[1]
       const flag = (name) => (m[2].match(new RegExp(`--${name}\\s+([^\\s\`]+)`)) || [])[1]
-      const slug = flag('slug')
+      const slug = flag('slug') ?? flag('crew')
       const expect = flag('expect')
       const branch = flag('branch')
       const key = cmd === 'check' ? `check:${expect}` : cmd === 'integrate' ? `integrate:${branch}` : cmd
@@ -225,7 +225,10 @@ const stopped = (r, tag, at) => {
   assert.deepEqual(Object.keys(r).sort(), ['at', 'slug', 'state', 'tag', 'text'])
 }
 const passedShape = (r, slug, head, qc, e = entry(slug), deferred = []) => {
-  assert.deepEqual(r, { slug, state: 'passed', head, base: e.base, qc, ...(e.stressTest ? { deferred } : {}) })
+  // ADR-0033: a passed crew also carries knowledge {items, ran, sourceChanges} (tests/crew-knowledge.check.ts pins its values)
+  const { knowledge, ...rest } = r
+  assert.deepEqual(Object.keys(knowledge ?? {}).sort(), ['items', 'ran', 'sourceChanges'])
+  assert.deepEqual(rest, { slug, state: 'passed', head, base: e.base, qc, ...(e.stressTest ? { deferred } : {}) })
 }
 const call = (r, label) => r.calls.find((c) => c.label === label)
 const had = (r, label) => r.calls.some((c) => c.label === label)
@@ -349,6 +352,8 @@ async function runPlan(o = {}) {
   return r
 }
 const AGREE = 'Notes\nREVIEW: agree\nClient: none'
+const NO_PO = { skipped: 'the project has no product-owner persona and no draft of one in this plan' }
+const DISAGREE_PO = { skipped: 'checking engineer disagrees; plan goes back to step 2' }
 
 t('plan: the first call is truss-designer with first prompt line exactly "Mode: plan", then the brief', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
@@ -385,14 +390,14 @@ t('plan: the checker is truss-checker and its prompt carries planJson, planMd an
 t('plan: agree returns {designerLabel, reviews, client, stillDisagree} with no reconcile', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: agree'], client: [], stillDisagree: false })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: agree'], client: [], stillDisagree: false, productOwner: NO_PO })
 })
 t('plan: REVIEW: disagree returns after one designer and one checker: stillDisagree true, no designer-2 or checker-2', async () => {
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': 'REVIEW: disagree\nWHY-CHECKER-ONE\nClient: none' } })
   assert.deepEqual(r.labels, ['truss-designer', 'truss-checker'])
   assert.ok(!had(r, 'truss-designer-2'), 'designer-2 ran')
   assert.ok(!had(r, 'truss-checker-2'), 'checker-2 ran')
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: DISAGREE_PO })
 })
 t('plan: a disagree never starts a second designer or checker even when they would answer', async () => {
   const dis = 'REVIEW: disagree\nClient: none'
@@ -414,7 +419,7 @@ t('plan: an Client: line never stops the script (the result still comes back)', 
 t('plan: a fix run labels designer-3 and checker-3 and never reconciles', async () => {
   const r = await runPlan({ fix: true, labels: { 'truss-designer-3': ARCH(), 'truss-checker-3': 'REVIEW: disagree\nClient: none' } })
   assert.deepEqual(r.labels, ['truss-designer-3', 'truss-checker-3'])
-  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true })
+  assert.deepEqual(r.result, { designerLabel: 'truss-designer-3', reviews: ['REVIEW: disagree'], client: [], stillDisagree: true, productOwner: DISAGREE_PO })
 })
 t('plan: an designer that returns null makes the script throw', async () => {
   const r = await runPlan({ allowError: true, labels: { 'truss-designer': null } })
@@ -897,7 +902,9 @@ t('stage red: a red check that fails on the environment stops BLOCKED at red, qu
 })
 t('stage resume answers: an answer at red runs the red check again; other answers still skip it', async () => {
   const atRed = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'red', text: 'host fixed' }] })], { labels: base() })
-  assert.equal(atRed.timeline[0], 'start:runner:a:check:red')
+  // a resume first asks factory decisions --crew for the crew's earlier product calls, then runs the red check
+  assert.deepEqual(atRed.timeline.slice(0, 2), ['start:runner:a:decisions', 'end:runner:a:decisions'])
+  assert.equal(atRed.timeline[2], 'start:runner:a:check:red')
   passedShape(atRed.res[0], 'a', HEAD, 'a-qc')
   const atSplit = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'split', text: 'x' }] })], { labels: base() })
   assert.ok(noRunner(atSplit, 'check:red'))
@@ -1273,14 +1280,17 @@ t('stage resume stale: with invalid tasks it stops BLOCKED at split and never ru
 })
 t('stage resume stale: with no tasks the chain starts at the red check', async () => {
   const r = await runStage([entry('a', { resume: 'stale' })], { labels: base() })
-  assert.equal(r.timeline[0], 'start:runner:a:check:red')
+  assert.equal(r.timeline[0], 'start:runner:a:decisions')
+  assert.equal(r.timeline[2], 'start:runner:a:check:red')
   assert.ok(had(r, 'a-planner'))
 })
 t('stage resume merge-ready: sync, green, owns-check, qc in that order; no red, planner, member or stress test', async () => {
   const e = rtCrew({ resume: 'merge-ready' })
   const r = await runStage([e], { labels: { 'a-qc': PASS } })
-  assert.equal(r.timeline[0], 'start:runner:a:sync')
-  has(r.calls[0].prompt, 'sync --slug a')
+  assert.equal(r.timeline[0], 'start:runner:a:decisions')
+  assert.equal(r.timeline[2], 'start:runner:a:sync')
+  has(r.calls[0].prompt, 'decisions --crew a')
+  has(r.calls[1].prompt, 'sync --slug a')
   assert.ok(noRunner(r, 'check:red'))
   assert.deepEqual(r.labels.filter((l) => !/runner/.test(l)), ['a-qc'])
   assert.ok(idx(r, 'end:runner:a:sync') < idx(r, 'start:runner:a:check:green'))

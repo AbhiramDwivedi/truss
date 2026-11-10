@@ -10,5 +10,6 @@
   "stress":    { "agentType": "truss:stress-engineer", "model": "opus", "effort": "medium", "isolation": "worktree" },
   "qc": { "agentType": "truss:qc-engineer", "model": "opus", "effort": "medium", "isolation": "none" },
   "runner": { "agentType": "general-purpose", "model": "sonnet", "effort": "low", "isolation": "none" },
-  "ux": { "agentType": "truss:ux-engineer", "model": "opus", "effort": "medium", "isolation": "none" }
+  "ux": { "agentType": "truss:ux-engineer", "model": "opus", "effort": "medium", "isolation": "none" },
+  "po": { "agentType": "general-purpose", "model": "opus", "effort": "medium", "isolation": "none" }
 }

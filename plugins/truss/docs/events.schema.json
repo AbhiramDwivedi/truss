@@ -4,15 +4,89 @@
   "title": "truss event log line",
   "description": "One line of <truss dir>/events.jsonl (rolled to events.<n>.jsonl past 3 MiB), appended by truss's hooks from 0.4.0 (truss ADR-0003). Each line is one JSON object matching this schema. Read by retro/counts.ts, which skips a line that isn't JSON or has a v it doesn't know, and counts the skips. No line holds message, prompt or report text (P8).",
   "type": "object",
-  "required": ["v", "ts", "event", "crew", "agent"],
+  "required": ["v", "ts", "event", "crew"],
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
   "allOf": [
+    {
+      "description": "Every event except the crew-level ones of truss ADR-0033 names its agent. Those (crew-decision, decision-reply, decision-ack, knowledge-commit and knowledge) are about a crew, not an agent, and carry no agent field.",
+      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] } } } },
+      "then": { "required": ["agent"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "knowledge" } } },
+      "then": {
+        "description": "What a Workflow crew's optional learning came to, recorded by factory finish from the crew result's knowledge field (truss ADR-0033), once per crew and run. items is how many learned items its members reported (a product call's item is not one); ran is whether the knowledge step ran; sourceChanges is how many non-test source files its diff added, renamed or deleted. The retro counts crews, items and steps run versus skipped from it.",
+        "additionalProperties": false,
+        "required": ["run", "items", "ran", "sourceChanges"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "run": { "type": "string", "minLength": 1 },
+          "items": { "type": "integer", "minimum": 0 },
+          "ran": { "type": "boolean" },
+          "sourceChanges": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "crew-decision" } } },
+      "then": {
+        "description": "A product call a crew's product-owner persona made and went on from, recorded by factory crew-decision (truss ADR-0033). id is d-<crew>-<n>; task is the member task the question came from; by is who decided.",
+        "additionalProperties": false,
+        "required": ["id", "task", "question", "answer", "by"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": "string", "pattern": "^d-[a-z0-9-]+-[0-9]+$" },
+          "task": { "type": "string", "minLength": 1 },
+          "question": { "type": "string", "minLength": 1 },
+          "answer": { "type": "string", "minLength": 1 },
+          "by": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "decision-reply" } } },
+      "then": {
+        "description": "The main session's reply to a crew's product call, recorded by factory decision-reply (truss ADR-0033). ack keeps the answer; change replaces it, and note says with what (null on an ack without one).",
+        "additionalProperties": false,
+        "required": ["id", "reply", "note"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": "string", "pattern": "^d-[a-z0-9-]+-[0-9]+$" },
+          "reply": { "enum": ["ack", "change"] },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "decision-ack" } } },
+      "then": {
+        "description": "The crew applied these replies to its product calls and said so with factory decision-ack (truss ADR-0033). ids are the replies newly marked consumed by that call, never one already consumed.",
+        "additionalProperties": false,
+        "required": ["ids"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^d-[a-z0-9-]+-[0-9]+$" } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "knowledge-commit" } } },
+      "then": {
+        "description": "The commit that holds a crew's knowledge step, recorded by factory knowledge-commit (truss ADR-0033). owns-check lets the docs that commit changed, and no other commit did, stand outside the crew's owns.",
+        "additionalProperties": false,
+        "required": ["sha"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "sha": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" }
+        }
+      }
+    },
     {
       "if": { "properties": { "event": { "const": "allowance-spent" } } },
       "then": {

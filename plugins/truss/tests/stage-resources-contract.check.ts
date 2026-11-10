@@ -136,6 +136,7 @@ async function exec(args, o = {}) {
         else if (p.cmd === 'owns-check') out = rj({ ok: true, outside: [] })
         else if (p.cmd === 'tests-check') out = rj({ ok: true, tests: [] })
         else if (p.cmd === 'sync') out = rj({ merged: true })
+        else if (['decision-checkpoint', 'crew-learned', 'knowledge-commit', 'decision-ack', 'decisions'].includes(p.cmd)) out = rj({ ok: true, decisions: [] })
         else {
           unscripted.push(`${opts.label} (${p.cmd})`)
           throw new Error(`unscripted runner command ${p.cmd}`)

@@ -422,6 +422,7 @@ type Run = {
   esc: { QUESTION: number; BLOCKED: number; PROPOSAL: number }
   qcs: { pass: number; fail: number }
   allowanceCrews: Set<string>
+  knowledge: Map<string, { items: number; ran: boolean }>
   fetches: { total: number; perAgent: Dict }
   refusals: { total: number; bySource: Dict; byTool: Dict; byCategory: Dict; byProgram: Dict; byShape: Dict }
   goals: Dict
@@ -440,10 +441,18 @@ const newRun = (started: string, goal: string, dt: bigint | null): Run => ({
   esc: { QUESTION: 0, BLOCKED: 0, PROPOSAL: 0 },
   qcs: { pass: 0, fail: 0 },
   allowanceCrews: new Set(),
+  knowledge: new Map(),
   fetches: { total: 0, perAgent: new Map() },
   refusals: { total: 0, bySource: new Map(), byTool: new Map(), byCategory: new Map(), byProgram: new Map(), byShape: new Map() },
   goals: new Map(),
 })
+
+// ADR-0033: the retro's count of optional learning: crews, the learned items their members reported, and knowledge steps run versus skipped
+const knowledgeOf = (m: Map<string, { items: number; ran: boolean }>): Out => {
+  const all = [...m.values()]
+  const ran = all.filter((k) => k.ran).length
+  return { crews: all.length, items: all.reduce((n, k) => n + k.items, 0), ran, skipped: all.length - ran }
+}
 
 const classifyTime = (token: string): 'notRecorded' | 'dateOnly' | 'clock' => {
   if (token === 'HH:MM') return 'notRecorded'
@@ -587,6 +596,16 @@ const processEvents = (files: string[], runs: Run[]): { skipped: number; outside
       } else if (kind === 'allowance-spent') {
         const crew = get(ev, 'crew')
         if (isStr(crew) && crew !== '') run.allowanceCrews.add(crew)
+      } else if (kind === 'knowledge') {
+        // ADR-0033: one line per crew and run; a later line for the same crew (a resume) merges into the earlier one: ran is true when
+        // any line says so, items is the largest count seen, so a merge-ready resume (ran false, items 0) erases nothing
+        const crew = get(ev, 'crew')
+        const items = get(ev, 'items')
+        const ran = get(ev, 'ran')
+        if (isStr(crew) && crew !== '' && typeof ran === 'boolean' && (typeof items === 'number' || typeof items === 'bigint') && Number.isInteger(Number(items)) && Number(items) >= 0) {
+          const old = run.knowledge.get(crew)
+          run.knowledge.set(crew, { items: Math.max(old?.items ?? 0, Number(items)), ran: (old?.ran ?? false) || ran })
+        }
       } else if (kind === 'report') {
         const agent = get(ev, 'agent')
         const m = isStr(agent) ? QC_NAME.exec(agent) : null
@@ -958,7 +977,7 @@ const commitLog = (root: string | null): [bigint, string][] | null => {
   return log
 }
 
-const isExtendPass = (subject: string): boolean => subject.startsWith('docs(arch): extend ') || subject === 'docs(arch): adopt learned items'
+const isExtendPass = (subject: string): boolean => subject.startsWith('docs(arch): extend ') || subject === 'docs(arch): adopt learned items' || subject === 'docs(arch): reconcile learned items'
 
 const countDefaultDecisions = (root: string | null): number | string => {
   if (root === null) return NR
@@ -1037,6 +1056,7 @@ export const retro = (directory: string): Out => {
       escalations: placed ? r.esc : NR,
       qcs: placed ? r.qcs : NR,
       allowancesSpent: placed && r.allowanceCrews.size > 0 ? r.allowanceCrews.size : NR,
+      knowledge: placed && r.knowledge.size > 0 ? knowledgeOf(r.knowledge) : NR,
       fetches: placed && fetchSeen ? r.fetches : NR,
       refusals: placed && refusalSeen ? r.refusals : NR,
       extendPasses: extend,

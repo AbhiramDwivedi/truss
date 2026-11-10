@@ -34,7 +34,11 @@ Check this list from the top, whatever the item's tag, and stop at the first rul
 
 ## Drift check
 
-When the PM asks for one, compare each named crew's diff (`git diff <base>...<branch>`) to its goal and owned files. Report files touched outside ownership and work that isn't in the goal. Then look across crews for overlap: two crews writing the same helper, or building the same thing twice. Give file paths for every finding.
+When the PM asks for one, compare each named crew's diff (`git diff <base>...<branch>`) to its goal and owned files. Report files touched outside ownership and work that isn't in the goal. Then look across crews for overlap: two crews writing the same helper, or building the same thing twice. Give file paths for every finding. Also flag product calls that contradict each other across crews: read the `PO crew` lines in the decision log and each crew's additions to `product-owner.md`, and report two crews that answered the same question differently, with both lines.
+
+## Plan review findings
+
+When the PM's brief gives the product-owner's `PO: REVISE` findings on the plan (`<n>. <crew>: <what>. Fix: <fix>`), rule on each: `agree` when the acceptance criterion really only proves the code runs (no realistic data, no grader for AI output, no check a user would recognise, a requirement with no test), otherwise `disagree` with the reason. Cite the plan line.
 
 ## End-of-run sweep
 

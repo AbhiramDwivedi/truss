@@ -55,7 +55,7 @@ async function exec(file, args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/)
+      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|decision-ack|decisions)\b([^\n`]*)/)
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -285,7 +285,7 @@ t('persona 10: the QC brief lists the used persona files and every judge file un
 
 const HOUR = 3_600_000
 const LONG_AGO = 1_700_000_000_000
-const fm = (o, body = 'Standards\n- one rule\n') => `---\n${Object.entries(o).map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n\n${body}`
+const fm = (o, body = '## Standards\n- one rule\n') => `---\n${Object.entries(o).map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n\n${body}`
 const agentsDir = (repo) => `${repo}/.claude/agents`
 function put(p, text, ageMs = LONG_AGO) {
   mkdirSync(dirname(p), { recursive: true })
@@ -328,7 +328,7 @@ t('persona 11: start builds personas from .claude/agents: editing vs read-only, 
   assert.equal(ai.effort, 'medium')
   assert.equal(ai.readOnly, false, 'no tools line is an editing persona')
   assert.equal(ai.loaded, false, 'a file newer than the session start is not loaded')
-  assert.equal(ai.body, 'Standards\n- one rule', 'an unloaded persona carries its body, frontmatter stripped')
+  assert.equal(ai.body, '## Standards\n- one rule','an unloaded persona carries its body, frontmatter stripped')
   assert.equal(ps['long-one'].description.length, 400)
   assert.ok(!('broken' in ps), 'a malformed file is skipped')
   assert.ok(r.json.warnings.some((x) => x.includes('broken.md')), JSON.stringify(r.json.warnings))

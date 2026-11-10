@@ -135,7 +135,8 @@ test('plan-args: builds {"truss":{kind plan,...},"brief"} from the brief file, r
   assert.deepEqual(Object.keys(j), ['truss', 'brief'])
   assert.equal(j.brief, 'Build the thing.\nSecond line.')
   const f = j.truss
-  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath'])
+  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath', 'personas'])
+  assert.deepEqual(f.personas, {}) // ADR-0033: the project's personas (none here), for the product-owner review
   assert.equal(f.kind, 'plan')
   assert.equal(flat(f.dir), env.dir)
   assert.equal(flat(f.repo), env.repo)
@@ -725,7 +726,7 @@ test('owns-check: files inside the owns globs are ok, files outside are listed (
   putFile(wt, 'docs/readme.md', 'd\n', 'inside too')
   const ok = env.run('owns-check', { slug: 's' })
   assert.equal(ok.status, 0, ok.stdout)
-  assert.deepEqual(assertOneLine(ok), { ok: true })
+  assert.deepEqual(assertOneLine(ok), { ok: true, exempt: [] })
   putFile(wt, 'lib/out.ts', 'x\n', 'outside')
   putFile(wt, 'docs/sub/n.md', 'x\n', 'outside: * does not cross /')
   const bad = env.run('owns-check', { slug: 's' })
@@ -738,22 +739,22 @@ test('owns-check: files inside the owns globs are ok, files outside are listed (
 
 test('owns-check: no change at all is ok', () => {
   const { env } = crewEnv()
-  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true })
+  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true, exempt: [] })
 })
 
 test('owns-check: <base> is the merge-base with the target, so after a sync another crew\'s merged files are not listed', () => {
   const { env, wt, start } = crewEnv()
   putFile(wt, 'src/s/mine.ts', 'mine\n', 'crew work')
   assert.equal(git(wt, ['merge-base', 'main', 'HEAD']), start, 'before a sync the base is the start head')
-  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true })
+  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true, exempt: [] })
   // another crew's work lands on the target, outside this crew's owns
   const targetHead = putFile(env.repo, 'src/other/z.ts', 'z\n', 'another crew merged')
-  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true }, 'unsynced: still only the crew\'s own commits')
+  assert.deepEqual(assertOneLine(env.run('owns-check', { slug: 's' })), { ok: true, exempt: [] }, 'unsynced: still only the crew\'s own commits')
   assert.equal(env.run('sync', { slug: 's' }).status, 0)
   assert.equal(git(wt, ['merge-base', 'main', 'HEAD']), targetHead, 'after a sync the base is the merged target head')
   const after = env.run('owns-check', { slug: 's' })
   assert.equal(after.status, 0, `another crew's src/other/z.ts must not be listed: ${after.stdout}`)
-  assert.deepEqual(assertOneLine(after), { ok: true })
+  assert.deepEqual(assertOneLine(after), { ok: true, exempt: [] })
   // and the crew's own stray file after the sync is still caught
   putFile(wt, 'lib/stray.ts', 's\n', 'stray')
   const stray = env.run('owns-check', { slug: 's' })
@@ -817,6 +818,7 @@ const TABLE = {
   qc: ['truss:qc-engineer', 'opus', 'medium', 'none'],
   runner: ['general-purpose', 'sonnet', 'low', 'none'],
   ux: ['truss:ux-engineer', 'opus', 'medium', 'none'],
+  po: ['general-purpose', 'opus', 'medium', 'none'],
 }
 
 const tableRoles = () => Object.fromEntries(Object.entries(TABLE).map(([k, [agentType, model, effort, isolation]]) => [k, { agentType, model, effort, isolation }]))

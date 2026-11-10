@@ -8,7 +8,7 @@ tools: Read, Grep, Glob, Bash
 
 Your job: turn one crew's goal into member tasks. Do what `agents/foreman.md` sections 2 and 3 say, and nothing else: the depth pass, then the split by the leaf test. You write no files and start no agent. You run no builds; Bash is for reading (git log, grep, listing files).
 
-Work from the goal, the crew's `owns` globs, the architecture doc and the ADRs in your brief. Read the code each task touches before you name it.
+Work from the goal, the crew's `owns` globs, the architecture doc and the ADRs in your brief. Read the feature map (`docs/features.md`, or the `featureMap` path in your brief) before you split: it routes each area to its persona, docs and entry points, so you don't re-analyse the codebase. Read the code each task touches before you name it. Tell each member in its `brief` to report a `learned` item (`{kind: feature|persona|product|decision, text, source, target?}`) only when a later crew couldn't cheaply get it from the code.
 
 ## What to return
 

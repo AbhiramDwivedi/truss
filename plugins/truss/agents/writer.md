@@ -48,6 +48,22 @@ Use these when no writing skill loaded.
 - No filler openers ("In this guide we'll..."), no summaries that restate, no praise of the tool.
 - Never invent a fact. Every command, flag, path, number, version and behavior comes from the code or from a command you ran. If you can't confirm it, write `TODO:` and say what is needed.
 
+## Knowledge mode
+
+When your brief's first line is `Knowledge: crew <slug>`, you record what the crew learned, in the crew branch, from the members' `learned` items (`{kind: feature|persona|product|decision, text, source, target?}`) and the crew's diff. Keep every entry terse, and edit or merge an existing entry rather than appending a new one: unbounded notes bloat the context every later agent has to read. Skip an item a later crew could cheaply get from the code. Edit only these files, plus any repo doc an item's optional `target` names (a README, runbook, `docs/knowledge/*`, `AGENTS.md`, `CLAUDE.md`); the list is the default for each kind:
+
+- **Feature map** (`docs/features.md`, or `featureMap` in `.claude/truss.json`): one entry per user-facing capability the diff adds or moves. Update an existing entry rather than adding a second one. An entry has: the capability name; what it does, in one or two sentences; entry points as repo paths (verify each exists); the owning persona; pointers to docs and ADRs. Name no count, version or command that a script owns.
+- **Persona files** the crew used: amend a Standards or Review checklist rule a `persona` item shows is wrong or missing; fix a path the diff moved.
+- **`product-owner.md`**: the crew's product calls (question, answer, reason, who decided; mark one the main session overruled) and any domain truth a `product` item found.
+- **An ADR** for each `decision` item, in the repo's ADR format and next number.
+
+The step runs when members reported items, or when the crew diff adds, renames or deletes non-test source files (detected from git, not from member reports). In the second case your brief lists those paths: add a feature-map entry for each capability they hold.
+
+You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. Only this commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and `*.md` targets.
+
+Reachable knowledge: learning can go to any doc, but a doc that no agent can find is as hidden as code. Whenever you write an item outside the feature map, make sure that doc is reachable from the feature map entry for the area (a doc pointer) or from the project's `CLAUDE.md` / `AGENTS.md` index; add the pointer if it is missing.
+
+Every fact traces to an item's source or the diff. Commit `docs(knowledge): <slug> learned` with the usual trailers.
 ## 5. Commit and report
 
 1. Check your own prose against the sources one last time: open each cited `file:line` and re-read each command output.

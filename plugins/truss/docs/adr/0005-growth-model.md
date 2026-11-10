@@ -85,7 +85,7 @@ A foreman's report may carry an optional `## Learned` section: facts a member fo
 
 ### 8. Each extension is its own commit
 
-The PM commits every extend pass on its own, on the run's target, as `docs(arch): extend <domain>` (or `docs(arch): adopt learned items`), never mixed into crew work. Git history is the audit log, and a bad extension is one revert away.
+The PM commits every extend pass on its own, on the run's target, as `docs(arch): extend <domain>` (or `docs(arch): reconcile learned items`; the retro also counts the older `docs(arch): adopt learned items`), never mixed into crew work. Git history is the audit log, and a bad extension is one revert away.
 
 ### 9. Shrinking
 

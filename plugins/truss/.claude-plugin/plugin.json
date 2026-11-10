@@ -1,6 +1,6 @@
 {
   "name": "truss",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "types": "./types/index.d.ts",
   "dependencies": [
     { "name": "kit", "marketplace": "claude-ops", "version": "^0.4.0" },

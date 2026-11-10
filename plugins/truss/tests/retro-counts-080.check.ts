@@ -24,6 +24,8 @@ const COMMITS = [
   ['2026-10-27T10:00:00Z', 'docs(arch): adopt learned items'],
   ['2026-10-27T11:00:00Z', 'docs(arch): extension notes'],
   ['2026-10-27T11:30:00Z', 'docs(arch): adopt learned item'],
+  ['2026-10-27T11:40:00Z', 'docs(arch): reconcile learned items'], // review 7: the run skill's real subject counts
+  ['2026-10-27T11:50:00Z', 'docs(arch): reconcile learned item'],
   ['2026-10-27T12:00:00Z', 'feat: extend something'],
   ['2026-10-28T10:00:00Z', 'docs(arch): extend search'],
 ]
@@ -88,7 +90,7 @@ describe('contract', () => {
   test('extendPasses counts only matching subjects inside the window', () => {
     const run = run1(full)
     assert.ok('extendPasses' in run)
-    assert.equal(run.extendPasses, 2)
+    assert.equal(run.extendPasses, 3)
   })
 
   test('extendPasses for the second run window', () => {
