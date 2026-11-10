@@ -19,7 +19,7 @@ Where the truth lives:
 1. Erasable TypeScript on Node built-ins only (P19, architecture.md). No `enum`, no `namespace`, no parameter properties, and no package in any plugin manifest. JSON Schema checks in tests are hand-written assertions or `factory.ts plan-check`, never ajv.
 2. Use the built-ins: `node:test` and `node:assert/strict`, `crypto.randomUUID` and `createHash`, `structuredClone`, `fetch`, `fs.mkdtempSync`, `child_process.spawnSync`. Never add a dependency for any of them.
 3. A command prints exactly one JSON line. It exits 0 when ok, 1 on a refusal (`refuse({...})`) and 2 on a usage error (`usage(...)`), always through `CliError`. It never writes a free-text error to stdout.
-4. A new `bin/*.ts` module never imports `bin/factory.ts`: factory.ts has a top-level `await`. Shared helpers come from `bin/store.ts` once it exists.
+4. A new `bin/*.ts` module never imports `bin/factory.ts`: factory.ts has a top-level `await`. Shared helpers (`CliError`, `usage`, `refuse`, `flat`, `readJson`, ...) come from `bin/store.ts`.
 5. Shared state is written only through store.ts: `withLock`, `appendJsonl`, `writeJsonAtomic` and `createExclusive`. Never hold two locks at once. Never use `flock`, `fs.watch` or `/tmp`.
 6. Paths go through `flat()` to forward slashes. File names hold only `[A-Za-z0-9._-]`. git runs with `--path-format=absolute` and `-c core.quotepath=off`.
 7. A child process is `spawnSync(cmd, args, { windowsHide: true })`, with no shell. Untrusted text (an intake title, a note, an agent's report) reaches a command only through a `--*-file` argument or stdin, never as an argument string.
@@ -30,5 +30,6 @@ Where the truth lives:
 12. Every new event kind gets its own `if`/`then` block in `docs/events.schema.json`, and every new `.claude/truss.json` key gets a property in `docs/truss-config.schema.json`. `additionalProperties` stays false in both.
 13. No price, token rate or model cost is written in plugin code, prose or a committed test fixture. Prices come from the client's `pricing` config.
 14. Dead code goes in the same change that makes it dead. A moved helper is re-exported from its old module only where the goal file says so.
+15. A test that must be red before the build asserts the new behaviour. A case that only checks the old behaviour still works is green; add a new-behaviour check to it or report it as a regression guard.
 
 Shell rules: follow the shell rules paragraph in your brief word for word.
