@@ -1217,7 +1217,23 @@ export function uxOn(planUx: unknown, uxText: string): boolean {
 
 // A crew entry for stage.js; `resume`, `tasks`, `done`, `answers` and `prior` are the restart facts (fresh start: null and empty).
 // prior: [{at, branch}], an earlier member branch per task whose commits the crew branch lacks (priorBranches).
-function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[]; prior?: { at: string; branch: string }[] }): Obj {
+// Per role, the larger next-free label number of two maps.
+function mergeLabelFrom(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+  const out = { ...a }
+  for (const [role, n] of Object.entries(b)) out[role] = Math.max(out[role] ?? 1, n)
+  return out
+}
+// {role: next free number} from the labels of the crew's agents in the given runs. A resume reads these as well as the report
+// files, because finish files a run's reports only after it, so a run not yet recorded would otherwise have its labels reused.
+function labelsOfRuns(runs: WfRun[], slug: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const r of runs) for (const a of r.agents) {
+    const p = parseLabel(a.label)
+    if (p !== undefined && p.slug === slug) out[p.role] = Math.max(out[p.role] ?? 1, p.n + 1)
+  }
+  return out
+}
+function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[]; prior?: { at: string; branch: string }[]; runLabels?: Record<string, number> }): Obj {
   const slug = String(crew.slug)
   const goalFile = `${c.dir}/goals/${slug}.md`
   const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
@@ -1250,7 +1266,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? '') || profile?.stressTest === true, ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [], prior: extra.prior ?? [],
-    spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
+    spent: spentOf(c.dir, slug), labelFrom: mergeLabelFrom(labelFromOf(c.dir, slug), extra.runLabels ?? {}),
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
@@ -1936,7 +1952,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
   // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
   const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior })
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior, runLabels: labelsOfRuns(runs, slug) })
   // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
   // it; a result read earlier no longer holds for a crew that runs again
   entry.learned = learnedOf(c.dir, slug)
