@@ -43,9 +43,13 @@ function designerPrompt(extra) {
     args.brief,
     '',
     'Return the plan blocks in two places: put the plan JSON in `planJson` and the plan markdown in `planMd`, and also fence both in `report`.',
+    'The plan version is 4; give every crew a workType (one of feature, bugfix, migration, dependency, docs, refactor), and in an unattended run it is required.',
     ...(extra ? ['', extra] : []),
   ].join('\n')
 }
+
+// contract-025 section 3, word for word
+const LONG_TERM_COST = "Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for \"more code to maintain\", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client."
 
 function checkerPrompt(a) {
   return [
@@ -58,6 +62,9 @@ function checkerPrompt(a) {
     '',
     'planMd:',
     a.planMd,
+    '',
+    LONG_TERM_COST,
+    "Check each crew's workType fits its work: a crew that changes behaviour is not docs or refactor.",
     '',
     'For each module give one `REVIEW: agree` or `REVIEW: disagree` line, and the client triggers that hold as `Client:` lines (`Client: none` when no trigger holds).',
   ].join('\n')
