@@ -699,6 +699,26 @@ t('stage members: builder and writer carry Truss-Role builder and writer', async
   has(call(r, 'a-writer').prompt, 'Truss-Role: writer')
   has(call(r, 'a-writer').prompt, 'Truss-Crew: a')
 })
+// ADR-0036: DIFF in builder, tester and resolver prompts; DEBUG in builder prompts and fixPrompt; neither in writer or QC
+const DIFF = "Change only the lines your task needs. Match the file's existing style; don't reformat, rename or tidy lines the task doesn't change. Add no dependency that the standard library or the project's existing dependencies cover. A dependency the approved scope doesn't name goes back in your report as a proposal."
+const DEBUG = 'On a bug, reproduce it first with a test that fails, then fix the cause. A guard that hides an unexpected null, empty or error value is a fix only when your report says why the value occurs.'
+const QC_STEP = "Check that every hunk traces to the task: a hunk that only reformats, renames or reorders lines the task didn't change is a finding, unless the project's formatter or a hook produced it (compare `git diff <base>...<branch>` with `git diff -w`). Check each manifest addition against core rule 15. A bug fix that adds a null or empty guard, or a catch, without saying why the value occurs is a finding."
+t('stage members: builder and tester prompts hold DIFF; only the builder holds DEBUG', async () => {
+  const r = await runStage([entry('a')], { labels: base() })
+  has(call(r, 'a-builder').prompt, DIFF)
+  has(call(r, 'a-tester').prompt, DIFF)
+  has(call(r, 'a-builder').prompt, DEBUG)
+  assert.ok(!call(r, 'a-tester').prompt.includes(DEBUG), 'tester has no DEBUG')
+})
+t('stage members: the writer and QC prompts hold neither DIFF nor DEBUG; QC holds the new step', async () => {
+  const W = { name: 'write-docs', role: 'writer', effort: 'medium', files: ['src/a.ts'], reads: [], brief: 'BRIEF-W', after: ['build-it'] }
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-planner': PLAN(T1, { ...B1, files: ['src/a.ts'] }, W), 'a-writer': done('feat/w') }) })
+  for (const l of ['a-writer', 'a-qc']) {
+    assert.ok(!call(r, l).prompt.includes(DIFF), `${l} has no DIFF`)
+    assert.ok(!call(r, l).prompt.includes(DEBUG), `${l} has no DEBUG`)
+  }
+  has(call(r, 'a-qc').prompt, QC_STEP)
+})
 for (const who of ['a-tester', 'a-builder']) {
   t(`stage members: ${who} prompt holds the be-brave sentence verbatim`, async () => has(call(await runStage([entry('a')], { labels: base() }), who).prompt, BRAVE))
   t(`stage members: ${who} prompt holds the fetch rule verbatim`, async () => has(call(await runStage([entry('a')], { labels: base() }), who).prompt, FETCH))

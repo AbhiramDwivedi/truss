@@ -2,6 +2,10 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.24.0
+
+- **Diff hygiene, dependency rule and debugging rule ([ADR-0036](docs/adr/0036-diff-hygiene-and-dependencies.md)).** Builder, tester and resolver prompts (and the foreman brief) carry a `DIFF` rule: change only the lines the task needs, match the file's style, add no dependency the standard library or an existing dependency covers, and report an unscoped dependency as a proposal. Builder prompts and `fixPrompt` carry a `DEBUG` rule: reproduce a bug with a failing test, fix the cause, and say why a hidden null, empty or error value occurs. A new QC step (10) flags hunks that only reformat, rename or reorder, manifest additions that break core rule 15, and unexplained guards. Core rule 15 (a new dependency needs a reason) takes core to its 15-rule cap; rule 13 now covers bug fixes. Persona Standards name the stack's built-ins that replace common packages.
+
 ## 0.23.0 (2026-11-09)
 
 truss captures what each crew learns in the repo, lets crew leads make product calls, and has the product owner review the plan before work starts. Install or update as before with `claude plugin install truss@truss`.
