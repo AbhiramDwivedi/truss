@@ -117,9 +117,9 @@ async function install(withAllowlist: boolean): Promise<{ ids: string[]; error: 
 }
 
 describe('compose manifests', () => {
-  it('cm 1: plugin.json depends on kit, worktrees and subagent-limits from claude-ops, at 0.23.0', () => {
+  it('cm 1: plugin.json depends on kit, worktrees and subagent-limits from claude-ops, at 0.24.0', () => {
     const pj = rd(PLUGIN)
-    assert.equal(pj.version, '0.23.0', 'plugin.json version is not 0.23.0')
+    assert.equal(pj.version, '0.24.0', 'plugin.json version is not 0.24.0')
     const got = Object.fromEntries(depList().map((d) => [d.name, `${d.marketplace}:${d.version}`]))
     assert.deepEqual(got, Object.fromEntries(Object.entries(DEPS).map(([n, v]) => [n, `claude-ops:${v}`])), 'plugin.json dependencies differ')
   })

@@ -2,6 +2,16 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.24.0 (2026-11-09)
+
+Knowledge now lives in files Claude Code loads lazily, scoped to the paths they describe, and the knowledge step is linted. Install or update as before with `claude plugin install truss@truss`.
+
+- **Path-scoped knowledge ([ADR-0035](docs/adr/0035-path-scoped-knowledge.md), amends ADR-0033).** Area rules go to `.claude/rules/<area>.md` (frontmatter `paths`, `sources`, `verified`), longer topics to `docs/knowledge/<topic>.md`, and `AGENTS.md` is a pointer index of 60 lines or fewer that `CLAUDE.md` imports with `@AGENTS.md`. The knowledge writer gets a routing table (rule, persona Standards, feature map, product decisions, ADR, or nowhere), must cite a source for every fact, reconciles before it adds, sets `verified` to the crew head and stays within line budgets (`knowledgeBudgets`). "Nothing to record" is a valid outcome. Not adopted: Capital One Context Specs, a competing harness.
+- **Fix: product calls no longer go into an always-loaded file.** In 0.23.0 `productOwnerFile()` in `stage.js` returned `.claude/agents/product-owner.md`, so every crew product call was appended to a persona that is loaded into every agent's system prompt. Calls now go to `docs/knowledge/product-decisions.md` (the `productDecisions` key); the persona keeps its judging rules and one pointer line. The `Product call:` brief, the knowledge brief and the QC `Knowledge:` rule all read that file. `factory knowledge-migrate` moves 0.23.0 entries over.
+- **`Context for your files` line.** A task whose files match a rule file's `paths` globs gets one line naming the rule files to read; the planner reads the agents index and the rules index, and a task's `reads` includes the matching rules. `stage.js` carries a local matcher for the `**`, `*`, `?` glob dialect that passes the shared vectors in `tests/fixtures/glob-vectors.json`. The line stays until an eval shows rules load natively in member worktrees.
+- **Knowledge lint before QC.** `stage.js` runs `factory knowledge-lint --base=<crew base>` once before QC (again only if the head moved) and gives the failures and warnings to QC. Only failures marked `new: true` fail the crew; a failure that predates the crew and every warning is listed for the main session (the crew result's `knowledgeLint`). A lint that cannot run is logged, never stops the crew, and QC is told "Knowledge lint did not run". It is skipped when the crew has no code tasks and the project has no knowledge files.
+- **Init.** `/truss:init` proposes the `AGENTS.md` index, `@AGENTS.md` in `CLAUDE.md`, `docs/knowledge/` and, for a 0.23.0 project, `factory knowledge-migrate`; the new `truss.json` keys are `productDecisions`, `knowledgeDir`, `rulesDir`, `agentsIndex` and `knowledgeBudgets`.
+
 ## 0.23.0 (2026-11-09)
 
 truss captures what each crew learns in the repo, lets crew leads make product calls, and has the product owner review the plan before work starts. Install or update as before with `claude plugin install truss@truss`.

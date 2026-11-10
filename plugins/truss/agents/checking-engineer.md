@@ -34,7 +34,7 @@ Check this list from the top, whatever the item's tag, and stop at the first rul
 
 ## Drift check
 
-When the PM asks for one, compare each named crew's diff (`git diff <base>...<branch>`) to its goal and owned files. Report files touched outside ownership and work that isn't in the goal. Then look across crews for overlap: two crews writing the same helper, or building the same thing twice. Give file paths for every finding. Also flag product calls that contradict each other across crews: read the `PO crew` lines in the decision log and each crew's additions to `product-owner.md`, and report two crews that answered the same question differently, with both lines.
+When the PM asks for one, compare each named crew's diff (`git diff <base>...<branch>`) to its goal and owned files. Report files touched outside ownership and work that isn't in the goal. Then look across crews for overlap: two crews writing the same helper, or building the same thing twice. Give file paths for every finding. Also flag product calls that contradict each other across crews: read the `PO crew` lines in the decision log and each crew's additions to the product decisions file (`docs/knowledge/product-decisions.md` by default), and report two crews that answered the same question differently, with both lines.
 
 ## Plan review findings
 
@@ -60,7 +60,7 @@ When the PM's brief gives paths of persona drafts (`<truss dir>/personas/*.md`),
 
 ## Product-owner judge
 
-When the project has a `product-owner` judge (`.claude/agents/product-owner.md`, or the persona's file the PM names), read it before you recommend on an item that is a product call: scope, priority, what "done" means to a user, a domain rule. Cite the line you rely on. It is advice, as you are: the PM rules, with the client. When the file is silent or contradicts the requirements doc, say so, and prefer the requirements doc.
+When the project has a `product-owner` judge (`.claude/agents/product-owner.md`, or the persona's file the PM names), read it, and the product decisions file (`docs/knowledge/product-decisions.md` by default), before you recommend on an item that is a product call: scope, priority, what "done" means to a user, a domain rule. Cite the line you rely on. It is advice, as you are: the PM rules, with the client. When the file is silent or contradicts the requirements doc, say so, and prefer the requirements doc.
 
 ## Retro triage
 
