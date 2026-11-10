@@ -171,6 +171,10 @@ export function budgetRaises(repo: string, session: string): { ref: string; rais
 function typedText(row: Obj): string | null {
   if (row.type !== 'user' || row.isMeta || row.isSidechain || row.isCompactSummary || row.isVisibleInTranscriptOnly) return null
   if (row.origin !== undefined && row.origin?.kind !== 'human') return null
+  // A /loop wakeup line has no origin and no isMeta but its text is what the agent passed to ScheduleWakeup.
+  if (row.wakeupSource !== undefined || row.scheduledTaskId !== undefined || row.scheduledFireId !== undefined) return null
+  if (row.turnOrigin !== undefined && row.turnOrigin !== 'human') return null
+  if (row.promptSource !== undefined && row.promptSource !== 'typed') return null
   const c = row.message?.content
   if (typeof c === 'string') return c
   if (!Array.isArray(c) || c.length === 0) return null
