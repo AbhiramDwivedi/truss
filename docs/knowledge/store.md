@@ -12,7 +12,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 642849d0f8ea375830be55115863172cfd5b27c4
+verified: 483238c5bbfdaf03e57b30eb2a21911c6bb95e68
 ---
 
 # Store, holds and contract-025 stubs
@@ -45,7 +45,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Inbox transcript proof
 
-`typedText` and `typedProof` in `bin/inbox.ts:170-195` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. It also refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count; the slash line is unaffected. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. A line must be newer than the `open` op and hold the id, the code and the decision word directly before the id, so a note's word cannot flip the decision.
+`typedText` and `typedProof` in `bin/inbox.ts:171-196` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. It also refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count; the slash line is unaffected. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. A line must be newer than the `open` op and hold the id, the code and the decision word directly before the id, so a note's word cannot flip the decision.
 
 The proof guards only `factory resolve`: a same-user agent can append a `resolve` row to `S/inbox.jsonl` and the fold accepts it. Only a retro comparing each `quote` with the typed prompts catches it (ADR-0037, Consequences). Change proof-check behaviour here and in `docs/features.md` together.
 
