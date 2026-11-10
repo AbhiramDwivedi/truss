@@ -629,6 +629,25 @@ test('inbox: resolve by client refuses a task-notification line and a compact su
   assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
 })
 
+test('inbox: a scheduled /loop wakeup line does not count', () => {
+  const env = mkInbox()
+  const a = raise(env, 'scope-change', ['--crew', 'c1'])
+  const ts = afterOpen(env, a.id)
+  const lines = fixtureLines(a.id, a.code, ts, 'scheduled-wakeup.jsonl')
+  assert.equal(lines.length, 4)
+  for (const [i, label] of ['wakeupSource', 'scheduledTaskId and scheduledFireId', 'turnOrigin scheduled', 'promptSource scheduled'].entries()) {
+    putTranscript(env, [lines[i]])
+    const r = resolveOf(env, a.id, 'approve', 'client', a.code)
+    assertOneLine(r)
+    assert.equal(r.status, 1, `${label}: ${r.stdout} ${r.stderr}`)
+    assert.equal(listOf(env, ['--open']).open, 1, `${label}: the item is still open`)
+  }
+  // control: the same text as a typed human line qualifies
+  putTranscript(env, [human(`/truss:inbox approve ${a.id} ${a.code} looping`, ts, { turnOrigin: 'human', promptSource: 'typed' })])
+  const ok = resolveOf(env, a.id, 'approve', 'client', a.code)
+  assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
+})
+
 test('inbox: a text-block prompt qualifies and a quote is cut to 1000 characters', () => {
   const env = mkInbox()
   const a = raise(env, 'scope-change', ['--crew', 'c1'])
