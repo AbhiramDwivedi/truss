@@ -35,6 +35,12 @@ import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, read
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
+import { INBOX_COMMANDS, blockingFor, escalate } from './inbox.ts'
+import { COST_COMMANDS, budgetVerdict, crewCost } from './cost.ts'
+import { QUEUE_COMMANDS } from './queue.ts'
+import { WORKTYPE_COMMANDS, profilesOf, workTypeErrors } from './worktypes.ts'
+import { ltcCrewGate, ltcPlan, ltcPlanGate } from './guard.ts'
+import { ledgerAppend } from './ledger.ts'
 
 const PLUGIN = path.dirname(path.dirname(fileURLToPath(import.meta.url))).replace(/\\/g, '/')
 
@@ -402,7 +408,7 @@ function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas,
+      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -449,7 +455,15 @@ function cmdPlanWrite(f: Flags): Obj {
   writeFileSync(`${dir}/plan.md`, md as string)
   const left = retirePlanRun(f, dir, run_.id)
   const drafts = writePersonaDrafts(dir, message)
-  return { written: true, ...(left.length > 0 ? { leftWorktrees: left } : {}), ...(drafts.personas.length > 0 ? { personas: drafts.personas } : {}), ...(drafts.problems.length > 0 ? { personaProblems: drafts.problems } : {}) }
+  // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result
+  const texts = run_.journal
+    .filter((l) => l.type === 'started' && typeof l.label === 'string' && /^truss-(designer|checker)/.test(l.label))
+    .flatMap((l) => {
+      const r = run_.journal.filter((x) => x.type === 'result' && x.agentId === l.agentId).pop()?.result
+      return r === undefined ? [] : [typeof r === 'string' ? r : isObj(r) && typeof r.report === 'string' ? r.report : JSON.stringify(r)]
+    })
+  const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
+  return { written: true, longTermCosts, ...(left.length > 0 ? { leftWorktrees: left } : {}), ...(drafts.personas.length > 0 ? { personas: drafts.personas } : {}), ...(drafts.problems.length > 0 ? { personaProblems: drafts.problems } : {}) }
 }
 
 // The `PERSONA: <name>` lines of a design engineer's report, each followed by its whole file in one fenced block. A block that is
@@ -522,6 +536,7 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
   return left
 }
 
+const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'refactor']
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
 const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
 const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
@@ -531,6 +546,18 @@ function cmdPlanCheck(f: Flags): Obj {
   const errors: string[] = []
   const crews: Obj[] = plan.crews.filter(isObj)
   const name = (c: Obj): string => (typeof c.slug === 'string' ? c.slug : '?')
+  // contract-025 section 2: a crew's workType is version 4 only and checked against the profiles of the repo's config (the built-ins with no repo)
+  const unattended = existsSync(`${dirOf(f)}/unattended.json`)
+  let repoCfg: Obj = {}
+  try {
+    repoCfg = configOf(repoOf(f))
+  } catch {
+    // no --repo and the cwd is not in a git repository: the built-in profiles
+  }
+  const profiles = profilesOf(repoCfg)
+  const addOnce = (e: string): void => {
+    if (!errors.includes(e)) errors.push(e)
+  }
   if (plan.version !== 2 && plan.version !== 3 && plan.version !== 4) errors.push('plan: version must be 2, 3 or 4')
   const goalIds: string[] = []
   if (plan.version === 2 || plan.version === 3 || plan.version === 4) {
@@ -589,6 +616,12 @@ function cmdPlanCheck(f: Flags): Obj {
       if (hasQc) errors.push(`${s}: qc is version 4 only`)
       if (hasRed) errors.push(`${s}: red is version 4 only`)
     }
+    if (Object.hasOwn(c, 'workType') && plan.version !== 4) errors.push(`${s}: workType is version 4 only`)
+    if (plan.version === 4) {
+      if (Object.hasOwn(c, 'workType') && !WORK_TYPES.includes(c.workType)) errors.push(`${s}: workType must be one of ${WORK_TYPES.slice(0, -1).join(', ')} or ${WORK_TYPES[WORK_TYPES.length - 1]}`)
+      else if (!Object.hasOwn(c, 'workType') && unattended) errors.push(`${s}: workType is required in an unattended run`)
+      for (const e of workTypeErrors(plan, c, profiles.profiles, { unattended })) addOnce(e)
+    }
     if (Object.hasOwn(c, 'ux') && typeof c.ux !== 'boolean') errors.push(`${s}: ux must be a boolean`)
     // a ## UX section that contradicts plan.json ux (ux false but the section asks for UX; ux true but the section says none)
     if (typeof c.ux === 'boolean' && typeof c.slug === 'string' && SLUG.test(c.slug)) {
@@ -614,6 +647,7 @@ function cmdPlanCheck(f: Flags): Obj {
       }
     }
   }
+  for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name) }
 }
@@ -625,6 +659,15 @@ function cmdApprove(f: Flags): Obj {
   const repo = repoOf(f)
   const plan = loadPlan(dir)
   if (plan.approvedAt !== null && plan.approvedAt !== undefined) throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
+  // contract-025 section 3 (finding #17): auto never approves a goal that needs the client or a stage-0 design crew
+  if (by === 'auto') {
+    const client = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
+    if (client.length > 0) throw refuse({ error: `approve --by auto: ${client.length === 1 ? 'goal' : 'goals'} ${client.join(', ')} ${client.length === 1 ? 'needs' : 'need'} the client's approval`, goals: client })
+    const stage0 = plan.crews.filter((c: unknown) => isObj(c) && c.stage === 0).map((c: Obj) => String(c.slug))
+    if (stage0.length > 0) throw refuse({ error: `approve --by auto: stage-0 crew ${stage0.join(', ')} needs the client's approval`, crews: stage0 })
+  }
+  const ltc = ltcPlanGate(repo, dir)
+  if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
   const s = settingsOf(repo)
   const approvedAt = new Date().toISOString()
   savePlan(dir, { ...plan, approvedAt })
@@ -845,7 +888,16 @@ function cmdDoctor(f: Flags): Obj {
     if (!r.pass) rulings.push({ id: e.id, fix: e.fix })
   }
   const failed = probes.filter((p) => !p.pass).map((p) => p.name)
-  const body = { ok: failed.length === 0, probes, passed: probes.filter((p) => p.pass).map((p) => p.name), failed, known, bundle: { allow, downloads, rulings } }
+  // contract-025 section 4: with a budget set, a model the roles use that no pricing key covers can't be priced, so every spend would hold
+  const cfg = configOf(repo)
+  const warnings: string[] = []
+  if (isObj(cfg.budget)) {
+    const keys = isObj(cfg.pricing) ? Object.keys(cfg.pricing) : []
+    const models = new Set(Object.values(rolesWithTypes(PLUGIN, [], cfg.roles)).filter(isObj).map((r) => r.model).filter((m): m is string => typeof m === 'string'))
+    // a pricing key is a model-id prefix; a role names its model by alias (opus, sonnet), so a key that holds the alias covers it
+    for (const m of models) if (!keys.some((k) => m.startsWith(k) || k.includes(m))) warnings.push(`budget is set but pricing has no entry for the ${m} model (a key that is a prefix of its id); its spend can't be priced, so the budget holds`)
+  }
+  const body = { ok: failed.length === 0, probes, passed: probes.filter((p) => p.pass).map((p) => p.name), failed, known, bundle: { allow, downloads, rulings }, ...(warnings.length > 0 ? { warnings } : {}) }
   if (!body.ok) throw refuse(body)
   return body
 }
@@ -1175,13 +1227,15 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     const m = members[role]
     if (m !== undefined && c.models[role] !== undefined) members[role] = { ...m, model: c.models[role] }
   }
+  // contract-025 section 5: a work type's profile can switch the stress test on, never off
+  const profile = typeof crew.workType === 'string' ? profilesOf(configOf(c.repo)).profiles[crew.workType] : undefined
   return {
-    slug, stage: crew.stage, goalFile, owns: crew.owns ?? [],
+    slug, stage: crew.stage, goalFile, owns: crew.owns ?? [], ...(typeof crew.workType === 'string' ? { workType: crew.workType } : {}),
     ...(atInGoal ? {} : { acceptanceTest: crew.acceptanceTest ?? '' }),
     guarded: guardedOf({ dir: c.dir, slug, wt, target: c.settings.target }).tests,
     ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
-    stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? ''), ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
+    stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? '') || profile?.stressTest === true, ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
     base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
     ux, livePage, direction: directionOf(c.dir, slug), members,
@@ -1935,7 +1989,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = admission(dir, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
+    const adm = admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -2117,15 +2171,36 @@ function effectiveParallelism(dir: string, cap: number): number {
   return cap
 }
 
-type Admission = { admitted: boolean; parallelism: number; running: number; freeMB: number | null; minFreeMB: number; memPressure?: number; swapUsedPct?: number; why?: string }
+type Admission = { admitted: boolean; parallelism: number; running: number; freeMB: number | null; minFreeMB: number; memPressure?: number; swapUsedPct?: number; why?: string; budget?: true; awaiting?: true; scope?: string; spentUsd?: number | null; limitUsd?: number; escalateError?: string }
 const MAX_MEM_PRESSURE = 10
 const MAX_SWAP_USED_PCT = 70
+// contract-025 section 3: blocking inbox items first, then (only when truss.json sets a budget) the budget verdict; a hold here never waits.
+// A budget hold also writes one budget-hold event and one budget escalation (ref budget:<sid>:<scope>:<slug|run>); a throwing escalate never lifts the hold.
+function holdOf(dir: string, repo: string, plan: Obj, slug: string, command: string, base: Omit<Admission, 'admitted'>): Admission | undefined {
+  const sid = path.basename(dir)
+  const ids = blockingFor(repo, sid, slug)
+  if (ids.length > 0) return { admitted: false, ...base, awaiting: true, why: `awaiting client: ${ids.join(', ')}` }
+  if (!isObj(configOf(repo).budget)) return undefined
+  const v = budgetVerdict(dir, repo, plan, slug)
+  if (!v.held) return undefined
+  appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
+  let escalateError: string | undefined
+  try {
+    escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
+  } catch (e) {
+    escalateError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+  }
+  return { admitted: false, ...base, budget: true, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd, why: v.why, ...(escalateError === undefined ? {} : { escalateError }) }
+}
+
 // Memory first (free MB, then memory pressure and swap use, ADR-0026 item 57), then (for a planned crew) the effective parallelism. A sampler error admits and logs a sampler-error event.
-function admission(dir: string, plan: Obj, crew: Obj, command: string, running: number): Admission {
+function admission(dir: string, repo: string, plan: Obj, crew: Obj, command: string, running: number): Admission {
   const slug = String(crew.slug)
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   const parallelism = effectiveParallelism(dir, cap)
   const min = minFreeMB()
+  const held = holdOf(dir, repo, plan, slug, command, { parallelism, running, freeMB: null, minFreeMB: min })
+  if (held !== undefined) return held
   let freeMB: number | null = null
   // ADR-0026 item 57: the sampler's memory pressure (PSI some avg10, %) and swap use (%), read as optional numbers here
   // until resources/index.ts types them; an absent or non-numeric field skips its rule
@@ -2156,13 +2231,15 @@ function cmdAdmit(f: Flags): Obj {
   const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
   const running = (): number => plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length
-  let a = admission(dir, plan, crew, 'admit', running())
+  const repo = repoOf(f)
+  let a = admission(dir, repo, plan, crew, 'admit', running())
   // --wait-ms N: a hold re-checks every 2 s for up to N ms (bounded) before it refuses, so a short memory dip does not stop the crew
   const waitMs = Math.min(intOr(Number(str(f, 'wait-ms') ?? 0), 0, 0), 600000)
   const t0 = Date.now()
-  while (!a.admitted && Date.now() - t0 < waitMs) {
+  // an awaiting or budget hold waits for the client, not for memory, so it ends the wait at once
+  while (!a.admitted && !a.budget && !a.awaiting && Date.now() - t0 < waitMs) {
     sleepSync(Math.min(2000, Math.max(1, waitMs - (Date.now() - t0))))
-    a = admission(dir, plan, crew, 'admit', running())
+    a = admission(dir, repo, plan, crew, 'admit', running())
   }
   if (!a.admitted) throw refuse({ ...a, ...(waitMs > 0 ? { waitedMs: Date.now() - t0 } : {}) })
   // ADR-0015 Decision 6: --label and --title together record the agent's card title for the UI
@@ -2814,6 +2891,11 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   } catch (e) {
     return { refused: e instanceof CliError && Array.isArray(e.body.outside) ? `owns-check: outside ${(e.body.outside as string[]).join(', ')}` : `owns-check failed: ${(e as Error).message}` }
   }
+  // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
+  const since = runStart(plan) ?? 0
+  const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
+  const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`]).out, head: run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out })
+  if (gate.refused !== undefined) return { refused: gate.refused }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
   if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }
   const red = needRed ? redRecord(dir, slug) : undefined
@@ -2858,6 +2940,13 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   savePlan(dir, fresh)
   if (gates !== undefined) appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | land: process ${gates.process}, qc ${gates.qc}, red ${gates.red}${red !== undefined ? `, red record exit ${red.exit}` : ''}${needQc && ruling !== undefined ? `, QC PASS on ${ruling.head}` : ''}`)
   else appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling?.head}, red record exit ${red?.exit}, patch ${patch}, acceptance test green on the merged head`)
+  // contract-025 section 4: the merge is final by now, so a ledger failure is a decision line, never a refusal
+  try {
+    const cost = crewCost(dir, repo, slug)
+    ledgerAppend(repo, { v: 1, ts: new Date().toISOString(), kind: 'merge', session: path.basename(dir), crew: slug, goal: goalOf(crew), workType: typeof crew.workType === 'string' ? crew.workType : null, process: gates?.process ?? crew.process ?? 'full', qc: needQc, red: needRed, target, base, head, costUsd: cost.usd, ...(cost.usd === null && cost.why !== undefined ? { costWhy: cost.why } : {}) })
+  } catch (e) {
+    appendDecision(dir, `ledger row for crew ${slug} not written | ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`)
+  }
   const own = new Set(fresh.crews.filter(isObj).map((c: Obj) => `truss-${c.slug}`))
   for (const w of worktreesOf(repo)) {
     if (w.path === wt || w.branch === undefined || own.has(w.branch) || !w.branch.startsWith(`truss-${slug}-`)) continue
@@ -3475,6 +3564,7 @@ const COMMANDS: Record<string, (f: Flags) => Obj> = {
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
+  ...INBOX_COMMANDS, ...COST_COMMANDS, ...QUEUE_COMMANDS, ...WORKTYPE_COMMANDS,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
@@ -3506,7 +3596,8 @@ export function main(argv: string[]): { body: Obj; code: number } {
     const [command, ...rest] = argv
     const fn = command === undefined ? undefined : COMMANDS[command]
     if (fn === undefined) throw usage(`unknown command: ${command ?? '(none)'}; commands: ${Object.keys(COMMANDS).join(', ')}`)
-    return { body: fn(parseFlags(command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : rest)), code: 0 }
+    const argv2 = command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : command === 'resolve' || command === 'mark-applied' ? positionalsToFlags(rest, ['id']) : rest
+    return { body: fn(parseFlags(argv2)), code: 0 }
   } catch (e) {
     if (e instanceof CliError) return { body: e.body, code: e.code }
     return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
