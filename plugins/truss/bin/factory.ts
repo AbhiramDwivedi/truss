@@ -2546,7 +2546,7 @@ function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj
 }
 
 // Session audit: every Workflow run of the session at or after the run start, in scope as ADR-0009 "finish, session audit" says.
-function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
+export function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
   const audits: Audit[] = []
   const log = existsSync(`${dir}/decisions.md`) ? readFileSync(`${dir}/decisions.md`, 'utf8') : ''
   const starts = [...log.matchAll(/^## Run (\S+)/gm)].map((m) => Date.parse(m[1] ?? '')).filter((n) => Number.isFinite(n))
