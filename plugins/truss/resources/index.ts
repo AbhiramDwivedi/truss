@@ -1,9 +1,10 @@
 // truss ADR-0015 Decision 1: the sampler, the heavy slot lock and the process-group helpers.
 // Node built-ins only (P19). Every file it writes lives under <dir>/resources/ of the truss dir.
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { takeOver } from '../bin/store.ts'
 
 export const DEFAULT_MIN_FREE_MB = 2048
 
@@ -121,28 +122,8 @@ function readOwner(lock: string): any {
   }
 }
 
-/** Replaces a stale lock: rename to a unique name, check it is the stale one, rename back if not. */
-function takeOver(lock: string, seenToken: string | null): boolean {
-  const moved = `${lock}.stale-${process.pid}-${randomUUID()}`
-  try {
-    renameSync(lock, moved)
-  } catch {
-    return false
-  }
-  const o = readOwner(moved)
-  const tok = o && typeof o.token === 'string' ? o.token : null
-  if (tok !== seenToken) {
-    try {
-      renameSync(moved, lock)
-    } catch {
-      rmSync(moved, { recursive: true, force: true })
-    }
-    return false
-  }
-  rmSync(moved, { recursive: true, force: true })
-  return true
-}
-
+// A stale lock is removed by store.ts takeOver: one breaker at a time holds <lock>.break and removes the lock only while its
+// token is still the one judged stale. It never renames the lock aside, which could move a lock that has just turned live.
 /** Takes the one heavy slot. Returns the owner's token, or null while someone else holds it. */
 export function takeHeavySlot(dir: string, owner: { label?: string; slug?: string; pid?: number } = {}): string | null {
   const lock = lockDir(dir)
@@ -151,6 +132,8 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
     try {
       mkdirSync(lock)
     } catch (e: any) {
+      // on win32 a lock dir that is pending delete refuses mkdir with EPERM or EACCES: that is contention, not a fault
+      if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return null
       if (e.code !== 'EEXIST') throw e
       const o = readOwner(lock)
       let stale = false
@@ -163,7 +146,7 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
         }
       }
       if (!stale) return null
-      if (!takeOver(lock, o && typeof o.token === 'string' ? o.token : null)) return null
+      if (!takeOver(lock, o && typeof o.token === 'string' ? o.token : null, process.platform)) return null
       continue
     }
     const token = randomUUID()
