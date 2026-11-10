@@ -298,7 +298,7 @@ export const INBOX_COMMANDS: Record<string, (f: Flags) => Obj> = {
     const ref = str(f, 'ref')
     const out = escalate(flat(need(f, 'repo')), need(f, 'dir'), { kind, title, detail: textOf(f, 'detail'), crews: listOf(f, 'crew'), ref: ref === undefined ? null : ref, blocking: f.blocking === true || f.blocking === 'true' })
     const body: Obj = { id: out.id, kind: out.kind, deduped: out.deduped }
-    if (!out.deduped) body.code = out.code
+    body.code = out.deduped ? null : out.code
     body.notified = out.notified
     if (out.notifyError !== undefined) body.notifyError = out.notifyError
     return body
