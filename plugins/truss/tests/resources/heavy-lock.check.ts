@@ -156,3 +156,37 @@ test('nothing is written outside <dir>/resources/', async () => {
     assert.deepEqual(readdirSync(parent), ['truss'], 'nothing next to the truss dir')
   })
 })
+
+const WORKER = fileURLToPath(new URL('../fixtures/resources/heavy-worker.ts', import.meta.url))
+
+function runWorker(args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((res) => {
+    const c = spawn(process.execPath, [WORKER, `${ROOT}/resources/index.ts`, ...args], { windowsHide: true })
+    let out = ''
+    let err = ''
+    c.stdout.on('data', (d) => (out += d))
+    c.stderr.on('data', (d) => (err += d))
+    c.on('close', (code) => res({ code, out, err }))
+  })
+}
+
+test('8 processes racing to take over one stale heavy lock never hold it at once and none is lost', async () => {
+  // the window is narrow, so each round plants a fresh stale lock (a dead owner) that all 8 workers see at once,
+  // and each worker does read-modify-write increments of a counter only while it holds the slot
+  const rounds = Number(process.env.TRUSS_HEAVY_RACE_ROUNDS || 12)
+  const workers = 8
+  const each = 3
+  const pid = await deadPid()
+  for (let round = 0; round < rounds; round++) {
+    await withDir(async (dir) => {
+      mkdirSync(lockOf(dir), { recursive: true })
+      writeFileSync(`${lockOf(dir)}/owner.json`, JSON.stringify({ pid, token: `dead-${round}`, label: 'old', slug: 'old', since: Date.now() }))
+      const file = `${dir}/counter.txt`
+      const startAt = String(Date.now() + 400)
+      const results = await Promise.all(Array.from({ length: workers }, () => runWorker([dir, file, String(each), startAt])))
+      for (const r of results) assert.equal(r.code, 0, r.err)
+      assert.equal(readFileSync(file, 'utf8'), String(workers * each), `round ${round}: two holders at once lost an increment`)
+      assert.deepEqual(readdirSync(`${dir}/resources`), [], `round ${round}: no lock, .stale-* or .break leftovers`)
+    })
+  }
+})
