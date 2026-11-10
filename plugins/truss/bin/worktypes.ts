@@ -60,7 +60,7 @@ export function workTypeErrors(plan: Obj, crew: Obj, profiles: Record<string, Pr
   const errors: string[] = []
   const proc = typeof crew.process === 'string' && Object.hasOwn(RANK, crew.process) ? crew.process : 'full'
   if (RANK[proc] < RANK[p.minProcess]) errors.push(`${s}: process ${proc} is below the ${wt} minimum ${p.minProcess}`)
-  if (p.red === true && crew.red !== true) errors.push(`${s}: ${wt} requires red`)
+  if (p.red === true && crew.red !== true && proc !== 'full') errors.push(`${s}: ${wt} requires red`)
   return errors
 }
 
