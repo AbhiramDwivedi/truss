@@ -111,7 +111,7 @@
   },
   "allOf": [
     {
-      "$comment": "versions 1 to 3 forbid a crew's process, qc and red (ADR-0031 section 3).",
+      "$comment": "versions 1 to 3 forbid a crew's process, qc and red (ADR-0031 section 3) and its workType (contract-025 section 2).",
       "if": {
         "properties": { "version": { "enum": [1, 2, 3] } },
         "required": ["version"]
@@ -123,7 +123,7 @@
             "items": {
               "type": "object",
               "not": {
-                "anyOf": [{ "required": ["process"] }, { "required": ["qc"] }, { "required": ["red"] }]
+                "anyOf": [{ "required": ["process"] }, { "required": ["qc"] }, { "required": ["red"] }, { "required": ["workType"] }]
               }
             }
           }
@@ -277,6 +277,10 @@
         "red": {
           "description": "Version 4 and above, lean crews only, and required on them: true when the merge gate asks for a red record. See adr/0031-right-size-process.md, section 1.",
           "type": "boolean"
+        },
+        "workType": {
+          "description": "Optional, version 4 only. The kind of change the crew makes; it sets the minimum process and the proof the crew needs, and an unattended run requires it on every crew (contract-025 sections 2 and 5).",
+          "enum": ["feature", "bugfix", "migration", "dependency", "docs", "refactor"]
         },
         "needs": {
           "description": "Optional, any version. What the crew needs from the host before it starts: a browser that launches, npm ci, gh auth, a system library. The plan design engineer lists them; a crew with none leaves the key out, and every reader treats a missing needs as an empty list. factory.ts doctor runs each probe after plan-check and before any crew starts. See adr/0012-self-improving-retro.md, Decision 9.",
