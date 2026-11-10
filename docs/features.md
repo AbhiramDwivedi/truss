@@ -1,6 +1,6 @@
 # Feature map
 
-One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md).
+One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md). Product calls: [product-decisions](knowledge/product-decisions.md). Never nest backticks around a path here: the knowledge lint reads the inner path as a repo path and fails when it is untracked.
 
 ## Shared store
 
@@ -29,3 +29,9 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/docs/plan.schema.json`, `plugins/truss/bin/factory.ts` (`cmdPlanCheck`, `WORK_TYPES`), `plugins/truss/tests/plan-worktype.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/docs/architecture.md` ("Work type in the plan").
+
+## Plan spawn labels
+
+- What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
+- Entry points: plugins/truss/workflows/plan.js (lines 203-204), plugins/truss/bin/factory.ts (sessionAudit).
+- Owner: truss-workflow-scripts.
