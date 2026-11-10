@@ -8,7 +8,7 @@ sources:
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/inbox.check.ts
   - plugins/truss/bin/factory.ts
-verified: 2a0de660f3df2f5058f31ab09c15bcedc4846b1e
+verified: 610b551e155972405d1e2a0382a659df43c10a8b
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
@@ -18,4 +18,5 @@ verified: 2a0de660f3df2f5058f31ab09c15bcedc4846b1e
 - Assert workflow prompt content on the prompts the stubbed `agent()` received (`call(r, label).prompt` in `workflows.check.ts`), never on script source text. A nested `node --test` child inherits `NODE_TEST_CONTEXT` and ignores `--test-name-pattern` unless it is unset (`wiring-025.check.ts:266`).
 - `workflows.check.ts` resolves agent labels with `Object.hasOwn(labels, label)`, so a `Proxy` with `has`/`get`/`getOwnPropertyDescriptor` traps can route stubs by role regex (`workflows.check.ts:1532`). `checkSpawns()` knows only `ROLE_NAMES`: product-owner labels (`truss-po*`) need `exec()` with `args.truss.personas['product-owner']`, not `runPlan()`.
 - Test a session-scoped CLI command (`inbox.check.ts` `mkInbox`/`fx`): make the session dir `<repo>/.git/truss/<sid>`, not a loose tmp dir, so `path.basename(dir)` is the session and `<common>/truss/shared/inbox.jsonl` is the real shared file. Call `runCli(factory(), cmd, ['--repo', R, '--dir', D, ...])` with `TRUSS_TRANSCRIPTS_ROOT` in the extra env. Put positionals (`resolve <id>`) before value-less flags: `positionalsToFlags` (`factory.ts:3630`) lets a boolean flag swallow the next bare word.
+- A change to proof-check behaviour in `bin/inbox.ts` needs `docs/features.md` and `docs/knowledge/store.md` updated too; they sit outside a builder's file list, so the stage or knowledge member owns them.
 - Reach `sessionAudit` (`factory.ts:2549`) through `factory finish` with a second run of plan labels next to the stage run (`auditOf`, `wiring-025.check.ts:319`). An unparsable label starting a `truss:` agent type is flagged.

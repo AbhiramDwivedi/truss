@@ -12,7 +12,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 2a0de660f3df2f5058f31ab09c15bcedc4846b1e
+verified: 610b551e155972405d1e2a0382a659df43c10a8b
 ---
 
 # Store, holds and contract-025 stubs
@@ -45,7 +45,9 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Inbox transcript proof
 
-`typedText` and `typedProof` in `bin/inbox.ts:170-195` accept a transcript line only when it is a main-thread user line (not `isSidechain`, not `isMeta`) with string content or text blocks and no `tool_result`. A line must be newer than the `open` op and hold the id, the code and the decision word.
+`typedText` and `typedProof` in `bin/inbox.ts:170-195` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. A line must be newer than the `open` op and hold the id, the code and the decision word directly before the id, so a note's word cannot flip the decision.
+
+The proof guards only `factory resolve`: a same-user agent can append a `resolve` row to `S/inbox.jsonl` and the fold accepts it. Only a retro comparing each `quote` with the typed prompts catches it (ADR-0037, Consequences). Change proof-check behaviour here and in `docs/features.md` together.
 
 A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
 

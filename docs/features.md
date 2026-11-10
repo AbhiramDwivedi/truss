@@ -22,7 +22,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/bin/inbox.ts`, `plugins/truss/bin/notify-run.ts`, `plugins/truss/skills/inbox/SKILL.md`; tests `plugins/truss/tests/inbox.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Inbox transcript proof"), `plugins/truss/docs/adr/0037-shared-store-and-inbox.md`.
-- TODO: the skill passes `--note-file`, but `resolveItem` in `bin/inbox.ts` reads only `--note`, and no test names `--note-file`.
+- Note: the skill passes the note via `--note-file`; `textOf` (`bin/inbox.ts:288`) reads it for `--note` and `--title`. Without a typed line the skill asks the human to type the decision line.
 
 ## Contract-025 module stubs (guard, cost, worktypes, ledger, queue)
 
