@@ -54,6 +54,7 @@ async function main(): Promise<void> {
   const pid = child.pid
   const done = new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => {
+      // ESRCH: the process may have exited already; there is nothing left to kill.
       try { if (pid !== undefined) killTree(pid, process.platform, { spawnSync, kill: (p, s) => process.kill(p, s as NodeJS.Signals) }) } catch {}
       resolve('notify timed out after 10 s')
     }, 10000)
