@@ -1466,7 +1466,7 @@ t('workflows 025: admit exit 2 "store busy" twice makes exactly two admit runner
   assert.equal(res.state, 'stopped')
   assert.equal(res.tag, 'BLOCKED')
   assert.equal(admitCalls(r).length, 2)
-  assert.ok(r.calls.every((c) => c.runner?.cmd === 'admit'), 'no other call follows the stop')
+  assert.ok(r.calls.every((c) => c.runner), 'no agent is spawned after the stop')
 })
 t('workflows 025: admit exit 2 "store busy" once, then admitted, goes on and the crew passes', async () => {
   const runner = ({ cmd, slug, n }) => (cmd === 'admit' && slug === 'a' && n === 0 ? { exit: 2, stdout: 'store busy' } : undefined)
