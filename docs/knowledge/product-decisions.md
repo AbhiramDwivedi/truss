@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: 27d25ea836ad8c232abdbdb51cc2f49f6988b9c3
+verified: 4705791bf65c28393cd89b0b2ad8184d2e92d2f2
 ---
 
 # Product decisions
@@ -19,3 +19,10 @@ verified: 27d25ea836ad8c232abdbdb51cc2f49f6988b9c3
 
 - Answer: assert the paragraph byte for byte on the prompts the stubbed agents received (a-qc through `runStage`, truss-checker through `runPlan`, in `plugins/truss/tests/workflows.check.ts`), not on script source text. The source-text test in `wiring-025.check.ts` was deleted.
 - Decided by: product-owner persona, applied in commit f197412 (crew a0-foundation).
+
+## b-cost: busy usage lock before the first sweep
+
+- Question: with a busy usage lock and no `usage-cursor.json`, should `budgetVerdict` hold until the first sweep lands?
+- Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` still returns `usd: null` ('usage sweep still running') while unswept, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
+- Reason: contract-025 section 4 lists only those holds; the first-sweep hold BLOCKED 3 of 4 crews started together (ADR-0038, `plugins/truss/bin/cost.ts` `budgetVerdict`). Known limit: no budget is enforced until the first sweep lands.
+- Decided by: product-owner persona (crew b-cost).
