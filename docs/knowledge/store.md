@@ -11,7 +11,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 62c130152d81678edca1b68414052aa1f11da819
+verified: a9a7b6bba1e0398ffa22dc711f30a23d35690f9e
 ---
 
 # Store, holds and contract-025 stubs
@@ -41,6 +41,16 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 `stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once after 2 s on exit 2 `store busy` (stage.js:420-429). The pause runs inside a factory runner command: scripts have no timers. `qc()` returns `longTermCosts` (lines matching `^\s*(?:-\s*)?LONG-TERM-COST:`) only when non-empty (stage.js:1903, 1979).
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, foreman crews in `foremen`, held ones in `held` with `why` (factory.ts:1247, `stageOut`).
+
+## Cost meter (`bin/cost.ts`)
+
+- `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts:57). `platform` is a parameter so tests cover win32.
+- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:60, 156). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:67-69, 154).
+- Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
+- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:284-291); `queue-next` must use the session ref. Every `why` starts `budget: `.
+- A busy usage lock before the first sweep (no cursor) is unknown spend: `budgetVerdict` holds and `crewCost` gives `usd: null` (cost.ts:171, 307).
+- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:249-256). Pricing web search needs a new rate field.
+- Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
 
 ## Stub modules
 
