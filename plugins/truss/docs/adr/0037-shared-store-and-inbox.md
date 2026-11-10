@@ -134,6 +134,8 @@ We will accept `resolve --by client` only with proof that the human typed the de
 
 The text of that line, cut to 1000 characters, is stored as `quote`. There is no `--quote` flag, so an agent never types the quote. A retro can check each quote against the human-typed prompts of all the project's sessions.
 
+Known limit: `promptSource` must be `typed`, so a plain-text `approve <id> <code>` the client typed while the agent was busy (`promptSource: "queued"`, `origin.kind` and `turnOrigin` human) is refused, and so is a `claude -p` prompt (`promptSource: "sdk"`). The `/truss:inbox` slash line is unaffected. The client types the line again when the agent is idle.
+
 **The probed slash-command shape.** The tester took the shape from real transcripts and recorded a scrubbed sample in `tests/fixtures/inbox/slash-command.jsonl`. A human slash command is a main-thread user line, `isSidechain: false` and no `isMeta`, whose content is one string:
 
 ```
