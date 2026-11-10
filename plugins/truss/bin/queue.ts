@@ -175,7 +175,9 @@ function intake(f: Flags): Obj {
       if (made) {
         sAdded++
         added.push(id)
-        if (c.state === 'triage' && dir !== undefined) {
+        if (c.state === 'triage' && dir === undefined) {
+          errors.push({ source, error: `no --dir: the intake-triage escalation for ${id} was not raised; the item stays triage` })
+        } else if (c.state === 'triage') {
           try {
             escalate(repo, dir, { kind: 'intake-triage', title: `Triage intake item ${id}`, detail: `The issue's author ${c.author ?? 'unknown'} is not a collaborator.\n${dataNotice(c.title, c.title)}`, ref: `queue:${id}` })
           } catch (e) {
@@ -234,7 +236,11 @@ function queueNext(f: Flags): Obj {
       }
     }
     const mine = items.find((i) => (i.state === 'claimed' || i.state === 'running') && i.session === session)
-    if (mine) return mine
+    if (mine) {
+      mine.claimedAt = new Date(now).toISOString()
+      writeJsonAtomic(itemPath(repo, mine.id), mine)
+      return mine
+    }
     const next = items
       .filter((i) => i.state === 'new')
       .sort((a, b) => String(a.addedAt).localeCompare(String(b.addedAt)) || String(a.id).localeCompare(String(b.id)))[0]
