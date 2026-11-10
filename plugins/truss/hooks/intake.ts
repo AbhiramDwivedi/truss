@@ -73,5 +73,5 @@ export function amendPlan(existing: unknown, amend: unknown, now: string): { pla
     const index = first < 0 ? kept.length : first
     nextCrews = [...kept.slice(0, index), ...fresh, ...kept.slice(index)]
   }
-  return { plan: { ...existing, version: 3, goals: nextGoals, crews: nextCrews }, id }
+  return { plan: { ...existing, version: Math.max(3, typeof existing.version === 'number' ? existing.version : 3), goals: nextGoals, crews: nextCrews }, id }
 }
