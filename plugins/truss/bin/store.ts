@@ -181,7 +181,9 @@ function readOwner(lock: string, fs?: FsLike): any {
 // Removes a stale lock. Unlike resources/index.ts takeOver it never moves the lock aside: a rename of a lock that turned live
 // would open a window where the path is free while its owner is still in f (and strand the owner's release). Instead one
 // breaker at a time holds the mutex <lock>.break, re-reads the owner and removes the lock only if it is still the one
-// judged stale (same token). Only a breaker removes a lock it does not own, so a live owner's lock is never disturbed.
+// judged stale (same token). Only a breaker removes a lock it does not own, and only one judged stale: a dead owner on this
+// host, an ownerless lock past OWNERLESS_MS, or any lock past STALE_AGE_MS. The age rule can break a live owner's lock that
+// has been held longer than STALE_AGE_MS; a live owner within that age is never disturbed.
 // On win32 the removal retries, since a scanner can hold a handle for a moment.
 function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platform, fs?: FsLike): boolean {
   const brk = `${lock}.break`
@@ -239,7 +241,14 @@ export function withLock<T>(dir: string, name: string, f: () => T, opts: LockOpt
     try {
       mkdir(lock)
     } catch (e: any) {
-      if (e.code !== 'EEXIST') throw e
+      // on win32 a lock dir that is pending delete refuses mkdir with EPERM or EACCES: that is contention, not a fault
+      const pending = platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')
+      if (e.code !== 'EEXIST' && !pending) throw e
+      if (pending) {
+        if (Date.now() >= deadline) throw new StoreBusy(name)
+        sleepSync(25)
+        continue
+      }
       const o = readOwner(lock, fs)
       let stale = false
       if (o) stale = (o.host === host && pidDead(o.pid)) || (typeof o.since === 'number' && now() - o.since > STALE_AGE_MS)
