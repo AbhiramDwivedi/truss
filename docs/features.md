@@ -16,9 +16,17 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`, `truss-workflow-scripts`.
 - Docs: [store](knowledge/store.md).
 
-## Contract-025 module stubs (inbox, guard, cost, worktypes, ledger)
+## Client inbox (escalate, resolve, notify)
 
-- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` is now filled (see "Cost meter and budgets"); `cost` and `worktypes` feed admission and `plan-check`. `queue` left this list: it is filled in (next entry).
+- What: escalations land in the shared `inbox.jsonl`; `factory resolve --by client` needs a human-typed `/truss:inbox <decision> <E-id> <code>` line in the session transcript. The `/truss:inbox` skill (model invocation disabled) lists open items with no arguments. `notify-run.ts` runs the client's `notify` command for each new item, with a 10 s limit. Only `codeHash` is stored; the code goes to the PM's message and the notify stdin.
+- Entry points: `plugins/truss/bin/inbox.ts`, `plugins/truss/bin/notify-run.ts`, `plugins/truss/skills/inbox/SKILL.md`; tests `plugins/truss/tests/inbox.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [store](knowledge/store.md) ("Inbox transcript proof"), `plugins/truss/docs/adr/0037-shared-store-and-inbox.md`.
+- Note: the skill passes the note via `--note-file`; `textOf` (`bin/inbox.ts:303`) reads it for `--note` and `--title`. Without a typed line the skill asks the human to type the decision line.
+
+## Contract-025 module stubs (guard, cost, worktypes, ledger)
+
+- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` is now filled (see "Cost meter and budgets"); `cost` and `worktypes` feed admission and `plan-check`. `inbox` and `queue` left this list: they are filled in (the inbox entry above and the next entry).
 - Entry points: `plugins/truss/bin/inbox.ts`, `guard.ts`, `cost.ts`, `worktypes.ts`, `ledger.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Stub modules").
