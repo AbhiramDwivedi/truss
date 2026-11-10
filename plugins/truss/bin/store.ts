@@ -176,6 +176,8 @@ function readOwner(lock: string, fs?: FsLike): any {
   }
 }
 
+// Deviates from contract-025 section 2 line 83 (rename the stale lock aside, then remove it): renaming a lock aside can move a
+// lock that has just turned live, so the .break mutex below replaces the rename. Behaviour is unchanged by this note.
 // Removes a stale lock. Unlike resources/index.ts takeOver it never moves the lock aside: a rename of a lock that turned live
 // would open a window where the path is free while its owner is still in f (and strand the owner's release). Instead one
 // breaker at a time holds the mutex <lock>.break, re-reads the owner and removes the lock only if it is still the one
