@@ -620,6 +620,8 @@ function cmdPlanCheck(f: Flags): Obj {
       if (hasRed) errors.push(`${s}: red is version 4 only`)
     }
     if (Object.hasOwn(c, 'workType') && plan.version !== 4) errors.push(`${s}: workType is version 4 only`)
+    // contract-025: when D/unattended.json exists every crew needs a workType, whatever the plan version
+    if (plan.version !== 4 && unattended && !Object.hasOwn(c, 'workType')) errors.push(`${s}: workType is required in an unattended run; unattended runs need a version 4 plan with workType`)
     if (plan.version === 4) {
       if (Object.hasOwn(c, 'workType') && !WORK_TYPES.includes(c.workType)) errors.push(`${s}: workType must be one of ${WORK_TYPES.slice(0, -1).join(', ')} or ${WORK_TYPES[WORK_TYPES.length - 1]}`)
       else if (!Object.hasOwn(c, 'workType') && unattended) errors.push(`${s}: workType is required in an unattended run`)
