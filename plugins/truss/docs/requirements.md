@@ -382,9 +382,79 @@ Kind: constraint
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
 
+## R-55: An unattended run stops only on the exception list, through a shared inbox
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given an unattended run where one crew needs a client answer, when the PM runs `factory escalate --kind client-question --crew c1 --blocking`, then an item lands in `<common>/truss/shared/inbox.jsonl`, crew c1 is held at `start` and `admit` with `awaiting client: E-...`, every other crew keeps running, and the configured `notify` command gets the row on stdin.
+
+## R-56: An agent cannot forge a client approval
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given an open long-term-cost item, when an agent runs `factory resolve <id> --decision approve --by client --code <code>` with no human-typed prompt naming the id, decision and code in the main transcript, then it exits 1; after the human types `/truss:inbox approve <id> <code>`, the same call succeeds and stores the prompt as `quote`.
+
+## R-57: Nothing that costs the client later merges without the client
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given a solo crew whose diff adds a runtime dependency to a manifest, when `land` runs, then it refuses with `long-term-cost: E-...` until the client approves that item; a QC `LONG-TERM-COST: ... | reversal: cheap` line is only logged.
+
+## R-58: Spend is metered from transcripts and budgets hold crews
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given `budget.crewUsd` 5 and a crew whose deduplicated transcript usage prices at 5.20 USD, when `admit` runs for its next member, then it exits 1 in under 1 s with `budget: ...`, opens one budget escalation, and an approved resolve with `--raise-usd 3` lets it continue; an unpriced model gives `usd: null`, never 0.
+
+## R-59: The meter agrees with Claude Code's own estimate
+Status: open
+Kind: nfr
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Measure: `factory cost` on one real session lands within 5% of `claudeCodeEstimateUsd` with a client-supplied price table; the result is recorded in ADR-0038.
+
+## R-60: `/truss:run --next` runs one queued item with no human present
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given one `new` item in the queue and `/loop 30m /truss:run --next`, when it fires, then the PM claims the item, gates it through the sizing and checking engineers, writes the brief with defaults and non-blocking client-question items, plans, approves `--by auto`, runs the crews, merges locally, escalates `push-pr`, and an AskUserQuestion call during the run is refused by the hook.
+
+## R-61: Work enters through an intake queue from a markdown file or GitHub issues
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given `docs/queue.md` with `- [ ] add a --json flag to status` and an open `truss`-labelled issue by a non-collaborator, when `factory intake` runs, then the first becomes a `new` item, the issue becomes a `triage` item with an `intake-triage` escalation, and two processes racing `queue-next` claim the new item exactly once.
+
+## R-62: A crew can carry a work type that sets its minimum process
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given a v4 plan with a crew `workType: "bugfix"` and `process: "solo"`, when `plan-check` runs, then it fails with `<slug>: process solo is below the bugfix minimum lean`; the same plan without workType passes outside an unattended run, and fails with `workType is required in an unattended run` inside one.
+
+## R-63: Every merge is logged in an append-only ledger
+Status: open
+Kind: functional
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+Example: Given a crew merged by `finish` or `land`, when the merge completes, then one row `{kind: "merge", session, crew, goal, workType, process, qc, red, target, base, head, costUsd}` is appended to `<common>/truss/shared/ledger.jsonl`, with `costUsd: null` and a `costWhy` when spend was not recorded.
+
+## R-64: Wave 2 works on Linux, macOS and Windows
+Status: open
+Kind: constraint
+Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
+Source: goal
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
 - The retro never changes the code a truss run delivered; it changes only files truss uses (client ruling, 2026-10-31).
 - No measurement of sizing against an earlier run (client ruling, 2026-11-08).
 - Full crews keep today's process: planner, builders and testers, red-then-green acceptance test, QC engineer, stress test where it applies.
+- No auto-push or autoLand, no cloud Routines, no daemon, no resume across sessions, no inbox or cost UI, no fetched prices, no ci intake adapter, and no prod deploy from an unattended run (contract-025 section 10).
