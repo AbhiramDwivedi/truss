@@ -1509,3 +1509,12 @@ t('workflows 025: the checker prompt asks to check each crew workType fits its w
   const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
   has(call(r, 'truss-checker').prompt, "Check each crew's workType fits its work: a crew that changes behaviour is not docs or refactor.")
 })
+const LTC_PARAGRAPH = `Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line \`LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible\`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.`
+t('workflows 025: the prompt the qc agent receives carries the long-term cost paragraph', async () => {
+  const r = await runStage([entry('a', { workType: 'feature' })], { labels: base() })
+  has(call(r, 'a-qc').prompt, LTC_PARAGRAPH)
+})
+t('workflows 025: the prompt the checker agent receives carries the long-term cost paragraph', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  has(call(r, 'truss-checker').prompt, LTC_PARAGRAPH)
+})
