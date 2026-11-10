@@ -2900,7 +2900,12 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
   const since = runStart(plan) ?? 0
   const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
-  const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`]).out, head: run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out })
+  // a base or head that does not resolve would hand the gate '' and no triggers: refuse instead
+  const ltcBase = run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`])
+  if (ltcBase.status !== 0 || ltcBase.out === '') return { refused: `long-term cost gate: git merge-base refs/heads/${target} refs/heads/truss-${slug} failed${ltcBase.err === '' ? '' : `: ${ltcBase.err.split('\n')[0]}`}` }
+  const ltcHead = run(wt, ['rev-parse', '--verify', `refs/heads/truss-${slug}`])
+  if (ltcHead.status !== 0 || ltcHead.out === '') return { refused: `long-term cost gate: git rev-parse refs/heads/truss-${slug} failed${ltcHead.err === '' ? '' : `: ${ltcHead.err.split('\n')[0]}`}` }
+  const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: ltcBase.out, head: ltcHead.out })
   if (gate.refused !== undefined) return { refused: gate.refused }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
   if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }

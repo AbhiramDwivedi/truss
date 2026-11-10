@@ -550,6 +550,29 @@ test('control 12: a two-crew finish merges both and lists a dirty wf_<run> workt
   assert.equal(left[0].why, 'dirty')
 })
 
+test('a0 fix 5: finish refuses the merge when the long-term cost gate cannot resolve the crew branch (merge-base or rev-parse fails)', () => {
+  const env = mkEnv({ config: CFG })
+  writePlan(env.dir, planObj([crew('s', { status: 'running' })], { approvedAt: '2026-10-01T00:00:00.000Z' }))
+  appendEvent(env.dir, factorySpawn('s', iso(Date.now() - 3 * HOUR)))
+  const wt = addCrewWorktree(env.repo, 's')
+  putFile(wt, 'src/s/a.ts', 's\n', 'work s')
+  const base = git(wt, ['merge-base', 'main', 'HEAD'])
+  const hd = head(wt)
+  const diff = spawnSync('git', ['diff', `${base}...${hd}`], { cwd: wt, encoding: 'utf8' }).stdout
+  const pid = spawnSync('git', ['patch-id', '--stable'], { cwd: wt, input: diff, encoding: 'utf8' }).stdout.split(' ')[0]
+  mkdirSync(`${env.dir}/checks`, { recursive: true })
+  writeFileSync(`${env.dir}/checks/s-1.json`, JSON.stringify({ command: 'true', exit: 1, head: hd, tail: '' }))
+  const run = mkRun(env.transcripts, 'wf_ltcbase', [mk('s-builder'), { label: 's-qc', agentType: 'truss:qc-engineer', metaModel: 'opus', model: 'claude-opus-5-5', effort: 'medium', result: qcReport({ head: hd, patch: pid }) }])
+  // the worktree moves to another branch and truss-s is gone: owns-check (HEAD) still passes, refs/heads/truss-s does not resolve
+  git(wt, ['checkout', '-q', '-b', 'other'])
+  git(wt, ['branch', '-q', '-D', 'truss-s'])
+  const resFile = `${env.dir}/result.json`
+  writeFileSync(resFile, JSON.stringify([{ slug: 's', state: 'passed', head: hd, base, qc: 's-qc' }]))
+  const r = env.run('finish', { transcript: run.dir, result: resFile })
+  assert.ok(!(r.json?.merged ?? []).includes('s'), say(r))
+  assert.match(r.stdout, /long-term cost gate: git (merge-base|rev-parse)/, say(r))
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // item 21: an answered task leaves `done`
 
