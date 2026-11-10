@@ -413,12 +413,20 @@ async function ask(crew, role, prompt, opts = {}) {
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 // label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
-// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; still one call, no retry here.
+// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; a hold is never retried, only a store-busy exit is (below).
 async function admit(crew, at, label, title, persona = null, high = false) {
-  const r = await runFactory(crew, `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`, 'admitted')
+  const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
+  let r = await runFactory(crew, cmd, 'admitted')
+  // exit 2 "store busy": another process holds the crew store for a moment; one retry after 2 s, then the stop below
+  if (r.exit === 2 && /store busy/.test(r.out)) {
+    if (typeof setTimeout === 'function') await new Promise((done) => setTimeout(done, 2000))
+    r = await runFactory(crew, cmd, 'admitted')
+  }
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
+    if (r.parsed.budget === true) throw new Stop('BLOCKED', `BLOCKED: budget: ${why}`, at)
+    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
 }
@@ -1890,6 +1898,10 @@ function lintResult(crew) {
   return { knowledgeLint: { ran: true, ...(fresh.length ? { failures: fresh } : {}), ...(old.length ? { predating: old } : {}), ...(l.warnings.length ? { warnings: l.warnings } : {}), ...counts } }
 }
 
+// contract-025 section 3, word for word
+const LONG_TERM_COST = "Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for \"more code to maintain\", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client."
+const ltcLinesOf = (text) => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').filter((l) => /^\s*(?:-\s*)?LONG-TERM-COST:/.test(l)).map((l) => l.trim())
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -1906,6 +1918,7 @@ function qcPrompt(crew) {
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `Acceptance test: ${acceptanceOf(e)}`,
+    `Work type: ${typeof e.workType === 'string' && e.workType ? e.workType : 'none'}.`,
     '',
     'Member proofs:',
     ...(crew.proofs.length ? crew.proofs : ['none']),
@@ -1919,6 +1932,7 @@ function qcPrompt(crew) {
     '',
     ...standardsLines(crew),
     ...knowledgeLines(crew),
+    LONG_TERM_COST,
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
     "Check that every hunk traces to the task: a hunk that only reformats, renames or reorders lines the task didn't change is a finding, unless the project's formatter or a hook produced it (compare `git diff <base>...<branch>` with `git diff -w`). Check each manifest addition against core rule 15. A bug fix that adds a null or empty guard, or a catch, without saying why the value occurs is a finding.",
     "Check the goal file's Non-goals heading against the diff. Work that lands in a non-goal is a finding.",
@@ -1962,7 +1976,7 @@ async function qc(crew) {
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
