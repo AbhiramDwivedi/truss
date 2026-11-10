@@ -43,6 +43,16 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, foreman crews in `foremen`, held ones in `held` with `why` (factory.ts:1247, `stageOut`).
 
+## Cost meter (`bin/cost.ts`)
+
+- `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts:57). `platform` is a parameter so tests cover win32.
+- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:60, 156). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:67-69, 154).
+- Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
+- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:284-291); `queue-next` must use the session ref. Every `why` starts `budget: `.
+- A busy usage lock before the first sweep (no cursor) is unknown spend: `crewCost` gives `usd: null`, but `budgetVerdict` does not hold and reads `usage.jsonl` as it stands, so no budget is enforced until the first sweep lands (cost.ts:171, 329).
+- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:249-256). Pricing web search needs a new rate field.
+- Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
+
 ## Inbox transcript proof
 
 `typedText` and `typedProof` in `bin/inbox.ts:171-196` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. It also refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count; the slash line is unaffected. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. A line must be newer than the `open` op and hold the id, the code and the decision word directly before the id, so a note's word cannot flip the decision.
@@ -53,10 +63,10 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 
 ## Stub modules
 
-`guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures; a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
+`guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` and `cost` are implemented); a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
-- `cost.ts`: `budgetVerdict`, `crewCost`, `COST_COMMANDS`.
+- `cost.ts` (implemented): `sweep`, `budgetVerdict`, `crewCost`, `COST_COMMANDS`.
 - `worktypes.ts`: `profilesOf`, `workTypeErrors`, `WORKTYPE_COMMANDS`.
 - `ledger.ts`: `ledgerAppend`. `queue.ts`: `QUEUE_COMMANDS`.
