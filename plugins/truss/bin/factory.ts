@@ -451,11 +451,8 @@ function cmdPlanWrite(f: Flags): Obj {
     if (existing === undefined) no('kept the existing plan: it is not a readable plan')
     else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
   }
-  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
-  writeFileSync(`${dir}/plan.md`, md as string)
-  const left = retirePlanRun(f, dir, run_.id)
-  const drafts = writePersonaDrafts(dir, message)
-  // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result
+  // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
+  // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
     .filter((l) => l.type === 'started' && typeof l.label === 'string' && /^truss-(designer|checker)/.test(l.label))
     .flatMap((l) => {
@@ -463,6 +460,10 @@ function cmdPlanWrite(f: Flags): Obj {
       return r === undefined ? [] : [typeof r === 'string' ? r : isObj(r) && typeof r.report === 'string' ? r.report : JSON.stringify(r)]
     })
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
+  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
+  writeFileSync(`${dir}/plan.md`, md as string)
+  const left = retirePlanRun(f, dir, run_.id)
+  const drafts = writePersonaDrafts(dir, message)
   return { written: true, longTermCosts, ...(left.length > 0 ? { leftWorktrees: left } : {}), ...(drafts.personas.length > 0 ? { personas: drafts.personas } : {}), ...(drafts.problems.length > 0 ? { personaProblems: drafts.problems } : {}) }
 }
 
@@ -620,6 +621,8 @@ function cmdPlanCheck(f: Flags): Obj {
       if (hasRed) errors.push(`${s}: red is version 4 only`)
     }
     if (Object.hasOwn(c, 'workType') && plan.version !== 4) errors.push(`${s}: workType is version 4 only`)
+    // contract-025: when D/unattended.json exists every crew needs a workType, whatever the plan version
+    if (plan.version !== 4 && unattended && !Object.hasOwn(c, 'workType')) errors.push(`${s}: workType is required in an unattended run; unattended runs need a version 4 plan with workType`)
     if (plan.version === 4) {
       if (Object.hasOwn(c, 'workType') && !WORK_TYPES.includes(c.workType)) errors.push(`${s}: workType must be one of ${WORK_TYPES.slice(0, -1).join(', ')} or ${WORK_TYPES[WORK_TYPES.length - 1]}`)
       else if (!Object.hasOwn(c, 'workType') && unattended) errors.push(`${s}: workType is required in an unattended run`)
@@ -890,9 +893,15 @@ function cmdDoctor(f: Flags): Obj {
     known.push({ id: e.id, pass: r.pass })
     if (!r.pass) rulings.push({ id: e.id, fix: e.fix })
   }
+  // a malformed .claude/truss.json is one failed probe, so the other probes still print
+  let cfg: Obj = {}
+  try {
+    cfg = configOf(repo)
+  } catch (e) {
+    probes.push({ name: 'config', kind: 'config', pass: false, detail: e instanceof CliError && typeof e.body.error === 'string' ? e.body.error : (e as Error).message })
+  }
   const failed = probes.filter((p) => !p.pass).map((p) => p.name)
   // contract-025 section 4: with a budget set, a model the roles use that no pricing key covers can't be priced, so every spend would hold
-  const cfg = configOf(repo)
   const warnings: string[] = []
   if (isObj(cfg.budget)) {
     const keys = isObj(cfg.pricing) ? Object.keys(cfg.pricing) : []
@@ -2897,7 +2906,12 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
   const since = runStart(plan) ?? 0
   const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
-  const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`]).out, head: run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out })
+  // a base or head that does not resolve would hand the gate '' and no triggers: refuse instead
+  const ltcBase = run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`])
+  if (ltcBase.status !== 0 || ltcBase.out === '') return { refused: `long-term cost gate: git merge-base refs/heads/${target} refs/heads/truss-${slug} failed${ltcBase.err === '' ? '' : `: ${ltcBase.err.split('\n')[0]}`}` }
+  const ltcHead = run(wt, ['rev-parse', '--verify', `refs/heads/truss-${slug}`])
+  if (ltcHead.status !== 0 || ltcHead.out === '') return { refused: `long-term cost gate: git rev-parse refs/heads/truss-${slug} failed${ltcHead.err === '' ? '' : `: ${ltcHead.err.split('\n')[0]}`}` }
+  const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: ltcBase.out, head: ltcHead.out })
   if (gate.refused !== undefined) return { refused: gate.refused }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
   if (fails > allowance) return { refused: `rework allowance spent: ${fails} QC FAILs, allowance ${allowance}` }

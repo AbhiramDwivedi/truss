@@ -69,6 +69,17 @@ test('plan worktype: an unattended plan without workType fails', () => {
   assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
 })
 
+test('plan worktype: an unattended run refuses a v3 plan, naming every crew without workType', () => {
+  const env = world([crew('alpha'), crew('beta', { stage: 2 })], 3)
+  writeFileSync(`${env.dir}/unattended.json`, JSON.stringify({ since: new Date().toISOString(), item: null }) + '\n')
+  const r = env.run('plan-check')
+  assert.equal(r.status, 1, `exit 1 expected: ${r.stdout} ${r.stderr}`)
+  assert.equal(r.json.ok, false)
+  for (const s of ['alpha', 'beta']) {
+    assert.ok(errorsOf(r).includes(`${s}: workType is required in an unattended run; unattended runs need a version 4 plan with workType`), JSON.stringify(r.json))
+  }
+})
+
 test('plan worktype: amendPlan keeps version 4', async () => {
   const { amendPlan } = await import(INTAKE)
   const now = '2026-11-10T10:00:00.000Z'
