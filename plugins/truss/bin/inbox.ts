@@ -169,7 +169,8 @@ export function budgetRaises(repo: string, session: string): { ref: string; rais
 
 // The text of a main-thread line a human typed, or null: not isMeta, not isSidechain, string content or text blocks with no tool_result.
 function typedText(row: Obj): string | null {
-  if (row.type !== 'user' || row.isMeta || row.isSidechain) return null
+  if (row.type !== 'user' || row.isMeta || row.isSidechain || row.isCompactSummary || row.isVisibleInTranscriptOnly) return null
+  if (row.origin !== undefined && row.origin?.kind !== 'human') return null
   const c = row.message?.content
   if (typeof c === 'string') return c
   if (!Array.isArray(c) || c.length === 0) return null
@@ -178,12 +179,12 @@ function typedText(row: Obj): string | null {
   return c.map((b: any) => b.text).join('\n')
 }
 
-// The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the decision word and the code.
+// The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the code and the decision word right before the id.
 function typedProof(session: string, open: Obj, decision: string, code: string): string | null {
   const main = transcriptsOf(session).main
   if (main === null) return null
   const after = Date.parse(open.ts)
-  const word = new RegExp(`(^|[^A-Za-z0-9])${decision}($|[^A-Za-z0-9])`)
+  const word = new RegExp(`(^|[^A-Za-z0-9])${decision}[ \\t]+${open.id.replace(/[^A-Za-z0-9]/g, '\\$&')}($|[^A-Za-z0-9])`)
   let found: string | null = null
   for (const row of readJsonl(main).rows) {
     const text = typedText(row)
