@@ -125,10 +125,11 @@ We will accept `resolve --by client` only with proof that the human typed the de
 
 **What `resolve --by client` checks.** It reads the main transcript of this session, found by `transcriptsOf(sid)` under `$TRUSS_TRANSCRIPTS_ROOT`, else `$CLAUDE_CONFIG_DIR/projects`, else `.claude/projects` in the home dir (`bin/store.ts:397-401`). It looks for a line with `type: "user"` that:
 
-- is not `isMeta` and not `isSidechain`;
+- is not `isMeta` and not `isSidechain`, and is not `isCompactSummary` or `isVisibleInTranscriptOnly`;
+- has no `origin`, or `origin.kind` is `human` (a task-notification line carries an agent's return text, not a human's);
 - has string content, or only text blocks and no `tool_result`;
 - is newer than the item's `open` op;
-- contains the E-id, the decision word and the code.
+- contains the E-id and the code, with the decision word directly before the E-id (`reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
 
 The text of that line, cut to 1000 characters, is stored as `quote`. There is no `--quote` flag, so an agent never types the quote. A retro can check each quote against the human-typed prompts of all the project's sessions.
 
