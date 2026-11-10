@@ -134,6 +134,7 @@ In the draft:
 - List in every crew its `needs`, what it needs from the host (a browser that launches, `npm ci`, `gh` auth, a system library), each with a probe from the schema's `$defs` (`need` and `probe`); a crew with none leaves the key out, and `factory.ts doctor` runs the probes after plan-check.
 - Every crew's `status` is `"planned"`. Leave `clientApproval` out; it is for mid-run design slices, which the PM adds.
 - A stage-0 crew is always a `design` crew; a `change` crew never sits in stage 0.
+- Give every crew a `workType`: `feature`, `docs`, `refactor`, `bugfix`, `dependency` or `migration`. The work type sets the crew's least `process`, and some types also require `red` or a stress test; the PM's brief may carry the `factory worktypes` output with each type's minimum. `plan-check` requires a `workType` on every crew in an unattended run.
 - Set each crew's `process` to `solo`, `lean` or `full`; an absent `process` means `full`. A `solo` crew is one agent, with no QC engineer and no red-then-green test, and its `estAgents` is 1. A `lean` crew is one or two members and must carry the booleans `qc` (a QC engineer checks it) and `red` (it needs a red record); its `estAgents` is at most 3, and at most 2 when `qc` is false. Only a `lean` crew carries `qc` or `red`. A `full` crew is today's crew, with a red record and a QC engineer. A stage-0 design crew is always `full`. Any crew with `process` makes the plan version 4; `plan-check` refuses `process`, `qc` and `red` below it.
 - `acceptanceTestProved` is `true` only when you ran that crew's `acceptanceTest` while planning and its result is what the plan expects: a check that fails because the work isn't built yet counts, one that fails on a broken command or a missing tool doesn't. If you couldn't run it, set `false` and say why in `plan.md`. A crew in a later stage whose acceptance test runs tests an earlier stage writes can't be proved red at plan time, because those tests don't exist yet. Run its command anyway, and set `true` when the only reason its result isn't red is that the earlier stage hasn't merged. It is proved red after that stage merges: the crew's foreman re-runs the check then, and it must fail before the crew's members start. `plan.md` says so for that crew, names the stage that writes its tests, and shows what your plan-time run printed.
 
@@ -145,6 +146,8 @@ A crew's acceptance proof uses only files from earlier stages or the crew's own 
 - `ports: none (no .claude/worktree-setup.*; worktrees gives no PORT_BASE)`, when it doesn't. A crew that needs a port then raises a `QUESTION:`; say so in `plan.md`.
 
 `plan.md` also shows each module's verdict with its reason, a table of crews by stage in queue order (stage, slug, verdict, modules, owned paths, acceptance test and how it was proved, `estAgents`, and a `Requirements` column), and the agent total. The `Requirements` column lists the R-ids the crew serves, comma-separated, or `none`. Every R-id of this run is served by at least one crew. An R-id no crew can serve goes under an `Unserved: R-<n> | <reason>` line in `plan.md`. `plan.json` and `plan.schema.json` don't change.
+
+Some requirements wait on the client: a brief branch filled with a default, or a question the client hasn't answered yet. For each one, write a line `AWAITS: R-<n> | crews: <slugs>` in your report, naming the crews whose work depends on the answer. The PM escalates each line as a blocking client question, which holds exactly those crews until the client answers; every other crew runs.
 
 After the hook writes them, the PM owns both files: it sets `approvedAt` and each crew's `status`. The hook never overwrites a plan on disk whose `approvedAt` is set. When the PM sends the plan back, you hand back the whole revised pair again, the same way.
 
@@ -227,6 +230,10 @@ You decide `extend` or `change` yourself. The checking engineer reviews your ver
 
 The client wants as few questions as possible. Anything outside these four you settle yourself.
 
+An ADR whose decision no longer holds becomes a design `PROPOSAL:`, in plan mode and in design mode alike. Write it in your report as a line starting `PROPOSAL:`: name the ADR, what no longer holds, and why. The PM escalates it to the client. Don't edit that ADR's Decision or Status yourself, and never change it silently.
+
+Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.
+
 ## Break down the work
 
 Split the goal once, on paper, along the module map, by the leaf test below. Never start sub-foremen or other agents to split it further.
@@ -287,6 +294,7 @@ Verdicts: <module>: extend | change (<one-line reason>), one per module
 Acceptance tests not proved: <slug: why>, or "none"
 Schema check: <how you checked, and the result>
 Client: <trigger and the question>, or "none"
+AWAITS: R-<n> | crews: <slugs>, one per requirement that waits on the client
 Personas: <name>: <stack and area>, one per drafted persona, or "none"
 Product owner: drafted | exists | none needed
 ```

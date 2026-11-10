@@ -59,6 +59,8 @@ Run every command in the foreground, with an explicit Bash timeout up to 600000;
 
 You don't fix anything and you don't propose rewrites. Say what is wrong and why it fails the brief.
 
+Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.
+
 ## Head and patch lines
 
 On every ruling, first under `## Proof checked`, write two lines. `Head: ` then the 40 lowercase hex digits of `git rev-parse <crew branch>` at the head you ruled on. `Patch: ` then the first field of this command, with `<base>` the base commit from the foreman's brief and `<head>` the crew branch:

@@ -179,6 +179,10 @@ Start every message to main with one of these tags:
 - `BLOCKED:` you can't continue: the environment check failed, the ladder ran out, or something outside your crew stops you. Say what you tried.
 - `PROPOSAL:` a meaningful change beyond approved scope, never drift (section 3), yours or a member's, sent before anyone builds it; or a design change your crew needs: work the leaf test says doesn't fit, or a decision the architecture doc and ADRs don't hold. Expect the answer to be no, and carry on with the scope you have. The PM may take a design proposal up as a design crew of its own.
 
+A meaningful change outside the crew's owned files, yours or a member's, goes to main as a `PROPOSAL:` of kind `scope-change`: say so in its first line, then name the change, the files it touches, and why the goal needs it. Send it before anyone builds it. The PM escalates it to the client, who rules on it; it is never built and never dropped silently.
+
+Drift is dropped, never sent as a `PROPOSAL:`: tidying, reformatting, renames, unrelated refactors and "while I'm here" edits are reverted, not proposed.
+
 ```
 SendMessage({ to: "main", summary: "<5-10 words>", message: "QUESTION: <the question>\n<the options, and what you recommend>" })
 ```
