@@ -555,7 +555,7 @@ function memberPrompt(crew, role, parts) {
   const e = crew.e
   const lines = [`You are the ${role} for crew ${crew.slug}. ${BRAVE}`, '']
   lines.push(...parts.start)
-  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. An idea beyond it goes back in your report, never into the diff.', '')
+  lines.push(`Approved scope: ${scopeOf(e)}`, '', 'Build only the approved scope quoted above. Drift (tidying, reformatting, renames, unrelated refactors, "while I am here" edits) never goes into the diff and is never reported as a proposal. A meaningful change beyond it (a better approach, a stale design, a broken assumption elsewhere, a real defect) is never left out: surface it in your report.', '')
   const dl = directionLines(crew)
   if (dl.length) lines.push(...dl, '')
   lines.push(`Acceptance test: ${acceptanceOf(e)}`, '')
@@ -1683,7 +1683,7 @@ function knowledgePrompt(crew, resume) {
     `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every rule or knowledge doc you create or edit.`,
     `A new knowledge or rule file is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
     `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to ${RULES_DIR}/<area>.md.`,
-    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc.',
+    'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the text when it is a description, raise a design PROPOSAL when an ADR\'s decision no longer holds.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))

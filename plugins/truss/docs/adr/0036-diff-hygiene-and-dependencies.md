@@ -25,8 +25,9 @@ An external list of coding rules for agents was checked item by item against tru
 
 Recorded so a later run does not re-adopt them.
 
-- **"Skip error handling for errors that can't occur" and "hardcode values".** They conflict with core rules 6 (validate at the boundary), 10 (secure defaults) and 11 (secrets from configuration).
-- **"Stop, don't push through" on a failure.** It conflicts with the "be brave" rule. Truss handles the same worry with "beyond scope goes back as a PROPOSAL".
+- **III (Simplicity)** is covered, not declined, by core rule 12 (YAGNI) and rule 6 (validate only at boundaries; otherwise rule 12 applies). Two exceptions hold: secrets are never hardcoded (rule 11), and new settings and permissions ship closed (rule 10).
+- **X (failure modes)** is covered. Kitchen Sink by DIFF and the QC hunk check; Wrong Abstraction by rule 12 and the QC reuse check; Optimistic Path by rule 6 and the stress test; Runaway Refactor by owns and the scope check. "Stop, don't push through" is adopted as: drift is reverted and dropped, never proposed, by the client's rule of 2026-11-09. Cost: drift is dropped; meaningful changes are always surfaced.
+- **IX** stays as covered.
 - **The communication rules.** The proof rule, `Examined` and `Not examined` already cover them.
 
 ## Consequences
