@@ -57,6 +57,11 @@ test('worktypes: bugfix requires red', () => {
   assert.ok(errs({ slug: 'a', workType: 'bugfix', process: 'lean' }).includes('a: bugfix requires red'), JSON.stringify(errs({ slug: 'a', workType: 'bugfix', process: 'lean' })))
   assert.ok(errs({ slug: 'a', workType: 'bugfix', process: 'lean', red: false }).includes('a: bugfix requires red'))
   assert.ok(!errs({ slug: 'a', workType: 'bugfix', process: 'lean', red: true }).some((e: string) => e.includes('requires red')))
+  // a full process runs the red step itself, and an absent process counts as full: neither needs red: true
+  assert.deepEqual(errs({ slug: 'a', workType: 'bugfix', process: 'full' }), [])
+  assert.deepEqual(errs({ slug: 'a', workType: 'bugfix' }), [])
+  assert.deepEqual(errs({ slug: 'a', workType: 'bugfix', process: 'full', red: false }), [])
+  assert.ok(errs({ slug: 'a', workType: 'bugfix', process: 'bogus' }).every((e: string) => !e.includes('requires red')))
   // a config can make another work type require red
   assert.ok(errs({ slug: 'a', workType: 'feature', process: 'lean' }, { cfg: { workTypes: { feature: { red: true } } } }).includes('a: feature requires red'))
   assert.ok(!errs({ slug: 'a', workType: 'feature', process: 'lean' }).some((e: string) => e.includes('requires red')))
