@@ -36,9 +36,15 @@ export function budgetsOf(raw: unknown): Budgets {
 // alternative may be empty only in the form `{,x}` (two alternatives, the first empty); any other empty alternative makes the group
 // literal. An unbalanced `{` or `}` is literal, and so are `[`, `!` and a `,` outside a group. A leading `./` is dropped, `\` is
 // `/`, a trailing `/` means `/**`. Case-sensitive. Characters are code points, so `?` matches one non-ASCII character.
-export function expandBraces(glob: string): string[] {
-  const chars = Array.from(glob)
-  for (let i = 0; i < chars.length; i++) {
+// A glob with more than MAX_BRACE_GROUPS groups, or whose groups expand to more than MAX_BRACE_ALTERNATIVES alternatives, is
+// invalid (globError says why) and matches nothing; the count is taken before anything is expanded, so the work stays bounded.
+export const MAX_BRACE_GROUPS = 8
+export const MAX_BRACE_ALTERNATIVES = 256
+type Group = { start: number; end: number; alts: string[] }
+// The brace groups, left to right, at most `limit` of them. Whether a `{` opens a group depends only on what follows it.
+function braceGroups(chars: string[], limit = Infinity): Group[] {
+  const out: Group[] = []
+  for (let i = 0; i < chars.length && out.length < limit; i++) {
     if (chars[i] !== '{') continue
     let j = i + 1
     while (j < chars.length && chars[j] !== '{' && chars[j] !== '}') j++
@@ -47,11 +53,35 @@ export function expandBraces(glob: string): string[] {
     if (alts.length < 2) continue
     const emptyOk = alts.length === 2 && alts[0] === '' && alts[1] !== ''
     if (!emptyOk && alts.some((a) => a === '')) continue
-    // chars before i hold no group (each `{` there was literal), so only the rest is expanded further
-    const pre = chars.slice(0, i).join('')
-    return expandBraces(chars.slice(j + 1).join('')).flatMap((post) => alts.map((a) => `${pre}${a}${post}`))
+    out.push({ start: i, end: j, alts })
+    i = j
   }
-  return [glob]
+  return out
+}
+// Why a glob is invalid, or undefined when it is valid.
+export function globError(glob: string): string | undefined {
+  const groups = braceGroups(Array.from(flat(glob)), MAX_BRACE_GROUPS + 1)
+  if (groups.length > MAX_BRACE_GROUPS) return `it has more than ${MAX_BRACE_GROUPS} brace groups`
+  let n = 1
+  for (const g of groups) {
+    n *= g.alts.length
+    if (n > MAX_BRACE_ALTERNATIVES) return `its brace groups expand to more than ${MAX_BRACE_ALTERNATIVES} alternatives`
+  }
+  return undefined
+}
+// Every expansion of a valid glob; none for an invalid one.
+export function expandBraces(glob: string): string[] {
+  if (globError(glob) !== undefined) return []
+  const chars = Array.from(glob)
+  let out = ['']
+  let at = 0
+  for (const g of braceGroups(chars)) {
+    const lit = chars.slice(at, g.start).join('')
+    out = out.flatMap((p) => g.alts.map((a) => `${p}${lit}${a}`))
+    at = g.end + 1
+  }
+  const tail = chars.slice(at).join('')
+  return out.map((p) => `${p}${tail}`)
 }
 function globSource(glob: string): string {
   const g = flat(glob).replace(/^(\.\/)+/, '').replace(/^\/+/, '')
@@ -71,10 +101,13 @@ function globSource(glob: string): string {
   return re
 }
 export function globToRegExp(glob: string): RegExp {
-  return new RegExp(`^(?:${expandBraces(flat(glob)).map(globSource).join('|')})$`, 'u')
+  const alts = expandBraces(flat(glob))
+  // an invalid glob: `(?!)` never matches (an empty alternation would match the empty path)
+  if (alts.length === 0) return /(?!)/u
+  return new RegExp(`^(?:${alts.map(globSource).join('|')})$`, 'u')
 }
 export const globMatch = (glob: string, p: string): boolean => globToRegExp(glob).test(flat(p))
-const hasWild = (s: string): boolean => /[*?]/.test(s) || expandBraces(s).length > 1
+const hasWild = (s: string): boolean => /[*?]/.test(s) || braceGroups(Array.from(s), 1).length > 0
 
 // ==== frontmatter ====
 // A small YAML subset: `key: value`, `key: [a, b]` (also over several lines) and `key:` followed by `- item` lines. Undefined when
@@ -307,7 +340,12 @@ export function callSpans(lines: string[], from: number, pointer?: string): { en
   kept.sort((a, b) => a.start - b.start)
   return { entries: kept, sections }
 }
-const personaFiles = (files: string[]): string[] => files.filter((f) => /^\.claude\/agents\/[^/]+\.md$/.test(f)).sort()
+const PERSONA = /^\.claude\/agents\/[^/]+\.md$/
+const personaFiles = (files: string[]): string[] => files.filter((f) => PERSONA.test(f)).sort()
+// The other files Claude Code loads into every prompt: CLAUDE.md, CLAUDE.local.md and AGENTS.md at any depth (case folded: a
+// macOS or Windows file system opens `claude.md` for `CLAUDE.md`) and the agents index. Personas are checked on their own.
+const ALWAYS_LOADED = /(?:^|\/)(?:CLAUDE\.md|CLAUDE\.local\.md|AGENTS\.md)$/i
+const alwaysLoadedFiles = (files: string[], agentsIndex: string): string[] => files.filter((f) => !PERSONA.test(f) && (ALWAYS_LOADED.test(f) || f === agentsIndex)).sort()
 const bodyFrom = (text: string): number => parseFrontmatter(text)?.end ?? 0
 
 // ==== lint ====
@@ -334,11 +372,17 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
     if (!fm) continue
     if (rules.includes(f)) {
       for (const g of asList(fm.data.paths)) {
+        const bad = globError(g)
+        if (bad !== undefined) { add('failure', 'bad-glob', f, `paths glob "${g}" is invalid: ${bad}; split it into fewer, simpler globs`, [g]); continue }
         const re = globToRegExp(g)
         if (!files.some((x) => re.test(x))) add('failure', 'dead-glob', f, `paths glob "${g}" matches no tracked file: fix or remove it`, [g])
       }
     }
-    for (const s of asList(fm.data.sources)) if (!isTrackedSource(s, files, set)) add('failure', 'missing-source', f, `sources path "${s}" is not tracked: fix it or drop the fact it backs`, [s])
+    for (const s of asList(fm.data.sources)) {
+      const bad = globError(s)
+      if (bad !== undefined) add('failure', 'bad-glob', f, `sources glob "${s}" is invalid: ${bad}; split it into fewer, simpler globs`, [s])
+      else if (!isTrackedSource(s, files, set)) add('failure', 'missing-source', f, `sources path "${s}" is not tracked: fix it or drop the fact it backs`, [s])
+    }
   }
 
   let mapText: string | undefined
@@ -370,6 +414,12 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
     const pl = splitLines(t)
     const calls = callSpans(pl, bodyFrom(t), cfg.productDecisions).entries.map((e) => callKey(pl.slice(e.start, e.end).join('\n')))
     if (calls.length > 0) add('failure', 'persona-calls', p, `${calls.length} product-call entr${calls.length === 1 ? 'y' : 'ies'} in the persona: run \`factory knowledge-migrate\` to move them to ${cfg.productDecisions}`, calls)
+  }
+  for (const p of alwaysLoadedFiles(files, cfg.agentsIndex)) {
+    const t = text(p)
+    const pl = splitLines(t)
+    const calls = callSpans(pl, bodyFrom(t), cfg.productDecisions).entries.map((e) => callKey(pl.slice(e.start, e.end).join('\n')))
+    if (calls.length > 0) add('failure', 'always-loaded-calls', p, `${calls.length} product-call entr${calls.length === 1 ? 'y' : 'ies'} in an always-loaded file: run \`factory knowledge-migrate\` to move them to ${cfg.productDecisions}`, calls)
   }
   for (const r of rules) {
     const n = countLines(text(r))
@@ -417,8 +467,10 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
     if (doc.verified === undefined) { out.push({ severity: 'warning', check: 'stale', path: doc.path, message: 'sources are set but `verified` is not: set it to the sha the doc was last checked at' }); continue }
     const ok = /^[0-9a-f]{4,40}$/i.test(doc.verified) && git(repo, ['rev-parse', '--verify', '--quiet', `${doc.verified}^{commit}`]).status === 0
     if (!ok) { out.push({ severity: 'warning', check: 'stale', path: doc.path, message: `\`verified\` ${doc.verified} is not a known commit: re-check the doc and set it to the head` }); continue }
-    // git pathspecs have no braces, so a brace source is passed as its expansions
+    // git pathspecs have no braces, so a brace source is passed as its expansions; an invalid glob has none (it is a bad-glob
+    // failure), and with no pathspec left `git log` would count every commit, so the doc is skipped
     const specs = doc.sources.flatMap((s) => expandBraces(flat(s).replace(/^(\.\/)+/, '').replace(/\/+$/, ''))).map((s) => `:(${/[*?]/.test(s) ? 'glob' : 'literal'})${s}`)
+    if (specs.length === 0) continue
     const r = git(repo, ['log', '--format=%H', `${doc.verified}..HEAD`, '--', ...specs])
     const n = nameLines(r.out).length
     if (r.status === 0 && n > 0) out.push({ severity: 'warning', check: 'stale', path: doc.path, message: `${n} commit(s) touched its sources since \`verified\` ${doc.verified.slice(0, 12)}: re-check the doc and set \`verified\` to the head` })
@@ -426,7 +478,8 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
   return out
 }
 
-// How many predating failures and warnings the output lists; predatingCount and warningCount carry the true totals.
+// How many predating (new: false) failures, and how many predating warnings, the output lists; predatingCount and warningCount
+// carry the true totals.
 export const LIST_CAP = 20
 export function lint(repo: string, cfg: KCfg, base?: string): LintResult {
   const head = headTree(repo)
@@ -437,10 +490,12 @@ export function lint(repo: string, cfg: KCfg, base?: string): LintResult {
   const order = (a: Finding, b: Finding): number => (a.check < b.check ? -1 : a.check > b.check ? 1 : a.path < b.path ? -1 : a.path > b.path ? 1 : a.message < b.message ? -1 : a.message > b.message ? 1 : 0)
   const failures = raw.filter((r) => r.severity === 'failure').map(fin).sort(order)
   const warnings = raw.filter((r) => r.severity === 'warning').map(fin).sort(order)
-  // every new failure in full; the predating ones and the warnings capped, in the same order
-  let kept = 0
-  const listed = failures.filter((f) => f.new || kept++ < LIST_CAP)
-  return { ok: failures.length === 0, failures: listed, warnings: warnings.slice(0, LIST_CAP), predatingCount: failures.filter((f) => !f.new).length, warningCount: warnings.length }
+  // every new failure and every new warning in full; the predating ones capped at LIST_CAP each, in the same order
+  const capped = (list: Finding[]): Finding[] => {
+    let kept = 0
+    return list.filter((f) => f.new || kept++ < LIST_CAP)
+  }
+  return { ok: failures.length === 0, failures: capped(failures), warnings: capped(warnings), predatingCount: failures.filter((f) => !f.new).length, warningCount: warnings.length }
 }
 
 // ==== rules-index ====
@@ -454,16 +509,16 @@ export function rulesIndex(repo: string, cfg: KCfg): { rules: { path: string; pa
 
 // ==== migrate ====
 export type Move = { from: string; to: string; entries: string[] }
-// Moves the product-call entries out of every persona into the productDecisions file, leaving one pointer line in each persona.
-// Without `apply` nothing is written.
+// Moves the product-call entries out of every persona and every other always-loaded file (CLAUDE.md, CLAUDE.local.md, AGENTS.md,
+// the agents index) into the productDecisions file, leaving one pointer line in each. Without `apply` nothing is written.
 export function migrate(repo: string, cfg: KCfg, apply: boolean): { moves: Move[]; applied: boolean; notes: string[] } {
   const r = git(repo, ['ls-files', '--cached', '--others', '--exclude-standard'])
   if (r.status !== 0) throw new Error(`git ls-files failed in ${repo}`)
-  const personas = personaFiles([...new Set(nameLines(r.out))].filter((f) => existsSync(`${repo}/${f}`)))
+  const files = [...new Set(nameLines(r.out))].filter((f) => existsSync(`${repo}/${f}`))
   const moves: Move[] = []
   const writes: { path: string; text: string }[] = []
   const pointer = `Product calls are recorded in \`${cfg.productDecisions}\`.`
-  for (const p of personas) {
+  for (const p of [...personaFiles(files), ...alwaysLoadedFiles(files, cfg.agentsIndex)]) {
     const raw = readFileSync(`${repo}/${p}`, 'utf8')
     const eol = raw.includes('\r\n') ? '\r\n' : '\n'
     const lines = splitLines(raw)
@@ -492,7 +547,7 @@ export function migrate(repo: string, cfg: KCfg, apply: boolean): { moves: Move[
   }
   if (moves.length > 0) {
     const target = `${repo}/${cfg.productDecisions}`
-    let cur = existsSync(target) ? readFileSync(target, 'utf8') : `# Product decisions\n\nThe crew product calls, newest last. Moved out of the persona files by \`factory knowledge-migrate\`.\n`
+    let cur = existsSync(target) ? readFileSync(target, 'utf8') : `# Product decisions\n\nThe crew product calls, newest last. Moved out of the always-loaded files by \`factory knowledge-migrate\`.\n`
     const eol = cur.includes('\r\n') ? '\r\n' : '\n'
     for (const m of moves) for (const e of m.entries) if (!cur.includes(e)) cur = `${cur.replace(/\s+$/, '')}${eol}${eol}${e.replace(/\n/g, eol)}${eol}`
     writes.push({ path: cfg.productDecisions, text: cur })

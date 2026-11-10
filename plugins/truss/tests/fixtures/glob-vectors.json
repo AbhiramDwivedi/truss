@@ -115,5 +115,9 @@
   {"glob": "src/**/*.ts", "path": "src/ünï/cödé.ts", "match": true},
   {"glob": "docs/?.md", "path": "docs/é.md", "match": true},
   {"glob": "src/?", "path": "src/😀", "match": true},
-  {"glob": "**/ファイル.md", "path": "docs/ファイル.md", "match": true}
+  {"glob": "**/ファイル.md", "path": "docs/ファイル.md", "match": true},
+  {"glob": "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}", "path": "abababab", "match": true},
+  {"glob": "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}", "path": "aaaaaaaaa", "match": false},
+  {"glob": "{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}", "path": "abc", "match": false},
+  {"glob": "{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}", "path": "{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}{a,b,c,d,e,f,g}", "match": false}
 ]
