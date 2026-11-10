@@ -125,8 +125,9 @@ function ghCands(cfg: Obj): Cand[] {
     return ghRun(['api', '--silent', `repos/{owner}/{repo}/collaborators/${login}`]).status === 0
   }
   const out: Cand[] = []
-  for (const i of issues) {
-    if (!isObj(i) || !Number.isInteger(i.number)) continue
+  // gh lists newest first; the queue claims in source order, so take the oldest issue first.
+  const ordered = issues.filter((i) => isObj(i) && Number.isInteger(i.number)).sort((a, b) => a.number - b.number)
+  for (const i of ordered) {
     const title = String(i.title ?? '')
     const body = String(i.body ?? '')
     const login = isObj(i.author) && typeof i.author.login === 'string' ? i.author.login : null
@@ -140,6 +141,8 @@ function ghCands(cfg: Obj): Cand[] {
 }
 
 // ==== commands ====
+
+let lastStamp = 0
 
 function intake(f: Flags): Obj {
   const repo = repoOf(f)
@@ -166,8 +169,10 @@ function intake(f: Flags): Obj {
     for (const c of cands) {
       const id = idOf(c.key)
       const p = itemPath(repo, id)
+      // Strictly increasing within this process, so items of one intake keep source order even inside one millisecond.
+      lastStamp = Math.max(Date.now(), lastStamp + 1)
       const item = {
-        v: 1, id, key: c.key, source: c.source, title: c.title, text: c.text, url: c.url, author: c.author, addedAt: new Date().toISOString(),
+        v: 1, id, key: c.key, source: c.source, title: c.title, text: c.text, url: c.url, author: c.author, addedAt: new Date(lastStamp).toISOString(),
         state: c.state, session: null, claimedAt: null,
         history: [] as Obj[],
       }

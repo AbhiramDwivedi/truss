@@ -160,7 +160,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
   )
 }
 
-/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). With no cursor yet no sweep has finished, so usage.jsonl is missing or partial: the result says `unswept`. */
+/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). With no cursor yet no sweep has finished, so usage.jsonl is missing or partial: the result says `unswept`. budgetVerdict reads that as it stands (contract-025 section 4); crewCost returns null for it, so the ledger never gets a too-low cost. */
 function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
   try {
     return sweep(dir, repo, opts)
@@ -304,7 +304,6 @@ export function budgetVerdict(dir: string, repo: string, plan: Obj | null, slug:
   for (const c of checks) {
     const limitUsd = c.ref === '' ? c.base : c.base + raiseFor(raises, c.ref)
     if (done.found === 0) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: no transcripts found for session ${sid}, so ${c.label} spend is unknown` }
-    if (done.unswept === true) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: the first usage sweep of session ${sid} is still running, so ${c.label} spend is unknown` }
     const s = sumOf(c.rows(all, of), cfg.pricing)
     if (s.usd === null) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: ${c.label} spend not priced: ${s.unpriced.join(', ')}` }
     if (s.usd >= limitUsd) return { held: true, scope: c.scope, spentUsd: s.usd, limitUsd, why: `budget: ${c.label} spent ${Math.round(s.usd * 10000) / 10000} USD, which reached the limit of ${limitUsd} USD` }

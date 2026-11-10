@@ -277,6 +277,41 @@ test('queue: a stale claim is released to new', () => {
   assert.equal(JSON.parse(readFileSync(`${env.dir}/unattended.json`, 'utf8')).item, 'Q-00000000a001')
 })
 
+test('queue: queue-next claims the lowest-numbered gh issue first', () => {
+  const env = mkEnv({ config: config({ sources: ['gh'] }) })
+  const fx = `${tmp('q-gh-order-')}/issues.json`
+  const issues = [5, 4, 3, 2, 1].map((n) => ({ number: n, title: `issue ${n}`, body: '', url: `https://github.example.invalid/acme/app/issues/${n}`, author: { login: 'alice' } }))
+  writeFileSync(fx, JSON.stringify({ collaborators: ['alice'], issues }))
+  const e = { TRUSS_GH_FIXTURE: fx }
+  const r = q(env, 'intake', { source: 'gh' }, [], e)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.added.length, 5)
+  const next = q(env, 'queue-next')
+  assert.equal(next.status, 0, next.stdout + next.stderr)
+  assert.equal(next.json.item.title, 'issue 1')
+})
+
+test('queue: md items stored in one intake are claimed in file order', () => {
+  const titles = Array.from({ length: 60 }, (_, i) => `item number ${i}`)
+  const env = mdEnv(titles.map((t) => `- [ ] ${t}`).join('\n') + '\n')
+  // A frozen clock puts every item of the intake in one millisecond, as a fast machine does.
+  const freeze = `${tmp('q-clock-')}/freeze.mjs`
+  writeFileSync(freeze, [
+    `const Real = Date`,
+    `const T = Real.parse('2026-11-10T00:00:00.000Z')`,
+    `globalThis.Date = class extends Real { constructor(...a) { super(...(a.length ? a : [T])) } static now() { return T } }`,
+    '',
+  ].join('\n'))
+  const r = q(env, 'intake', { source: 'md' }, [], { NODE_OPTIONS: `--import=${freeze.replace(/\\/g, '/').replace(/^([A-Za-z]:)/, 'file:///$1')}` })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.added.length, 60)
+  const stamps = titles.map((t) => itemFiles(env.repo).find((i) => i.title === t).addedAt)
+  for (let i = 1; i < stamps.length; i++) assert.ok(stamps[i - 1] < stamps[i], `addedAt strictly increases in file order: ${stamps[i - 1]} then ${stamps[i]}`)
+  const next = q(env, 'queue-next')
+  assert.equal(next.status, 0, next.stdout + next.stderr)
+  assert.equal(next.json.item.title, 'item number 0')
+})
+
 test('queue: two processes racing queue-next claim one item exactly once', () => {
   for (let round = 0; round < 6; round++) {
     const env = mdEnv('- [ ] the one item\n')
