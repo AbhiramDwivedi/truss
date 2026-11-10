@@ -1260,6 +1260,32 @@ t('stage resume answers: skips red and done tasks; the builder prompt carries th
   assert.ok(had(r, 'a-stress'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc', e)
 })
+// the branches a member prompt's first step merges, in order
+const firstMerges = (prompt) => {
+  const line = prompt.split('\n').find((l) => l.startsWith('Your first step')) || ''
+  return [...line.matchAll(/git merge --no-ff -m "[^"]*" ([^\s,]+)/g)].map((m) => m[1])
+}
+const conflictIsBlocked = (prompt) => assert.ok(prompt.split('\n').some((l) => /conflict/i.test(l) && /\bBLOCKED\b/.test(l) && /merge --abort/.test(l)), 'a merge conflict is reported BLOCKED, not resolved by dropping a side')
+t('stage resume answers: a task whose earlier member stopped with commits on its own branch (entry.prior) merges the crew branch and then that branch first; without prior only the crew branch', async () => {
+  const prior = [{ at: 'build-it', branch: 'worktree-wf_x-15' }, { at: 'fix, green check', branch: 'worktree-wf_x-16' }]
+  const e = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }], prior })
+  const r = await runStage([e], { labels: { ...base('a', { 'a-stress': RT0 }), ...fixers }, runner: greenSeq(gFail('TAIL-ONE'), gOk(HEAD2)) })
+  const p = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: build-it')).prompt
+  assert.deepEqual(firstMerges(p), ['truss/a', 'worktree-wf_x-15'])
+  conflictIsBlocked(p)
+  // the green fix builder of a crew whose earlier `fix, green check` member stopped carries that branch too
+  const f = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: fix, green check')).prompt
+  assert.deepEqual(firstMerges(f), ['truss/a', 'worktree-wf_x-16'])
+  conflictIsBlocked(f)
+  const plain = await runStage([{ ...e, prior: [] }], { labels: base('a', { 'a-stress': RT0 }) })
+  assert.deepEqual(firstMerges(plain.calls.find((c) => c.prompt.includes('Task: build-it')).prompt), ['truss/a'])
+})
+t('stage members: a CHECKPOINT restart in the same run merges the stopped member\'s branch after the crew branch', async () => {
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-tester': marked('CHECKPOINT', 'CHECKPOINT-NOTE: halfway', 'worktree-wf_y-3'), 'a-tester-2': done('feat/t2') }) })
+  assert.deepEqual(firstMerges(call(r, 'a-tester-2').prompt), ['truss/a', 'worktree-wf_y-3'])
+  conflictIsBlocked(call(r, 'a-tester-2').prompt)
+  assert.deepEqual(firstMerges(call(r, 'a-tester').prompt), ['truss/a'], 'a first member merges only the crew branch')
+})
 t('stage entry: guarded and ownTests keys (ADR-0019 item 9, stage 1) change nothing but the tester-file lists', async () => {
   const plain = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }] })
   const extra = { ...plain, guarded: ['tests/a.check.ts'], ownTests: ['tests/*.ts'] }
