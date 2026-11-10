@@ -8,10 +8,11 @@ sources:
   - plugins/truss/bin/worktypes.ts
   - plugins/truss/bin/ledger.ts
   - plugins/truss/bin/queue.ts
+  - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 27d25ea836ad8c232abdbdb51cc2f49f6988b9c3
+verified: 2a0de660f3df2f5058f31ab09c15bcedc4846b1e
 ---
 
 # Store, holds and contract-025 stubs
@@ -42,9 +43,15 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, foreman crews in `foremen`, held ones in `held` with `why` (factory.ts:1247, `stageOut`).
 
+## Inbox transcript proof
+
+`typedText` and `typedProof` in `bin/inbox.ts:170-195` accept a transcript line only when it is a main-thread user line (not `isSidechain`, not `isMeta`) with string content or text blocks and no `tool_result`. A line must be newer than the `open` op and hold the id, the code and the decision word.
+
+A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
+
 ## Stub modules
 
-`inbox`, `guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures; a replacing crew keeps these exports exactly:
+`guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures; a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
