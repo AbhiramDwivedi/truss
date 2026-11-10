@@ -264,3 +264,59 @@ test('store: withLock and the stale-lock takeover take the platform as a paramet
     assert.throws(() => withLock(dir, 'other', () => 1, { platform, host: 'h1', waitMs: 100 }), (e: any) => e.code === 2 && e.body.error === 'store busy: other')
   }
 })
+
+test('store: the stale-lock takeover removes the lock with win32 retry options on win32 only', async () => {
+  const { withLock } = await load()
+  for (const platform of ['linux', 'darwin', 'win32']) {
+    const dir = tmp()
+    const lock = plantLock(dir, 'ledger', { pid: deadPid(), host: 'h1', token: 't-old', since: Date.now() })
+    const calls: any[] = []
+    const fs = {
+      rmSync: (p: string, o: any) => {
+        if (path.resolve(p) === path.resolve(lock)) calls.push(o)
+        return rmSync(p, o)
+      },
+    }
+    assert.equal(withLock(dir, 'ledger', () => 'taken', { platform, host: 'h1', waitMs: 2000, fs }), 'taken')
+    assert.equal(calls.length >= 1, true, `${platform}: the takeover removed the stale lock`)
+    const take = calls[0]
+    if (platform === 'win32') {
+      assert.equal(take.maxRetries, 5)
+      assert.equal(take.retryDelay, 20)
+    } else {
+      assert.equal(take.maxRetries, undefined, `${platform}: no win32 retries`)
+      assert.equal(take.retryDelay, undefined, `${platform}: no win32 retries`)
+    }
+  }
+})
+
+test('store: on win32 an EPERM or EACCES mkdir of the lock is contention (retry, then busy); other errors and other platforms stay raw', async () => {
+  const { withLock } = await load()
+  const failing = (code: string, times: number) => {
+    let left = times
+    return {
+      mkdirSync: (p: string, o?: any) => {
+        if (String(p).endsWith('.lock') && left > 0) {
+          left--
+          throw Object.assign(new Error(code), { code })
+        }
+        return mkdirSync(p, o)
+      },
+    }
+  }
+  for (const code of ['EPERM', 'EACCES']) {
+    // a delete-pending lock dir that clears: the retry gets the lock
+    assert.equal(withLock(tmp(), 'inbox', () => 'got', { platform: 'win32', host: 'h1', waitMs: 2000, fs: failing(code, 2) }), 'got')
+    // one that never clears: busy after waitMs
+    assert.throws(
+      () => withLock(tmp(), 'inbox', () => 1, { platform: 'win32', host: 'h1', waitMs: 100, fs: failing(code, Infinity) }),
+      (e: any) => e.code === 2 && e.body?.error === 'store busy: inbox',
+    )
+    // not on linux or darwin: raw
+    for (const platform of ['linux', 'darwin']) {
+      assert.throws(() => withLock(tmp(), 'inbox', () => 1, { platform, host: 'h1', waitMs: 100, fs: failing(code, 1) }), (e: any) => e.code === code)
+    }
+  }
+  // any other error stays raw on win32
+  assert.throws(() => withLock(tmp(), 'inbox', () => 1, { platform: 'win32', host: 'h1', waitMs: 100, fs: failing('ENOSPC', 1) }), (e: any) => e.code === 'ENOSPC')
+})
