@@ -1,18 +1,19 @@
 // @ts-nocheck
 // truss ADR-0035, factory side: path-scoped knowledge. Written from the contract before the change.
 //   1. the glob dialect (tests/fixtures/glob-vectors.json, shared with stage.js) and the frontmatter reader
-//   2. `knowledge-lint`: dead-glob, missing-source, stale, unreachable, over-budget, persona-calls; --base and `new`
+//   2. `knowledge-lint`: dead-glob, bad-glob, missing-source, stale, unreachable, over-budget, persona-calls, always-loaded-calls;
+//      --base, --slug (base, baseFallback, the worktree's config) and `new`
 //   3. `knowledge-migrate` (dry run and --apply) and `rules-index`
 //   4. the owns exemption gains the rules dir, the knowledge dir, the agents index and the product-decisions file
 //   5. the stage-args keys (start, plan-args), the poPrompt line and the schema keys
 // Run with: node --test tests/knowledge-lint.check.ts
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { globMatch, parseFrontmatter, countLines, featurePaths } from '../bin/knowledge.ts'
+import { globError, globMatch, globToRegExp, parseFrontmatter, countLines, featurePaths } from '../bin/knowledge.ts'
 import { addCrewWorktree, assertOneLine, assertUsageError, crew, git, mkEnv, mkRepo, mkTrussDir, planObj, putFile, runCli, tmp, validate, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
@@ -250,7 +251,7 @@ t('lint 13: stale with --base is a failure when a source changed in base..HEAD a
   j = lint(env, ['--base', base])
   assert.deepEqual(checks(j.failures), ['stale:.claude/rules/src.md'])
   commit(env.repo, { '.claude/rules/src.md': `${fm({ paths: ['src/**'], sources: ['src/a.ts'], verified: head1 })}\n- a rule\n` })
-  assert.deepEqual(lint(env, [`--base=${base}`]), CLEAN)
+  assert.deepEqual(lint(env, [`--base=${base}`]), { ...CLEAN, base })
   const same = lint(env, [`--base=${git(env.repo, ['rev-parse', 'HEAD'])}`])
   assert.equal(same.ok, true)
 })
@@ -410,6 +411,131 @@ t('lint 23: --slug lints the crew worktree (working tree and HEAD) with the base
   assert.equal(flag(red, '.claude/rules/src.md', /"old\/\*\*"/), false)
   assertUsageError(env.run('knowledge-lint', { slug: 'nope' }))
   assertUsageError(env.run('knowledge-lint', { slug: 'Bad Slug' }))
+})
+
+// ---------------------------------------------------------------- 0.24.0 review fixes, second round
+
+const groups = (n, alts = ['a', 'b']) => `{${alts.join(',')}}`.repeat(n)
+
+t('glob 3: brace expansion is bounded: more than 8 groups, or more than 256 alternatives, is invalid and matches nothing, and a 30-group glob is rejected in under 100 ms', () => {
+  const t0 = performance.now()
+  assert.equal(globMatch(`src/${groups(30)}.ts`, `src/${'a'.repeat(30)}.ts`), false)
+  assert.match(globError(groups(30)), /more than 8 brace groups/)
+  assert.ok(performance.now() - t0 < 100, `took ${performance.now() - t0} ms`)
+  assert.equal(globError(groups(8)), undefined, '8 groups of 2 is exactly 256')
+  assert.equal(globMatch(groups(8), 'abababab'), true)
+  assert.match(globError(groups(9)), /more than 8 brace groups/)
+  assert.match(globError(groups(3, ['a', 'b', 'c', 'd', 'e', 'f', 'g'])), /more than 256 alternatives/)
+  assert.equal(globMatch(groups(3, ['a', 'b', 'c', 'd', 'e', 'f', 'g']), 'abc'), false)
+  assert.equal(globToRegExp(groups(9)).test(''), false, 'an invalid glob does not match the empty path either')
+  assert.equal(globError('{a,b}/{a,b}'), undefined)
+  assert.equal(globError('{'.repeat(40)), undefined, 'literal braces are not groups')
+})
+
+t('lint 24: bad-glob fails an invalid paths or sources glob, instead of dead-glob or missing-source; new is keyed on the glob', () => {
+  // quoted: a `,` splits an inline list
+  const bad1 = `"src/${groups(22)}.ts"`
+  const bad2 = `"src/${groups(3, ['a', 'b', 'c', 'd', 'e', 'f', 'g'])}"`
+  const { env } = goodWorld({ '.claude/rules/src.md': `${fm({ paths: ['src/**', bad1], sources: ['src/a.ts', bad1] })}\n- r\n` })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  const j = lint(env)
+  assert.deepEqual(checks(j.failures), ['bad-glob:.claude/rules/src.md', 'bad-glob:.claude/rules/src.md'])
+  assert.match(j.failures.map((f) => f.message).join('\n'), /paths glob .*more than 8 brace groups/)
+  assert.match(j.failures.map((f) => f.message).join('\n'), /sources glob .*more than 8 brace groups/)
+  commit(env.repo, { '.claude/rules/src.md': `${fm({ paths: ['src/**', bad1, bad2], sources: ['src/a.ts', bad1] })}\n- r\n` })
+  const k = lint(env, [`--base=${base}`])
+  assert.deepEqual(k.failures.filter((f) => f.check === 'bad-glob').map((f) => [f.message.includes('256 alternatives'), f.new]).sort(), [[false, false], [false, false], [true, true]])
+  assert.ok(!k.failures.some((f) => f.check === 'dead-glob' || f.check === 'missing-source'), 'never both')
+})
+
+t('lint 25: always-loaded-calls fails a product-call entry in CLAUDE.md, CLAUDE.local.md or AGENTS.md at any depth and in the agents index; a CLAUDE.md of imports and conventions passes; persona-calls stays for personas; knowledge-migrate moves them', () => {
+  const CONVENTIONS = '# Project\n\n@AGENTS.md\n\n## Conventions\n\n- run `npm test` before a commit\n- product calls go to the product owner\n'
+  const ok = goodWorld({ 'CLAUDE.md': CONVENTIONS })
+  assert.deepEqual(lint(ok.env), CLEAN)
+  const CALLS = '\n## Product calls\n\n- Q: skip login? A: yes. Decided by: PM\n- Q: export csv? A: no.\n'
+  const bad = goodWorld({
+    'CLAUDE.md': CONVENTIONS + CALLS,
+    'pkg/web/AGENTS.md': '# Web\n\n- **Question:** dark mode? -> later\n',
+    'pkg/api/CLAUDE.local.md': '# Api\n\n- use pnpm\n',
+    '.claude/agents/product-owner.md': PERSONA_OF('product-owner', `Judge fit.\n${CALLS}`),
+  })
+  const j = lint(bad.env)
+  assert.deepEqual(checks(j.failures), ['always-loaded-calls:CLAUDE.md', 'always-loaded-calls:pkg/web/AGENTS.md', 'persona-calls:.claude/agents/product-owner.md'])
+  const claude = j.failures.find((f) => f.path === 'CLAUDE.md')
+  assert.match(claude.message, /2 product-call entries in an always-loaded file/)
+  assert.match(claude.message, /factory knowledge-migrate/)
+  // the agents index is always loaded, wherever it is configured; new is keyed on the call
+  const idx = world({ ...BASE_FILES, 'ctx/index.md': '# I\n\n## Product decisions\n\n- skip login -> yes\n' }, { merge: 'sequential', target: 'main', agentsIndex: 'ctx/index.md' })
+  const base = git(idx.repo, ['rev-parse', 'HEAD'])
+  assert.deepEqual(checks(lint(idx).failures), ['always-loaded-calls:ctx/index.md'])
+  commit(idx.repo, { 'ctx/index.md': '# I\n\n## Product decisions\n\n- skip   login -> yes\n- dark mode -> later\n' })
+  assert.deepEqual(lint(idx, [`--base=${base}`]).failures.map((f) => [f.check, f.new]), [['always-loaded-calls', true]])
+  commit(idx.repo, { 'ctx/index.md': '# I\n\n## Product decisions\n\n- Skip login -> yes\n' })
+  assert.deepEqual(lint(idx, [`--base=${base}`]).failures.map((f) => [f.check, f.new]), [['always-loaded-calls', false]])
+  // migrate moves the CLAUDE.md and AGENTS.md entries too and leaves the conventions
+  const m = bad.env.run('knowledge-migrate', { apply: true })
+  assert.equal(m.status, 0, m.stderr)
+  assert.deepEqual(m.json.moves.map((x) => x.from).sort(), ['.claude/agents/product-owner.md', 'CLAUDE.md', 'pkg/web/AGENTS.md'])
+  const after = readFileSync(`${bad.env.repo}/CLAUDE.md`, 'utf8')
+  assert.ok(after.startsWith(CONVENTIONS), after)
+  assert.ok(!/skip login|Product calls\n/.test(after), after)
+  assert.match(after, /Product calls are recorded in `docs\/knowledge\/product-decisions\.md`\.\n$/)
+  assert.match(readFileSync(`${bad.env.repo}/docs/knowledge/product-decisions.md`, 'utf8'), /dark mode\? -> later/)
+  assert.ok(!bad.env.run('knowledge-lint').json.failures.some((f) => /calls$/.test(f.check)))
+})
+
+t('lint 26: --slug says which base it used: base always, baseFallback true when the red record head stood in for the merge-base; with neither, the error names both attempts', () => {
+  const { env } = goodWorld()
+  const forked = git(env.repo, ['rev-parse', 'HEAD'])
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { 'src/a.ts': 'export const a = 2\n' })
+  const crewHead = git(wt, ['rev-parse', 'HEAD'])
+  const mb = lint(env, ['--slug', 's'])
+  assert.equal(mb.base, forked)
+  assert.equal('baseFallback' in mb, false)
+  assert.equal(lint(env, ['--slug', 's', `--base=${forked.slice(0, 10)}`]).base, forked, '--base is reported as the full sha')
+  assert.equal('base' in lint(env), false, 'no base, no key')
+  writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
+  const none = env.run('knowledge-lint', { slug: 's' })
+  assertUsageError(none)
+  assert.match(none.json.error, /merge-base no-such-branch HEAD failed/)
+  assert.match(none.json.error, /red record/)
+  putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: '0123456789abcdef0123456789abcdef01234567', tail: '' }) + '\n')
+  const unknown = env.run('knowledge-lint', { slug: 's' })
+  assertUsageError(unknown)
+  assert.match(unknown.json.error, /merge-base no-such-branch HEAD failed.*red record head 0123456789abcdef.* is not a commit/)
+  putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: crewHead, tail: '' }) + '\n')
+  const fb = lint(env, ['--slug', 's'])
+  assert.equal(fb.base, crewHead)
+  assert.equal(fb.baseFallback, true)
+})
+
+t('lint 27: with --slug the knowledge config comes from the crew worktree\'s truss.json, and from the main checkout\'s when the worktree has none', () => {
+  const { env } = goodWorld()
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n` })
+  const j = lint(env, ['--slug', 's'])
+  assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === 'policy/x.md'), JSON.stringify(j.failures))
+  assert.ok(!j.failures.some((f) => f.path === '.claude/rules/y.md'), 'the main checkout\'s rulesDir is not used')
+  unlinkSync(`${wt}/.claude/truss.json`)
+  const k = lint(env, ['--slug', 's'])
+  assert.ok(k.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), JSON.stringify(k.failures))
+  assert.ok(!k.failures.some((f) => f.path === 'policy/x.md'))
+})
+
+t('lint 28: every new warning is listed; only predating warnings are capped at 20, and warningCount is the true total', () => {
+  const entry = (i) => `## E${i}\n\nl1\nl2\nl3\nl4\nl5\nl6\n`
+  const map = (from, n) => Array.from({ length: n }, (_, i) => entry(from + i)).join('\n')
+  const { env } = goodWorld({ 'docs/features.md': `# F\n\n${map(0, 25)}` })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  commit(env.repo, { 'docs/features.md': `# F\n\n${map(0, 25)}\n${map(100, 22)}` })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.warnings.filter((w) => w.new).length, 22, 'new warnings are never capped')
+  assert.equal(j.warnings.filter((w) => !w.new).length, 20)
+  assert.equal(j.warningCount, 47)
+  const plain = lint(env)
+  assert.equal(plain.warnings.length, 47, 'without --base every warning is new')
+  assert.equal(plain.warningCount, 47)
 })
 
 // ---------------------------------------------------------------- rules-index

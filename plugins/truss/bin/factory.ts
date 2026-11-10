@@ -3504,14 +3504,23 @@ function cmdDecisions(f: Flags): Obj {
 // ==== knowledge (ADR-0035) ====
 
 // `knowledge-lint [--base=<sha>] [--repo R] [--slug S [--dir D]]`: exit 0 whether or not it found failures; the caller reads `ok`.
-// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the repo's truss.json; with no --base the base
-// is `git merge-base <target> HEAD` there, and when that does not resolve, the head of the crew's red record in --dir (the
-// crew's head when its red check ran). Without --slug it lints the repo's own checkout, against --base when given.
+// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the worktree's truss.json (the repo's when the
+// worktree has none); with no --base the base is `git merge-base <target> HEAD` there, and when that does not resolve, the head
+// of the crew's red record in --dir (the crew's head when its red check ran, so a later base than the fork point: the output then
+// carries `baseFallback: true`). Without --slug it lints the repo's own checkout, against --base when given. The output carries
+// `base` whenever the lint ran against one.
 function cmdKnowledgeLint(f: Flags): Obj {
   const repo = repoOf(f)
   let at = repo
   let base = str(f, 'base')
+  let fallback = false
   if (f.base === true || base === '') throw usage('--base needs a value')
+  // the full sha a ref names in the linted checkout, or undefined
+  const commitOf = (ref: string): string | undefined => {
+    if (ref.startsWith('-')) return undefined
+    const r = run(at, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+    return r.status === 0 && r.out !== '' ? r.out : undefined
+  }
   if (f.slug !== undefined) {
     const slug = str(f, 'slug')
     if (slug === undefined || !SLUG.test(slug)) throw usage(`--slug ${String(f.slug)} is not a crew slug`)
@@ -3522,14 +3531,23 @@ function cmdKnowledgeLint(f: Flags): Obj {
       const mb = target === '' || target.startsWith('-') ? undefined : run(at, ['merge-base', target, 'HEAD'])
       if (mb !== undefined && mb.status === 0 && mb.out !== '') base = mb.out
       else {
+        const first = mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
         const red = f.dir === undefined ? undefined : redRecord(dirOf(f), slug)
-        if (typeof red?.head !== 'string' || red.head === '') throw usage(`no base for crew ${slug}: git merge-base ${target || '<no target>'} HEAD failed in ${at} and no red record names the crew's head; pass --base`)
-        base = red.head
+        const head = typeof red?.head === 'string' ? red.head : ''
+        const second = f.dir === undefined ? 'no --dir, so no red record was read' : red === undefined ? `no red record for ${slug} in ${dirOf(f)}/checks` : head === '' ? `the red record for ${slug} names no head` : commitOf(head) !== undefined ? '' : `the red record head ${head} is not a commit of ${at}`
+        if (second !== '') throw usage(`no base for crew ${slug}: ${first}, and ${second}; pass --base`)
+        base = head
+        fallback = true
       }
     }
   }
-  if (base !== undefined && (base.startsWith('-') || run(at, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0)) throw usage(`--base ${base} is not a commit of ${at}`)
-  return knowledgeLint(at, knowledgeCfgOf(repo), base)
+  if (base !== undefined) {
+    const sha = commitOf(base)
+    if (sha === undefined) throw usage(`--base ${base} is not a commit of ${at}`)
+    base = sha
+  }
+  const kcfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
+  return { ...knowledgeLint(at, kcfg, base), ...(base === undefined ? {} : { base }), ...(fallback ? { baseFallback: true } : {}) }
 }
 // `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
 function cmdKnowledgeMigrate(f: Flags): Obj {
