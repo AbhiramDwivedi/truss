@@ -549,11 +549,14 @@ function cmdPlanCheck(f: Flags): Obj {
   // contract-025 section 2: a crew's workType is version 4 only and checked against the profiles of the repo's config (the built-ins with no repo)
   const unattended = existsSync(`${dirOf(f)}/unattended.json`)
   let repoCfg: Obj = {}
+  let repoDir: string | undefined
   try {
-    repoCfg = configOf(repoOf(f))
+    repoDir = repoOf(f)
   } catch {
     // no --repo and the cwd is not in a git repository: the built-in profiles
   }
+  // a malformed .claude/truss.json is a usage error here, never a silent fall back to the built-ins
+  if (repoDir !== undefined) repoCfg = configOf(repoDir)
   const profiles = profilesOf(repoCfg)
   const addOnce = (e: string): void => {
     if (!errors.includes(e)) errors.push(e)

@@ -7,7 +7,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: the one lock, atomic-write, JSONL and transcript-finding module for the plugin CLI, plus the helpers `factory.ts` once held (`CliError`, `usage`, `refuse`, `flat`).
 - Entry points: `plugins/truss/bin/store.ts`; tests `plugins/truss/tests/store.check.ts`.
 - Owner: `truss-plugin-node`.
-- Docs: `plugins/truss/docs/architecture.md` ("The store (`bin/store.ts`)"), `plugins/truss/docs/state.schema.json`.
+- Docs: `plugins/truss/docs/architecture.md` ("The store" section), `plugins/truss/docs/state.schema.json`.
 
 ## Admission holds (awaiting client, budget)
 

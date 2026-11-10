@@ -189,7 +189,12 @@ function takeOver(lock: string, seenToken: string | null, platform: NodeJS.Platf
     if (e.code === 'EEXIST') {
       // another breaker is working; one that died holding the mutex is cleared once it is old
       try {
-        if (Date.now() - fn(fs, 'statSync')(brk).mtimeMs > OWNERLESS_MS) fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+        const st = fn(fs, 'statSync')(brk) as any
+        if (Date.now() - st.mtimeMs > OWNERLESS_MS) {
+          // re-check just before the removal: a mutex released and re-taken in the gap is a different directory
+          const again = fn(fs, 'statSync')(brk) as any
+          if (again.ino === st.ino && again.mtimeMs === st.mtimeMs) fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+        }
       } catch {
         // gone already
       }
