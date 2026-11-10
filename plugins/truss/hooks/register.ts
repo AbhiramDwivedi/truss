@@ -1283,6 +1283,21 @@ async function rootOf($: $, state: State): Promise<string | undefined> {
   return root
 }
 
+// The unattended ask gate (contract-025 s7): on the main thread, while the session's own truss dir holds unattended.json,
+// AskUserQuestion is denied, as no one is there to answer. Any read error fails open (undefined).
+export async function unattendedAskVerdict(
+  input: { readonly agentId?: string },
+  ctx: { readonly trussDir: string | undefined; readonly exists: (p: string) => boolean | Promise<boolean> },
+): Promise<{ deny: string } | undefined> {
+  if (input.agentId !== undefined || ctx.trussDir === undefined) return undefined
+  try {
+    if (!(await ctx.exists(`${ctx.trussDir}/unattended.json`))) return undefined
+  } catch {
+    return undefined
+  }
+  return { deny: '[truss] unattended run: no one is here to answer. Run `factory escalate --kind client-question …` and go on with the work that doesn\'t depend on the answer.' }
+}
+
 // The plan-file route (ADR-0015 s9): the inner lines of the first block that opens with exactly `open` and ends at the
 // next line that is exactly four backticks, joined with a newline. Undefined when there is no such block.
 export function fencedBlock(message: string, open: string): string | undefined {
@@ -2479,6 +2494,12 @@ export const register: Register = on => {
     const verdict = fetchVerdict(e.tool as 'WebFetch' | 'WebSearch', input, caller?.crew ?? 'main', caller?.agent ?? e.agentId ?? 'main', hasPlan)
     if (verdict.line !== null) await logEvent($, state, verdict.line)
     if (verdict.kind === 'deny') return { deny: verdict.reason }
+    return next(e)
+  }).catch(failOpen)
+
+  on('tool.call', { tool: ['AskUserQuestion'] }, async ($, e, next) => {
+    const verdict = await unattendedAskVerdict(e, { trussDir: await rootOf($, state), exists: p => $.fs.exists(p) })
+    if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)
     return next(e)
   }).catch(failOpen)
 
