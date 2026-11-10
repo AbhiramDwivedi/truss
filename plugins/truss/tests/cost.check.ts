@@ -333,7 +333,7 @@ test('cost: a held usage lock still gives a verdict', async () => {
   }
 })
 
-test('cost: a busy usage lock before the first sweep holds with a null spend', async () => {
+test('cost: a busy usage lock before the first sweep does not hold and crewCost stays null', async () => {
   const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
   lay(w, ['budget'])
   // a live owner holds locks/usage and no sweep has ever finished: there is no usage-cursor.json
@@ -344,9 +344,8 @@ test('cost: a busy usage lock before the first sweep holds with a null spend', a
   try {
     const c = await realCost()
     const v = withRoot(w, () => c.budgetVerdict(w.dir, w.repo, planOf(w), 'bcrew'))
-    assert.equal(v.held, true, JSON.stringify(v))
-    assert.equal(v.spentUsd, null, JSON.stringify(v))
-    assert.ok(String(v.why).includes('first usage sweep'), `why: ${v.why}`)
+    assert.equal(v.held, false, JSON.stringify(v))
+    assert.ok(!String(v.why ?? '').includes('first usage sweep'), `why: ${v.why}`)
     const cc = withRoot(w, () => c.crewCost(w.dir, w.repo, 'bcrew'))
     assert.equal(cc.usd, null, JSON.stringify(cc))
   } finally {
