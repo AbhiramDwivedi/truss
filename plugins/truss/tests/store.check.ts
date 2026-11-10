@@ -77,6 +77,19 @@ test('store: a lock held by a dead pid is taken over', async () => {
   assert.deepEqual(readdirSync(path.join(dir, 'locks')), [], 'no .stale-* leftovers')
 })
 
+test('store: 8 waiters racing to take over one stale lock never overlap and none is lost', async () => {
+  // the window is narrow, so each round plants a fresh stale lock (a dead owner on this host) that all 8 waiters see at once
+  for (let round = 0; round < 12; round++) {
+    const dir = tmp()
+    plantLock(dir, 'race', { pid: deadPid(), host: os.hostname(), token: `dead-token-${round}`, since: Date.now() })
+    const file = path.join(dir, 'counter.txt')
+    const results = await Promise.all(Array.from({ length: 8 }, () => runWorker(['counter', dir, 'race', file, '1'])))
+    for (const r of results) assert.equal(r.code, 0, r.err)
+    assert.equal(readFileSync(file, 'utf8'), '8', `round ${round}: an overlap lost an increment`)
+    assert.deepEqual(readdirSync(path.join(dir, 'locks')), [], `round ${round}: no lock or .break leftovers`)
+  }
+})
+
 test('store: a lock older than 200 s is taken over', async () => {
   const { withLock } = await load()
   const dir = tmp()
