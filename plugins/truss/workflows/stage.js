@@ -413,7 +413,7 @@ async function ask(crew, role, prompt, opts = {}) {
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 // label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
-// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; still one call, no retry here.
+// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; a hold is never retried, only a store-busy exit is (below).
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   let r = await runFactory(crew, cmd, 'admitted')
@@ -426,7 +426,7 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
     if (r.parsed.budget === true) throw new Stop('BLOCKED', `BLOCKED: budget: ${why}`, at)
-    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: awaiting client: ${why}`, at)
+    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
 }
