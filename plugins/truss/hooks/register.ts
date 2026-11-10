@@ -2499,7 +2499,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: ['AskUserQuestion'] }, async ($, e, next) => {
     const verdict = await unattendedAskVerdict(e, { trussDir: await rootOf($, state), exists: p => $.fs.exists(p) })
-    if (verdict !== undefined) return { deny: verdict.deny }
+    if (verdict !== undefined) return refuse($, state, refusalsLogged, e, verdict)
     return next(e)
   }).catch(failOpen)
 
