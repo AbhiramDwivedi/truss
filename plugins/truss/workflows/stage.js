@@ -49,8 +49,6 @@ const PROOF = [
 
 // ADR-0033: the kinds of a learned item; kind decides the default home of the item when it names no target
 const LEARNED_KINDS = ['feature', 'persona', 'product', 'decision']
-// ADR-0033: what every member's brief asks for in the learned field of its report
-const LEARNED = `Learned items: in the learned field of your report, list each fact a later crew will need, so it need not re-analyse the codebase: new or moved functionality and its entry points; a stack rule or recurring mistake for a persona; a domain or user truth; a design decision. Each item is {kind: ${LEARNED_KINDS.join(' | ')}, text, source, target}: source is a file:line, a command or a finding; target is optional, the repo path the item belongs in, and only a markdown file (*.md) can be one: a README, a runbook, a file under docs/knowledge/, AGENTS.md, CLAUDE.md, a persona file, the product-owner file, an ADR or the architecture doc. Never name a code file as a target. Leave the field empty when nothing is new, and list no more than a later crew would miss.`
 
 const REFUSAL ='A permission, classifier, hook or gate refusal is never retried by another route, renamed or encoded: stop BLOCKED and quote the refusal.'
 const PKILL = 'Never run `pkill -f` or `killall`; stop only a process you started, by its pid.'
@@ -73,38 +71,69 @@ const AGENTS_INDEX = strArg(F.agentsIndex, 'AGENTS.md')
 const RULES_DIR = dirArg(F.rulesDir, '.claude/rules')
 const KNOWLEDGE_DIR = dirArg(F.knowledgeDir, 'docs/knowledge')
 // the line budgets the lint enforces; the stage args may carry the project's knowledgeBudgets, the defaults fill what they omit
-const BUDGETS = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150, ...Object.fromEntries(Object.entries(F.knowledgeBudgets !== null && typeof F.knowledgeBudgets === 'object' && !Array.isArray(F.knowledgeBudgets) ? F.knowledgeBudgets : {}).filter(([, v]) => Number.isInteger(v) && v > 0)) }
+const BUDGETS = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150, ...Object.fromEntries(Object.entries(F.knowledgeBudgets !== null && typeof F.knowledgeBudgets === 'object' && !Array.isArray(F.knowledgeBudgets) ? F.knowledgeBudgets : {}).filter(([, v]) => Number.isInteger(v) && v >= 0)) }
+// ADR-0033, ADR-0035: what every member's brief asks for in the learned field of its report. A product call never targets an
+// always-loaded file (CLAUDE.md, AGENTS.md, a persona file): it goes to the product decisions file.
+const LEARNED = `Learned items: in the learned field of your report, list each fact a later crew will need, so it need not re-analyse the codebase: new or moved functionality and its entry points; a stack rule or recurring mistake for a persona; a domain or user truth; a design decision. Each item is {kind: ${LEARNED_KINDS.join(' | ')}, text, source, target}: source is a file:line, a command or a finding; target is optional, the repo path the item belongs in, and only a markdown file (*.md) can be one. A product item's target is only the product decisions file (${PRODUCT_DECISIONS}), never CLAUDE.md, AGENTS.md or a persona file. An area rule's target is a rule file under ${RULES_DIR}, the feature map (${FEATURE_MAP}) or an ADR; only a rule that holds for every task of a persona targets that persona file. A feature item's target is the feature map, a README, a runbook or a file under ${KNOWLEDGE_DIR}; a decision's is an ADR or the architecture doc. Never name a code file as a target. Leave the field empty when nothing is new, and list no more than a later crew would miss.`
 
 // rule globs: begin
-// ADR-0035: the glob dialect of a rule file's `paths`: `**`, `*`, `?` and `/`-separated paths. `*` and `?` stop at `/`; `**/` is zero
-// or more directories; a trailing slash and double star is everything below; no braces, no negation, a dot is no special case. This copy must pass
+// ADR-0035: the glob dialect of a rule file's `paths`, as bin/knowledge.ts globToRegExp. Paths are `/`-separated (a `\` is a `/`, in
+// the glob and in the path) and anchored at the repo root; a leading `./` or `/` is dropped and a trailing `/` means everything below.
+// `*` is any run of characters but `/`, `?` one code point but `/`. A double star is special only as a whole segment: any number of
+// segments in the middle (so `a/` double star `/b` also matches `a/b`), at least one more segment at the end; inside a segment it is
+// two stars. `{a,b,c}` is alternation, each alternative a literal or a glob, with no nesting; an alternative may be empty only as
+// `{,x}`, and an unbalanced or malformed brace group is literal. No negation; a dot and `[` are literal. This copy must pass
 // tests/fixtures/glob-vectors.json with the factory's matcher (stage.js is a workflow script and cannot import factory code).
+const flatPath = (p) => String(p).replace(/\\/g, '/')
+// the brace expansion of a glob: one glob per alternative (the glob itself when it has no valid brace group)
+function braceAlternatives(glob) {
+  const parts = [['']]
+  let lit = ''
+  let i = 0
+  while (i < glob.length) {
+    const close = glob[i] === '{' ? glob.indexOf('}', i + 1) : -1
+    const inner = close > i ? glob.slice(i + 1, close) : null
+    const alts = inner !== null && !inner.includes('{') ? inner.split(',') : null
+    const valid = alts && alts.length >= 2 && (alts.every((a) => a !== '') || (alts.length === 2 && alts[0] === '' && alts[1] !== ''))
+    if (!valid) {
+      lit += glob[i]
+      i++
+      continue
+    }
+    parts.push([lit], alts)
+    lit = ''
+    i = close + 1
+  }
+  parts.push([lit])
+  return parts.reduce((acc, alts) => acc.flatMap((a) => alts.map((b) => a + b)), [''])
+}
+// the regular expression body of one brace-free glob
+function globBody(glob) {
+  const g = glob.replace(/^(\.\/)+/, '').replace(/^\/+/, '')
+  const segs = g.split('/').filter((s) => s !== '')
+  if (g.endsWith('/')) segs.push('**')
+  let re = ''
+  segs.forEach((seg, i) => {
+    const last = i === segs.length - 1
+    if (seg === '**') {
+      re += last ? '.+' : '(?:[^/]+/)*'
+      return
+    }
+    for (const ch of Array.from(seg)) re += ch === '*' ? '[^/]*' : ch === '?' ? '[^/]' : ch.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&')
+    if (!last) re += '/'
+  })
+  return re
+}
 const globRegExpCache = new Map()
 function ruleGlobRegExp(glob) {
   if (globRegExpCache.has(glob)) return globRegExpCache.get(glob)
-  let s = ''
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i]
-    if (ch === '*' && glob[i + 1] === '*') {
-      const rest = glob.slice(i + 2)
-      if (rest.startsWith('/')) {
-        s += '(?:.*/)?'
-        i += 2
-      } else {
-        s += '.*'
-        i++
-      }
-    } else if (ch === '*') s += '[^/]*'
-    else if (ch === '?') s += '[^/]'
-    else s += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  }
-  const re = new RegExp(`^${s}$`)
+  const re = new RegExp(`^(?:${braceAlternatives(flatPath(glob)).map(globBody).join('|')})$`, 'u')
   globRegExpCache.set(glob, re)
   return re
 }
 const hasWildcard = (p) => /[*?]/.test(p)
 function globMatches(glob, path) {
-  return typeof glob === 'string' && typeof path === 'string' && ruleGlobRegExp(glob).test(path)
+  return typeof glob === 'string' && typeof path === 'string' && ruleGlobRegExp(glob).test(flatPath(path))
 }
 // the directory part of a glob before its first wildcard segment ('src/ui' for a glob that goes on with a double star), and its literal extension, if any
 const staticDirs = (g) => {
@@ -121,23 +150,33 @@ const literalExt = (g) => {
   const m = /\.([A-Za-z0-9]+)$/.exec(last)
   return m && !hasWildcard(m[1]) ? m[1] : null
 }
-// a task file that is itself a glob overlaps a rule glob when their literal directory prefixes nest and their extensions do not differ
+// a glob or path without its leading `./` or `/` (the caller turns `\` into `/` first)
+const plainGlob = (g) => g.replace(/^(\.\/)+/, '').replace(/^\/+/, '')
+// a task file that is itself a glob overlaps a rule glob when, for some pair of their brace alternatives, the literal directory
+// prefixes nest and the extensions do not differ
 function globsOverlap(taskGlob, ruleGlob) {
-  const a = staticDirs(taskGlob)
-  const b = staticDirs(ruleGlob)
-  const n = Math.min(a.length, b.length)
-  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return false
-  const ea = literalExt(taskGlob)
-  const eb = literalExt(ruleGlob)
-  return !(ea && eb && ea !== eb)
+  const one = (t, r) => {
+    const a = staticDirs(t)
+    const b = staticDirs(r)
+    const n = Math.min(a.length, b.length)
+    for (let i = 0; i < n; i++) if (a[i] !== b[i]) return false
+    const ea = literalExt(t)
+    const eb = literalExt(r)
+    return !(ea && eb && ea !== eb)
+  }
+  const rs = braceAlternatives(flatPath(ruleGlob)).map(plainGlob)
+  return braceAlternatives(flatPath(taskGlob)).map(plainGlob).some((t) => rs.some((r) => one(t, r)))
 }
-// the rule files (repo-relative paths) whose `paths` globs match any of the task's files, in rule order, once each
+const isGlob = (f) => hasWildcard(f) || braceAlternatives(f).length > 1
+// the rule files (repo-relative paths) whose `paths` globs match any of the task's files, in rule order, once each. A planner's
+// task file may carry `\` separators: it is matched as `/`.
 function rulesFor(rules, files) {
   if (!Array.isArray(rules)) return []
+  const fs = (files || []).filter((f) => typeof f === 'string' && f).map(flatPath)
   const out = []
   for (const r of rules) {
     if (!r || typeof r.path !== 'string' || !r.path || !Array.isArray(r.paths) || out.includes(r.path)) continue
-    const hit = r.paths.some((g) => typeof g === 'string' && g && (files || []).some((f) => typeof f === 'string' && f && (hasWildcard(f) ? globsOverlap(f, g) : globMatches(g, f))))
+    const hit = r.paths.some((g) => typeof g === 'string' && g && fs.some((f) => (isGlob(f) ? globsOverlap(f, g) : globMatches(g, f))))
     if (hit) out.push(r.path)
   }
   return out
@@ -456,10 +495,10 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   if (status) {
     const parsed = { ...(fromStdout || {}), ...status }
     if (typeof status.ran === 'boolean') parsed.heavy = { ...(isPlainObject(fromStdout && fromStdout.heavy) ? fromStdout.heavy : {}), ran: status.ran }
-    return { met: status[key] === true, parsed, out: `exit ${res.exit}\n${res.stdout}` }
+    return { met: status[key] === true, parsed, exit: res.exit, out: `exit ${res.exit}\n${res.stdout}` }
   }
   const met = fromStdout !== null && typeof fromStdout === 'object' && fromStdout[key] === true
-  return { met, parsed: fromStdout, out: `exit ${res.exit}\n${res.stdout}` }
+  return { met, parsed: fromStdout, exit: res.exit, out: `exit ${res.exit}\n${res.stdout}` }
 }
 
 // the object of a `truss-status: {...}` line, or null when the runner gave none or it does not parse
@@ -1644,10 +1683,18 @@ function sourceChangesOf(parsed) {
     .map((c) => ({ status: c.status, path: c.path, ...(c.status === 'R' ? { from: c.from } : {}) }))
 }
 const isMarkdown = (p) => /\.md$/i.test(String(p))
+// ADR-0035: a file every session loads whole: CLAUDE.md, CLAUDE.local.md or AGENTS.md in any directory, the agents index, a persona file
+function alwaysLoaded(p) {
+  const f = plainGlob(flatPath(repoRel(p)))
+  const base = f.slice(f.lastIndexOf('/') + 1)
+  if (/^(CLAUDE|CLAUDE\.local|AGENTS)\.md$/i.test(base) || f === plainGlob(repoRel(AGENTS_INDEX)) || f.startsWith('.claude/agents/')) return true
+  return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && plainGlob(flatPath(repoRel(x.file))) === f)
+}
 
 function knowledgePrompt(crew, resume) {
   const e = crew.e
-  const items = crew.learned.map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}${isMarkdown(i.target) ? '' : ' (not markdown: skip it and list it in your report)'}` : ''}; from ${i.member}, task ${i.task})`)
+  const note = (i) => (!isMarkdown(i.target) ? ' (not markdown: skip it and list it in your report)' : i.kind === 'product' && alwaysLoaded(i.target) ? ` (always loaded: a product call never goes there; record it in ${productOwnerFile()} instead)` : '')
+  const items = crew.learned.map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}${note(i)}` : ''}; from ${i.member}, task ${i.task})`)
   const moved = crew.sourceChanges.map((c) => (c.status === 'A' ? `- added ${c.path}` : c.status === 'D' ? `- deleted ${c.path}` : `- renamed ${c.from} -> ${c.path}`))
   const body = [
     `Task: record what crew ${crew.slug} learned`,
@@ -1664,7 +1711,7 @@ function knowledgePrompt(crew, resume) {
     `ADR directory: ${ADR_DIR}`,
     '',
     'Why: a later crew must find where functionality lives, what a persona must know and what the product owner decided from these docs, not by analysing the codebase again.',
-    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes where the table below says: a feature item is a capability; a persona item is an area-scoped rule or a cross-cutting persona rule; a product item is a product call; a decision item is a decision.`,
+    `Update the docs in your own worktree (the paths above are repo-relative), and change only docs. A learned item that names a target goes to that path, but a product item never goes into an always-loaded file (CLAUDE.md, AGENTS.md, the agents index or a persona file): ignore that target and record the call in the product decisions file. Only a markdown file (*.md) is a target: skip an item whose target is any other file, change nothing for it, and list it in your report. An item with no target goes where the table below says: a feature item is a capability; a persona item is an area-scoped rule or a cross-cutting persona rule; a product item is a product call; a decision item is a decision.`,
     '',
     'Where each item goes:',
     '| Item | Goes to |',
@@ -1676,7 +1723,7 @@ function knowledgePrompt(crew, resume) {
     `| Decision | a new ADR in ${ADR_DIR} |`,
     '| Anything else | nowhere |',
     '',
-    `A rule file is lowercase ASCII kebab-case (\`${RULES_DIR}/export-ui.md\`), with frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\` and \`/\`, no braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
+    `A rule file is lowercase ASCII kebab-case (\`${RULES_DIR}/export-ui.md\`), with frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\`, \`/\` and \`{a,b}\` alternation, no nested braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. A persona file gets a Standards item the crew learned only when it holds for every task of that persona, and a path a persona file names that the diff moved is fixed. The product decisions file gets the product calls this crew made and any domain truth.`,
     'Every fact you write cites its source path or hunk; drop a fact you cannot cite.',
     'Reconcile before you add: read what the doc says about the topic, then edit or delete an entry the diff supersedes or contradicts; never append a duplicate or a second entry on the same fact.',
@@ -1761,15 +1808,22 @@ async function knowledgeLint(crew) {
   if (crew.lint && crew.lintHead === crew.head) return
   crew.lintHead = crew.head
   try {
-    const r = await runFactory(crew, `knowledge-lint --base=${sh(crew.e.base)}`, 'ok')
+    // --slug lints the crew worktree, and the factory takes the base as git merge-base <target> HEAD there, so a sync moves it too
+    const r = await runFactory(crew, `knowledge-lint --slug=${sh(crew.slug)}`, 'ok')
     const failures = r.parsed ? lintEntries(r.parsed.failures) : null
     const warnings = r.parsed ? lintEntries(r.parsed.warnings ?? []) : null
     if (!failures || !warnings) {
-      log(`knowledge-lint did not run: crew ${crew.slug}: ${clip(r.out, 300)}`)
-      crew.lint = { ran: false }
+      // the command ran (exit 0, or its status line carries ok) but its output is not a lint result: a runner that cut or
+      // garbled a long stdout. Said apart from a lint that never ran, so QC and the log do not read it as one.
+      const ran = r.exit === 0 || (r.parsed !== null && typeof r.parsed.ok === 'boolean')
+      log(`knowledge-lint ${ran ? 'output could not be parsed' : 'did not run'}: crew ${crew.slug}: ${clip(r.out, 300)}`)
+      crew.lint = { ran: false, unparsed: ran }
       return
     }
-    crew.lint = { ran: true, failures, warnings }
+    const count = (v, listed) => (Number.isInteger(v) && v >= listed ? v : null)
+    const predatingCount = count(r.parsed.predatingCount, failures.filter((x) => !isNewFinding(x)).length)
+    const warningCount = count(r.parsed.warningCount, warnings.length)
+    crew.lint = { ran: true, failures, warnings, ...(predatingCount !== null ? { predatingCount } : {}), ...(warningCount !== null ? { warningCount } : {}) }
   } catch (err) {
     if (err instanceof Stop) throw err
     log(`knowledge-lint failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
@@ -1777,23 +1831,28 @@ async function knowledgeLint(crew) {
   }
 }
 
-// a failure counts as new unless the lint says it was already there at the crew base (new: false); without --base every one is new
+// a failure counts as new unless the lint says it was already there at the merge base (new: false)
 const isNewFinding = (x) => x.new !== false
 const lintItem = (x) => `- [${x.check}] ${x.path}: ${x.message}`
+// the lint caps its predating and warning lists and gives the full counts; a line for what the cap left out, or none
+const notListed = (count, listed) => (Number.isInteger(count) && count > listed ? [`- and ${count - listed} more not listed (${count} in all)`] : [])
 
 // the QC brief's lint block; [] when the lint was skipped
 function lintLines(crew) {
   const l = crew.lint
   if (!l) return []
+  if (!l.ran && l.unparsed) return ['Knowledge lint output could not be parsed. Check the knowledge rules above by hand.', '']
   if (!l.ran) return ['Knowledge lint did not run. Check the knowledge rules above by hand.', '']
   const fresh = l.failures.filter(isNewFinding)
   const old = l.failures.filter((x) => !isNewFinding(x))
-  if (!fresh.length && !old.length && !l.warnings.length) return ['Knowledge lint (factory knowledge-lint): no failures and no warnings.', '']
+  const oldN = l.predatingCount ?? old.length
+  const warnN = l.warningCount ?? l.warnings.length
+  if (!fresh.length && !oldN && !warnN) return ['Knowledge lint (factory knowledge-lint): no failures and no warnings.', '']
   return [
     'Knowledge lint (factory knowledge-lint):',
     ...(fresh.length ? ["New failures (this crew's diff caused them; FAIL on each, quoting it):", ...fresh.map(lintItem)] : []),
-    ...(old.length ? ['Failures that predate this crew (list them in your report for the main session; never FAIL for them):', ...old.map(lintItem)] : []),
-    ...(l.warnings.length ? ['Warnings (list them in your report; never FAIL for them):', ...l.warnings.map(lintItem)] : []),
+    ...(oldN ? ['Failures that predate this crew (list them in your report for the main session; never FAIL for them):', ...old.map(lintItem), ...notListed(oldN, old.length)] : []),
+    ...(warnN ? ['Warnings (list them in your report; never FAIL for them):', ...l.warnings.map(lintItem), ...notListed(warnN, l.warnings.length)] : []),
     '',
   ]
 }
@@ -1805,8 +1864,9 @@ function lintResult(crew) {
   if (!l || !l.ran) return {}
   const fresh = l.failures.filter(isNewFinding)
   const old = l.failures.filter((x) => !isNewFinding(x))
-  if (!fresh.length && !old.length && !l.warnings.length) return {}
-  return { knowledgeLint: { ran: true, ...(fresh.length ? { failures: fresh } : {}), ...(old.length ? { predating: old } : {}), ...(l.warnings.length ? { warnings: l.warnings } : {}) } }
+  if (!fresh.length && !l.predatingCount && !old.length && !l.warningCount && !l.warnings.length) return {}
+  const counts = { ...(l.predatingCount ? { predatingCount: l.predatingCount } : {}), ...(l.warningCount ? { warningCount: l.warningCount } : {}) }
+  return { knowledgeLint: { ran: true, ...(fresh.length ? { failures: fresh } : {}), ...(old.length ? { predating: old } : {}), ...(l.warnings.length ? { warnings: l.warnings } : {}), ...counts } }
 }
 
 function qcPrompt(crew) {
