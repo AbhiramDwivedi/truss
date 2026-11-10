@@ -44,7 +44,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Stub modules
 
-`inbox`, `guard`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures; a replacing crew keeps these exports exactly (`cost` is now implemented and is listed for its exports):
+`inbox`, `guard`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` is now implemented); a replacing crew keeps these exports exactly (`cost` is now implemented and is listed for its exports):
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
