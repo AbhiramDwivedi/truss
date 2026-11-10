@@ -1,0 +1,11 @@
+{
+  "darwin": [
+    { "raw": "/Users/dev/Projects/truss/.git/truss/shared", "flat": "/Users/dev/Projects/truss/.git/truss/shared" },
+    { "raw": "/private/var/folders/ab/cd/T/truss-x/locks", "flat": "/private/var/folders/ab/cd/T/truss-x/locks" }
+  ],
+  "win32": [
+    { "raw": "C:\\Users\\dev\\Projects\\truss\\.git\\truss\\shared", "flat": "C:/Users/dev/Projects/truss/.git/truss/shared" },
+    { "raw": "D:\\a\\truss\\truss\\.git\\truss\\locks\\inbox.lock", "flat": "D:/a/truss/truss/.git/truss/locks/inbox.lock" },
+    { "raw": "C:/mixed\\slashes/here", "flat": "C:/mixed/slashes/here" }
+  ]
+}
