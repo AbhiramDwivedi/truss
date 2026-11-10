@@ -8,10 +8,11 @@ sources:
   - plugins/truss/bin/worktypes.ts
   - plugins/truss/bin/ledger.ts
   - plugins/truss/bin/queue.ts
+  - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 4705791bf65c28393cd89b0b2ad8184d2e92d2f2
+verified: 483238c5bbfdaf03e57b30eb2a21911c6bb95e68
 ---
 
 # Store, holds and contract-025 stubs
@@ -52,9 +53,17 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 - The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:249-256). Pricing web search needs a new rate field.
 - Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
 
+## Inbox transcript proof
+
+`typedText` and `typedProof` in `bin/inbox.ts:171-196` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. It also refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count; the slash line is unaffected. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. A line must be newer than the `open` op and hold the id, the code and the decision word directly before the id, so a note's word cannot flip the decision.
+
+The proof guards only `factory resolve`: a same-user agent can append a `resolve` row to `S/inbox.jsonl` and the fold accepts it. Only a retro comparing each `quote` with the typed prompts catches it (ADR-0037, Consequences). Change proof-check behaviour here and in `docs/features.md` together.
+
+A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
+
 ## Stub modules
 
-`inbox`, `guard`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` is now implemented); a replacing crew keeps these exports exactly (`cost` is now implemented and is listed for its exports):
+`guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` and `cost` are implemented); a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
