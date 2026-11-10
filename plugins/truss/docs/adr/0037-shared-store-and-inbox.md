@@ -127,6 +127,7 @@ We will accept `resolve --by client` only with proof that the human typed the de
 
 - is not `isMeta` and not `isSidechain`, and is not `isCompactSummary` or `isVisibleInTranscriptOnly`;
 - has no `origin`, or `origin.kind` is `human` (a task-notification line carries an agent's return text, not a human's);
+- is not a scheduled line: no `wakeupSource`, `scheduledTaskId` or `scheduledFireId`, and `turnOrigin` (if present) is `human` and `promptSource` (if present) is `typed` (a `/loop` wakeup line has no `origin` and no `isMeta`, and its text is the `prompt` the agent passed to ScheduleWakeup);
 - has string content, or only text blocks and no `tool_result`;
 - is newer than the item's `open` op;
 - contains the E-id and the code, with the decision word directly before the E-id (`reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
