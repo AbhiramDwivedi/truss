@@ -1206,8 +1206,9 @@ export function uxOn(planUx: unknown, uxText: string): boolean {
   return uxText !== '' && !uxSaysOff(uxText)
 }
 
-// A crew entry for stage.js; `resume`, `tasks`, `done` and `answers` are the restart facts (fresh start: null and empty).
-function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[] }): Obj {
+// A crew entry for stage.js; `resume`, `tasks`, `done`, `answers` and `prior` are the restart facts (fresh start: null and empty).
+// prior: [{at, branch}], an earlier member branch per task whose commits the crew branch lacks (priorBranches).
+function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string | null; tasks?: unknown[]; done?: string[]; answers?: unknown[]; prior?: { at: string; branch: string }[] }): Obj {
   const slug = String(crew.slug)
   const goalFile = `${c.dir}/goals/${slug}.md`
   const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
@@ -1239,7 +1240,7 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ownTests: (Array.isArray(crew.owns) ? crew.owns : []).filter((g: unknown): g is string => typeof g === 'string' && isTestPath(g)),
     highImpact: (sections['High-impact paths'] ?? '').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/`/g, '').trim()).filter((l) => l !== '' && !/^none\.?$/i.test(l)),
     stressTest: /^(yes|true)\b/i.test(sections['Stress test'] ?? '') || profile?.stressTest === true, ...(has('Approved scope') ? {} : { scope: '' }), worktree: wt, branch: `truss-${slug}`,
-    base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [],
+    base: baseOf(wt, c.settings.target), head: gitOrFail(c.repo, ['rev-parse', `refs/heads/truss-${slug}`]), architecture: c.arch, adrs: c.adrs, resume: extra.resume, tasks: extra.tasks ?? [], done: extra.done ?? [], answers: extra.answers ?? [], prior: extra.prior ?? [],
     spent: spentOf(c.dir, slug), labelFrom: labelFromOf(c.dir, slug),
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
@@ -1761,9 +1762,73 @@ function promptTask(transcript: string): string | undefined {
 // that line (the crew branch was rewritten after the member forked), the reflog count is the only count.
 function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): string[] {
   const crewBranch = `truss-${slug}`
+  const { ownCommits, picked } = memberGit(slug, wt, target)
+  const done: string[] = []
+  // runs come oldest first and a run's agents in start order, so the last result of a task is its newest
+  const agents = runs.flatMap((r) => r.agents)
+  const names = agents.map((a) => memberTaskOf(a, slug))
+  const newest = new Map<string, number>()
+  names.forEach((n, i) => {
+    if (n !== undefined) newest.set(n, i)
+  })
+  for (const [i, a] of agents.entries()) {
+    const r = a.result
+    const name = names[i]
+    if (name === undefined || !isObj(r) || typeof r.branch !== 'string') continue
+    if (done.includes(name)) continue
+    // ADR-0024 item 27 counts a result that isn't DONE only when it is the task's newest: an older hand-merged BLOCKED branch
+    // never makes done a task whose newer result stopped again on an unmerged branch.
+    if (r.marker !== 'DONE' && newest.get(name) !== i) continue
+    // A CHECKPOINT says the member stopped with work left, so its merged commits are partial and never make the task done.
+    if (r.marker === 'CHECKPOINT' || (r.marker !== 'DONE' && ownCommits(r.branch) === 0)) continue
+    if (run(wt, ['merge-base', '--is-ancestor', r.branch, crewBranch]).status === 0 || picked(r.branch)) done.push(name)
+  }
+  return done
+}
+
+// The member's task name: the prompt's Task line, else result.task minus a leading `<slug>: `; undefined for another crew's agent
+// or a result with no task. A fix member's name is its `fix, <what>` Task line.
+function memberTaskOf(a: RunAgent, slug: string): string | undefined {
+  const r = a.result
+  if (parseLabel(a.label)?.slug !== slug || !isObj(r) || typeof r.task !== 'string') return undefined
+  return promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
+}
+
+// The earlier member branches a resumed crew's members must merge (stage.js firstStep): for each task (or `fix, <what>`) not in
+// `done`, the branch of its newest result when that result is not DONE (QUESTION, BLOCKED, PROPOSAL or CHECKPOINT), the branch has
+// commits of its own, and the crew branch holds neither the branch nor a patch-id match of every commit on it. A resumed member
+// forks from the session checkout, not from that branch, so without the merge those commits are lost.
+function priorBranches(runs: WfRun[], slug: string, wt: string, target: string, done: string[]): { at: string; branch: string }[] {
+  const crewBranch = `truss-${slug}`
+  const { ownCommits, picked } = memberGit(slug, wt, target)
+  const newest = new Map<string, Obj>()
+  for (const a of runs.flatMap((r) => r.agents)) {
+    const name = memberTaskOf(a, slug)
+    if (name !== undefined && isObj(a.result)) newest.set(name, a.result)
+  }
+  const out: { at: string; branch: string }[] = []
+  for (const [at, r] of newest) {
+    const branch = r.branch
+    if (done.includes(at) || r.marker === 'DONE' || typeof branch !== 'string' || branch === '' || branch === crewBranch) continue
+    if (run(wt, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).status !== 0) continue
+    if (ownCommits(branch) === 0) continue
+    if (run(wt, ['merge-base', '--is-ancestor', branch, crewBranch]).status === 0 || picked(branch)) continue
+    out.push({ at, branch })
+  }
+  return out
+}
+
+// git facts about a crew's member branches. ownCommits: the commits the member made on its branch (see doneTasks). picked: every
+// commit the branch has over the crew branch is patch-id-matched on it (git cherry).
+function memberGit(slug: string, wt: string, target: string): { ownCommits: (branch: string) => number; picked: (branch: string) => boolean } {
+  const crewBranch = `truss-${slug}`
   const lines = (args: string[]): string[] | undefined => {
     const x = run(wt, args)
     return x.status === 0 ? x.out.split('\n').filter((l) => l.trim() !== '') : undefined
+  }
+  const picked = (branch: string): boolean => {
+    const c = run(wt, ['cherry', crewBranch, branch])
+    return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
   }
   const ownCommits = (branch: string): number => {
     const reach = lines(['rev-list', branch, '--not', target])
@@ -1796,36 +1861,7 @@ function doneTasks(runs: WfRun[], slug: string, wt: string, target: string): str
     // member's commits sit on the first-parent line; the reflog decides here too.
     return made()
   }
-  const done: string[] = []
-  const taskOf = (a: RunAgent): string | undefined => {
-    const r = a.result
-    if (parseLabel(a.label)?.slug !== slug || !isObj(r) || typeof r.task !== 'string') return undefined
-    return promptTask(a.transcript) ?? (r.task.startsWith(`${slug}: `) ? r.task.slice(slug.length + 2) : r.task)
-  }
-  // runs come oldest first and a run's agents in start order, so the last result of a task is its newest
-  const agents = runs.flatMap((r) => r.agents)
-  const names = agents.map(taskOf)
-  const newest = new Map<string, number>()
-  names.forEach((n, i) => {
-    if (n !== undefined) newest.set(n, i)
-  })
-  for (const [i, a] of agents.entries()) {
-    const r = a.result
-    const name = names[i]
-    if (name === undefined || !isObj(r) || typeof r.branch !== 'string') continue
-    if (done.includes(name)) continue
-    // ADR-0024 item 27 counts a result that isn't DONE only when it is the task's newest: an older hand-merged BLOCKED branch
-    // never makes done a task whose newer result stopped again on an unmerged branch.
-    if (r.marker !== 'DONE' && newest.get(name) !== i) continue
-    const picked = (): boolean => {
-      const c = run(wt, ['cherry', crewBranch, r.branch as string])
-      return c.status === 0 && c.out.split('\n').filter((l) => l.trim() !== '').every((l) => l.startsWith('-'))
-    }
-    // A CHECKPOINT says the member stopped with work left, so its merged commits are partial and never make the task done.
-    if (r.marker === 'CHECKPOINT' || (r.marker !== 'DONE' && ownCommits(r.branch) === 0)) continue
-    if (run(wt, ['merge-base', '--is-ancestor', r.branch, crewBranch]).status === 0 || picked()) done.push(name)
-  }
-  return done
+  return { ownCommits, picked }
 }
 
 // start --slug S --resume answers|merge-ready|stale: one crew entry, or a refusal {slug, why}.
@@ -1889,7 +1925,9 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
   // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
   const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers })
+  // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
+  const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
+  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior })
   // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
   // it; a result read earlier no longer holds for a crew that runs again
   entry.learned = learnedOf(c.dir, slug)
