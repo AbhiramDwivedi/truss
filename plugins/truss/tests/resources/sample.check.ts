@@ -65,11 +65,14 @@ test('worktrees: lists the worktree dir holding a live process, not the idle one
   const root = mkdtempSync(`${os.tmpdir()}/resources-sample-`)
   mkdirSync(`${root}/wt-busy`)
   mkdirSync(`${root}/wt-idle`)
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120000)'], { cwd: `${root}/wt-busy`, stdio: 'ignore' })
+  const child = spawn(process.execPath, ['-e', 'process.stdout.write("up\\n"); setTimeout(() => {}, 120000)'], { cwd: `${root}/wt-busy`, stdio: ['ignore', 'pipe', 'ignore'] })
   try {
+    // 'spawn' fires after fork, before node has exec'd and grown its resident set (rssMB would round to 0);
+    // the child's first stdout line proves it is running node.
     await new Promise((res, rej) => {
-      child.once('spawn', res)
+      child.stdout.once('data', res)
       child.once('error', rej)
+      child.once('exit', () => rej(new Error('child exited before signalling')))
     })
     const s = await hostSample(m, { worktreesRoot: root })
     assert.ok(Array.isArray(s.worktrees), 'worktrees is an array')
