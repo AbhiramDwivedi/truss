@@ -96,7 +96,7 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 
 - `factory escalate --kind k (--title t | --title-file p) [--detail d | --detail-file p] [--crew s]... [--ref key] [--blocking]` prints `{id, kind, deduped, code, notified}`. On a dedupe `code` is null.
 - `factory inbox [--open | --unapplied] [--kind k] [--crew s]` prints `{items, open}`. The filters narrow `items` only: `open` is the total of open items whatever the filters. `--unapplied` lists resolved items with no `applied` op from this session.
-- `factory resolve <id> --decision d --by client|pm --code c [--note t] [--raise-usd n]`.
+- `factory resolve <id> --decision d --by client|pm --code c [--note-file f | --note t] [--raise-usd n]`. Untrusted note text goes through `--note-file`.
 - `factory mark-applied <id>`.
 
 **Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
