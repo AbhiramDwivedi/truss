@@ -8,15 +8,111 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc"] },
     "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
   "allOf": [
     {
-      "description": "Every event except the crew-level ones of truss ADR-0033 names its agent. Those (crew-decision, decision-reply, decision-ack, knowledge-commit and knowledge) are about a crew, not an agent, and carry no agent field.",
-      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge"] } } } },
+      "description": "Every event except the crew-level ones of truss ADR-0033 and the wave-2 kinds of contract-025 names its agent. Those (crew-decision, decision-reply, decision-ack, knowledge-commit, knowledge, escalate, resolve, notify-error, budget-hold, intake, unattended and ltc) are about a crew or the run, not an agent, and carry no agent field.",
+      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc"] } } } },
       "then": { "required": ["agent"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "escalate" } } },
+      "then": {
+        "description": "An exception raised to the inbox (contract-025 section 3). id is E-<yyyymmdd>-<6hex>; blocking says the linked crews are held until it is resolved.",
+        "additionalProperties": false,
+        "required": ["id", "kind", "blocking"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
+          "kind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage"] },
+          "blocking": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "resolve" } } },
+      "then": {
+        "description": "An inbox item resolved (contract-025 section 3). by is who resolved it.",
+        "additionalProperties": false,
+        "required": ["id", "decision", "by"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
+          "decision": { "enum": ["approve", "reject", "answer", "done", "dismiss"] },
+          "by": { "enum": ["client", "pm"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "notify-error" } } },
+      "then": {
+        "description": "The client-owned notify command failed for an inbox item (fail open; contract-025 section 3). error is cut to its first 200 characters.",
+        "additionalProperties": false,
+        "required": ["id", "error"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
+          "error": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "budget-hold" } } },
+      "then": {
+        "description": "A budget held a start, admit or queue-next (contract-025 section 4). spentUsd is null when the spend could not be priced.",
+        "additionalProperties": false,
+        "required": ["scope", "spentUsd", "limitUsd"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "scope": { "enum": ["run", "crew", "workType", "session"] },
+          "spentUsd": { "type": ["number", "null"], "minimum": 0 },
+          "limitUsd": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "intake" } } },
+      "then": {
+        "description": "One intake run over a source (contract-025 section 6). added is how many new queue items it made, seen how many it saw.",
+        "additionalProperties": false,
+        "required": ["source", "added", "seen"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "source": { "enum": ["md", "gh"] },
+          "added": { "type": "integer", "minimum": 0 },
+          "seen": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "unattended" } } },
+      "then": {
+        "description": "The unattended mode went on or off (contract-025 section 7). item is the queue item the run works, or null.",
+        "additionalProperties": false,
+        "required": ["on", "item"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "on": { "type": "boolean" },
+          "item": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "ltc" } } },
+      "then": {
+        "description": "A long-term cost line was found (contract-025 section 3). id is the inbox item it escalated to, or null when it did not escalate; reversal is how costly it is to undo.",
+        "additionalProperties": false,
+        "required": ["id", "scope", "reversal"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "id": { "type": ["string", "null"], "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
+          "scope": { "type": "string", "minLength": 1 },
+          "reversal": { "enum": ["cheap", "costly", "irreversible"] }
+        }
+      }
     },
     {
       "if": { "properties": { "event": { "const": "knowledge" } } },

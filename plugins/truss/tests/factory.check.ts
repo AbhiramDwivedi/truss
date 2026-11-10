@@ -135,7 +135,7 @@ test('plan-args: builds {"truss":{kind plan,...},"brief"} from the brief file, r
   assert.deepEqual(Object.keys(j), ['truss', 'brief'])
   assert.equal(j.brief, 'Build the thing.\nSecond line.')
   const f = j.truss
-  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath', 'personas'])
+  assert.deepEqual(Object.keys(f), ['kind', 'dir', 'repo', 'plugin', 'schema', 'architecture', 'maxParallelCrews', 'reworkAllowance', 'roles', 'scriptPath', 'personas', 'workTypes'])
   assert.deepEqual(f.personas, {}) // ADR-0033: the project's personas (none here), for the product-owner review
   assert.equal(f.kind, 'plan')
   assert.equal(flat(f.dir), env.dir)
@@ -230,7 +230,7 @@ test('plan-write: writes plan.json with approvedAt null and plan.md from the lab
   const t = planRun(env, [messageOf()])
   const res = env.run('plan-write', { transcript: t, label: 'truss-designer' })
   assert.equal(res.status, 0, res.stderr)
-  assert.deepEqual(assertOneLine(res), { written: true })
+  assert.deepEqual(assertOneLine(res), { written: true, longTermCosts: [] })
   const plan = readPlan(env.dir)
   assert.equal(plan.approvedAt, null)
   assert.equal(plan.version, 2)
@@ -446,7 +446,9 @@ test('approve: sets approvedAt to an ISO Z time, prints it, appends the decision
 })
 
 test('approve --by auto names auto and the settings source in the decision line', () => {
-  const env = unapprovedEnv()
+  const env = mkEnv()
+  writePlan(env.dir, planObj([crew('alpha')], { approval: 'client', approvedAt: null }))
+  writeFileSync(`${env.dir}/decisions.md`, '## Run 2026-10-29T19:42:11Z | test goal\n- 15:42 | earlier decision | why | none | followed\n')
   const res = env.run('approve', { by: 'auto' })
   assert.equal(res.status, 0, res.stderr)
   const last = readFileSync(`${env.dir}/decisions.md`, 'utf8').trim().split('\n').pop()

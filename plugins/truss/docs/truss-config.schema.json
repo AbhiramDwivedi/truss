@@ -134,9 +134,110 @@
         "commissioning-engineer": { "$ref": "#/$defs/promptFile" },
         "design-engineer": { "$ref": "#/$defs/promptFile" }
       }
+    },
+    "notify": {
+      "description": "0.25.0. A client-owned shell command run one-way and fail-open when an inbox item is raised (contract-025 section 3).",
+      "type": "string",
+      "minLength": 1
+    },
+    "pricing": {
+      "description": "0.25.0. USD prices per million tokens, by model-id prefix; the longest key that is a prefix of a model's id applies. A model with no price makes a sum unpriced (null), never 0 (contract-025 section 4). The plugin writes no price itself.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/price" }
+    },
+    "budget": {
+      "description": "0.25.0. Spend limits in USD, each above 0, checked at member start (contract-025 section 4). workTypes sets a tighter per-crew limit for a work type.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runUsd": { "type": "number", "exclusiveMinimum": 0 },
+        "crewUsd": { "type": "number", "exclusiveMinimum": 0 },
+        "sessionUsd": { "type": "number", "exclusiveMinimum": 0 },
+        "workTypes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "feature": { "$ref": "#/$defs/workTypeBudget" },
+            "bugfix": { "$ref": "#/$defs/workTypeBudget" },
+            "migration": { "$ref": "#/$defs/workTypeBudget" },
+            "dependency": { "$ref": "#/$defs/workTypeBudget" },
+            "docs": { "$ref": "#/$defs/workTypeBudget" },
+            "refactor": { "$ref": "#/$defs/workTypeBudget" }
+          }
+        }
+      }
+    },
+    "workTypes": {
+      "description": "0.25.0. Per work type, a profile that may only tighten the built-in one: minProcess may only rise, stressTest and red may only become true. A loosening is reported by factory worktypes (contract-025 section 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "feature": { "$ref": "#/$defs/workTypeProfile" },
+        "bugfix": { "$ref": "#/$defs/workTypeProfile" },
+        "migration": { "$ref": "#/$defs/workTypeProfile" },
+        "dependency": { "$ref": "#/$defs/workTypeProfile" },
+        "docs": { "$ref": "#/$defs/workTypeProfile" },
+        "refactor": { "$ref": "#/$defs/workTypeProfile" }
+      }
+    },
+    "intake": {
+      "description": "0.25.0. Where factory intake reads work from (contract-025 section 6). Defaults: sources [\"md\"], queueFile docs/queue.md, ghLabel truss, claimTtlHours 24.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sources": { "type": "array", "uniqueItems": true, "items": { "enum": ["md", "gh"] } },
+        "queueFile": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![/\\\\]|[A-Za-z]:)(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n\\\\]+$"
+        },
+        "ghLabel": { "type": "string", "minLength": 1 },
+        "claimTtlHours": { "type": "number", "exclusiveMinimum": 0 }
+      }
     }
   },
   "$defs": {
+    "rates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputPerMTok", "outputPerMTok", "cacheReadPerMTok", "cacheWrite5mPerMTok", "cacheWrite1hPerMTok"],
+      "properties": {
+        "inputPerMTok": { "type": "number", "minimum": 0 },
+        "outputPerMTok": { "type": "number", "minimum": 0 },
+        "cacheReadPerMTok": { "type": "number", "minimum": 0 },
+        "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
+        "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 }
+      }
+    },
+    "price": {
+      "description": "One model prefix's prices in USD per million tokens; fast applies to a row with speed fast.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputPerMTok", "outputPerMTok", "cacheReadPerMTok", "cacheWrite5mPerMTok", "cacheWrite1hPerMTok"],
+      "properties": {
+        "inputPerMTok": { "type": "number", "minimum": 0 },
+        "outputPerMTok": { "type": "number", "minimum": 0 },
+        "cacheReadPerMTok": { "type": "number", "minimum": 0 },
+        "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
+        "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 },
+        "fast": { "$ref": "#/$defs/rates" }
+      }
+    },
+    "workTypeBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crewUsd"],
+      "properties": { "crewUsd": { "type": "number", "exclusiveMinimum": 0 } }
+    },
+    "workTypeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minProcess": { "enum": ["solo", "lean", "full"] },
+        "stressTest": { "const": true },
+        "red": { "const": true }
+      }
+    },
     "agentType": {
       "description": "A full agent type: a project or built-in type, or plugin:name.",
       "type": "string",
