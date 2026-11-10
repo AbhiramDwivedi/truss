@@ -333,6 +333,27 @@ test('cost: a held usage lock still gives a verdict', async () => {
   }
 })
 
+test('cost: a busy usage lock before the first sweep holds with a null spend', async () => {
+  const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
+  lay(w, ['budget'])
+  // a live owner holds locks/usage and no sweep has ever finished: there is no usage-cursor.json
+  const lock = `${w.dir}/locks/usage.lock`
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(`${lock}/owner.json`, JSON.stringify({ pid: process.pid, host: hostname(), token: 'planted', since: Date.now() }))
+  assert.equal(existsSync(`${w.dir}/usage-cursor.json`), false)
+  try {
+    const c = await realCost()
+    const v = withRoot(w, () => c.budgetVerdict(w.dir, w.repo, planOf(w), 'bcrew'))
+    assert.equal(v.held, true, JSON.stringify(v))
+    assert.equal(v.spentUsd, null, JSON.stringify(v))
+    assert.ok(String(v.why).includes('first usage sweep'), `why: ${v.why}`)
+    const cc = withRoot(w, () => c.crewCost(w.dir, w.repo, 'bcrew'))
+    assert.equal(cc.usd, null, JSON.stringify(cc))
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
+})
+
 test('cost: no transcripts gives a hold', async () => {
   const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
   mkdirSync(w.root, { recursive: true })
