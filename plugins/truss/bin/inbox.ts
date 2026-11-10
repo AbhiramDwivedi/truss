@@ -183,19 +183,30 @@ function typedText(row: Obj): string | null {
   return c.map((b: any) => b.text).join('\n')
 }
 
+// Claude Code records the output of a bash-mode or local command as a user line; that text is command output, not typed.
+const OUTPUT_TAG = /<(bash-input|bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|local-command-caveat)>/
+
+// What the client typed after the command name: the <command-args> text of a slash command, else the whole prompt without a leading /truss:inbox.
+function argsOf(text: string): string {
+  const m = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)
+  return (m === null ? text.replace(/^\s*\/truss:inbox(?=\s)/, '') : m[1]).trim()
+}
+
 // The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the code and the decision word right before the id.
 function typedProof(session: string, open: Obj, decision: string, code: string): string | null {
   const main = transcriptsOf(session).main
   if (main === null) return null
   const after = Date.parse(open.ts)
-  const word = new RegExp(`(^|[^A-Za-z0-9])${decision}[ \\t]+${open.id.replace(/[^A-Za-z0-9]/g, '\\$&')}($|[^A-Za-z0-9])`)
+  // The decision is the first word the client typed, directly before the id: "reject <id> ... I will approve <id>" is a reject.
+  const word = new RegExp(`^${decision}[ \\t]+${open.id.replace(/[^A-Za-z0-9]/g, '\\$&')}($|[^A-Za-z0-9])`)
   let found: string | null = null
   for (const row of readJsonl(main).rows) {
     const text = typedText(row)
     if (text === null) continue
     const at = Date.parse(row.timestamp)
     if (!Number.isFinite(at) || !(at > after)) continue
-    if (text.includes(open.id) && text.includes(code) && word.test(text)) found = text
+    if (OUTPUT_TAG.test(text)) continue
+    if (text.includes(open.id) && text.includes(code) && word.test(argsOf(text))) found = text
   }
   return found === null ? null : (found as string).slice(0, 1000)
 }
