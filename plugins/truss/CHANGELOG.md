@@ -2,6 +2,12 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names.
 
+## 0.24.1 (2026-11-09)
+
+- Fix: truss loads with worktrees 0.9 and 0.10 (dependency range was ^0.8.4).
+- Fix: the writer's rule-file guidance now allows `{a,b}` braces, as the lint does.
+- Install or update with `/plugin install truss@truss`.
+
 ## 0.24.0 (2026-11-09)
 
 Knowledge now lives in files Claude Code loads lazily, scoped to the paths they describe, and the knowledge step is linted. Install or update as before with `claude plugin install truss@truss`.
