@@ -108,16 +108,16 @@ t('po 4: an unloaded read-only product-owner persona runs on its inlineType with
 
 t('po 5: REVISE sends the numbered findings to the designer once, then the review runs again; ACCEPT on the second pass', async () => {
   const r = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised plan.', { planJson: '{"REVISED":1}' }), 'truss-po-2': ACCEPT,
+    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('Revised plan.', { planJson: '{"REVISED":1}' }), 'truss-po-2': ACCEPT,
   })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2'])
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-2', 'truss-po-2'])
   const d = r.calls[3]
   assert.equal(d.prompt.split('\n')[0], 'Mode: plan')
   assert.ok(d.prompt.includes('1. api: only checks the code runs. Fix: add a graded fixture run (round 1)'))
   assert.ok(d.prompt.includes('2. ui: no check a user would recognise'))
   assert.ok(r.calls[4].prompt.includes('{"REVISED":1}'), 'the second review sees the revised plan')
-  assert.equal(r.result.designerLabel, 'truss-designer-po')
+  assert.equal(r.result.designerLabel, 'truss-designer-2')
   assert.equal(r.result.productOwner.verdict, 'ACCEPT')
   assert.equal(r.result.productOwner.revised, true)
   assert.deepEqual(r.result.productOwner.open, [])
@@ -125,23 +125,23 @@ t('po 5: REVISE sends the numbered findings to the designer once, then the revie
 
 t('po 6: a second REVISE ends the loop: no third designer or review, the findings go into the result as open', async () => {
   const r = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(1), 'truss-designer-po': ARCH('Revised.'), 'truss-po-2': REVISE(2),
-    'truss-designer-po-2': ARCH(), 'truss-po-3': ACCEPT,
+    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(1), 'truss-designer-2': ARCH('Revised.'), 'truss-po-2': REVISE(2),
+    'truss-designer-3': ARCH(), 'truss-po-3': ACCEPT,
   })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2'])
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-2', 'truss-po-2'])
   assert.equal(r.result.productOwner.verdict, 'REVISE')
   assert.equal(r.result.productOwner.revised, true)
   assert.equal(r.result.productOwner.open.length, 2)
   assert.match(r.result.productOwner.open[0], /^1\. api: .*round 2/)
 })
 
-t('po 7: a fix run labels the review truss-po-3 and the revision truss-designer-3-po', async () => {
+t('po 7: a fix run labels the review truss-po-3 and the revision truss-designer-4', async () => {
   const r = await execPlan(planArgs({ fix: true, personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer-3': ARCH(), 'truss-checker-3': AGREE, 'truss-po-3': REVISE(), 'truss-designer-3-po': ARCH(), 'truss-po-4': ACCEPT,
+    'truss-designer-3': ARCH(), 'truss-checker-3': AGREE, 'truss-po-3': REVISE(), 'truss-designer-4': ARCH(), 'truss-po-4': ACCEPT,
   })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels, ['truss-designer-3', 'truss-checker-3', 'truss-po-3', 'truss-designer-3-po', 'truss-po-4'])
+  assert.deepEqual(r.labels, ['truss-designer-3', 'truss-checker-3', 'truss-po-3', 'truss-designer-4', 'truss-po-4'])
 })
 
 t('po 8: an UNCOVERED line returns before any review; a reply with no PO: line is reported, not guessed', async () => {
@@ -157,7 +157,7 @@ t('po 8: an UNCOVERED line returns before any review; a reply with no PO: line i
 t('po 9 (review 1): the revise prompt carries the first plan verbatim: planJson, planMd and the PERSONA blocks of the first report', async () => {
   const first = { report: withDraft(), planJson: '{"crews":[{"slug":"api","verdict":"extend","owns":["src/api/**"]}],"FIRST":"x y  z"}', planMd: '# First plan\n\n- store: extend (reuses the seam)\n\n| 1 | api | extend |\n' }
   const r = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer': first, 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised plan.', { planJson: first.planJson, planMd: first.planMd }), 'truss-po-2': ACCEPT,
+    'truss-designer': first, 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('Revised plan.', { planJson: first.planJson, planMd: first.planMd }), 'truss-po-2': ACCEPT,
   })
   assert.ifError(r.error)
   const p = r.calls[3].prompt
@@ -172,12 +172,12 @@ t('po 9 (review 1): the revise prompt carries the first plan verbatim: planJson,
 t('po 9b (review 1): a persona draft that holds a four-backtick run is fenced with a longer fence; a first plan with no draft carries no PERSONA line', async () => {
   const tricky = DRAFT_FILE + '\n````text\ninner\n````\n'
   const a = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer': ARCH(`R\n\nPERSONA: product-owner\n\`\`\`\`\`markdown\n${tricky}\`\`\`\`\`\n`), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised.'), 'truss-po-2': ACCEPT,
+    'truss-designer': ARCH(`R\n\nPERSONA: product-owner\n\`\`\`\`\`markdown\n${tricky}\`\`\`\`\`\n`), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('Revised.'), 'truss-po-2': ACCEPT,
   })
   assert.ifError(a.error)
   assert.ok(a.calls[3].prompt.includes('PERSONA: product-owner\n`````\n' + tricky.replace(/\n$/, '') + '\n`````'), a.calls[3].prompt.slice(-500))
   const b = await execPlan(planArgs({ personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('Revised.'), 'truss-po-2': ACCEPT,
+    'truss-designer': ARCH(), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('Revised.'), 'truss-po-2': ACCEPT,
   })
   assert.ok(!b.calls[3].prompt.includes('PERSONA:'))
 })
@@ -228,7 +228,7 @@ const PLAN_A = (verdict = 'extend', slugs = ['api', 'ui']) => ({
 const PO_ARGS = () => planArgs({ personas: { 'product-owner': PO_PERSONA } })
 
 t('recheck 1: the revision brief limits the designer to acceptance criteria, acceptance tests and test data', async () => {
-  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
+  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
   assert.ifError(r.error)
   const p = r.calls[3].prompt
   assert.match(p, /Change only the acceptance criteria, the acceptance tests and the test data/)
@@ -236,19 +236,19 @@ t('recheck 1: the revision brief limits the designer to acceptance criteria, acc
 })
 
 t('recheck 2: a revised plan with the same verdict lines and crews is not re-checked; the result says so', async () => {
-  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
+  const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', PLAN_A()), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('R2', PLAN_A()), 'truss-po-2': ACCEPT })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2'])
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-2', 'truss-po-2'])
   assert.equal(r.result.recheck.ran, false)
 })
 
 t('recheck 3: a revision that changes a verdict re-runs the checking engineer once on the revised plan and reports it', async () => {
   const r = await execPlan(PO_ARGS(), {
-    'truss-designer': ARCH('R', PLAN_A('extend')), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', PLAN_A('change')), 'truss-po-2': ACCEPT,
+    'truss-designer': ARCH('R', PLAN_A('extend')), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('R2', PLAN_A('change')), 'truss-po-2': ACCEPT,
     'truss-checker-2': 'REVIEW: disagree\nClient: new seam needs the client',
   })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-po', 'truss-po-2', 'truss-checker-2'])
+  assert.deepEqual(r.labels, ['truss-designer', 'truss-checker', 'truss-po', 'truss-designer-2', 'truss-po-2', 'truss-checker-2'])
   const c = r.calls[5]
   assert.equal(c.opts.agentType, 'truss:checking-engineer')
   assert.ok(c.prompt.includes('"verdict":"change"'), 'the re-check sees the revised plan')
@@ -258,13 +258,13 @@ t('recheck 3: a revision that changes a verdict re-runs the checking engineer on
   assert.ok(r.result.client.includes('Client: new seam needs the client'))
 })
 
-t('recheck 4: a revision that changes the crew list re-runs it; a fix run labels it truss-checker-3-2', async () => {
+t('recheck 4: a revision that changes the crew list re-runs it; a fix run labels it truss-checker-4', async () => {
   const r = await execPlan(planArgs({ fix: true, personas: { 'product-owner': PO_PERSONA } }), {
-    'truss-designer-3': ARCH('R', PLAN_A('extend', ['api'])), 'truss-checker-3': AGREE, 'truss-po-3': REVISE(), 'truss-designer-3-po': ARCH('R2', PLAN_A('extend', ['api', 'ui'])), 'truss-po-4': ACCEPT,
-    'truss-checker-3-2': AGREE,
+    'truss-designer-3': ARCH('R', PLAN_A('extend', ['api'])), 'truss-checker-3': AGREE, 'truss-po-3': REVISE(), 'truss-designer-4': ARCH('R2', PLAN_A('extend', ['api', 'ui'])), 'truss-po-4': ACCEPT,
+    'truss-checker-4': AGREE,
   })
   assert.ifError(r.error)
-  assert.deepEqual(r.labels.slice(-1), ['truss-checker-3-2'])
+  assert.deepEqual(r.labels.slice(-1), ['truss-checker-4'])
   assert.equal(r.result.recheck.ran, true)
   assert.equal(r.result.stillDisagree, false)
 })
@@ -278,12 +278,12 @@ t('recheck 6 (review 1): a revision that changes a crew\'s owns or modules re-ru
   const planWith = (crews) => ({ planJson: JSON.stringify({ crews }), planMd: '# Plan\n\n- store: extend (x)\n' })
   const base = [{ slug: 'api', verdict: 'extend', owns: ['src/api/**'], modules: ['api'] }]
   for (const [name, changed] of [['owns', [{ ...base[0], owns: ['src/**'] }]], ['modules', [{ ...base[0], modules: ['api', 'db'] }]]]) {
-    const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', planWith(changed)), 'truss-po-2': ACCEPT, 'truss-checker-2': AGREE })
+    const r = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('R2', planWith(changed)), 'truss-po-2': ACCEPT, 'truss-checker-2': AGREE })
     assert.ifError(r.error)
     assert.equal(r.result.recheck.ran, true, `${name} changed`)
     assert.deepEqual(r.labels.slice(-1), ['truss-checker-2'])
   }
-  const same = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-po': ARCH('R2', planWith([{ slug: 'api', verdict: 'extend', modules: ['api'], owns: ['src/api/**'] }])), 'truss-po-2': ACCEPT })
+  const same = await execPlan(PO_ARGS(), { 'truss-designer': ARCH('R', planWith(base)), 'truss-checker': AGREE, 'truss-po': REVISE(), 'truss-designer-2': ARCH('R2', planWith([{ slug: 'api', verdict: 'extend', modules: ['api'], owns: ['src/api/**'] }])), 'truss-po-2': ACCEPT })
   assert.equal(same.result.recheck.ran, false, 'key order alone is no change')
 })
 

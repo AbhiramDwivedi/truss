@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AbhiramDwivedi/truss/docs/state.schema.json",
+  "title": "truss shared state rows",
+  "description": "The row shapes of the inbox, ledger, queue and usage files and of the unattended and ltc-plan files (contract-025 sections 2, 3, 4 and 6), as $defs. Stored rows are append-only: a field is added, never renamed or retyped, and v goes up if one must be. Read a row by $ref into $defs; the root validates nothing on its own.",
+  "$defs": {
+    "inboxId": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
+    "slug": { "type": "string", "minLength": 1 },
+    "inboxKind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage"] },
+    "inboxOpen": {
+      "description": "S/inbox.jsonl, op open. codeHash is sha256(id + code); the code is 6 characters from ABCDEFGHJKMNPQRSTUVWXYZ23456789.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "ts", "kind", "session", "crews", "ref", "blocking", "title", "detail", "codeHash"],
+      "properties": {
+        "v": { "const": 1 },
+        "op": { "const": "open" },
+        "id": { "$ref": "#/$defs/inboxId" },
+        "ts": { "type": "string" },
+        "kind": { "$ref": "#/$defs/inboxKind" },
+        "session": { "type": "string", "minLength": 1 },
+        "crews": { "type": "array", "items": { "$ref": "#/$defs/slug" } },
+        "ref": { "type": ["string", "null"] },
+        "blocking": { "type": "boolean" },
+        "title": { "type": "string", "maxLength": 200 },
+        "detail": { "type": "string", "maxLength": 4000 },
+        "codeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "inboxLink": {
+      "description": "S/inbox.jsonl, op link. It can only turn blocking on.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "ts", "session", "crews"],
+      "properties": {
+        "v": { "const": 1 },
+        "op": { "const": "link" },
+        "id": { "$ref": "#/$defs/inboxId" },
+        "ts": { "type": "string" },
+        "session": { "type": "string", "minLength": 1 },
+        "crews": { "type": "array", "items": { "$ref": "#/$defs/slug" } },
+        "blocking": { "const": true }
+      }
+    },
+    "inboxResolve": {
+      "description": "S/inbox.jsonl, op resolve.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "ts", "session", "decision", "by", "note", "quote"],
+      "properties": {
+        "v": { "const": 1 },
+        "op": { "const": "resolve" },
+        "id": { "$ref": "#/$defs/inboxId" },
+        "ts": { "type": "string" },
+        "session": { "type": "string", "minLength": 1 },
+        "decision": { "enum": ["approve", "reject", "answer", "done", "dismiss"] },
+        "by": { "enum": ["client", "pm"] },
+        "note": { "type": "string", "maxLength": 4000 },
+        "quote": { "type": ["string", "null"], "maxLength": 1000 },
+        "raiseUsd": { "type": "number" }
+      }
+    },
+    "inboxApplied": {
+      "description": "S/inbox.jsonl, op applied.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "ts", "session"],
+      "properties": {
+        "v": { "const": 1 },
+        "op": { "const": "applied" },
+        "id": { "$ref": "#/$defs/inboxId" },
+        "ts": { "type": "string" },
+        "session": { "type": "string", "minLength": 1 }
+      }
+    },
+    "inboxOp": {
+      "description": "Any line of S/inbox.jsonl; fold the ops in file order.",
+      "oneOf": [
+        { "$ref": "#/$defs/inboxOpen" },
+        { "$ref": "#/$defs/inboxLink" },
+        { "$ref": "#/$defs/inboxResolve" },
+        { "$ref": "#/$defs/inboxApplied" }
+      ]
+    },
+    "ledgerRow": {
+      "description": "S/ledger.jsonl, appended by mergeCrew. Append-only: no track command, no settle days.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "ts", "kind", "session", "crew", "goal", "workType", "process", "qc", "red", "target", "base", "head", "costUsd"],
+      "properties": {
+        "v": { "const": 1 },
+        "ts": { "type": "string" },
+        "kind": { "const": "merge" },
+        "session": { "type": "string", "minLength": 1 },
+        "crew": { "$ref": "#/$defs/slug" },
+        "goal": { "type": ["string", "null"] },
+        "workType": { "enum": ["feature", "bugfix", "migration", "dependency", "docs", "refactor", null] },
+        "process": { "enum": ["solo", "lean", "full", null] },
+        "qc": { "type": ["boolean", "null"] },
+        "red": { "type": ["boolean", "null"] },
+        "target": { "type": "string" },
+        "base": { "type": "string" },
+        "head": { "type": "string" },
+        "costUsd": { "type": ["number", "null"], "minimum": 0 },
+        "costWhy": { "type": "string" }
+      }
+    },
+    "usageRow": {
+      "description": "D/usage.jsonl, appended by sweep under D/locks/usage. The crew is resolved at read time from agentId, never stored.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "ts", "sid", "agentId", "model", "speed", "msgId", "in", "out", "think", "cr", "cw5m", "cw1h", "web"],
+      "properties": {
+        "v": { "const": 1 },
+        "ts": { "type": "string" },
+        "sid": { "type": "string", "minLength": 1 },
+        "agentId": { "type": ["string", "null"] },
+        "model": { "type": "string" },
+        "speed": { "type": ["string", "null"] },
+        "msgId": { "type": "string", "minLength": 1 },
+        "in": { "type": "integer", "minimum": 0 },
+        "out": { "type": "integer", "minimum": 0 },
+        "think": { "type": "integer", "minimum": 0 },
+        "cr": { "type": "integer", "minimum": 0 },
+        "cw5m": { "type": "integer", "minimum": 0 },
+        "cw1h": { "type": "integer", "minimum": 0 },
+        "web": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "usageCursor": {
+      "description": "D/usage-cursor.json. files is keyed by transcript path (lowercased on win32); ccEstimate is the newest cost-state estimate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "project", "ccEstimate"],
+      "properties": {
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["offset"],
+            "properties": { "offset": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "project": { "type": ["string", "null"] },
+        "ccEstimate": { "type": ["number", "null"] }
+      }
+    },
+    "queueItem": {
+      "description": "S/queue/items/<Q-id>.json. An item is a snapshot taken at first sight; a later edit to its source is ignored.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "id", "key", "source", "title", "text", "url", "author", "addedAt", "state", "session", "claimedAt", "history"],
+      "properties": {
+        "v": { "const": 1 },
+        "id": { "type": "string", "pattern": "^Q-[0-9a-f]{12}$" },
+        "key": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["md", "gh"] },
+        "title": { "type": "string", "maxLength": 200 },
+        "text": { "type": "string", "maxLength": 4000 },
+        "url": { "type": ["string", "null"] },
+        "author": { "type": ["string", "null"] },
+        "addedAt": { "type": "string" },
+        "state": { "enum": ["new", "claimed", "running", "triage", "done", "dropped"] },
+        "session": { "type": ["string", "null"] },
+        "claimedAt": { "type": ["string", "null"] },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ts", "from", "to", "by"],
+            "properties": {
+              "ts": { "type": "string" },
+              "from": { "enum": ["new", "claimed", "running", "triage", "done", "dropped"] },
+              "to": { "enum": ["new", "claimed", "running", "triage", "done", "dropped"] },
+              "by": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "unattended": {
+      "description": "D/unattended.json. item is the queue item the run works, or null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "item"],
+      "properties": {
+        "since": { "type": "string" },
+        "item": { "type": ["string", "null"], "pattern": "^Q-[0-9a-f]{12}$" }
+      }
+    },
+    "ltcPlan": {
+      "description": "D/ltc-plan.json, written by plan-write. rev is sha12 of the designer's result; ids are the inbox items it escalated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rev", "ids"],
+      "properties": {
+        "rev": { "type": "string", "minLength": 1 },
+        "ids": { "type": "array", "items": { "$ref": "#/$defs/inboxId" } }
+      }
+    }
+  }
+}
