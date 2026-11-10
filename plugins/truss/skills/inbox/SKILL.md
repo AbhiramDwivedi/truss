@@ -20,9 +20,9 @@ With no arguments, run:
 node <plugin>/bin/factory.ts inbox --open --repo <repo> --dir <truss dir>
 ```
 
-It prints one JSON line, `{items, open}`. Show each item on its own line: its `id`, `kind`, `title`, the `crews` it holds with their `session`, and whether it is `blocking`. When `open` is 0, say the inbox is empty.
+It prints one JSON line, `{items, open}`. Show each item on its own line: its `id`, `kind`, `title`, the `crews` it holds with their `session`, and whether it is `blocking`. `open` is the total of open items whatever the filters. When `open` is 0, say the inbox is empty.
 
-The list carries no codes: the inbox stores only a hash of each one. Tell the human that an item's code is in the escalation message, the PM's message or the notify row, and that they resolve an item by typing `/truss:inbox <approve|reject|answer|dismiss> <E-id> <code> [note]`. Never run a command to find a code.
+The list carries no codes: the inbox stores only a hash of each one. Tell the human that an item's code is in the escalation message, the PM's message or the notify row, and that they use the code of the item's first escalation: a deduped escalation prints `code: null` and makes no new code. They resolve an item by typing `/truss:inbox <approve|reject|answer|dismiss> <E-id> <code> [note]`. Never run a command to find a code.
 
 ## Resolve an item
 

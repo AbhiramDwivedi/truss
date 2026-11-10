@@ -94,12 +94,12 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 
 **Commands.** Each prints one JSON line and exits 0 for ok, 1 for a refusal, 2 for a usage error.
 
-- `factory escalate --kind k (--title t | --title-file p) [--detail d | --detail-file p] [--crew s]... [--ref key] [--blocking]` prints `{id, kind, deduped, code, notified}`.
-- `factory inbox [--open | --unapplied] [--kind k] [--crew s]` lists items. `--unapplied` lists resolved items with no `applied` op from this session.
+- `factory escalate --kind k (--title t | --title-file p) [--detail d | --detail-file p] [--crew s]... [--ref key] [--blocking]` prints `{id, kind, deduped, code, notified}`. On a dedupe `code` is null.
+- `factory inbox [--open | --unapplied] [--kind k] [--crew s]` prints `{items, open}`. The filters narrow `items` only: `open` is the total of open items whatever the filters. `--unapplied` lists resolved items with no `applied` op from this session.
 - `factory resolve <id> --decision d --by client|pm --code c [--note t] [--raise-usd n]`.
 - `factory mark-applied <id>`.
 
-**Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true`, and sends no notify. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
+**Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
 
 **The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores only `codeHash = sha256(id + code)`. The code reaches the client in the PM's message and in the notify row; `factory inbox` never shows it.
 
@@ -155,7 +155,7 @@ That line holds the id, the decision word and the code, so it qualifies. The lin
 
 **Negative**
 
-- **Residual risk.** An agent with Bash, running as the same OS user, can append a fake line to the transcript file. truss can't stop a same-user process. This fix raises the bar from typing one flag to deliberate tampering with Claude Code's files.
+- **Residual risk.** An agent with Bash, running as the same OS user, can append a fake line to the transcript file. truss can't stop a same-user process. This fix raises the bar from typing one flag to deliberate tampering with Claude Code's files. A wider path exists: the same agent can append a `resolve` row to `S/inbox.jsonl` directly, which skips the transcript proof altogether. Readers fold whatever rows the file holds; what is left against either forgery is a retro that checks each `quote` against the human-typed prompts.
 - The proof rests on Claude Code's transcript layout, which is not a documented interface. A change to it makes every client resolve fail closed until truss follows; the plain-prompt fallback covers the case where the arguments move.
 - **Append-only rows are a long-term cost.** `S/inbox.jsonl` and `S/ledger.jsonl` grow without bound, at about 1 KB per row (contract-025 §9). Every later reader is bound to the row shape, and changing it means migrating the history or reading both shapes forever.
 - A live lock held past 120 s can be broken by a waiter.
