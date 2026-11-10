@@ -53,7 +53,7 @@ async function exec(args, o = {}) {
     calls.push(call)
     await tick()
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
-      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|crew-decision|decision-replies|decision-ack|decision-checkpoint|crew-learned|knowledge-commit|decisions)\b([^\n]*)/)
+      const m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|crew-decision|decision-replies|decision-ack|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decisions)\b([^\n]*)/)
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
         throw new Error(`unparsable runner prompt for label ${opts.label}`)
@@ -214,7 +214,9 @@ t('knowledge 5: the knowledge writer runs after members and the green check, bef
   has(w.prompt, 'docs/adr')
   has(w.prompt, `${BASE}...`)
   has(w.prompt, '.claude/agents/frontend-ui-developer.md')
-  has(w.prompt, '.claude/agents/product-owner.md')
+  // ADR-0035: product calls go to the lazy product decisions file, never the always-loaded persona file
+  has(w.prompt, 'docs/knowledge/product-decisions.md')
+  hasnt(w.prompt, '.claude/agents/product-owner.md')
   has(w.prompt, 'docs(knowledge): a learned')
   const green = r.calls.findIndex((c) => c.runner && c.runner.key === 'check:green')
   assert.ok(green >= 0 && green < indexOf(r, 'a-writer'), 'writer after the first green check')
@@ -239,14 +241,14 @@ t('knowledge 7: args.truss.featureMap and adrDir override the default paths', as
   has(callOf(r, 'a-qc').prompt, 'docs/capabilities.md')
 })
 
-t('knowledge 8: a crew with no personas still gets the step, without persona or product-owner files', async () => {
+t('knowledge 8: a crew with no personas still gets the step, without persona files, and still names the product decisions file', async () => {
   const labels = labelsFor({ 'a-planner': PLAN(TT, { ...TF, persona: null }) })
   const r = await runStage([OLD()], { labels })
   passed(r)
   const p = callOf(r, 'a-writer').prompt
   has(p, 'Knowledge: crew a')
   has(p, 'Persona files the crew used: none')
-  has(p, 'Product-owner file: none')
+  has(p, 'Product decisions file: docs/knowledge/product-decisions.md')
 })
 
 t('knowledge 9: a crew whose tasks are all writer tasks skips the step and gets no Knowledge block in QC', async () => {
@@ -357,7 +359,7 @@ t('knowledge 13: the QC brief carries a Knowledge: block after Standards:, with 
   const p = callOf(r, 'a-qc').prompt
   has(p, 'Knowledge:')
   has(p, 'docs/features.md')
-  has(p, 'If the diff adds or moves user-facing functionality, the feature map must be updated in this diff, and every product call this crew made must appear in the product-owner file; otherwise FAIL, quoting the missing entry.')
+  has(p, 'If the diff adds or moves user-facing functionality, the feature map must be updated in this diff, and every product call this crew made must appear in the product decisions file; otherwise FAIL, quoting the missing entry.')
   assert.ok(p.indexOf('Standards:') >= 0 && p.indexOf('Standards:') < p.indexOf('Knowledge:'), 'Knowledge after Standards')
 })
 
@@ -366,7 +368,7 @@ t('knowledge 14: a crew with no personas also gets the Knowledge block in QC', a
   const p = callOf(r, 'a-qc').prompt
   has(p, 'Knowledge:')
   has(p, 'Never FAIL for missing optional learning')
-  has(p, 'Product-owner file: none')
+  has(p, 'Product decisions file: docs/knowledge/product-decisions.md')
 })
 
 // ---------------------------------------------------------------- product calls
@@ -385,7 +387,8 @@ t('product 1: a member QUESTION goes to the product-owner persona; DECIDE re-run
   has(po.prompt, '/proj/.truss/goals/a.md')
   has(po.prompt, 'SCOPE-VERBATIM: build a, nothing else')
   has(po.prompt, 'src/**')
-  has(po.prompt, '/proj/.claude/agents/product-owner.md')
+  has(po.prompt, 'docs/knowledge/product-decisions.md')
+  hasnt(po.prompt, '.claude/agents/product-owner.md')
   has(po.prompt, 'PO: DECIDE')
   has(po.prompt, 'PO: ESCALATE')
   assert.equal(po.opts.agentType, 'product-owner')
