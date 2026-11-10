@@ -11,7 +11,7 @@ sources:
   - plugins/truss/workflows/stage.js
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 7d10a66fab5091e5117223da7c94f18274180715
+verified: 62c130152d81678edca1b68414052aa1f11da819
 ---
 
 # Store, holds and contract-025 stubs
@@ -44,10 +44,10 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Stub modules
 
-`inbox`, `guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` is now implemented); a replacing crew keeps these exports exactly:
+`inbox`, `guard`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` is now implemented); a replacing crew keeps these exports exactly (`cost` is now implemented and is listed for its exports):
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
-- `cost.ts`: `budgetVerdict`, `crewCost`, `COST_COMMANDS`.
+- `cost.ts` (implemented): `sweep`, `budgetVerdict`, `crewCost`, `COST_COMMANDS`.
 - `worktypes.ts`: `profilesOf`, `workTypeErrors`, `WORKTYPE_COMMANDS`.
 - `ledger.ts`: `ledgerAppend`. `queue.ts`: `QUEUE_COMMANDS`.
