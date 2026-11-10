@@ -87,6 +87,18 @@ test('drift is reverted and dropped, never proposed', () => {
     assert.ok(!/good idea[^.\n]*(lost|dropped)/i.test(s), `${n}: no line says a good idea is dropped`)
   }
 })
+test('QC steps 7 and 11: QC never edits; knowledge-commit description edits to the architecture doc are allowed; the knowledge prompt agrees', () => {
+  const qc = read('agents', 'qc-engineer.md')
+  const s7 = qc.slice(qc.indexOf('\n7. '), qc.indexOf('\n8. '))
+  for (const s of ['`docs(knowledge):` commit', 'only correct descriptions', "existing ADR's Decision or Status", "architecture doc's principles", 'outside the knowledge commit', 'a design crew']) assert.ok(s7.includes(s), `step 7: ${s}`)
+  assert.ok(!s7.includes('Crews never edit them'), 'step 7 old rule')
+  const s11 = qc.slice(qc.indexOf('\n11. '), qc.indexOf('\n12. '))
+  assert.ok(s11.includes('Non-goals'), 'Non-goals sentence kept')
+  assert.ok(s11.includes('QC never edits.') && s11.includes('is a finding for rework') && s11.includes('design `PROPOSAL:`; if it does not, that is a finding'), 'step 11 new text')
+  assert.ok(!s11.includes('update the text when it is a description'), 'step 11 old text')
+  assert.ok(stage.includes('update the descriptive text in the architecture doc and the feature map') && stage.includes('never edit an existing ADR'), 'knowledge prompt')
+  assert.ok(!stage.includes('update the text when it is a description'), 'stage.js old text')
+})
 test('qc-engineer.md holds the new QC step word for word, as a numbered step after the reuse step', () => {
   const t = read('agents', 'qc-engineer.md')
   assert.ok(t.includes(`10. ${QC_STEP}`), 'step 10 text')

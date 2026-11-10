@@ -558,3 +558,73 @@ t('lint 10: a docs-only crew still gets the lint when the stage args name a know
     has(callOf(r, 'a-qc').prompt, 'Knowledge lint (factory knowledge-lint):')
   }
 })
+
+// ---------------------------------------------------------------- review fixes: brace limit, path forms, lint passthrough
+
+t('brace limit: more than 8 groups, or more than 256 alternatives, is invalid: it matches nothing and returns at once', () => {
+  const { globMatches, rulesFor } = matcher()
+  const g = (n, alts) => `{${alts.join(',')}}`.repeat(n)
+  const cases = [
+    [g(9, ['a', 'b']), 'a'.repeat(9)], // 9 groups
+    [g(3, ['a', 'b', 'c', 'd', 'e', 'f', 'g']), 'aaa'], // 3 groups of 7: 343 alternatives
+    [g(30, ['a', 'b']), 'a'.repeat(30)], // 30 groups
+  ]
+  for (const [glob, path] of cases) {
+    const t0 = performance.now()
+    assert.equal(globMatches(glob, path), false, glob)
+    assert.deepEqual(rulesFor([{ path: 'r.md', paths: [glob] }], [path]), [], `${glob} as a rule glob`)
+    assert.deepEqual(rulesFor([{ path: 'r.md', paths: ['**'] }], [`${glob}/*`]), [], `${glob} as a task glob overlaps nothing`)
+    assert.ok(performance.now() - t0 < 100, `${glob} took ${performance.now() - t0} ms`)
+  }
+  // the limits themselves are valid: 8 groups, and 256 alternatives
+  assert.equal(globMatches(g(8, ['a', 'b']), 'a'.repeat(8)), true)
+  assert.equal(globMatches(g(2, Array.from({ length: 16 }, (_, i) => String.fromCharCode(97 + i))), 'pp'), true)
+})
+
+t('brace limit: globsOverlap with braces on both sides stays bounded', () => {
+  const { rulesFor } = matcher()
+  const g = `{${'a,b'}}`.repeat(8)
+  const t0 = performance.now()
+  assert.deepEqual(rulesFor([{ path: 'r.md', paths: [`src/${g}/*.ts`] }], [`src/${g}/**/*.ts`]), ['r.md'])
+  assert.ok(performance.now() - t0 < 2000, `took ${performance.now() - t0} ms`)
+})
+
+t('always loaded 1: a Windows path, a different slash, a different case and a leading ./ are all recognised', async () => {
+  const forms = [
+    ['C:\\repo', 'C:\\repo\\.claude\\agents\\pm.md'],
+    ['C:/repo/', 'C:/repo/.claude/agents/pm.md'],
+    ['/proj', '.claude/Agents/x.md'],
+    ['/proj', './AGENTS.md'],
+    ['C:\\repo', 'c:/REPO/CLAUDE.md'],
+  ]
+  for (const [repo, target] of forms) {
+    const item = { kind: 'product', text: 'CALL-X', source: 's:1', target }
+    const r = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b', { learned: [item] }) }), truss: { repo } })
+    const line = callOf(r, 'a-writer').prompt.split('\n').find((l) => l.includes('CALL-X')) || ''
+    has(line, '(always loaded: a product call never goes there')
+  }
+  // the agents index goes through the same normalisation
+  const item = { kind: 'product', text: 'CALL-X', source: 's:1', target: 'C:\\repo\\Ctx\\Index.md' }
+  const r = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b', { learned: [item] }) }), truss: { repo: 'C:/repo', agentsIndex: './ctx\\index.md' } })
+  has(callOf(r, 'a-writer').prompt.split('\n').find((l) => l.includes('CALL-X')) || '', 'always loaded')
+  // a file that is not one of them is not
+  const ok = { kind: 'product', text: 'CALL-X', source: 's:1', target: 'C:\\repo\\docs\\knowledge\\a.md' }
+  const r2 = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b', { learned: [ok] }) }), truss: { repo: 'C:\\repo' } })
+  hasnt(callOf(r2, 'a-writer').prompt.split('\n').find((l) => l.includes('CALL-X')) || '', 'always loaded')
+})
+
+t('lint 12: the new checks (bad-glob, always-loaded-calls) are ordinary failures; baseFallback adds the QC warning line', async () => {
+  const bad = { check: 'bad-glob', path: '.claude/rules/ui.md', message: 'too many brace groups', new: true }
+  const calls = { check: 'always-loaded-calls', path: 'AGENTS.md', message: 'product call', new: false }
+  const run = (extra) => ({ cmd }) => (cmd === 'knowledge-lint' ? rj({ ok: false, failures: [bad, calls], warnings: [], base: 'abc', ...extra }) : undefined)
+  const FALL = "The lint base is the crew's red-record head, not the fork point; a failure marked predating may be the crew's own. Check the knowledge files by hand."
+  const r = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: run({ baseFallback: true }) })
+  const p = callOf(r, 'a-qc').prompt
+  has(p, '- [bad-glob] .claude/rules/ui.md: too many brace groups')
+  has(p, '- [always-loaded-calls] AGENTS.md: product call')
+  has(p, FALL)
+  const r2 = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: run({}) })
+  hasnt(callOf(r2, 'a-qc').prompt, 'red-record head')
+  const r3 = await runStage([OLD()], { labels: labelsFor(PLAIN), runner: ({ cmd }) => (cmd === 'knowledge-lint' ? rj({ ok: true, failures: [], warnings: [], baseFallback: true }) : undefined) })
+  has(callOf(r3, 'a-qc').prompt, FALL)
+})
