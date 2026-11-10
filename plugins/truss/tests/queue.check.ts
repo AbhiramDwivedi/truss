@@ -128,6 +128,16 @@ test('queue: indented lines join the item text', () => {
   assert.ok(!second.text.includes('continues here'), 'a continuation belongs to the item above it only')
 })
 
+test('queue: indented sibling items stay separate items', () => {
+  const env = mdEnv(['# Queue', '', '  - [ ] fix the login page', '  - [ ] add a dark mode toggle', '  - [ ] write the release notes', ''].join('\n'))
+  const r = q(env, 'intake', { source: 'md' })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.added.length, 3)
+  const items = itemFiles(env.repo)
+  assert.deepEqual(items.map((i) => i.title).sort(), ['add a dark mode toggle', 'fix the login page', 'write the release notes'])
+  for (const i of items) assert.ok(!i.text.includes('\n'), i.text)
+})
+
 test('queue: a repeat intake dedupes and reports changed', () => {
   // md: the same file twice is all seen.
   const md = mdEnv('- [ ] one item\n')
