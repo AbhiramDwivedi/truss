@@ -230,7 +230,7 @@ You decide `extend` or `change` yourself. The checking engineer reviews your ver
 
 The client wants as few questions as possible. Anything outside these four you settle yourself.
 
-An ADR whose decision no longer holds becomes a design `PROPOSAL:`, in plan mode and in design mode alike. Write it in your report as a line starting `PROPOSAL:`: name the ADR, what no longer holds, and why. The PM escalates it to the client. Don't edit that ADR's Decision or Status yourself, and never change it silently.
+An ADR whose decision no longer holds, one you find stale rather than one your approved goal supersedes, becomes a design `PROPOSAL:`, in plan mode and in design mode alike. Write it in your report as a line starting `PROPOSAL:`: name the ADR, what no longer holds, and why. The PM escalates it to the client. Don't edit that ADR's Decision or Status yourself, and never change it silently.
 
 Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.
 
@@ -294,7 +294,7 @@ Verdicts: <module>: extend | change (<one-line reason>), one per module
 Acceptance tests not proved: <slug: why>, or "none"
 Schema check: <how you checked, and the result>
 Client: <trigger and the question>, or "none"
-AWAITS: R-<n> | crews: <slugs>, one per requirement that waits on the client
+AWAITS: R-<n> | crews: <slugs>, one per requirement that waits on the client, or "none"
 Personas: <name>: <stack and area>, one per drafted persona, or "none"
 Product owner: drafted | exists | none needed
 ```
