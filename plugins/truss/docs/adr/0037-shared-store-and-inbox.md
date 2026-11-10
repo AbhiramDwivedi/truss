@@ -127,10 +127,11 @@ We will accept `resolve --by client` only with proof that the human typed the de
 
 - is not `isMeta` and not `isSidechain`, and is not `isCompactSummary` or `isVisibleInTranscriptOnly`;
 - has no `origin`, or `origin.kind` is `human` (a task-notification line carries an agent's return text, not a human's);
+- is not command output: its text holds no `bash-input`, `bash-stdout`, `bash-stderr` or `local-command-*` tag (`inbox.ts:187`, `:208`), because the first `<command-args>` anywhere in such text would otherwise count;
 - is not a scheduled line: no `wakeupSource`, `scheduledTaskId` or `scheduledFireId`, and `turnOrigin` (if present) is `human` and `promptSource` (if present) is `typed` (a `/loop` wakeup line has no `origin` and no `isMeta`, and its text is the `prompt` the agent passed to ScheduleWakeup);
 - has string content, or only text blocks and no `tool_result`;
 - is newer than the item's `open` op;
-- contains the E-id and the code, with the decision word directly before the E-id (`reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
+- contains the E-id and the code, and the decision word is the first word of the `<command-args>` text (or of the prompt, without a leading `/truss:inbox`), directly before the E-id (`inbox.ts:200-201`; `reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
 
 The text of that line, cut to 1000 characters, is stored as `quote`. There is no `--quote` flag, so an agent never types the quote. A retro can check each quote against the human-typed prompts of all the project's sessions.
 
@@ -152,7 +153,7 @@ That line holds the id, the decision word and the code, so it qualifies. The lin
 
 **Positive**
 
-- An agent can no longer approve for the client by typing a flag; it needs a code it was never shown in a line only the human writes.
+- An agent can no longer approve for the client by typing a flag; it needs the code that `escalate` prints only to the agent that raised the item, typed back in a line only the human writes (an agent that holds the code can't write that line).
 - Every session of a repo sees the same inbox, ledger and queue, with no filter on session dirs.
 - One file owns locking and atomic writes, so the cross-platform cases are fixed once.
 - The notify command can't hang an escalation or leave a stray process.
