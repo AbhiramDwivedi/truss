@@ -690,3 +690,29 @@ test('inbox: 8 concurrent escalates with one kind and ref leave one open op and 
   assert.equal(ops.filter((o) => o.op === 'link').length, 7)
   assert.equal(listOf(env, ['--open']).open, 1)
 })
+
+test('inbox: resolve by client needs the decision word directly before the id', () => {
+  const env = mkInbox()
+  const a = raise(env, 'scope-change', ['--crew', 'c1'])
+  // the id and code are present, but the word before the id is reject, and approve only appears elsewhere
+  putTranscript(env, [human(`reject ${a.id} ${a.code} I do not approve this`, afterOpen(env, a.id))])
+  const r = resolveOf(env, a.id, 'approve', 'client', a.code)
+  assertOneLine(r)
+  assert.equal(r.status, 1, `${r.stdout} ${r.stderr}`)
+  assert.equal(opsOf(env).filter((o) => o.op === 'resolve').length, 0)
+  assert.equal(listOf(env, ['--open']).open, 1, 'the item is still open')
+})
+
+test('inbox: resolve reads the note from --note-file', () => {
+  const env = mkInbox()
+  const a = raise(env, 'scope-change', ['--crew', 'c1'])
+  putTranscript(env, [human(typed(a.id, a.code), afterOpen(env, a.id))])
+  const noteFile = `${mk('inbox-note-')}/note.txt`
+  const note = 'note-from-file-marker'
+  writeFileSync(noteFile, note)
+  const r = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note-file', noteFile])
+  assertOneLine(r)
+  assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
+  assert.equal(opsOf(env).find((o) => o.op === 'resolve').note, note)
+  assert.ok(!readFileSync(`${env.dir}/events.jsonl`, 'utf8').includes(note), 'the note never reaches events.jsonl')
+})
