@@ -3,14 +3,14 @@
 // No price is written here: prices come from the client's `pricing` config. Imports node: builtins and relative paths only, and never factory.ts
 // (its top-level await would make an import cycle).
 
-import { appendFileSync, closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
 import path from 'node:path'
 import { budgetRaises } from './inbox.ts'
 import { StoreBusy, configOf, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string }
-export type SweepOut = { rows: number; files: number; bad: number; found: number }
+export type SweepOut = { rows: number; files: number; bad: number; found: number; unswept?: true }
 type SweepOpts = { platform?: NodeJS.Platform; waitMs?: number }
 
 const CHUNK = 4 * 1024 * 1024 // a transcript is read in chunks of this size, each cut at its last newline
@@ -160,14 +160,16 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
   )
 }
 
-/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). */
+/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). With no cursor yet no sweep has finished, so usage.jsonl is missing or partial: the result says `unswept`. */
 function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
   try {
     return sweep(dir, repo, opts)
   } catch (e) {
     if (!(e instanceof StoreBusy)) throw e
     const tr = transcriptsOf(path.basename(flat(dir)))
-    return { rows: 0, files: 0, bad: 0, found: (tr.main === null ? 0 : 1) + tr.agents.length }
+    const out: SweepOut = { rows: 0, files: 0, bad: 0, found: (tr.main === null ? 0 : 1) + tr.agents.length }
+    if (!existsSync(`${flat(dir)}/usage-cursor.json`)) out.unswept = true
+    return out
   }
 }
 
@@ -302,6 +304,7 @@ export function budgetVerdict(dir: string, repo: string, plan: Obj | null, slug:
   for (const c of checks) {
     const limitUsd = c.ref === '' ? c.base : c.base + raiseFor(raises, c.ref)
     if (done.found === 0) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: no transcripts found for session ${sid}, so ${c.label} spend is unknown` }
+    if (done.unswept === true) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: the first usage sweep of session ${sid} is still running, so ${c.label} spend is unknown` }
     const s = sumOf(c.rows(all, of), cfg.pricing)
     if (s.usd === null) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: ${c.label} spend not priced: ${s.unpriced.join(', ')}` }
     if (s.usd >= limitUsd) return { held: true, scope: c.scope, spentUsd: s.usd, limitUsd, why: `budget: ${c.label} spent ${Math.round(s.usd * 10000) / 10000} USD, which reached the limit of ${limitUsd} USD` }
@@ -323,7 +326,7 @@ const raiseFor = (raises: { ref: string; raiseUsd: number }[], ref: string): num
 
 /** The crew's spend in USD, or null with the reason it can't be priced. */
 export function crewCost(dir: string, repo: string, slug: string): { usd: number | null; why?: string } {
-  sweepOrRead(dir, repo, { waitMs: 1000 })
+  if (sweepOrRead(dir, repo, { waitMs: 1000 }).unswept === true) return { usd: null, why: 'usage sweep still running' }
   const slugs = slugsOf(planOf(dir))
   if (!slugs.includes(slug)) slugs.push(slug)
   const of = attributor(dir, repo, slugs, process.platform)

@@ -78,7 +78,7 @@ A crew without `workType` gets no error outside an unattended run. A run is unat
 
 `factory.ts worktypes --repo R` prints `profilesOf` of the repo's config as one JSON object `{profiles, errors}` (`bin/worktypes.ts:67-69`). The sizing engineer has no Bash, so it cannot run this. The PM runs it and passes the output to the sizing engineer with the goal. Contract-025 section 5 assigns that prompt text to the D1 and D2 crews.
 
-TODO: name the PM and sizing-engineer prompt lines that pass `factory worktypes` output, once D1 and D2 have landed them.
+The PM and sizing-engineer prompt lines that pass `factory worktypes` output are owned by D1 and D2.
 
 ## Consequences
 
