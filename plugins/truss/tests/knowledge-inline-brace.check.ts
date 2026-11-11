@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { parseFrontmatter } from '../bin/knowledge.ts'
+
+test('inline frontmatter list keeps a comma inside glob braces', () => {
+  const fm = parseFrontmatter('---\npaths: [src/{a,b}/**, "lib/{x,y}.ts", plain.ts]\n---\n')
+  assert.deepEqual(fm?.data.paths, ['src/{a,b}/**', 'lib/{x,y}.ts', 'plain.ts'])
+  const multi = parseFrontmatter('---\npaths: [src/{a,b}/**,\n  c.ts]\n---\n')
+  assert.deepEqual(multi?.data.paths, ['src/{a,b}/**', 'c.ts'])
+})
+
+test('inline frontmatter list treats an unbalanced brace as a literal, so its comma still splits', () => {
+  assert.deepEqual(parseFrontmatter('---\npaths: [a{b, c.ts]\n---\n')?.data.paths, ['a{b', 'c.ts'])
+  assert.deepEqual(parseFrontmatter('---\npaths: [a{b, c{d,e}.ts]\n---\n')?.data.paths, ['a{b', 'c{d,e}.ts'])
+  assert.deepEqual(parseFrontmatter('---\npaths: [a}b, c.ts]\n---\n')?.data.paths, ['a}b', 'c.ts'])
+})
+
+test('inline frontmatter list does not take a quoted closing brace for the end of a group', () => {
+  assert.deepEqual(parseFrontmatter('---\npaths: [a{b, "c}d", e.ts]\n---\n')?.data.paths, ['a{b', 'c}d', 'e.ts'])
+})
