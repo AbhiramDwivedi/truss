@@ -10,7 +10,7 @@ claude plugin marketplace add AbhiramDwivedi/truss
 claude plugin install truss@truss
 ```
 
-Add the claude-ops marketplace first. truss depends on three claude-ops plugins, kit `^0.3.1`, worktrees `^0.8.4` and subagent-limits `^0.3.1` (`plugins/truss/.claude-plugin/plugin.json`), and `claude plugin install truss@truss` installs them with it. The truss catalog allows those dependencies with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`.
+Add the claude-ops marketplace first. truss depends on three claude-ops plugins, kit `^0.4.0`, worktrees `>=0.8.4 <0.11.0` and subagent-limits `^0.3.2` (`plugins/truss/.claude-plugin/plugin.json`), and `claude plugin install truss@truss` installs them with it. The truss catalog allows those dependencies with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`.
 
 Without the claude-ops marketplace, truss fails to load. To fix it, run `claude plugin marketplace add AbhiramDwivedi/claude-ops`, then reinstall truss with `claude plugin install truss@truss`. See [ADR-0021](plugins/truss/docs/adr/0021-plugin-dependencies.md).
 

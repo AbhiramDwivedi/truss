@@ -1407,8 +1407,8 @@ truss uses kit, worktrees and subagent-limits where they live, in the claude-ops
 | Dependency | Range | What truss uses it for |
 | --- | --- | --- |
 | kit | `^0.4.0` | The project manifest init builds on, `kit:init` when the manifest is missing, `kit:persona` (how to write a persona agent file, ADR-0032), and the `kit:builder` and `kit:test-writer` member types where no persona covers an area |
-| worktrees | `^0.8.4` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); it also cleans merged, clean `wf_*` worktrees |
-| subagent-limits | `^0.3.1` | The context budget in every subagent's brief, the `nudgeAtK` checkpoint and `stopAtK` stop, and the `split-work` skill the foreman and planner load |
+| worktrees | `>=0.8.4 <0.11.0` | Worktree slots and `PORT_BASE` (ADR-0002 Decision 4); it also cleans merged, clean `wf_*` worktrees |
+| subagent-limits | `^0.3.2` | The context budget in every subagent's brief, the `nudgeAtK` checkpoint and `stopAtK` stop, and the `split-work` skill the foreman and planner load |
 
 Every entry names `marketplace: "claude-ops"`. The truss catalog allows it with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. A user installs with the claude-ops marketplace added first:
 
@@ -1424,9 +1424,9 @@ Without the claude-ops marketplace, truss fails to load. Add it, then reinstall 
 flowchart LR
   truss["truss plugin<br/>[plugins/truss/.claude-plugin/plugin.json]"]
   cat["truss catalog<br/>[marketplace/.claude-plugin/marketplace.json]"]
-  kit["kit ^0.3.1"]
-  wt["worktrees ^0.8.4"]
-  sl["subagent-limits ^0.3.1"]
+  kit["kit ^0.4.0"]
+  wt["worktrees >=0.8.4 <0.11.0"]
+  sl["subagent-limits ^0.3.2"]
   truss -->|"dependencies, marketplace claude-ops"| kit
   truss --> wt
   truss --> sl
