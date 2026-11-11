@@ -31,7 +31,8 @@ export function ltcLines(text: string): LtcLine[] {
       if (l !== null && later === '') later = l[1].trim()
       else if (r !== null && rev === '') rev = r[1].trim().toLowerCase()
     }
-    const reversal: Reversal = rev === 'cheap' || rev === 'costly' || rev === 'irreversible' ? rev : 'costly'
+    if (parts[0] === '') continue
+    const reversal: Reversal =rev === 'cheap' || rev === 'costly' || rev === 'irreversible' ? rev : 'costly'
     out.push({ what: parts[0], later, reversal })
   }
   return out
@@ -101,8 +102,9 @@ function raise(repo: string, dir: string, ref: string, line: LtcLine, crews: str
   const same = longTermItems(repo).filter((i) => i.ref === ref)
   const approved = same.find((i) => i.decision === 'approve')
   if (approved !== undefined) return approved.id
-  const standing = same.find((i) => i.decision === null || i.decision === 'reject')
-  if (standing !== undefined && standing.decision === 'reject') return standing.id
+  const rejected = same.find((i) => i.decision === 'reject')
+  if (rejected !== undefined) return rejected.id
+  // an open item falls through: escalate dedupes on the ref and returns it
   return escalate(repo, dir, { kind: KIND, title: `long-term cost: ${line.what}`, detail: `later: ${line.later}\nreversal: ${line.reversal}`, crews, ref, blocking: true }).id
 }
 
