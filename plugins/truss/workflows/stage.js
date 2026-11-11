@@ -613,11 +613,20 @@ const testsCheckExtra = (crew, ...lines) => {
   return all.length ? all.join('\n') : null
 }
 
+// Starvation bound (gates item 8): the heavy slot is not FIFO, and one heavy run waits at most HEAVY_WAIT_MS (540 s, under
+// the 600 s Bash timeout) in factory. check() runs heavy up to HEAVY_WAIT_ROUNDS = 3 times in all, so a crew waits at most
+// 3 rounds of 540 s, about 27 minutes, for the slot. Non-FIFO: a crew can still lose every round and block. No sleep
+// between rounds, since each run already waits inside factory.
+const HEAVY_WAIT_ROUNDS = 3
+
 async function check(crew, expect) {
-  const r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect))
-  const h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
-  if (h && typeof h === 'object' && h.ran === false) throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
-  return r
+  let r, h
+  for (let round = 1; round <= HEAVY_WAIT_ROUNDS; round++) {
+    r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect))
+    h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
+    if (!(h && typeof h === 'object' && h.ran === false)) return r
+  }
+  throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
 }
 
 // ---------------------------------------------------------------- prompts
