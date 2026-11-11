@@ -17,10 +17,12 @@ import { hostname, tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { proofPlugin } from './fixtures/inbox/proof-plugin.ts'
 import { REAL_PLUGIN, assertOneLine, crew, highSampleFile, mkRepo, mkTrussDir, planObj, pluginCopy, runCli, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const FIX = fileURLToPath(new URL('./fixtures/cost/', import.meta.url))
-const FACTORY = `${REAL_PLUGIN}/bin/factory.ts`
+// the private plugin whose proof root is $TRUSS_TEST_PROOF_ROOT (set by world()); its sweeps still read TRUSS_TRANSCRIPTS_ROOT
+const FACTORY = `${proofPlugin()}/bin/factory.ts`
 const ALL_IDS = ['msg_l1', 'msg_m1', 'msg_m3', 'msg_m4', 'msg_t1', 'msg_w1']
 const TORN_SUFFIX = ',"cache_read_input_tokens":0}}}\n'
 const rp = (p: string): string => realpathSync(p).replace(/\\/g, '/')
@@ -48,7 +50,7 @@ function world(o: { config?: unknown; crews?: string[]; key?: string } = {}): W 
   const dir = rp(mkTrussDir())
   const root = rp(tmp('cost-tr-'))
   if (o.crews) writePlan(dir, planObj(o.crews.map((s) => crew(s))))
-  return { repo, dir, sid: path.basename(dir), root, key: o.key ?? '-work-proj', env: { TRUSS_TRANSCRIPTS_ROOT: root } }
+  return { repo, dir, sid: path.basename(dir), root, key: o.key ?? '-work-proj', env: { TRUSS_TRANSCRIPTS_ROOT: root, TRUSS_TEST_PROOF_ROOT: root } }
 }
 const wtOf = (w: W, slug: string): string => `${w.repo}/.claude/worktrees/truss-${slug}`
 const WHERE: Record<string, string> = {
@@ -292,9 +294,12 @@ test('cost: the 5.20 crew held at crewUsd 5 gives budgetVerdict held with scope 
 
 // End to end through the real inbox: hold, escalation with the code in the held entry (no notify key), client-path resolve with a typed raise, admit.
 function typeApproval(w: W, id: string, code: string, tail: string): void {
-  const line = { parentUuid: null, isSidechain: false, type: 'user', message: { role: 'user', content: `/truss:inbox approve ${id} ${code} ${tail}` }, uuid: `u-${id}`, timestamp: new Date(Date.now() + 60000).toISOString() }
+  const file = `${w.root}/${w.key}/${w.sid}.jsonl`
+  const have = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean) : []
+  const parentUuid = have.length ? JSON.parse(have[have.length - 1]).uuid : null
+  const line = { parentUuid, isSidechain: false, type: 'user', origin: { kind: 'human' }, promptSource: 'typed', sessionId: w.sid, message: { role: 'user', content: `/truss:inbox approve ${id} ${code} ${tail}` }, uuid: `u-${id}-${have.length}`, timestamp: new Date(Date.now() + 60000).toISOString() }
   mkdirSync(`${w.root}/${w.key}`, { recursive: true })
-  appendFileSync(`${w.root}/${w.key}/${w.sid}.jsonl`, JSON.stringify(line) + '\n')
+  appendFileSync(file, JSON.stringify(line) + '\n')
 }
 const resolveCli = (w: W, id: string, code: string, extra: string[]) => runCli(FACTORY, 'resolve', [id, '--decision', 'approve', '--by', 'client', '--code', code, ...extra, '--repo', w.repo, '--dir', w.dir], w.repo, w.env)
 
