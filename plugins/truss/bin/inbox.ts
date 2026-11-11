@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configOf, flat, listOf, proofTranscriptRoot, readJsonl, readProofFile, readText, refuse, sharedDir, str, usage, need, withLock, writeJsonAtomic } from './store.ts'
+import { commonDir, configOf, flat, listOf, proofTranscriptRoot, readJsonl, readProofFile, readText, refuse, sharedDir, str, usage, need, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 export type EscalateInput = { kind: string; title: string; detail?: string; crews?: string[]; ref?: string | null; blocking?: boolean }
@@ -173,8 +173,11 @@ function proofMain(session: string): string | null {
 }
 
 const commonOf = (dir: string): string | null => {
-  const r = spawnSync('git', ['-c', 'core.quotepath=off', '-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', windowsHide: true })
-  return r.status === 0 ? flat(r.stdout.trim()) : null
+  try {
+    return commonDir(dir)
+  } catch {
+    return null // not a git repo: commonDir throws a usage error
+  }
 }
 
 /**
@@ -194,7 +197,7 @@ function ownsCwd(repo: string, cwd: unknown): boolean {
   return ours === null || (theirs !== null && theirs === ours)
 }
 
-const norm = (s: string): string =>s.trim().split(/\s+/).filter(Boolean).join(' ')
+const norm = (s: string): string => s.trim().split(/\s+/).filter(Boolean).join(' ')
 
 // A quote shown to anyone: the item's code token becomes [code]. A reopened item makes its spent code live again, so no listing prints it.
 const maskCode = (quote: unknown, id: string, codeHash: unknown): unknown =>
@@ -415,12 +418,22 @@ function argsOf(text: string): string {
 // The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the code and the decision word right before the id.
 // With a raise, the typed line is `<decision> <id> <code> raise <usd> [note]`: the amount is the one the client typed, not the agent's flag.
 // The decision is the first word the client typed, directly before the id; the code is the token after it (see proof).
-function typedProof(repo: string, session: string, open: Obj, decision: string, raiseUsd?: number): { quote: string; rest: string } | { missing: string } {
+function typedProof(repo: string, session: string, open: Obj, decision: string, raiseUsd?: number): { quote: string; rest: string } | { missing: string; raiseTyped?: string } {
   const main = proofMain(session)
   if (main === null) return { missing: `no transcript of session ${session} under ${proofTranscriptRoot()}` }
   const scan = scanFile(main, session, new Set([String(open.id)]))
   const p = scan === null ? null : proof(repo, open, { decision, raiseUsd }, scan.cands.get(String(open.id)) ?? [], true)
-  return p === null ? { missing: '' } : { quote: p.text.slice(0, 1000), rest: p.rest }
+  if (p !== null) return { quote: p.text.slice(0, 1000), rest: p.rest }
+  if (raiseUsd === undefined && scan !== null) {
+    // the client typed a raise but the agent left out --raise-usd: the flag is the cause, not a missing prompt
+    for (const k of scan.cands.get(String(open.id)) ?? []) {
+      const t = argsOf(k.text).split(/\s+/)
+      if (k.chain && t[0] === decision && t[1] === open.id && t[2] !== undefined && codeHashOf(open.id, t[2]) === open.codeHash && t[3] === 'raise' && /^\d+(\.\d+)?$/.test(t[4] ?? '')) {
+        return { missing: '', raiseTyped: t[4] }
+      }
+    }
+  }
+  return { missing: '' }
 }
 
 function resolveItem(f: Flags): Obj {
@@ -457,6 +470,7 @@ function resolveItem(f: Flags): Obj {
     if (by === 'client') {
       const p = typedProof(repo, session, it.open, decision, raiseUsd)
       if ('missing' in p) {
+        if (p.raiseTyped !== undefined) throw refuse({ error: `the client typed raise ${p.raiseTyped} for ${id}: pass --raise-usd ${p.raiseTyped}, a resolve without it cannot stand for a typed raise` })
         const line = `${decision} ${id} <code>${raiseUsd === undefined ? '' : ` raise ${raiseUsd}`}`
         const cfg = process.env.CLAUDE_CONFIG_DIR // read for this message only, never as a root
         const why = p.missing !== '' && cfg && flat(path.join(cfg, 'projects')) !== proofTranscriptRoot() ? `; CLAUDE_CONFIG_DIR is set to ${flat(cfg)} but the proof reads transcripts only under ${proofTranscriptRoot()}` : ''
