@@ -179,7 +179,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
   )
 }
 
-/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). The result then says `busy`, because usage.jsonl may lag (or, before a first sweep, be missing or partial). budgetVerdict reads it as it stands and accepts the lag (contract-025 section 4); crewCost returns null on any busy lock, so the append-only ledger never gets a too-low cost. */
+/** Sweeps, and when the usage lock stays busy reads usage.jsonl as it stands (found is then counted from the transcripts). The result then says `busy`, because usage.jsonl may lag (or, before a first sweep, be missing or partial). budgetVerdict reads it as it stands and accepts the lag (contract-025 section 4), but with no usage.jsonl it sweeps again and throws StoreBusy (ADR-0038 amendment 2026-11-11); crewCost returns null on any busy lock, so the append-only ledger never gets a too-low cost. */
 function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
   try {
     return sweep(dir, repo, opts)
@@ -314,7 +314,9 @@ export function budgetVerdict(dir: string, repo: string, plan: Obj | null, slug:
     checks.push({ scope: useWt ? 'workType' : 'crew', ref: '', base: limit, label: `crew ${slug}`, rows: mine })
   }
   if (checks.length === 0) return { held: false }
-  const done = sweepOrRead(dir, repo, { waitMs: 1000 })
+  let done = sweepOrRead(dir, repo, { waitMs: 1000 })
+  // busy with no usage.jsonl: the spend is unknown, so never admit. Sweep once more with the store's default wait, then let StoreBusy (exit 2, not admitted) through.
+  if (done.busy === true && !existsSync(`${dir}/usage.jsonl`)) done = sweep(dir, repo, {})
   const all = usageRows(dir)
   const raises = raisesOf(repo, sid)
   const slugs = slugsOf(plan)

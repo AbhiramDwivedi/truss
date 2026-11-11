@@ -178,3 +178,9 @@ Until this amendment `budgetVerdict` checked `sessionUsd` only when `slug` was n
 - A torn last row of `usage.jsonl` no longer swallows the next swept row (Decision 1).
 
 Long-term cost, accepted by the ruling: an attended session at its cap stops at the next member start and needs a typed raise to go on, and the spend accumulates over every run in a long session, so a long attended session reaches the cap sooner than any one run would.
+
+## Amendment 2026-11-11: a busy usage lock with no reading never admits
+
+Decided by: the PM, on the checking engineer's review of the review-fixes round (decision 12:58, checker-7 item 2). The case is in `tests/cost-026.check.ts`.
+
+Until this amendment, `budgetVerdict` returned `held: false` when the usage lock stayed busy for its 1000 ms wait and no `usage.jsonl` existed. That let a crew in with unknown spend, a fail-open that parallel admits can reach. Now the verdict sweeps once more with the store's default wait (5 s, under the 120 s stale age), and if the lock is still busy it throws `StoreBusy` (exit 2, `store busy: usage`). It never returns a hold, because a hold raises a budget escalation that needs a typed raise. Exit 2 is never an admit: `admit` and `queue-next` exit 2 (`stage.js` retries `admit` once, then stops BLOCKED), and `start` lists the crew in `held` with that `why`. When `usage.jsonl` exists, a busy lock still reads it as it stands, and the lag is accepted (Decision 4).

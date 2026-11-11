@@ -204,8 +204,12 @@ async function holdLock(w: W, holdMs: number): Promise<{ stop: () => Promise<voi
 test('cost-026: the budget verdict waits at most its 1000 ms bound while another process holds the lock over a 100 MB transcript', async () => {
   const c = await realCost()
   const cap = { pricing: pricing(), budget: { crewUsd: 5 } }
-  // no over-cap rows in usage.jsonl: not held (a busy lock is not a hold)
+  // a prior usage.jsonl with no over-cap rows: a busy lock reads the last ledger and is not a hold
+  // (a busy lock with no ledger at all is refused with StoreBusy, pinned below)
   const a = world({ config: cfg(cap), crews: ['bcrew'] })
+  layMain(a, 'msg_prior', 1)
+  assert.equal(cost(a).status, 0)
+  assert.equal(existsSync(usagePath(a)), true, 'a prior usage.jsonl exists')
   layBudget(a)
   bigMain(a, 100)
   const ha = await holdLock(a, 6000)
@@ -234,6 +238,32 @@ test('cost-026: the budget verdict waits at most its 1000 ms bound while another
     assert.ok(ms >= 900 && ms < 2500, `the verdict waits its 1000 ms bound: ${ms} ms`)
   } finally {
     await hb.stop()
+  }
+})
+
+test('cost-026: the budget verdict refuses with store busy, never admits, when the usage lock stays held and no usage.jsonl exists', async () => {
+  const c = await realCost()
+  const w = world({ config: cfg({ pricing: pricing(), budget: { sessionUsd: 5 } }), crews: ['bcrew'] })
+  layMain(w, 'msg_over', 6) // 6 USD against sessionUsd 5
+  assert.equal(existsSync(usagePath(w)), false, 'no usage.jsonl yet')
+  const h = await holdLock(w, 30_000) // longer than the retry wait, shorter than the 120 s stale age
+  try {
+    let v: any
+    let err: any
+    const t0 = Date.now()
+    try {
+      v = withRoot(w, () => c.budgetVerdict(w.dir, w.repo, planOf(w), 'bcrew'))
+    } catch (e) {
+      err = e
+    }
+    const ms = Date.now() - t0
+    assert.equal(v?.held, undefined, `a busy lock with no reading must not return a verdict: ${JSON.stringify(v)}`)
+    assert.ok(err, `it throws StoreBusy: ${JSON.stringify(v)}`)
+    assert.equal(err.code, 2)
+    assert.match(String(err.body?.error ?? err.message), /store busy: usage/)
+    assert.ok(ms >= 4500 && ms < 20_000, `it retries once with a longer wait before refusing: ${ms} ms`)
+  } finally {
+    await h.stop()
   }
 })
 

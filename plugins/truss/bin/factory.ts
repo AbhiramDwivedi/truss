@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -2191,7 +2191,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
+    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length))
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -4107,6 +4107,16 @@ export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } 
   const head = cut < 0 ? argv : argv.slice(0, cut)
   const rest = cut < 0 ? [] : argv.slice(cut)
   return { on: head.includes('--status-line'), argv: [...head.filter((a) => a !== '--status-line'), ...rest] }
+}
+// start's admission: a busy usage lock with no reading (StoreBusy from budgetVerdict, ADR-0038 amendment 2026-11-11) is never an
+// admit. start holds that crew with why `store busy: usage` and still reports the crews it already started in this call.
+function heldOnBusy(f: () => Admission): Admission {
+  try {
+    return f()
+  } catch (e) {
+    if (!(e instanceof StoreBusy)) throw e
+    return { admitted: false, parallelism: 0, running: 0, freeMB: null, minFreeMB: 0, why: String(e.body.error) }
+  }
 }
 if (isMain) {
   const { on, argv } = takeStatusFlag(process.argv.slice(2))
