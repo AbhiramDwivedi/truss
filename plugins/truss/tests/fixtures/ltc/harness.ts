@@ -12,6 +12,8 @@ import path from 'node:path'
 import * as reg from '../../../hooks/register.ts'
 import { REAL_PLUGIN, addCrewWorktree, appendEvent, crew, factorySpawn, flat, git, head, mkRepo, mkRun, planObj, pluginCopy, putFile, qcReport, runCli, writeGoal, writePlan, writeReport } from '../workflow-run/harness.ts'
 
+import { proofPlugin } from '../inbox/proof-plugin.ts'
+
 export { assertOneLine, crew, flat, git, head, planObj, qcReport } from '../workflow-run/harness.ts'
 
 const RECORDER = `${REAL_PLUGIN}/tests/fixtures/inbox/recorder.ts`
@@ -48,12 +50,12 @@ export function mkWorld(config: Record<string, unknown> = {}, files: Record<stri
   mkdirSync(dir, { recursive: true })
   writeFileSync(`${dir}/events.jsonl`, '')
   writeFileSync(`${dir}/decisions.md`, '')
-  return { repo, common, shared: `${common}/truss/shared`, inboxFile: `${common}/truss/shared/inbox.jsonl`, sid, dir, troot: mk('ltc-tr-'), notifyOut, factory: `${pluginCopy()}/bin/factory.ts` }
+  return { repo, common, shared: `${common}/truss/shared`, inboxFile: `${common}/truss/shared/inbox.jsonl`, sid, dir, troot: mk('ltc-tr-'), notifyOut, factory: `${proofPlugin()}/bin/factory.ts` }
 }
 
 /** Runs `factory <command> ...args --repo R --dir D` as a real process; positionals go first in `args`. */
 export function cli(w: World, command: string, args: string[] = [], extraEnv: Record<string, string> = {}) {
-  return runCli(w.factory, command, [...args, '--repo', w.repo, '--dir', w.dir], w.repo, { TRUSS_TRANSCRIPTS_ROOT: w.troot, ...extraEnv })
+  return runCli(w.factory, command, [...args, '--repo', w.repo, '--dir', w.dir], w.repo, { TRUSS_TRANSCRIPTS_ROOT: w.troot, TRUSS_TEST_PROOF_ROOT: w.troot, ...extraEnv })
 }
 
 export const decisionsOf = (w: World): string => readFileSync(`${w.dir}/decisions.md`, 'utf8')
@@ -74,8 +76,9 @@ export function codeOf(w: World, id: string): string {
   return row.code
 }
 
-const typedLine = (content: string, ts: string): string =>
-  JSON.stringify({ parentUuid: null, isSidechain: false, type: 'user', message: { role: 'user', content }, uuid: randomUUID(), timestamp: ts })
+/** One typed human row of the real shape: origin human, promptSource typed, a uuid, the session id and the previous row of the file as parent (null for the first). */
+const typedLine = (content: string, ts: string, sessionId: string, parentUuid: string | null): string =>
+  JSON.stringify({ parentUuid, isSidechain: false, type: 'user', origin: { kind: 'human' }, promptSource: 'typed', sessionId, message: { role: 'user', content }, uuid: randomUUID(), timestamp: ts })
 
 /** The client types `/truss:inbox <decision> <id> <code>` in this session: one main-thread human line, newer than the item's open op. */
 export function clientTypes(w: World, id: string, decision: string, extra = ''): string {
@@ -85,7 +88,9 @@ export function clientTypes(w: World, id: string, decision: string, extra = ''):
   const ts = new Date(Date.parse(open.ts) + 1000).toISOString()
   const file = `${w.troot}/proj-ltc/${w.sid}.jsonl`
   mkdirSync(path.dirname(file), { recursive: true })
-  appendFileSync(file, typedLine(`/truss:inbox ${decision} ${id} ${code} ${extra ? extra + ' ' : ''}ok`, ts) + '\n')
+  const have = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean) : []
+  const prev = have.length ? JSON.parse(have[have.length - 1]).uuid : null
+  appendFileSync(file, typedLine(`/truss:inbox ${decision} ${id} ${code} ${extra ? extra + ' ' : ''}ok`, ts, w.sid, prev) + '\n')
   return code
 }
 

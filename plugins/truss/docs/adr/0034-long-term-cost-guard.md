@@ -52,15 +52,15 @@ It lives in five places: the `LONG_TERM_COST` constants of `workflows/stage.js` 
 
 ### The deterministic triggers
 
-`ltcTriggers(repo, base, head)` (`bin/guard.ts:53-78`) runs `git diff --name-status base head` and returns a `costly` item for each of these:
+`ltcTriggers(repo, base, head)` in `bin/guard.ts` runs `git diff --no-renames --name-status -z base head` and returns a `costly` item for each of these. With `-z`, a name holding a tab, a quote or a newline comes back raw instead of C-quoted, so a trigger rule sees the real path.
 
-- a dependency added to a `package.json`, in `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies`. It compares the package names at `base` and `head`, normalised with `packageName` from `bin/store.ts` (`bin/guard.ts:40-50`, `65-69`). A `package.json` added outright counts every dependency it declares;
+- a dependency added to a `package.json`, in `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies`. It compares the package names at `base` and `head` section by section (`depsOf`), normalised with `packageName` from `bin/store.ts`. A name already in the file also triggers when `dependencies`, `peerDependencies` or `optionalDependencies` holds it at `head` and did not at `base`, so a move out of `devDependencies` raises an item. A `package.json` added outright counts every dependency it declares;
 - a file added under a `migrations/` directory at any depth (matched case-insensitively, so EF Core's `Data/Migrations/` counts);
 - a new `*.sql` file (extension matched case-insensitively);
 - a new `*.schema.json` file;
 - a new `schema.*` file.
 
-A new file counts once, under the first rule it matches, in the order above (`bin/guard.ts:72-75`). Only added files trigger, except `package.json`, which also triggers when modified. A failed `git diff` returns no triggers (`bin/guard.ts:55`); the merge step guards against that by refusing when it can't resolve `base` or `head` (below).
+A new file counts once, under the first rule it matches, in the order above. Only added files trigger, except `package.json`, which also triggers when modified. No triggers is never the answer to a diff that could not be read: a failed `git diff` throws a refusal that names the range, and output over the 1 MB buffer of `git()` in `bin/store.ts` throws a refusal that names the limit. `ltcCrewGate` catches those refusals and returns them as `refused`, so the merge step refuses instead of crashing. The merge step also refuses when it can't resolve `base` or `head` (below).
 
 The contract named `declares()` for the dependency rule. The code reads the four dependency lists directly instead, because `declares()` (`bin/store.ts:101-115`) answers "does the nearest `package.json` declare this name", not "which names did this diff add". The effect is the same for `package.json`. Other ecosystems' manifests (`requirements.txt`, `go.mod`, `Cargo.toml` and the like) are not triggers in this version.
 
@@ -74,7 +74,7 @@ The contract named `declares()` for the dependency rule. The code reads the four
 2. Escalates each `costly` and `irreversible` line as a blocking `long-term-cost` inbox item, with ref `ltc:<sid>:plan:<rev>:<sha12(what)>` (`bin/guard.ts:130`).
 3. Writes `D/ltc-plan.json` as `{rev, ids}` (`bin/guard.ts:134`).
 
-`ltcPlanGate(repo, dir)` (`bin/guard.ts:139-153`) returns the ids in `D/ltc-plan.json` whose item is open, rejected, or not in the inbox at all. `factory approve` refuses with `{error: "long-term cost awaiting the client", ids}` while it returns any id (`bin/factory.ts:675-676`). That check runs for both approvers, `--by client` and `--by auto`.
+`ltcPlanGate(repo, dir)` in `bin/guard.ts` returns the ids in `D/ltc-plan.json` whose item is open, rejected, or not in the inbox at all. It reads each item through the verified fold of ADR-0037, so a forged approve leaves the item open. A missing, corrupt or non-array `ltc-plan.json` throws a refusal that points at `plan-write`. `factory approve` refuses with `{error: "long-term cost awaiting the client", ids}` while the gate returns any id. That check runs for both approvers, `--by client` and `--by auto`.
 
 Because `rev` changes when the designer's result changes, a re-plan escalates under new refs and overwrites `D/ltc-plan.json`. The old, rejected ids are no longer in the file, so they no longer block (finding #9; case "a re-plan clears a rejection").
 
@@ -114,7 +114,8 @@ The retro reports the approve rate of `long-term-cost` items. Above 90% over 10 
 
 **What the code does that the contract doesn't say.**
 
-- A plan id with no matching inbox item counts as blocking (fail closed). An unreadable `D/ltc-plan.json` counts as no ids (`bin/guard.ts:142-148`); `writeJsonAtomic` makes a torn file unlikely, but a hand-edited one opens the plan gate.
+- A plan id with no matching inbox item counts as blocking (fail closed). A missing, corrupt or non-array `D/ltc-plan.json` also refuses, with a message that points at `plan-write`. The gate runs only in `approve`, so a scratch `plan-check` is unaffected.
+- A change whose name-status output is over 1 MB can't pass the crew gate. The refusal says to split the change or have the client check it by hand.
 - The two gates read a `dismiss` decision differently. `ltcPlanGate` passes an item that is resolved `dismiss`, `answer` or `done`, because it blocks only on open or rejected items. `ltcCrewGate` passes only `approve`, and `raise` escalates a fresh item for a ref whose only item was dismissed.
 - The diff runs with `--no-renames`, so a rename is read as a delete plus an add and triggers like any added file. A `package.json` moved to a new path counts every dependency in it as added, because the new path has no earlier copy.
 
