@@ -175,6 +175,16 @@ test('ltc guard: a qc:false crew adding a new *.sql file is blocked at land', ()
   blockedThenApproved(w, cw, id)
 })
 
+test('ltc guard: a qc:false crew renaming an existing *.sql file is blocked at land', () => {
+  const sql = 'select a, b, c from t where a = 1;\nselect d, e, f from u where d = 2;\n'
+  const w = mkWorld({}, { 'queries/old.sql': sql })
+  const cw = crewWorld(w, { process: 'lean', qc: false })
+  git(cw.wt, ['mv', 'queries/old.sql', 'queries/new.sql'])
+  git(cw.wt, ['commit', '-m', 'rename old.sql'])
+  const id = assertBlocked(cw, cw.land())
+  blockedThenApproved(w, cw, id)
+})
+
 test('ltc guard: a qc:false crew adding a new *.schema.json file is blocked at land', () => {
   const w = mkWorld()
   const cw = crewWorld(w, { process: 'lean', qc: false, files: { 'docs/thing.schema.json': '{"type":"object"}\n' } })
