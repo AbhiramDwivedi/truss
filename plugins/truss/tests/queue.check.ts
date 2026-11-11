@@ -25,7 +25,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { sharedDir } from '../bin/store.ts'
@@ -184,6 +184,27 @@ test('queue: the gh fixture adds collaborator issues as new', () => {
   assert.ok(r.json.added.includes(alice.id))
   assert.ok(alice.text.includes('The uploader gives up after one failure.'))
   assert.ok(!existsSync(log) || !readFileSync(log, 'utf8').includes('Add a retry'), 'a collaborator issue raises no escalation')
+})
+
+test('queue: a capped gh listing drops no stored item', () => {
+  const env = mkEnv({ config: config({ sources: ['gh'], ghLabel: 'truss' }) })
+  const d = tmp('q-ghbin-').replace(/\\/g, '/')
+  const script = `${d}/gh`
+  writeFileSync(script, [
+    '#!/usr/bin/env node',
+    `const fs = require('node:fs')`,
+    `if (process.argv[2] === 'issue') process.stdout.write(fs.readFileSync(process.env.GH_STUB_ISSUES, 'utf8'))`,
+    '',
+  ].join('\n'))
+  chmodSync(script, 0o755)
+  writeFileSync(`${d}/gh.cmd`, `@"${process.execPath}" "${script}" %*\r\n`)
+  const issues = `${d}/issues.json`
+  writeFileSync(issues, JSON.stringify(Array.from({ length: 50 }, (_, i) => ({ number: i + 1, title: `issue ${i + 1}`, body: '', url: `https://example.invalid/${i + 1}`, author: { login: 'alice' } }))))
+  plant(env.repo, 'Q-aaaaaaaaaaaa', { key: 'gh:999', source: 'gh', state: 'new' })
+  const r = q(env, 'intake', { source: 'gh' }, [], { PATH: `${d}${path.delimiter}${process.env.PATH}`, GH_STUB_ISSUES: issues })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(itemFiles(env.repo).filter((i) => i.source === 'gh' && i.key !== 'gh:999').length, 50, 'the stub listing was read')
+  assert.equal(itemOf(env.repo, 'Q-aaaaaaaaaaaa').state, 'new', 'a full gh page may hide the issue, so it is not dropped')
 })
 
 test('queue: a non-collaborator issue goes to triage with an intake-triage escalation', () => {
