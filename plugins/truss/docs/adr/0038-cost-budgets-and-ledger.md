@@ -3,6 +3,7 @@
 Status: accepted, 2026-11-10
 Decided by: client brief and contract-025 revision 2 (R-58, R-59, R-63), as the approved-scope rows of the b-cost goal record
 Relates to: ADR-0015 (admission gains a budget hold), ADR-0041 (a work type can carry its own crew budget)
+Amended 2026-11-11 (goal cost-budgets): `sessionUsd` holds every crew's admit, attended runs included, and `factory cost` reports a busy lock instead of failing. See the amendment at the end.
 
 ## Context
 
@@ -41,6 +42,7 @@ Claude Code exposes no spend API to a plugin. What it does write is transcripts.
 - Only `type: "assistant"` lines with `message.usage` become rows. A row whose token fields are all zero is skipped, which drops `<synthetic>` lines (`cost.ts:50`). A line that doesn't parse adds to `bad`.
 - **Dedupe.** The sweep loads every `msgId` already in `D/usage.jsonl` once, before it reads, and skips any row whose id it has seen (`cost.ts:68-69`, `:116`). Because the check is against the usage file, not the cursor, a deleted cursor or a path-case mismatch can't add a row twice. The sweep appends rows first and writes the cursor second, so a crash between the two is repaired by the same id set (`cost.ts:154-156`).
 - **Row shape:** `{v: 1, ts, sid, agentId|null, model, speed, msgId, in, out, think, cr, cw5m, cw1h, web}` (`cost.ts:34-49`). `cw5m` and `cw1h` come from `usage.cache_creation` when the line has it, and otherwise all cache-write tokens count as `cw5m` (`cost.ts:46-47`).
+- **Torn rows.** A writer that dies mid-row leaves `usage.jsonl` with an unterminated last line. A read skips that line, and any other line that doesn't parse (`readJsonl`, `store.ts:376-392`). Before it appends, the sweep checks the file's last byte (`endsTorn`, `cost.ts:57-72`) and writes a newline first when the tail is torn, so new rows start on their own line and none is glued to the torn one (`cost.ts:174`).
 - **Cross-check.** The sweep keeps the newest `cost-state` estimate in the cursor as `ccEstimate` (`cost.ts:104-108`, `:156`). `factory cost` reports it as `claudeCodeEstimateUsd`.
 
 When the lock stays busy, a caller that needs a verdict (`budgetVerdict`, `crewCost`) reads `usage.jsonl` as it stands and counts `found` from the transcripts (`sweepOrRead`, `cost.ts:163-175`). A held lock never blocks a verdict. A busy lock means `usage.jsonl` may lag the transcripts (before a first sweep, with no `usage-cursor.json`, it is missing or partial). `crewCost` returns `usd: null` (`usage sweep busy`) on any busy lock, with or without a cursor, instead of writing a too-low cost into the append-only ledger. Only verdicts accept the lag: `budgetVerdict` follows contract-025 section 4 and does not hold on a busy lock, it reads `usage.jsonl` as it stands, so until the first sweep lands a budget is not enforced. The first sweep of a real session takes seconds, and holding on it BLOCKED 3 of 4 crews started together with spend far below the limit. After a first sweep, a busy read may lag by rows not yet swept and is accepted.
@@ -83,13 +85,15 @@ Prices come only from `pricing` in the client's `.claude/truss.json`. Each entry
 
 `factory cost` runs on a session dir with no `plan.json`.
 
+When the usage lock stays busy past the default wait, `factory cost` reads `usage.jsonl` as it stands through `sweepOrRead` (`cost.ts:362`) and prints `sweep.busy: true`, instead of failing with `store busy`. If no `usage.jsonl` and no `usage-cursor.json` exist yet, there is no reading to fall back on: `run.usd` and `session.usd` are null and `session.why` is `usage sweep busy and no earlier reading exists` (`cost.ts:364`, `:396-397`).
+
 ### 5. Budgets
 
 `budgetVerdict(dir, repo, plan|null, slug|null)` (`cost.ts:270-310`) returns `{held: false}` or `{held: true, scope, spentUsd|null, limitUsd, why}`. It reads `budget` from `.claude/truss.json`; with no `budget` it returns `{held: false}` and doesn't sweep. It sweeps only when a check applies, with a 1 s lock wait.
 
 The checks, in order, first hold wins:
 
-1. `sessionUsd`, only when `slug` is null. This is queue-next's check: the ceiling for a `/loop` of runs.
+1. `sessionUsd`, at every crew's admit and at queue-next (`slug` null), attended or not (`cost.ts:303`). It counts every row of the session. A held session verdict carries `ref: budget:<sid>:session:session` (`cost.ts:325`), so every crew's escalation and queue-next's share one ref, and one typed raise lifts the hold for all of them.
 2. `runUsd`, against run spend, only when the plan has `approvedAt`.
 3. The crew check: the lower of `crewUsd` and `workTypes[<the crew's workType>].crewUsd`. The scope is `workType` when the work-type limit is the lower one, and `crew` otherwise.
 
@@ -122,7 +126,7 @@ Every `why` starts with `budget:`.
 These hold by design, and readers of a budget or a ledger row must allow for them.
 
 - **Budgets are checked only at member start.** `admit` checks before each spawn, not during one. A crew can go over its limit by up to one member's spend, and a run by as much as every member running at once.
-- **Planning spend is excluded** from run and crew budgets. Plan-mode agents parse to `truss`, not a crew, and the main thread is `main`. `sessionUsd` counts them on purpose: it is the `/loop` ceiling. Planning spend per run is otherwise uncapped; the approved-scope row of 00:07 accepted that as a long-term cost.
+- **Planning spend is excluded** from run and crew budgets. Plan-mode agents parse to `truss`, not a crew, and the main thread is `main`. `sessionUsd` counts them on purpose: it caps the whole session's spend. Planning and intake spend count against it at the next admit of any crew and at queue-next, not mid-plan: `workflows/plan.js` makes no admit call, so a plan in progress can run past the cap until the next check. Without `sessionUsd`, planning spend is uncapped; the approved-scope row of 00:07 accepted that as a long-term cost.
 - **Long-context pricing is not modelled.** A row is priced at the base rate whatever its input length.
 - **The meter rests on undocumented transcript internals:** the directory layout, the duplicated content-block lines, the usage field names and meta `description`. If Claude Code changes any of them, spend is mis-counted without an error. What catches it: the `bad` and `found` counts in `sweep`, `null` in place of 0 for anything not recorded or not priced, and the `cost-state` cross-check.
 - Thinking and web-search requests are counted but not priced (Decision 3).
@@ -161,3 +165,22 @@ The meter comes in 2.62% under Claude Code's estimate, inside the 5% mark. The c
 - The client keeps the prices current. Truss ships no price, so `factory cost` with no `pricing` gives `usd: null` with a reason.
 - Every merge leaves one ledger row with its gates and cost. Every later reader is bound to the row shape, and changing it means migrating the history; the approved-scope row of 00:07 accepted that cost.
 - The meter breaks quietly if Claude Code changes its transcript layout. Watch the `cost-state` gap and the `bad` count for drift.
+
+## Amendment 2026-11-11: `sessionUsd` holds attended runs too
+
+Decided by: the PM as product owner, on the design engineer's recommendation, with the client away (decision 23:53 of the 0.26.0 run, item 6 ruling). Source: goal cost-budgets, items 5, 6 and 15. The cases are in `tests/cost-026.check.ts`.
+
+Until this amendment `budgetVerdict` checked `sessionUsd` only when `slug` was null, so only queue-next saw it. A setting named `sessionUsd` that did not cap an attended run was fail-open. The PM ruled to enforce it.
+
+- `sessionUsd` is checked at every crew's admit and at queue-next (Decision 5, check 1). Planning and intake spend count against it at those points; nothing checks it mid-plan (Decision 7).
+- A held session verdict carries `ref: budget:<sid>:session:session`, and `holdOf` (`factory.ts:2392`) escalates with the verdict's ref when it has one. Every crew held by the session cap gets the same ref, so one typed raise lifts the hold for all crews.
+- `factory cost` reports a busy usage lock as `sweep.busy: true`, with `usd: null` and a reason before any reading exists (Decision 4).
+- A torn last row of `usage.jsonl` no longer swallows the next swept row (Decision 1).
+
+Long-term cost, accepted by the ruling: an attended session at its cap stops at the next member start and needs a typed raise to go on, and the spend accumulates over every run in a long session, so a long attended session reaches the cap sooner than any one run would.
+
+## Amendment 2026-11-11: a busy usage lock with no reading never admits
+
+Decided by: the PM, on the checking engineer's review of the review-fixes round (decision 12:58, checker-7 item 2). The case is in `tests/cost-026.check.ts`.
+
+Until this amendment, `budgetVerdict` returned `held: false` when the usage lock stayed busy for its 1000 ms wait and no `usage.jsonl` existed. That let a crew in with unknown spend, a fail-open that parallel admits can reach. Now the verdict sweeps once more with the store's default wait (5 s, under the 120 s stale age), and if the lock is still busy it throws `StoreBusy` (exit 2, `store busy: usage`). It never returns a hold, because a hold raises a budget escalation that needs a typed raise. Exit 2 is never an admit: `admit` and `queue-next` exit 2 (`stage.js` retries `admit` once, then stops BLOCKED), and `start` lists the crew in `held` with that `why`. When `usage.jsonl` exists, a busy lock still reads it as it stands, and the lag is accepted (Decision 4).

@@ -451,6 +451,54 @@ Kind: constraint
 Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
 Source: goal
 
+## R-65: Only verified client proof can lift an inbox block
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given a blocking inbox item, when a process appends a `resolve` row to inbox.jsonl without verified client proof, then the guard and inbox folds keep the item open and the crew stays held; a `--note` that differs from the typed answer, a `local-command-stdout` line, a task-notification line with no origin, and a transcript root taken from the caller's environment are each refused.
+
+## R-66: The long-term cost guard fails closed and sees its missed triggers
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given a crew whose `git diff` fails or exceeds 1 MB, or a plan with no ltc-plan.json, when the guard runs, then the merge or plan gate blocks with a clear message; a devDependencies to dependencies move and a git-quoted odd file name each raise a trigger.
+
+## R-67: A crash cannot lose an escalation code or strand a queue item
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given an escalate that dies after its append, when the client next reads the inbox, then the item's code is recoverable; given a `--next` session that crashed, when a later session claims work, then the stale `running` item is released by the stale-running rule.
+
+## R-68: Cost readings and budget keys tell the truth
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given a torn usage.jsonl row or a slow first sweep, when `factory cost` runs, then it skips the torn row or reports busy rather than failing; `sessionUsd` is either enforced in attended runs or documented as not enforced; intake and planning spend counts against it; `inbox --unapplied` can filter by session.
+
+## R-69: The wave-2 plugin and process gaps are closed
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given a crew that needs one more owned file, when the program manager runs the new factory command, then owns grows without a hand edit of plan.json; a suite run on main reads nothing under .claude/worktrees.
+
+## R-70: The wave-2 doc leftovers are corrected
+Status: open
+Kind: functional
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+Example: Given ADR-0039 and the version-pin test, when they are read after this release, then the two wrong ADR sentences are gone and the test takes the version from plugin.json.
+
+## R-71: Every 0.26.0 fix carries a regression test and works on Linux, macOS and Windows
+Status: open
+Kind: constraint
+Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
+Source: goal
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).

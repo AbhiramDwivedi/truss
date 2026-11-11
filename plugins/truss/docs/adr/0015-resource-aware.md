@@ -103,6 +103,7 @@ With no parallelism file the effective parallelism equals `maxParallelCrews`, so
 - **Stale lock.** A lock is stale when its owner's pid is dead (`process.kill(pid, 0)` throws `ESRCH`), or when it has no `owner.json` and its mtime is more than 10 s old (an owner that died between `mkdir` and the write). A waiter takes a stale lock over by renaming it to a unique name, reading the renamed `owner.json` to check it took the stale owner's token, and renaming it back if it didn't. Then it removes the renamed dir and makes a fresh lock.
 - **Accepted risks.** Two waiters can still race in the gap between the stale check and the rename, and a dead owner's pid can be reused. Either can let two heavy runs overlap once. Neither can kill anything.
 - **Recovery by hand.** When no `heavy` runs, delete `D/resources/heavy.lock/`.
+- **Amendment 2026-11-11.** `OWNERLESS_MS` is 3 s since 0.26.0 (store.ts), not 10 s, so an ownerless lock is judged stale inside `withLock`'s default 5 s wait.
 
 ### The run and its record
 

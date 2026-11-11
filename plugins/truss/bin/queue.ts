@@ -4,11 +4,11 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { budgetVerdict } from './cost.ts'
 import { escalate } from './inbox.ts'
-import { configOf, createExclusive, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, usage, withLock, writeJsonAtomic } from './store.ts'
+import { configOf, createExclusive, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, transcriptsOf, usage, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 const STATES = ['new', 'claimed', 'running', 'triage', 'done', 'dropped']
@@ -100,7 +100,10 @@ function ghRun(args: string[]): { status: number; out: string; err: string } {
   return { status: r.status ?? 1, out: r.stdout ?? '', err: (r.stderr ?? '').trim() }
 }
 
-function ghCands(cfg: Obj): Cand[] {
+const GH_LIMIT = 50
+
+// `cut.capped` is set when gh returned a full page: the listing may then omit open issues, so it cannot prove an item left.
+function ghCands(repo: string, cfg: Obj, cut: { capped: boolean } = { capped: false }): Cand[] {
   const fx = process.env.TRUSS_GH_FIXTURE
   let issues: any[]
   let collaborators: Set<string> | undefined
@@ -110,7 +113,7 @@ function ghCands(cfg: Obj): Cand[] {
     collaborators = new Set(Array.isArray(data.collaborators) ? data.collaborators.map(String) : [])
   } else {
     const label = typeof cfg.ghLabel === 'string' ? cfg.ghLabel : 'truss'
-    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', '50'])
+    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', String(GH_LIMIT)])
     if (r.status !== 0) throw new Error(`gh issue list failed: ${r.err.slice(0, 200)}`)
     try {
       issues = JSON.parse(r.out)
@@ -118,6 +121,7 @@ function ghCands(cfg: Obj): Cand[] {
       throw new Error('gh issue list printed no JSON')
     }
     if (!Array.isArray(issues)) throw new Error('gh issue list printed no list')
+    cut.capped = issues.length >= GH_LIMIT
   }
   const isCollab = (login: string): boolean => {
     if (collaborators) return collaborators.has(login)
@@ -134,7 +138,8 @@ function ghCands(cfg: Obj): Cand[] {
     const text = body === '' ? title : `${title}\n\n${body}`
     out.push({
       key: `gh:${i.number}`, title: title.slice(0, 200), text: text.slice(0, 4000), url: typeof i.url === 'string' ? i.url : null, author: login,
-      state: login !== null && isCollab(login) ? 'new' : 'triage', source: 'gh',
+      // A stored issue is not vetted again: its state is the item's own, so the collaborator call is made for new issues only.
+      state: existsSync(itemPath(repo, idOf(`gh:${i.number}`))) || (login !== null && isCollab(login)) ? 'new' : 'triage', source: 'gh',
     })
   }
   return out
@@ -151,18 +156,31 @@ function intake(f: Flags): Obj {
   let sources = listOf(f, 'source')
   for (const s of sources) if (s !== 'md' && s !== 'gh') throw usage(`unknown --source ${s}`)
   if (sources.length === 0) sources = Array.isArray(cfg.sources) && cfg.sources.length > 0 ? cfg.sources.map(String) : ['md']
+  for (const s of sources) if (s !== 'md' && s !== 'gh') throw usage(`unknown intake source ${s} in .claude/truss.json`)
   const added: string[] = []
   const changed: string[] = []
   let seen = 0
   const errors: { source: string; error: string }[] = []
   for (const source of [...new Set(sources)]) {
     let cands: Cand[]
+    const cut = { capped: false }
     try {
-      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(cfg)
+      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(repo, cfg, cut)
     } catch (e) {
       errors.push({ source, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) })
       continue
     }
+    // An issue closed or a line ticked is no longer listed: a `new` item of this source that the listing dropped leaves `new`.
+    // A full gh page may hide open issues, so a capped listing drops nothing: `dropped` is terminal.
+    const listed = new Set(cands.map((c) => c.key))
+    if (!cut.capped) lockQueue(repo, () => {
+      for (const it of allItems(repo)) {
+        if (it.state !== 'new' || it.source !== source || listed.has(String(it.key))) continue
+        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date().toISOString(), from: 'new', to: 'dropped', by: 'intake' }]
+        it.state = 'dropped'
+        writeJsonAtomic(itemPath(repo, it.id), it)
+      }
+    })
     let sAdded = 0
     let sSeen = 0
     mkdirSync(itemsDirOf(repo), { recursive: true })
@@ -220,6 +238,17 @@ export function dataNotice(title: string, text: string): string {
   return `${FIRST_LINE}\n${fence}\n${body}\n${fence}`
 }
 
+/** True when the owner's newest main or agent transcript write is older than the claim ttl. A running owner makes no queue-next call, so claim age alone cannot tell a live run from a crash. No transcript, or one that vanishes before the stat, counts as no activity. */
+function ownerIdle(sid: string, now: number, ttl: number): boolean {
+  const t = transcriptsOf(sid)
+  for (const p of [...(t.main === null ? [] : [t.main]), ...t.agents.map((a) => a.path)]) {
+    try {
+      if (now - statSync(p).mtimeMs <= ttl * 3600_000) return false
+    } catch { /* gone between listing and stat: no activity */ }
+  }
+  return true
+}
+
 function queueNext(f: Flags): Obj {
   const repo = repoOf(f)
   const dir = dirOf(f, true) as string
@@ -244,15 +273,16 @@ function queueNext(f: Flags): Obj {
     const now = Date.now()
     const items = allItems(repo)
     for (const it of items) {
-      if (it.state === 'claimed' && it.session !== session && (it.claimedAt === null || now - Date.parse(String(it.claimedAt)) > ttl * 3600_000 || Number.isNaN(Date.parse(String(it.claimedAt))))) {
-        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date(now).toISOString(), from: 'claimed', to: 'new', by: 'stale' }]
+      if ((it.state === 'claimed' || it.state === 'running') && it.session !== session && (it.claimedAt === null || now - Date.parse(String(it.claimedAt)) > ttl * 3600_000 || Number.isNaN(Date.parse(String(it.claimedAt)))) && (it.state === 'claimed' || ownerIdle(String(it.session), now, ttl))) {
+        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date(now).toISOString(), from: it.state, to: 'new', by: 'stale' }]
         it.state = 'new'
         it.session = null
         it.claimedAt = null
         writeJsonAtomic(itemPath(repo, it.id), it)
       }
     }
-    const mine = items.find((i) => (i.state === 'claimed' || i.state === 'running') && i.session === session)
+    // A `running` item is held by its crews (unattended step 7); only a `claimed` one is handed back.
+    const mine = items.find((i) => i.state === 'claimed' && i.session === session)
     if (mine) {
       mine.claimedAt = new Date(now).toISOString()
       writeJsonAtomic(itemPath(repo, mine.id), mine)

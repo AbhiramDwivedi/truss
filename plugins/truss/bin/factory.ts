@@ -13,7 +13,7 @@ import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict, unbannered } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
 import { budgetsOf, lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from './knowledge.ts'
-import type { KCfg } from './knowledge.ts'
+import type { KCfg, LintResult } from './knowledge.ts'
 import type { Catalog } from '../retro/catalog.ts'
 
 // retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -96,7 +96,17 @@ export function loadPlan(dir: string): Obj {
 }
 // Writes the plan object back to D/plan.json, 2-space JSON with a trailing newline.
 export function savePlan(dir: string, plan: Obj): void {
-  writeFileSync(`${dir}/plan.json`, JSON.stringify(plan, null, 2) + '\n')
+  writeJsonAtomic(`${dir}/plan.json`, plan)
+}
+// Re-reads plan.json under the plan lock, lets `change` edit that fresh copy, and saves it, so a write never drops another
+// command's edit (owns-extend, start, approve, mark-merged and the merge gate all write the plan).
+function patchPlan(dir: string, change: (plan: Obj) => void): Obj {
+  return withLock(dir, 'plan', (): Obj => {
+    const plan = loadPlan(dir)
+    change(plan)
+    savePlan(dir, plan)
+    return plan
+  })
 }
 
 // The repo's merge mode and target branch, and where they came from, as `settings` prints them.
@@ -124,7 +134,9 @@ function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
 }
 // ADR-0035: the path-scoped knowledge keys of truss.json, each a valid repo path or its default.
 export function knowledgeCfgOf(repo: string): KCfg {
-  const cfg = configOf(repo)
+  return knowledgeCfgFrom(configOf(repo))
+}
+function knowledgeCfgFrom(cfg: Obj): KCfg {
   return {
     featureMap: repoPathOf(cfg.featureMap) ?? 'docs/features.md',
     productDecisions: repoPathOf(cfg.productDecisions) ?? 'docs/knowledge/product-decisions.md',
@@ -441,7 +453,8 @@ function cmdPlanWrite(f: Flags): Obj {
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  if (existsSync(`${dir}/plan.json`)) {
+  const keepExisting = (): void => {
+    if (!existsSync(`${dir}/plan.json`)) return
     let existing
     try {
       existing = parsePlan(readFileSync(`${dir}/plan.json`, 'utf8'))
@@ -451,6 +464,7 @@ function cmdPlanWrite(f: Flags): Obj {
     if (existing === undefined) no('kept the existing plan: it is not a readable plan')
     else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
   }
+  keepExisting()
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -460,7 +474,11 @@ function cmdPlanWrite(f: Flags): Obj {
       return r === undefined ? [] : [typeof r === 'string' ? r : isObj(r) && typeof r.report === 'string' ? r.report : JSON.stringify(r)]
     })
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
-  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
+  // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
+  withLock(dir, 'plan', () => {
+    keepExisting()
+    savePlan(dir, { ...carried, approvedAt: null })
+  })
   writeFileSync(`${dir}/plan.md`, md as string)
   const left = retirePlanRun(f, dir, run_.id)
   const drafts = writePersonaDrafts(dir, message)
@@ -541,6 +559,29 @@ const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'ref
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
 const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
 const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
+// Rule-file `paths` globs use `{a,b}` alternation and a leading `**`, which the literal-prefix compare above cannot read: expand the braces,
+// match a wildcard-free owns exactly, and compare only the last segment when either side starts with `**`.
+const braceExpand = (g: string): string[] => {
+  const m = /\{([^{}]*)\}/.exec(g)
+  return m === null ? [g] : m[1].split(',').flatMap((alt) => braceExpand(g.slice(0, m.index) + alt + g.slice(m.index + m[0].length)))
+}
+const globRe = (g: string): RegExp => new RegExp('^' + g.replace(/[.+^$()|\\{}[\]]/g, '\\$&').replace(/\*\*\/|\*\*|\*|\?/g, (t) => (t === '**/' ? '(?:.*/)?' : t === '**' ? '.*' : t === '*' ? '[^/]*' : '[^/]')) + '$')
+const ruleGlobsOverlap = (a: string, b: string): boolean =>
+  braceExpand(a).some((x) =>
+    braceExpand(b).some((y) => {
+      const wild = (s: string): boolean => /[*?[]/.test(s)
+      if (!wild(x)) return globRe(y).test(x)
+      if (!wild(y)) return globRe(x).test(y)
+      if (x.startsWith('**') || y.startsWith('**')) {
+        const tx = x.slice(x.lastIndexOf('/') + 1)
+        const ty = y.slice(y.lastIndexOf('/') + 1)
+        return !wild(tx) ? globRe(ty).test(tx) : !wild(ty) ? globRe(tx).test(ty) : true
+      }
+      return globsOverlap(x, y)
+    }),
+  )
+// one crew's `after` names the other's slug: the two never run together
+const orderedByAfter = (a: Obj, b: Obj): boolean => (Array.isArray(a.after) && a.after.includes(b.slug)) || (Array.isArray(b.after) && b.after.includes(a.slug))
 
 function cmdPlanCheck(f: Flags): Obj {
   const plan = loadPlan(dirOf(f))
@@ -640,16 +681,43 @@ function cmdPlanCheck(f: Flags): Obj {
     }
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
+  let rules: { path: string; paths: string[] }[] = []
+  if (repoDir !== undefined) {
+    try {
+      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
+    } catch {
+      // not a git repo or git failed: no rule check
+    }
+  }
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
       const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
       if (sameGoal && crews[i].stage !== crews[j].stage) continue
+      // The knowledge-owns rule makes one crew of each stage own a rule file, so two goals' crews in different stages each own the
+      // same rule file by design: that one exact glob is not an overlap between them, provided one crew's after names the other
+      // (they never run together); without after it is the same overlap error as any other glob.
+      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage && orderedByAfter(crews[i], crews[j])
       // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
       if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
         for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
+          if (crossStage && ga === gb && rules.some((r) => r.path === ga)) continue
           if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
         }
+      }
+    }
+  }
+  // knowledge-owns rule: per stage, when the live crews' owns overlap a rule file's paths, one crew of the stage must own that rule file.
+  // A repo with no rule files, or one git cannot list, adds no error here (the same fallback knowledgeArgsOf takes).
+  if (repoDir !== undefined) {
+    const live = crews.filter((c) => c.status !== 'merged' && c.status !== 'dropped')
+    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((g: unknown): g is string => typeof g === 'string') : [])
+    for (const rule of rules) {
+      for (const stage of [...new Set(live.map((c) => c.stage))]) {
+        const inStage = live.filter((c) => c.stage === stage)
+        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => ruleGlobsOverlap(g, p))))
+        if (hit.length === 0 || inStage.some((c) => ownsOf(c).some((g) => globsOverlap(g, rule.path)))) continue
+        errors.push(`${rule.path}: rule file matched by crew ${hit.map(name).join(', ')} of stage ${String(stage)} and owned by no crew of that stage; add ${rule.path} to the owns of one crew of stage ${String(stage)}`)
       }
     }
   }
@@ -676,7 +744,7 @@ function cmdApprove(f: Flags): Obj {
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
   const s = settingsOf(repo)
   const approvedAt = new Date().toISOString()
-  savePlan(dir, { ...plan, approvedAt })
+  patchPlan(dir, (p) => { p.approvedAt = approvedAt })
   appendDecision(dir, `plan approved (${by}): merge ${s.merge}, target ${s.target} from ${s.source}; approvedAt ${approvedAt}; scope frozen | the plan is approved by ${by}, so crews may start`)
   return { approvedAt }
 }
@@ -947,6 +1015,18 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
     .filter(([, crew, role, body]) => missed(crew, 'Truss-Crew', body) || missed(role, 'Truss-Role', body)).map(([id]) => String(id))
 }
+// Non-merge commits in HEAD..branch that the target does not hold and that carry neither Truss-Crew nor Truss-Role, `<sha> <subject>`
+// each; [] when the range can't be read. A commit already in the target (a main commit that reached the branch by a merge) never counts.
+function untrailered(wt: string, target: string, branch: string): string[] {
+  // a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits
+  const local = run(wt, ['rev-parse', '-q', '--verify', `refs/heads/${target}^{commit}`]).status === 0
+  const not = local ? `refs/heads/${target}` : target
+  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', not])
+  // fail closed: an unreadable range (an unknown target, a bad branch) is no proof that every commit carries a trailer
+  if (r.status !== 0) throw refuse({ merged: false, conflicts: [], missingTrailers: [], why: `could not read the commits of ${branch} that ${target} does not hold, so their trailers are unchecked: ${r.err.trim().split('\n')[0] ?? ''}` })
+  return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
+    .filter(([, crew, role]) => String(crew).trim() === '' && String(role).trim() === '').map(([id]) => String(id))
+}
 // The git operation left unconcluded in a worktree, if any: a rebase (`rebase-merge` or `rebase-apply` in its git dir, checked
 // first since a rebase's own picks and merges can set the heads below), a merge, a cherry-pick or a revert.
 function operationInProgress(wt: string): 'rebase' | 'merge' | 'cherry-pick' | 'revert' | undefined {
@@ -972,6 +1052,8 @@ function cmdIntegrate(f: Flags): Obj {
   }
   const trailers = unparsedTrailers(c.wt, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
+  const missingTrailers = untrailered(c.wt, c.target, branch)
+  if (missingTrailers.length > 0) throw refuse({ merged: false, conflicts: [], missingTrailers })
   // ADR-0024 item 32: a branch whose merge would leave the crew head's tree unchanged (one the head already holds, even after a
   // rewrite split its commits) isn't merged. A conflict or a merge-tree failure falls back to the --no-ff merge below.
   const mt = run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
@@ -993,10 +1075,64 @@ function cmdMarkMerged(f: Flags): Obj {
   const target = settingsOf(repo).target
   const r = run(repo, ['merge-base', '--is-ancestor', `truss-${slug}`, target])
   if (r.status !== 0) throw refuse({ ok: false, slug, merged: false, why: `truss-${slug} is not an ancestor of ${target}` })
-  crew.status = 'merged'
-  savePlan(dir, plan)
+  // ADR-0035: a raw merge cannot be recorded as merged. The same two comparisons as a merge: the crew head against its fork from the target's
+  // pre-merge tip, and what landed against that tip. Both from commits; the reflog only says which commit the tip was.
+  const crewHead = gateGit(repo, ['rev-parse', '--verify', `refs/heads/truss-${slug}^{commit}`]).out
+  const pre = preMergeOf(repo, target, crewHead)
+  const fork = pre.old === undefined ? undefined : gateGit(repo, ['merge-base', pre.old, crewHead]).out
+  const nextStep = `Next step: this check could not separate the crew's change from the client's. Once the client has confirmed the config change is theirs, the existing recovery is a hand edit of this crew's "status" to "merged" in plan.json.`
+  const landedWhy = (old: string, landed: string): string | undefined => {
+    const why = knowledgeConfigRefusal(repo, old, landed)
+    return why === undefined ? undefined : `${why}. ${nextStep}`
+  }
+  const cfgWhy = pre.old === undefined || pre.landed === undefined
+    ? `knowledge config gate: could not verify .claude/truss.json, so the merge is not recorded: ${pre.why}. ${nextStep}`
+    : fork === undefined || fork === ''
+      ? `knowledge config gate: truss-${slug} has no fork point with the pre-merge tip of ${target}`
+      : (knowledgeConfigRefusal(repo, fork, crewHead) ?? landedWhy(pre.old, pre.landed))
+  if (cfgWhy !== undefined) throw refuse({ ok: false, slug, merged: false, why: cfgWhy })
+  patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'merged' })
   appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
   return { ok: true, slug, status: 'merged' }
+}
+// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
+// another live crew the way plan-check does (same goal and stage, or another goal; a rule file another goal's crew of another stage
+// owns is exempt, as in plan-check, only when one crew's after names the other); logs a decision line.
+function cmdOwnsExtend(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  const glob = need(f, 'glob')
+  const reason = need(f, 'reason').replace(/\s+/g, ' ').trim()
+  let rules: { path: string; paths: string[] }[] = []
+  try {
+    const repoDir = repoOf(f)
+    rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
+  } catch {
+    // no repo or git failed: no rule file is exempt, as plan-check
+  }
+  const done = withLock(dir, 'plan', (): Obj => {
+    const plan = loadPlan(dir)
+    const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
+    if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+    const overlaps: { slug: string; glob: string }[] = []
+    for (const o of plan.crews) {
+      if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
+      if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
+      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage && orderedByAfter(o, crew)
+      for (const g of Array.isArray(o.owns) ? o.owns : []) {
+        if (crossStage && g === glob && rules.some((r) => r.path === g)) continue
+        if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
+      }
+    }
+    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage, and to one crew of another goal` })
+    const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
+    if (!owns.includes(glob)) owns.push(glob)
+    crew.owns = owns
+    savePlan(dir, plan)
+    return { ok: true, slug, glob, owns }
+  })
+  appendDecision(dir, `${slug} owns extended by ${glob.replace(/\s+/g, ' ').replace(/\|/g, '/').trim()} | ${reason}`)
+  return done
 }
 function cmdOwnsCheck(f: Flags): Obj {
   const c = crewCtx(f)
@@ -1276,7 +1412,7 @@ function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], s
   const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
     held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -2055,7 +2191,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length)
+    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length))
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -2073,7 +2209,7 @@ function cmdStart(f: Flags): Obj {
       }
       const wt = ensureWorktree(repo, slug, settings.target)
       crew.status = 'running'
-      savePlan(dir, plan)
+      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
       appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
       slots--
       direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
@@ -2103,7 +2239,7 @@ function cmdStart(f: Flags): Obj {
     }
     const wt = ensureWorktree(repo, slug, settings.target)
     crew.status = 'running'
-    savePlan(dir, plan)
+    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
     appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(roles, 'planner'), by: 'factory' })
     appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--
@@ -2249,11 +2385,13 @@ function holdOf(dir: string, repo: string, plan: Obj, slug: string, command: str
   if (!isObj(configOf(repo).budget)) return undefined
   const v = budgetVerdict(dir, repo, plan, slug)
   if (!v.held) return undefined
-  appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
+  // one event per hold: a repeat admit under the same crew, scope and limit writes none (a raised limit is a new hold)
+  const last = eventsOf(dir).filter((e) => e.event === 'budget-hold' && e.crew === slug && e.scope === v.scope).pop()
+  if (last === undefined || last.limitUsd !== v.limitUsd) appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
   let escalateError: string | undefined
   let clientNote = ''
   try {
-    const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
+    const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: typeof (v as Obj).ref === 'string' && (v as Obj).ref !== '' ? String((v as Obj).ref) : `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
     // the one-time code exists only in this return value (the inbox keeps its hash); with no notify command nothing else delivers it, so the held entry carries it for the PM to relay
     if (!esc.deduped && esc.code !== '' && esc.notified !== true) clientNote = `; client approval needed: ${esc.id} code ${esc.code} (relay to the client, who types /truss:inbox approve ${esc.id} ${esc.code} raise <usd>)`
   } catch (e) {
@@ -2960,14 +3098,19 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   } catch (e) {
     return { refused: e instanceof CliError && Array.isArray(e.body.outside) ? `owns-check: outside ${(e.body.outside as string[]).join(', ')}` : `owns-check failed: ${(e as Error).message}` }
   }
+  // the gate reads refs/heads/<target> throughout and fails closed: a remote-tracking name such as origin/main is refused up front, with the fix
+  if (run(repo, ['rev-parse', '--verify', '-q', `refs/heads/${target}^{commit}`]).status !== 0) return { refused: `target ${target} is not a local branch (refs/heads/${target} does not resolve); set \`target\` in .claude/truss.json to a local branch (\`git branch --list\` names them), or make one from it with \`git branch <local-name> ${target}\` and set \`target\` to <local-name>` }
   // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
   const since = runStart(plan) ?? 0
   const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
   // a base or head that does not resolve would hand the gate '' and no triggers: refuse instead
-  const ltcBase = run(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`])
+  const ltcBase = gateGit(wt, ['merge-base', `refs/heads/${target}`, `refs/heads/truss-${slug}`])
   if (ltcBase.status !== 0 || ltcBase.out === '') return { refused: `long-term cost gate: git merge-base refs/heads/${target} refs/heads/truss-${slug} failed${ltcBase.err === '' ? '' : `: ${ltcBase.err.split('\n')[0]}`}` }
-  const ltcHead = run(wt, ['rev-parse', '--verify', `refs/heads/truss-${slug}`])
+  const ltcHead = gateGit(wt, ['rev-parse', '--verify', `refs/heads/truss-${slug}`])
   if (ltcHead.status !== 0 || ltcHead.out === '') return { refused: `long-term cost gate: git rev-parse refs/heads/truss-${slug} failed${ltcHead.err === '' ? '' : `: ${ltcHead.err.split('\n')[0]}`}` }
+  // ADR-0035: from the commits alone, before anything else can open a client item or touch a branch
+  const cfgRefusal = knowledgeConfigRefusal(wt, ltcBase.out, ltcHead.out)
+  if (cfgRefusal !== undefined) return { refused: cfgRefusal }
   const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: ltcBase.out, head: ltcHead.out })
   if (gate.refused !== undefined) return { refused: gate.refused }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
@@ -2989,6 +3132,9 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   // step 3: the patch is always computed on the merged head, against the target head just merged in
   const head = run(wt, ['rev-parse', 'HEAD']).out
   const base = run(wt, ['merge-base', oldSha, 'HEAD']).out
+  // ADR-0035: what lands must not loosen the target, whatever each side looked like alone
+  const landing = knowledgeConfigRefusal(wt, oldSha, head)
+  if (landing !== undefined) return { refused: landing }
   const patch = !needQc || head === '' || base === '' ? undefined : patchOf(wt, base, head)
   if (needQc && (ruling === undefined || ruling.head === undefined || ruling.patch === undefined || head === '' || patch === undefined)) return { refused: 'patch id unavailable' }
   if (needQc && mergeHeadVerdict(plan, ruling, head, patch) !== undefined) return { rework: 'reqc' }
@@ -3005,13 +3151,13 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     const dirty = run(onTarget.path, ['status', '--porcelain', '--untracked-files=no']).out
     if (dirty !== '') return { blocked: `target checked out dirty: ${dirty.split('\n')[0]?.trim().replace(/^\S+\s+/, '')}` }
     if (run(onTarget.path, ['rev-parse', 'HEAD']).out !== oldSha) return { rework: 'target moved' }
-    if (run(onTarget.path, ['merge', '--ff-only', `refs/heads/truss-${slug}`]).status !== 0) return { rework: 'target moved' }
+    if (run(onTarget.path, ['merge', '--ff-only', head]).status !== 0) return { rework: 'target moved' }
   } else if (run(repo, ['update-ref', targetRef, head, oldSha]).status !== 0) return { rework: 'target moved' }
   // step 5: record, then clean up
-  const fresh = loadPlan(dir)
-  const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
-  if (entry !== undefined) entry.status = 'merged'
-  savePlan(dir, fresh)
+  const fresh = patchPlan(dir, (fresh) => {
+    const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
+    if (entry !== undefined) entry.status = 'merged'
+  })
   if (gates !== undefined) appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | land: process ${gates.process}, qc ${gates.qc}, red ${gates.red}${red !== undefined ? `, red record exit ${red.exit}` : ''}${needQc && ruling !== undefined ? `, QC PASS on ${ruling.head}` : ''}`)
   else appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling?.head}, red record exit ${red?.exit}, patch ${patch}, acceptance test green on the merged head`)
   // contract-025 section 4: the merge is final by now, so a ledger failure is a decision line, never a refusal
@@ -3242,7 +3388,29 @@ function cmdFinish(f: Flags): Obj {
 //   --run '<goal>'                                                   -> `## Run <UTC start> | <goal>`
 // The clock stamps every line. Each refusal exits 2 and writes nothing; no form writes a continuation line.
 const RECOMMENDS = ['answer', 'defer', 'pass']
-function cmdDecide(f: Flags): Obj {
+// True when `dir` is a direct child of <git common dir>/truss; the compare is on real, normalised paths (case-insensitive on win32).
+export function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
+  let common: string
+  try {
+    common = commonDir(repo)
+  } catch {
+    return false
+  }
+  const norm = (p: string): string => (platform === 'win32' ? flat(p).toLowerCase() : flat(p))
+  const target = path.resolve(dir)
+  if (!/^[A-Za-z0-9._-]+$/.test(path.basename(target))) return false
+  const parent = path.dirname(target)
+  // <common>/truss may not exist yet: resolve the nearest existing ancestor with realpath and re-append the missing tail, so a repo
+  // reached through a symlink (macOS /var -> /private/var) compares equal to the real common dir
+  const real = (p: string): string => {
+    let head = p
+    const tail: string[] = []
+    while (!existsSync(head) && path.dirname(head) !== head) (tail.unshift(path.basename(head)), (head = path.dirname(head)))
+    return path.join(existsSync(head) ? realpathSync(head) : head, ...tail)
+  }
+  return norm(real(parent)) === norm(path.join(real(common), 'truss'))
+}
+export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   const dir = dirOf(f)
   const forms = (['line', 'checker', 'run'] as const).filter((k) => f[k] !== undefined)
   if (forms.length !== 1) throw usage('decide takes exactly one of --line, --checker (with --recommend, --text, --outcome) or --run')
@@ -3255,6 +3423,9 @@ function cmdDecide(f: Flags): Obj {
     if (/[\r\n]/.test(v)) throw usage(`--${k} holds a newline; a decision is one line`)
     vals[k] = v
   }
+  // --run is the first command of a run: its session dir may not exist yet, so it makes one, but only directly under <common>/truss
+  // and only once the goal text is valid, so a refusal leaves nothing behind
+  if (form === 'run' && vals.run.trim() !== '' && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir, platform)) mkdirSync(dir, { recursive: true })
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
   let line: string
   if (form === 'line') {
@@ -3572,11 +3743,11 @@ function cmdDecisions(f: Flags): Obj {
 // ==== knowledge (ADR-0035) ====
 
 // `knowledge-lint [--base=<sha>] [--repo R] [--slug S [--dir D]]`: exit 0 whether or not it found failures; the caller reads `ok`.
-// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the worktree's truss.json (the repo's when the
-// worktree has none); with no --base the base is `git merge-base <target> HEAD` there, and when that does not resolve, the head
-// of the crew's red record in --dir (the crew's head when its red check ran, so a later base than the fork point: the output then
-// carries `baseFallback: true`). Without --slug it lints the repo's own checkout, against --base when given. The output carries
-// `base` whenever the lint ran against one.
+// With --slug it lints the crew worktree (its working tree, HEAD as the head); with no --base the base is `git merge-base <target>
+// HEAD` there, and when that does not resolve, the head of the crew's red record in --dir (the crew's head when its red check ran,
+// so a later base than the fork point: the output then carries `baseFallback: true`); with neither, a failing result. Without
+// --slug it lints the repo's own checkout, against --base when given. With a base the config is the base commit's; a head that
+// loosens it or a side git cannot read is a failure. The output carries `base` whenever the lint ran against one.
 function cmdKnowledgeLint(f: Flags): Obj {
   const repo = repoOf(f)
   let at = repo
@@ -3595,15 +3766,23 @@ function cmdKnowledgeLint(f: Flags): Obj {
     at = crewWorktree(repo, slug)
     if (!existsSync(at)) throw usage(`no crew worktree for ${slug} at ${at}`)
     if (base === undefined) {
-      const target = settingsOf(repo).target
+      let target = ''
+      let targetErr: string | undefined
+      try {
+        target = settingsOf(repo).target
+      } catch (e) {
+        if (!(e instanceof CliError)) throw e
+        targetErr = e.message
+      }
       const mb = target === '' || target.startsWith('-') ? undefined : run(at, ['merge-base', target, 'HEAD'])
       if (mb !== undefined && mb.status === 0 && mb.out !== '') base = mb.out
       else {
-        const first = mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
+        const first = targetErr !== undefined ? `the target could not be read: ${targetErr}` : mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
         const red = f.dir === undefined ? undefined : redRecord(dirOf(f), slug)
         const head = typeof red?.head === 'string' ? red.head : ''
         const second = f.dir === undefined ? 'no --dir, so no red record was read' : red === undefined ? `no red record for ${slug} in ${dirOf(f)}/checks` : head === '' ? `the red record for ${slug} names no head` : commitOf(head) !== undefined ? '' : `the red record head ${head} is not a commit of ${at}`
-        if (second !== '') throw usage(`no base for crew ${slug}: ${first}, and ${second}; pass --base`)
+        // a crew whose base cannot be found is not "lint did not run": it is a failure QC sees
+        if (second !== '') return { ok: false, failures: [{ check: 'config-unverified', path: '.claude/truss.json', message: `could not verify the crew's knowledge config: no base for crew ${slug}: ${first}, and ${second}; pass --base`, new: true }], warnings: [], predatingCount: 0, warningCount: 0 }
         base = head
         fallback = true
       }
@@ -3614,8 +3793,225 @@ function cmdKnowledgeLint(f: Flags): Obj {
     if (sha === undefined) throw usage(`--base ${base} is not a commit of ${at}`)
     base = sha
   }
-  const kcfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
-  return { ...knowledgeLint(at, kcfg, base), ...(base === undefined ? {} : { base }), ...(fallback ? { baseFallback: true } : {}) }
+  if (base === undefined) return knowledgeLint(at, knowledgeCfgOf(repo), undefined)
+  // A crew must not loosen the lint that judges it: with a base, the crew is linted against the base commit's config and never
+  // against a working tree's. A head config that loosens it, or a side that cannot be read, is a failure, not a lint that did not run.
+  const guard = knowledgeConfigGuard(at, base, 'HEAD')
+  const res = knowledgeLint(at, guard.baseCfg ?? guard.headCfg ?? knowledgeCfgFrom({}), base)
+  const finding = guard.unverified !== undefined
+    ? { check: 'config-unverified', message: `could not verify the crew's knowledge config: ${guard.unverified}` }
+    : guard.loosened.length > 0
+      ? { check: 'config-loosened', message: `the crew loosened its own knowledge lint: ${guard.loosened.join('; ')}. Revert it; the lint runs against the base config` }
+      : undefined
+  const out: LintResult = finding === undefined ? res : { ...res, ok: false, failures: [...res.failures, { ...finding, path: '.claude/truss.json', new: true }] }
+  return { ...out, base, ...(fallback ? { baseFallback: true } : {}) }
+}
+// Every read the gate makes ignores refs/replace, which a crew's worktree can write and which would show the gate a tree other than the one landing.
+const gateGit = (at: string, args: string[]): ReturnType<typeof run> => run(at, ['--no-replace-objects', ...args])
+// ADR-0035: .claude/truss.json as a commit holds it, never as a working tree does.
+// A forged tree refuses: a symlink, a blob of another mode, a `.claude` that is not a tree, or a path equal to it only when case-folded
+// (a case-insensitive checkout would read that one instead). Never echoes a path the tree holds: it is the crew's text.
+function committedTrussJson(at: string, rev: string): { raw?: Obj; absent?: boolean; error?: string } {
+  const bad = (why: string): { error: string } => ({ error: `.claude/truss.json at ${rev}: ${why}` })
+  const fold = (s: string): string => s.toUpperCase().toLowerCase()
+  const entries = (treeish: string): { error: string } | { name: string; mode: string; type: string; sha: string }[] => {
+    const ls = gateGit(at, ['ls-tree', '-z', '--full-tree', treeish])
+    if (ls.status !== 0) return { error: `could not read .claude/truss.json at ${rev}: ${ls.err.split('\n')[0]}` }
+    return ls.out.split('\0').filter(Boolean).map((row) => {
+      const tab = row.indexOf('\t')
+      const [mode = '', type = '', sha = ''] = row.slice(0, tab).split(' ')
+      return { name: row.slice(tab + 1), mode, type, sha }
+    })
+  }
+  const top = entries(rev)
+  if (!Array.isArray(top)) return top
+  let file: { mode: string; sha: string } | undefined
+  for (const d of top.filter((e) => fold(e.name) === '.claude')) {
+    if (d.type !== 'tree') return bad(d.name === '.claude' ? '.claude is a symlink or a file, not a directory' : 'a path differs from it only by case')
+    const kids = entries(d.sha)
+    if (!Array.isArray(kids)) return kids
+    const hits = kids.filter((e) => fold(e.name) === 'truss.json')
+    if (hits.some((e) => d.name !== '.claude' || e.name !== 'truss.json')) return bad('a path differs from it only by case')
+    if (d.name === '.claude') file = hits[0]
+  }
+  if (file === undefined) return { absent: true }
+  if (file.mode !== '100644') return bad(`it must be a regular file (mode 100644), found mode ${file.mode}`)
+  const show = gateGit(at, ['cat-file', 'blob', file.sha])
+  if (show.status !== 0) return { error: `could not read .claude/truss.json at ${rev}: ${show.err.split('\n')[0]}` }
+  try {
+    const v = JSON.parse(show.out)
+    return isObj(v) ? { raw: v } : { error: `.claude/truss.json at ${rev} is not an object` }
+  } catch {
+    return { error: `.claude/truss.json at ${rev} is not valid JSON` }
+  }
+}
+// The comparison behind both the lint and the merge gate: commits only. `unverified` says a side could not be read (fail closed);
+// `loosened` lists what the head loosens, by key and numeric budget only, because a path value is the crew's own text.
+function knowledgeConfigGuard(at: string, base: string, head: string): { baseCfg?: KCfg; headCfg?: KCfg; loosened: string[]; unverified?: string } {
+  const b = committedTrussJson(at, base)
+  const h = committedTrussJson(at, head)
+  const baseCfg = b.error === undefined ? knowledgeCfgFrom(b.raw ?? {}) : undefined
+  const headCfg = h.error === undefined ? knowledgeCfgFrom(h.raw ?? {}) : undefined
+  if (baseCfg === undefined || headCfg === undefined) return { baseCfg, headCfg, loosened: [], unverified: [b.error, h.error].filter((e) => e !== undefined).join('; ') }
+  const loosened: string[] = []
+  const pathKeys = ['featureMap', 'productDecisions', 'knowledgeDir', 'rulesDir', 'agentsIndex'] as const
+  if (h.absent === true && b.raw !== undefined) {
+    const set = ['knowledgeBudgets', ...pathKeys].filter((k) => Object.hasOwn(b.raw as Obj, k))
+    if (set.length > 0) loosened.push(`.claude/truss.json deleted while the base set ${set.join(', ')}`)
+  }
+  for (const k of Object.keys(baseCfg.budgets) as (keyof KCfg['budgets'])[]) {
+    if (headCfg.budgets[k] > baseCfg.budgets[k]) loosened.push(`knowledgeBudgets.${k} raised from ${baseCfg.budgets[k]} to ${headCfg.budgets[k]}`)
+  }
+  for (const k of pathKeys) {
+    if (headCfg[k] !== baseCfg[k]) loosened.push(`${k} changed`)
+  }
+  return { baseCfg, headCfg, loosened }
+}
+const refusalOf = (g: ReturnType<typeof knowledgeConfigGuard>): string | undefined => {
+  if (g.unverified !== undefined) return `knowledge config gate: could not verify .claude/truss.json, so the merge is refused: ${g.unverified}`
+  if (g.loosened.length > 0) return `knowledge config gate: a crew cannot make this change to its own knowledge lint: ${g.loosened.join('; ')}. If it is right (a real relocation of the knowledge dir, say), the client makes it on main, outside a crew`
+  return undefined
+}
+// Why this head may not merge, or undefined. Used by every merge path, so each gets the same answer.
+function knowledgeConfigRefusal(at: string, base: string, head: string): string | undefined {
+  return refusalOf(knowledgeConfigGuard(at, base, head))
+}
+// Why `result` (a commit or tree) may not replace the destination's old tip. With `target` (the destination is an integration branch),
+// a result that brings no more than the target itself holds passes: the branch only picked up what the target did.
+function landingRefusal(at: string, old: string, result: string, target?: string): string | undefined {
+  const g = knowledgeConfigGuard(at, old, result)
+  if (g.unverified === undefined && g.loosened.length > 0 && target !== undefined) {
+    const t = knowledgeConfigGuard(at, target, result)
+    if (t.unverified === undefined && t.loosened.length === 0) return undefined
+  }
+  return refusalOf(g)
+}
+type MergeSides = { head: string; old: string; base: string; target?: string }
+// Resolves the three commits a merge of `branch` into `into` is judged on and refuses on the branch's own change. Its base is the fork from the
+// target, also for an integration branch: `into` may be older than a target the branch already holds, and that change is not the branch's own.
+function mergeSides(repo: string, branch: string, into: string): { sides?: MergeSides; why?: string } {
+  if (branch.startsWith('-') || into === '' || into.startsWith('-')) return { why: 'knowledge config gate: the branch or target name is not usable' }
+  const tip = (b: string): string | undefined => {
+    const r = gateGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}^{commit}`])
+    return r.status === 0 && r.out !== '' ? r.out : undefined
+  }
+  const head = tip(branch)
+  if (head === undefined) return { why: `knowledge config gate: branch ${branch} does not resolve` }
+  const old = tip(into)
+  if (old === undefined) return { why: `knowledge config gate: branch ${into} does not resolve` }
+  const targetName = settingsOf(repo).target
+  const targetTip = tip(targetName)
+  if (targetTip === undefined) return { why: `knowledge config gate: branch ${targetName} does not resolve` }
+  const base = gateGit(repo, ['merge-base', targetTip, head])
+  if (base.status !== 0 || base.out === '') return { why: `knowledge config gate: git merge-base ${targetName} ${branch} failed${base.err === '' ? '' : `: ${base.err.split('\n')[0]}`}` }
+  const why = knowledgeConfigRefusal(repo, base.out, head)
+  if (why !== undefined) return { why }
+  return { sides: { head, old, base: base.out, ...(into === targetName ? {} : { target: targetTip }) } }
+}
+// `knowledge-config-gate --branch B [--into T]`: the check alone, where the merge happens elsewhere (the integration branch before its PR).
+// Exit 0 when B may merge into T (default: the target), 1 when not. The result is a merge-tree of the two tips; git before 2.38 has none, so B's head stands in, which can only refuse more.
+function cmdKnowledgeConfigGate(f: Flags): Obj {
+  const repo = repoOf(f)
+  const branch = need(f, 'branch')
+  const into = str(f, 'into') ?? settingsOf(repo).target
+  const { sides, why } = mergeSides(repo, branch, into)
+  if (sides === undefined) throw refuse({ ok: false, branch, into, why })
+  const mt = gateGit(repo, ['merge-tree', '--write-tree', sides.old, sides.head])
+  const tree = mt.status === 0 || mt.status === 1 ? mt.out.split('\n')[0]?.trim() : undefined
+  const landing = landingRefusal(repo, sides.old, tree === undefined || tree === '' ? sides.head : tree, sides.target)
+  if (landing !== undefined) throw refuse({ ok: false, branch, into, why: landing })
+  return { ok: true, branch, into, base: sides.base, head: sides.head }
+}
+// `gated-merge --branch B [--into T] [--ff-only] [--continue]`: the gate and the merge in one process, for the merges neither land nor finish performs.
+// A conflict is left for the caller to resolve and `git add`; --continue then judges the resolved index. A refused result is aborted, so nothing lands.
+function cmdGatedMerge(f: Flags): Obj {
+  const repo = repoOf(f)
+  const branch = need(f, 'branch')
+  const into = str(f, 'into') ?? settingsOf(repo).target
+  for (const k of ['ff-only', 'continue']) if (f[k] !== undefined && f[k] !== true) throw usage(`--${k} takes no value`)
+  const ffOnly = f['ff-only'] === true
+  const resume = f.continue === true
+  if (ffOnly && resume) throw usage('--ff-only and --continue do not go together')
+  const no = (why: string, more: Obj = {}): CliError => refuse({ ok: false, merged: false, branch, into, why, ...more })
+  const { sides, why } = mergeSides(repo, branch, into)
+  if (sides === undefined) throw no(why ?? 'knowledge config gate: refused')
+  const { head, old, target } = sides
+  const holder = worktreesOf(repo).find((w) => w.branch === into)
+  if (ffOnly) {
+    if (gateGit(repo, ['merge-base', '--is-ancestor', old, head]).status !== 0) throw no(`not a fast-forward: ${branch} does not contain the tip of ${into}; merge ${into} into it first`)
+    const landing = landingRefusal(repo, old, head, target)
+    if (landing !== undefined) throw no(landing)
+    if (holder !== undefined) {
+      const m = run(holder.path, ['merge', '--ff-only', head])
+      if (m.status !== 0) throw no(`git merge --ff-only failed: ${(m.err || m.out).split('\n')[0]}`)
+    } else if (run(repo, ['update-ref', `refs/heads/${into}`, head, old]).status !== 0) throw no(`${into} moved during the merge; run this again`)
+    return { ok: true, merged: true, branch, into, old, head, mode: 'ff-only' }
+  }
+  if (holder === undefined) throw no(`no worktree has ${into} checked out`)
+  const at = holder.path
+  const inProgress = (): string => run(at, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).out
+  if (resume) {
+    if (inProgress() !== head) throw no(`no merge of ${branch} is in progress in ${into}'s worktree`)
+  } else {
+    if (inProgress() !== '') throw no(`a merge is already in progress in ${into}'s worktree`)
+    // By name, so the message is git's own "Merge branch 'x'"; MERGE_HEAD is then held to the head the gate read.
+    const m = run(at, ['merge', '--no-ff', '--no-commit', '--no-edit', branch])
+    if (m.status !== 0) {
+      const files = run(at, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+      if (files.length > 0) throw no('merge conflict: resolve it, git add the files, then run this command again with --continue', { conflict: true, files })
+      run(at, ['merge', '--abort'])
+      throw no(`git merge failed: ${(m.err || m.out).split('\n')[0]}`)
+    }
+    if (inProgress() === '') return { ok: true, merged: true, upToDate: true, branch, into, old, head: old, mode: 'no-ff' }
+    if (inProgress() !== head) {
+      run(at, ['merge', '--abort'])
+      throw no(`${branch} moved during the merge; run this again`)
+    }
+  }
+  const gate = (): void => {
+    const tree = gateGit(at, ['write-tree'])
+    if (tree.status !== 0 || tree.out === '') throw no(`unresolved paths remain in ${into}'s worktree: ${tree.err.split('\n')[0]}`)
+    const landing = landingRefusal(at, old, tree.out, target)
+    if (landing === undefined) return
+    run(at, ['merge', '--abort'])
+    throw no(landing)
+  }
+  // Refused text for one hook, run by git so core.hooksPath and git's own sh apply. Git before 2.36 has no `git hook`: only a hook that exists then stops the merge.
+  const hookRefusal = (name: string, args: string[] = []): string | undefined => {
+    const h = run(at, ['hook', 'run', '--ignore-missing', name, ...(args.length > 0 ? ['--', ...args] : [])])
+    if (h.status === 0) return undefined
+    if (/is not a git command/.test(h.err)) return existsSync(run(at, ['rev-parse', '--path-format=absolute', '--git-path', `hooks/${name}`]).out) ? `the ${name} hook cannot be run: git hook needs git 2.36 or later` : undefined
+    const said = h.err || h.out
+    return `the ${name} hook refused the merge commit${said === '' ? ', printing nothing' : `: ${said}`}`
+  }
+  // Git keeps the conflict resolution only while MERGE_HEAD stands, so a refusal on --continue leaves the merge for the retry; a clean merge has nothing to keep.
+  const stopped = (why: string): CliError => {
+    if (resume) return no(`${why}. The resolved index and MERGE_HEAD are kept: fix that, git add any change, then run this command again with --continue to retry`)
+    run(at, ['merge', '--abort'])
+    return no(why)
+  }
+  gate() // first, so a loosening is cleared whatever a hook would say
+  // The hooks raw git runs: `git merge` runs pre-merge-commit, `git merge --continue` is `git commit` and runs pre-commit, both then commit-msg.
+  // Run here because `git commit` would pick pre-commit for both, and `merge --no-commit` runs neither; hence --no-verify below.
+  const msgFile = run(at, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_MSG']).out
+  const hookWhy = hookRefusal(resume ? 'pre-commit' : 'pre-merge-commit') ?? hookRefusal('commit-msg', [msgFile])
+  if (hookWhy !== undefined) throw stopped(hookWhy)
+  gate() // again, since a hook can change the index, and this is the tree that lands
+  const c = run(at, ['commit', '--no-edit', '--no-verify', '--cleanup=strip'])
+  if (c.status !== 0) throw stopped(`git commit failed: ${c.err || c.out || `exit ${c.status} with no output, as from a prepare-commit-msg hook`}`)
+  return { ok: true, merged: true, branch, into, old, head: run(at, ['rev-parse', 'HEAD']).out, mode: 'no-ff' }
+}
+// The target's tip just before `head` reached it and the tip that first held it, from the target's reflog (a commit graph cannot tell them apart after a
+// fast-forward). A raw merge leaves this behind; an expired or disabled reflog does not, and that fails closed.
+function preMergeOf(repo: string, target: string, head: string): { old?: string; landed?: string; why?: string } {
+  const log = gateGit(repo, ['log', '-g', '--format=%H', `refs/heads/${target}`])
+  if (log.status !== 0) return { why: `could not read the reflog of ${target}: ${log.err.split('\n')[0]}` }
+  let landed: string | undefined
+  for (const sha of log.out.split('\n').filter(Boolean)) {
+    if (gateGit(repo, ['merge-base', '--is-ancestor', head, sha]).status === 0) landed = sha
+    else return landed === undefined ? { why: `the reflog of ${target} is inconsistent` } : { old: sha, landed }
+  }
+  return { why: `the reflog of ${target} does not reach back to before the merge` }
 }
 // `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
 function cmdKnowledgeMigrate(f: Flags): Obj {
@@ -3631,17 +4027,26 @@ function cmdRulesIndex(f: Flags): Obj {
 
 // ==== main ====
 
-const COMMANDS: Record<string, (f: Flags) => Obj> = {
+const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
-  'knowledge-lint': cmdKnowledgeLint, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
+  'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'gated-merge': cmdGatedMerge, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
-  ...INBOX_COMMANDS, ...COST_COMMANDS, ...QUEUE_COMMANDS, ...WORKTYPE_COMMANDS,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
+}
+// A plugin module's command key never replaces a core command or another module's: main refuses and names the keys.
+const PLUGIN_COMMANDS: Record<string, (f: Flags) => Obj>[] = [INBOX_COMMANDS, COST_COMMANDS, QUEUE_COMMANDS, WORKTYPE_COMMANDS]
+const SHADOWED: string[] = []
+const COMMANDS: Record<string, (f: Flags) => Obj> = { ...CORE_COMMANDS }
+for (const group of PLUGIN_COMMANDS) {
+  for (const [k, fn] of Object.entries(group)) {
+    if (Object.hasOwn(COMMANDS, k)) SHADOWED.push(k)
+    else COMMANDS[k] = fn
+  }
 }
 
 // `decision-reply <id> ack|change [--note T]` takes two words before or among its flags: each word that is not a flag or a flag's
@@ -3668,6 +4073,7 @@ function positionalsToFlags(argv: string[], names: string[]): string[] {
 export function main(argv: string[]): { body: Obj; code: number } {
   try {
     const [command, ...rest] = argv
+    if (SHADOWED.length > 0) throw refuse({ error: `a plugin command key shadows a core command: ${SHADOWED.join(', ')}` })
     const fn = command === undefined ? undefined : COMMANDS[command]
     if (fn === undefined) throw usage(`unknown command: ${command ?? '(none)'}; commands: ${Object.keys(COMMANDS).join(', ')}`)
     const argv2 = command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : command === 'resolve' || command === 'mark-applied' ? positionalsToFlags(rest, ['id']) : rest
@@ -3701,6 +4107,16 @@ export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } 
   const head = cut < 0 ? argv : argv.slice(0, cut)
   const rest = cut < 0 ? [] : argv.slice(cut)
   return { on: head.includes('--status-line'), argv: [...head.filter((a) => a !== '--status-line'), ...rest] }
+}
+// start's admission: a busy usage lock with no reading (StoreBusy from budgetVerdict, ADR-0038 amendment 2026-11-11) is never an
+// admit. start holds that crew with why `store busy: usage` and still reports the crews it already started in this call.
+function heldOnBusy(f: () => Admission): Admission {
+  try {
+    return f()
+  } catch (e) {
+    if (!(e instanceof StoreBusy)) throw e
+    return { admitted: false, parallelism: 0, running: 0, freeMB: null, minFreeMB: 0, why: String(e.body.error) }
+  }
 }
 if (isMain) {
   const { on, argv } = takeStatusFlag(process.argv.slice(2))

@@ -404,7 +404,7 @@ t('lint 23: --slug lints the crew worktree (working tree and HEAD) with the base
   assert.equal(flag(given, '.claude/rules/main.md', /"main\/\*\*"/), true, '--base is used when given')
   // no merge-base: the target does not resolve, so the head of the crew red record is the base
   writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
-  assertUsageError(env.run('knowledge-lint', { slug: 's' }))
+  assert.equal(lint(env, ['--slug', 's']).failures[0].check, 'config-unverified', 'no base at all is a failing result, not a usage error')
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: forked, tail: '' }) + '\n')
   const red = lint(env, ['--slug', 's'])
   assert.equal(flag(red, '.claude/rules/main.md', /"main\/\*\*"/), true)
@@ -496,31 +496,45 @@ t('lint 26: --slug says which base it used: base always, baseFallback true when 
   assert.equal(lint(env, ['--slug', 's', `--base=${forked.slice(0, 10)}`]).base, forked, '--base is reported as the full sha')
   assert.equal('base' in lint(env), false, 'no base, no key')
   writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
-  const none = env.run('knowledge-lint', { slug: 's' })
-  assertUsageError(none)
-  assert.match(none.json.error, /merge-base no-such-branch HEAD failed/)
-  assert.match(none.json.error, /red record/)
+  const failing = (j) => {
+    assert.equal(j.ok, false)
+    assert.equal(j.failures.length, 1, JSON.stringify(j.failures))
+    assert.equal(j.failures[0].check, 'config-unverified')
+    assert.equal(j.failures[0].new, true)
+    return j.failures[0].message
+  }
+  const none = failing(lint(env, ['--slug', 's']))
+  assert.match(none, /merge-base no-such-branch HEAD failed/)
+  assert.match(none, /red record/)
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: '0123456789abcdef0123456789abcdef01234567', tail: '' }) + '\n')
-  const unknown = env.run('knowledge-lint', { slug: 's' })
-  assertUsageError(unknown)
-  assert.match(unknown.json.error, /merge-base no-such-branch HEAD failed.*red record head 0123456789abcdef.* is not a commit/)
+  assert.match(failing(lint(env, ['--slug', 's'])), /merge-base no-such-branch HEAD failed.*red record head 0123456789abcdef.* is not a commit/)
+  const good = readFileSync(`${env.repo}/.claude/truss.json`, 'utf8')
+  writeFileSync(`${env.repo}/.claude/truss.json`, '{broken')
+  assert.match(failing(lint(env, ['--slug', 's'])), /the target could not be read/)
+  writeFileSync(`${env.repo}/.claude/truss.json`, good)
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: crewHead, tail: '' }) + '\n')
   const fb = lint(env, ['--slug', 's'])
   assert.equal(fb.base, crewHead)
   assert.equal(fb.baseFallback, true)
 })
 
-t('lint 27: with --slug the knowledge config comes from the crew worktree\'s truss.json, and from the main checkout\'s when the worktree has none', () => {
+t('lint 27: with --slug the knowledge config comes from the base commit, never from the crew\'s truss.json or the main checkout\'s', () => {
   const { env } = goodWorld()
   const wt = addCrewWorktree(env.repo, 's')
-  commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n` })
+  commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n`, 'main-rules/z.md': `${fm({ paths: ['main-gone/**'] })}\n- r\n` })
+  // the main checkout's config differs from the base and must play no part
+  writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'main-rules' }))
   const j = lint(env, ['--slug', 's'])
-  assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === 'policy/x.md'), JSON.stringify(j.failures))
-  assert.ok(!j.failures.some((f) => f.path === '.claude/rules/y.md'), 'the main checkout\'s rulesDir is not used')
+  // the crew's own truss.json moves rulesDir: that is a loosening, so the lint judges the crew with the base config instead
+  assert.equal(j.ok, false)
+  assert.ok(j.failures.some((f) => f.check === 'config-loosened' && /rulesDir changed/.test(f.message)), JSON.stringify(j.failures))
+  assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), 'the base rulesDir is used')
+  assert.ok(!j.failures.some((f) => f.path === 'policy/x.md'), 'the crew\'s rulesDir is not used')
+  assert.ok(!j.failures.some((f) => f.path === 'main-rules/z.md'), 'the main checkout\'s rulesDir is not used')
+  assert.ok(!j.failures.some((f) => /policy|main-rules/.test(f.message)), 'a path value is not repeated in a message')
+  // the working tree's copy is not read: removing it changes nothing
   unlinkSync(`${wt}/.claude/truss.json`)
-  const k = lint(env, ['--slug', 's'])
-  assert.ok(k.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), JSON.stringify(k.failures))
-  assert.ok(!k.failures.some((f) => f.path === 'policy/x.md'))
+  assert.deepEqual(lint(env, ['--slug', 's']).failures, j.failures)
 })
 
 t('lint 28: every new warning is listed; only predating warnings are capped at 20, and warningCount is the true total', () => {
@@ -779,6 +793,10 @@ t('args 7: knowledgeBudgets reaches the stage args (all six, defaults filled in,
   assert.ok(!Object.hasOwn(startArgs({ merge: 'sequential', target: 'main' }, {}), 'knowledgeBudgets'))
 })
 
+t('args 8: the real stage args carry the platform', () => {
+  assert.equal(startArgs({ merge: 'sequential', target: 'main' }, {}).platform, process.platform)
+})
+
 t('args 5: plan.js poPrompt names the product-decisions file when plan-args carried it, and no such line without it', async () => {
   const body = readFileSync(`${PLUGIN}/workflows/plan.js`, 'utf8')
   assert.match(body, /Product decisions: \$\{F\.repo\}\/\$\{F\.productDecisions\}/)
@@ -799,4 +817,111 @@ t('schema 1: the schema declares productDecisions, knowledgeDir, rulesDir and ag
   assert.ok(validate(b, { rule: -1 }).length > 0)
   assert.ok(validate(b, { rule: 'x' }).length > 0)
   assert.ok(validate(b, { nope: 1 }).length > 0)
+})
+
+const CFG_KEY = '.claude/truss.json'
+const verdict = (j, check) => j.failures.find((f) => f.check === check)
+
+t('config 2: an unreadable base says it could not verify, never that the crew loosened anything', () => {
+  const cfg = { merge: 'sequential', target: 'main', rulesDir: '.claude/rules' }
+  const env = world(GOOD, cfg)
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  const blob = git(env.repo, ['rev-parse', `HEAD:${CFG_KEY}`])
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ merge: 'sequential', target: 'main' }) })
+  unlinkSync(`${env.repo}/.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`)
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-unverified').message, /could not verify/)
+  assert.equal(verdict(j, 'config-loosened'), undefined)
+})
+
+t('config 3: a non-JSON base or head, and a non-object head, fail as could not verify, with exit 0', () => {
+  const cfg = { merge: 'sequential', target: 'main' }
+  const badBase = world(GOOD, cfg)
+  const base = commit(badBase.repo, { [CFG_KEY]: '{not json' })
+  commit(badBase.repo, { [CFG_KEY]: JSON.stringify(cfg) })
+  const a = lint(badBase, [`--base=${base}`])
+  assert.equal(a.ok, false)
+  assert.match(verdict(a, 'config-unverified').message, /not valid JSON/)
+  for (const [text, why] of [['{not json', /not valid JSON/], ['[1]', /not an object/]]) {
+    const env = world(GOOD, cfg)
+    const b = git(env.repo, ['rev-parse', 'HEAD'])
+    commit(env.repo, { [CFG_KEY]: text })
+    const j = lint(env, [`--base=${b}`])
+    assert.equal(j.ok, false)
+    assert.match(verdict(j, 'config-unverified').message, why)
+  }
+})
+
+t('config 4: a crew head with a malformed truss.json gives a failing lint result through --slug, not a lint that did not run', () => {
+  const { env } = goodWorld()
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { [CFG_KEY]: '{not json' })
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(j.ok, false)
+  assert.ok(verdict(j, 'config-unverified'), JSON.stringify(j.failures))
+  assert.equal(verdict(j, 'config-unverified').new, true)
+})
+
+t('config 5: a base with no truss.json compares against the defaults', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main' })
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  const base = commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ knowledgeBudgets: { rule: 41 } }) })
+  assert.match(verdict(lint(env, [`--base=${base}`]), 'config-loosened').message, /knowledgeBudgets\.rule raised from 40 to 41/)
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ knowledgeBudgets: { rule: 39 } }) })
+  assert.equal(verdict(lint(env, [`--base=${base}`]), 'config-loosened'), undefined)
+})
+
+t('config 6: deleting the file is a loosening when the base set a knowledge key', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main', featureMap: 'docs/map.md' })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-loosened').message, /deleted while the base set featureMap/)
+})
+
+t('config 7: --slug catches a budget raise committed on the crew branch', () => {
+  const { env } = goodWorld()
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { [CFG_KEY]: JSON.stringify({ merge: 'sequential', target: 'main', knowledgeBudgets: { agentsIndex: 500 } }) })
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-loosened').message, /knowledgeBudgets\.agentsIndex raised from 60 to 500/)
+})
+
+t('config 8: an untracked truss.json in the main checkout gives no false config-loosened', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main' })
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { 'src/a.ts': 'export const a = 3\n' })
+  writeFileSync(`${env.repo}/${CFG_KEY}`, JSON.stringify({ merge: 'sequential', target: 'main', knowledgeBudgets: { rule: 1 }, rulesDir: 'main-only' }))
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(verdict(j, 'config-loosened'), undefined, JSON.stringify(j.failures))
+  assert.equal(verdict(j, 'config-unverified'), undefined, JSON.stringify(j.failures))
+})
+
+t('config 1: a diff against --base that raises a knowledge budget or moves a knowledge path fails config-loosened, and the crew is linted with the base config; tightening passes', () => {
+  const cfg = { merge: 'sequential', target: 'main' }
+  const env = world(GOOD, cfg)
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  // raise the budget and put AGENTS.md over the default budget of 60 lines
+  commit(env.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, knowledgeBudgets: { agentsIndex: 500 } }), 'AGENTS.md': `${GOOD['AGENTS.md']}${lines(80)}` })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.ok(j.failures.some((f) => f.check === 'config-loosened' && f.new === true && /knowledgeBudgets\.agentsIndex raised from 60 to 500/.test(f.message)), JSON.stringify(j.failures))
+  assert.ok(j.failures.some((f) => f.check === 'over-budget' && f.path === 'AGENTS.md'), 'linted against the base budget')
+  // moving a path is a loosening too
+  const env2 = world(GOOD, cfg)
+  const base2 = git(env2.repo, ['rev-parse', 'HEAD'])
+  commit(env2.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, rulesDir: 'elsewhere' }) })
+  assert.ok(lint(env2, [`--base=${base2}`]).failures.some((f) => f.check === 'config-loosened' && /rulesDir changed/.test(f.message)))
+  // tightening is allowed
+  const env3 = world(GOOD, { ...cfg, knowledgeBudgets: { rule: 40 } })
+  const base3 = git(env3.repo, ['rev-parse', 'HEAD'])
+  commit(env3.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, knowledgeBudgets: { rule: 30 } }) })
+  assert.ok(!lint(env3, [`--base=${base3}`]).failures.some((f) => f.check === 'config-loosened'))
 })

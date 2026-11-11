@@ -1,4 +1,4 @@
-// Work types (contract-025 section 5, ADR-0041). A0 stub: the final signatures; profilesOf gives the built-ins and workTypeErrors none. b-cost replaces it.
+// Work types (contract-025 section 5, ADR-0041). The built-in profiles, the `workTypes` config merge that can only tighten one (`profilesOf`), the per-crew minimum-process and unattended checks (`workTypeErrors`) and the `worktypes` command.
 // Imports node: builtins and relative paths only, and never factory.ts (its top-level await would make an import cycle).
 
 import { configOf, need } from './store.ts'

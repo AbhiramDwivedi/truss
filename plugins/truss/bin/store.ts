@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import * as nodeFs from 'node:fs'
-import { homedir, hostname } from 'node:os'
+import { homedir, hostname, userInfo } from 'node:os'
 import path from 'node:path'
 
 // ==== core (moved unchanged from factory.ts) ====
@@ -153,7 +153,9 @@ export class StoreBusy extends CliError {
 }
 
 const STALE_AGE_MS = 120_000 // a lock older than this is stale whoever owns it
-const OWNERLESS_MS = 10_000 // a lock dir with no readable owner.json this old was abandoned between mkdir and the owner write
+// a lock dir with no readable owner.json this old was abandoned between mkdir and the owner write (microseconds on a healthy disk).
+// It stays well under withLock's default 5 s wait, so a waiter judges an ownerless lock stale before it gives up with StoreBusy.
+const OWNERLESS_MS = 3_000
 
 export type LockOpts = { waitMs?: number; platform?: NodeJS.Platform; fs?: FsLike; host?: string; now?: () => number }
 
@@ -235,6 +237,7 @@ export function withLock<T>(dir: string, name: string, f: () => T, opts: LockOpt
   const locks = `${flat(dir)}/locks`
   const lock = `${locks}/${name}.lock`
   mkdir(locks, { recursive: true })
+  sweepTmp(dir, fs)
   const deadline = Date.now() + waitMs
   let token = ''
   for (;;) {
@@ -290,13 +293,43 @@ export function withLock<T>(dir: string, name: string, f: () => T, opts: LockOpt
 // ==== atomic writes ====
 
 const tmpOf = (p: string): string => `${p}.${process.pid}-${randomUUID()}.tmp`
+const TMP_NAME = /\.(\d+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/
+const TMP_SWEEP_EVERY_MS = 60_000
+const TMP_PID_REUSE_MS = 86_400_000 // a tmp this old is swept even when its pid is alive again (a reused pid)
+const sweptAt = new Map<string, number>()
+
+// Removes the tmp files a writer left between its write and its rename (writer killed): `<name>.<pid>-<uuid>.tmp` in dir, older
+// than STALE_AGE_MS (a live writer holds its tmp for milliseconds) and written by a dead pid, or older than a day. A tmp of a live
+// pid is never touched before that. Runs at most once a minute per dir in this process; any failure is ignored, since a sweep is housekeeping.
+function sweepTmp(dir: string, fs?: FsLike): void {
+  const d = flat(dir)
+  const t = Date.now()
+  if (t - (sweptAt.get(d) ?? 0) < TMP_SWEEP_EVERY_MS) return
+  sweptAt.set(d, t)
+  try {
+    for (const name of fn(fs, 'readdirSync')(d) as string[]) {
+      const m = TMP_NAME.exec(name)
+      if (!m) continue
+      try {
+        const age = t - (fn(fs, 'statSync')(`${d}/${name}`) as any).mtimeMs
+        if (age > STALE_AGE_MS && (pidDead(Number(m[1])) || age > TMP_PID_REUSE_MS)) fn(fs, 'unlinkSync')(`${d}/${name}`)
+      } catch {
+        // gone already, or not ours to remove
+      }
+    }
+  } catch {
+    // the directory is not readable
+  }
+}
 const RETRY_RENAME = new Set(['EPERM', 'EBUSY', 'EACCES'])
 
 // Writes obj as JSON to a tmp file, then renames it over p. A rename refused with EPERM, EBUSY or EACCES is retried 10 times, 20 ms apart.
-export function writeJsonAtomic(p: string, obj: unknown, opts: { fs?: FsLike } = {}): void {
-  const { fs } = opts
+// mode (for a file holding a secret) is the creation mode of the tmp file, so p never exists with a wider one.
+export function writeJsonAtomic(p: string, obj: unknown, opts: { fs?: FsLike; mode?: number } = {}): void {
+  const { fs, mode } = opts
+  sweepTmp(path.posix.dirname(flat(p)), fs)
   const tmp = tmpOf(p)
-  fn(fs, 'writeFileSync')(tmp, JSON.stringify(obj, null, 2) + '\n')
+  fn(fs, 'writeFileSync')(tmp, JSON.stringify(obj, null, 2) + '\n', mode === undefined ? undefined : { mode })
   try {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -322,6 +355,7 @@ export function writeJsonAtomic(p: string, obj: unknown, opts: { fs?: FsLike } =
 export function createExclusive(p: string, obj: unknown, opts: { fs?: FsLike } = {}): boolean {
   const { fs } = opts
   const text = JSON.stringify(obj, null, 2) + '\n'
+  sweepTmp(path.posix.dirname(flat(p)), fs)
   const tmp = tmpOf(p)
   fn(fs, 'writeFileSync')(tmp, text)
   try {
@@ -393,6 +427,13 @@ export function readJsonl(p: string): { rows: Obj[]; bad: number } {
 }
 
 // ==== transcripts ====
+
+// The root the inbox proof reads a transcript under: the OS user's home and .claude/projects, never an env var, so the caller cannot point
+// the proof at a file of its own. Reading spend (transcriptsOf) grants no authority; a proof does.
+export const proofTranscriptRoot = (): string => flat(path.join(userInfo().homedir, '.claude', 'projects'))
+
+// The one read of a transcript for the inbox proof (the tests stub it by re-export, so every proof read goes through it).
+export const readProofFile = (p: string, opts: { fs?: FsLike } = {}): Buffer => fn(opts.fs, 'readFileSync')(p) as Buffer
 
 // Where Claude Code keeps session transcripts: $TRUSS_TRANSCRIPTS_ROOT, else $CLAUDE_CONFIG_DIR/projects, else ~/.claude/projects.
 // main is <root>/<project>/<sid>.jsonl; agents are <root>/<project>/<sid>/subagents/**/agent-*.jsonl, each with its agent-*.meta.json
