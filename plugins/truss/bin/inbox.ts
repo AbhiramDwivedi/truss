@@ -94,6 +94,9 @@ export function escalate(repo: string, dir: string, input: EscalateInput): Escal
   const S = sharedDir(repo)
   const file = `${S}/inbox.jsonl`
   const code = codeOf()
+  // Everything that can throw but the append runs before it: a bad truss.json or an unwritable session dir leaves no item whose code was never shown.
+  const notifies = typeof configOf(repo).notify === 'string'
+  mkdirSync(dir, { recursive: true })
   let open: Obj | null = null
   let out: EscalateOut | null = null
   // one lock: the dedupe read, the check and the single append
@@ -119,13 +122,21 @@ export function escalate(repo: string, dir: string, input: EscalateInput): Escal
   if (res.deduped) return { ...res, code: '' }
   const row = open as unknown as Obj
   const crew = crews[0] ?? 'main' // the schema requires a crew; 'main' is the run itself
-  event(dir, { event: 'escalate', crew, id: row.id, kind: row.kind, blocking })
-  if (typeof configOf(repo).notify === 'string') {
+  // the item exists and the code is in res: nothing below may throw it away
+  const safeEvent = (obj: Obj): void => {
+    try {
+      event(dir, obj)
+    } catch {
+      // the event log is best effort here
+    }
+  }
+  safeEvent({ event: 'escalate', crew, id: row.id, kind: row.kind, blocking })
+  if (notifies) {
     const n = notify(repo, { ...row, code })
     res.notified = n.ok
     if (!n.ok) {
       res.notifyError = n.error
-      event(dir, { event: 'notify-error', crew, id: row.id, error: n.error })
+      safeEvent({ event: 'notify-error', crew, id: row.id, error: n.error })
     }
   }
   return res
@@ -155,13 +166,13 @@ export function blockingFor(repo: string, session: string, slug: string): string
   return ids
 }
 
-/** The raises of the approved budget resolves of `session`: [{ref, raiseUsd}]. */
+/** The raises of the approved budget resolves of `session`: [{ref, raiseUsd}]. The session is the one the ref names (budget:<open-session>:...), whichever session resolved it. */
 export function budgetRaises(repo: string, session: string): { ref: string; raiseUsd: number }[] {
   const out: { ref: string; raiseUsd: number }[] = []
   for (const it of readItems(repo).values()) {
     const r = it.resolve
-    if (r === null || it.open.kind !== 'budget' || r.decision !== 'approve' || r.session !== session) continue
-    if (typeof r.raiseUsd !== 'number' || !(r.raiseUsd > 0) || typeof it.open.ref !== 'string') continue
+    if (r === null || it.open.kind !== 'budget' || r.decision !== 'approve') continue
+    if (typeof r.raiseUsd !== 'number' || !(r.raiseUsd > 0) || typeof it.open.ref !== 'string' || !it.open.ref.startsWith(`budget:${session}:`)) continue
     out.push({ ref: it.open.ref, raiseUsd: r.raiseUsd })
   }
   return out
@@ -193,7 +204,8 @@ function argsOf(text: string): string {
 }
 
 // The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the code and the decision word right before the id.
-function typedProof(session: string, open: Obj, decision: string, code: string): string | null {
+// With a raise, the typed line is `<decision> <id> <code> raise <usd> [note]`: the amount is the one the client typed, not the agent's flag.
+function typedProof(session: string, open: Obj, decision: string, code: string, raiseUsd?: number): string | null {
   const main = transcriptsOf(session).main
   if (main === null) return null
   const after = Date.parse(open.ts)
@@ -206,7 +218,12 @@ function typedProof(session: string, open: Obj, decision: string, code: string):
     const at = Date.parse(row.timestamp)
     if (!Number.isFinite(at) || !(at > after)) continue
     if (OUTPUT_TAG.test(text)) continue
-    if (text.includes(open.id) && text.includes(code) && word.test(argsOf(text))) found = text
+    const args = argsOf(text)
+    if (raiseUsd !== undefined) {
+      const t = args.split(/\s+/)
+      if (t[3] !== 'raise' || !/^\d+(\.\d+)?$/.test(t[4] ?? '') || Number(t[4]) !== raiseUsd) continue
+    }
+    if (text.includes(open.id) && text.includes(code) && word.test(args)) found = text
   }
   return found === null ? null : (found as string).slice(0, 1000)
 }
@@ -242,8 +259,8 @@ function resolveItem(f: Flags): Obj {
     if (raiseUsd !== undefined && kind !== 'budget') throw refuse({ error: '--raise-usd is for the budget kind only' })
     if (codeHashOf(id, code) !== it.open.codeHash) throw refuse({ error: 'wrong code' })
     if (by === 'client') {
-      quote = typedProof(session, it.open, decision, code)
-      if (quote === null) throw refuse({ error: `no prompt typed by the client resolves ${id}: the client types /truss:inbox ${decision} ${id} <code> in this session` })
+      quote = typedProof(session, it.open, decision, code, raiseUsd)
+      if (quote === null) throw refuse({ error: `no prompt typed by the client resolves ${id}: the client types /truss:inbox ${decision} ${id} <code>${raiseUsd === undefined ? '' : ` raise ${raiseUsd}`} in this session` })
     }
     const op: Obj = { v: 1, op: 'resolve', id, ts: new Date().toISOString(), session, decision, by, note, quote }
     if (raiseUsd !== undefined) op.raiseUsd = raiseUsd

@@ -559,19 +559,84 @@ test('inbox: budgetRaises returns the approved budget raises', async () => {
   mkSession(env.common, other)
   const grant = (kind: string, ref: string, decision: string, extra: string[], dir = env.dir, sid = env.sid) => {
     const a = raise(env, kind, ['--crew', 'c1', '--ref', ref], 'budget', dir)
-    putTranscript(env, [human(typed(a.id, a.code, decision), afterOpen(env, a.id))], sid)
+    const amount = extra[0] === '--raise-usd' ? `raise ${extra[1]} ` : ''
+    putTranscript(env, [human(typed(a.id, a.code, decision, `${amount}go ahead`), afterOpen(env, a.id))], sid)
     const r = resolveOf(env, a.id, decision, 'client', a.code, extra, dir)
     assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
     return a
   }
-  grant('budget', 'budget:run:1', 'approve', ['--raise-usd', '25'])
-  grant('budget', 'budget:crew:c1', 'approve', ['--raise-usd', '7.5'])
-  grant('budget', 'budget:rejected', 'reject', [])
-  raise(env, 'budget', ['--crew', 'c1', '--ref', 'budget:still-open'])
-  grant('budget', 'budget:other-session', 'approve', ['--raise-usd', '99'], `${env.common}/truss/${other}`, other)
+  const S = env.sid
+  grant('budget', `budget:${S}:run:run`, 'approve', ['--raise-usd', '25'])
+  grant('budget', `budget:${S}:crew:c1`, 'approve', ['--raise-usd', '7.5'])
+  grant('budget', `budget:${S}:rejected`, 'reject', [])
+  raise(env, 'budget', ['--crew', 'c1', '--ref', `budget:${S}:still-open`])
+  grant('budget', `budget:${other}:crew:c1`, 'approve', ['--raise-usd', '99'], `${env.common}/truss/${other}`, other)
   const got = inbox.budgetRaises(env.repo, env.sid)
-  assert.deepEqual([...got].sort((x, y) => (x.ref < y.ref ? -1 : 1)), [{ ref: 'budget:crew:c1', raiseUsd: 7.5 }, { ref: 'budget:run:1', raiseUsd: 25 }])
-  assert.deepEqual(inbox.budgetRaises(env.repo, other), [{ ref: 'budget:other-session', raiseUsd: 99 }])
+  assert.deepEqual([...got].sort((x, y) => (x.ref < y.ref ? -1 : 1)), [{ ref: `budget:${S}:crew:c1`, raiseUsd: 7.5 }, { ref: `budget:${S}:run:run`, raiseUsd: 25 }])
+  assert.deepEqual(inbox.budgetRaises(env.repo, other), [{ ref: `budget:${other}:crew:c1`, raiseUsd: 99 }])
+})
+
+test('inbox: a raise opened in session A and approved from session B books to A', async () => {
+  const inbox = await import(INBOX_TS)
+  const env = mkInbox()
+  const other = 'sess-other'
+  const otherDir = mkSession(env.common, other)
+  const ref = `budget:${env.sid}:crew:c1`
+  const a = raise(env, 'budget', ['--crew', 'c1', '--ref', ref], 'budget')
+  putTranscript(env, [human(typed(a.id, a.code, 'approve', 'raise 4'), afterOpen(env, a.id))], other)
+  const r = resolveOf(env, a.id, 'approve', 'client', a.code, ['--raise-usd', '4'], otherDir)
+  assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
+  assert.deepEqual(inbox.budgetRaises(env.repo, env.sid), [{ ref, raiseUsd: 4 }], 'A gets the raise')
+  assert.deepEqual(inbox.budgetRaises(env.repo, other), [], 'B, the resolver, does not')
+})
+
+test('inbox: the raise amount is part of the typed proof: a different or missing typed amount is refused', () => {
+  const env = mkInbox()
+  const a = raise(env, 'budget', ['--crew', 'c1', '--ref', `budget:${env.sid}:crew:c1`], 'budget')
+  putTranscript(env, [human(typed(a.id, a.code, 'approve', 'raise 3 ok'), afterOpen(env, a.id))])
+  const big = resolveOf(env, a.id, 'approve', 'client', a.code, ['--raise-usd', '300'])
+  assert.equal(big.status, 1, `${big.stdout} ${big.stderr}`)
+  assert.match(String(assertOneLine(big).error), /no prompt typed/)
+  putTranscript(env, [human(typed(a.id, a.code, 'approve', 'go ahead'), afterOpen(env, a.id))])
+  assert.equal(resolveOf(env, a.id, 'approve', 'client', a.code, ['--raise-usd', '3']).status, 1, 'no typed raise at all')
+  putTranscript(env, [human(typed(a.id, a.code, 'approve', 'raise 3 ok'), afterOpen(env, a.id))])
+  const ok = resolveOf(env, a.id, 'approve', 'client', a.code, ['--raise-usd', '3'])
+  assert.equal(ok.status, 0, `${ok.stdout} ${ok.stderr}`)
+  assert.equal(opsOf(env).find((o) => o.op === 'resolve').raiseUsd, 3)
+})
+
+test('inbox: a malformed truss.json leaves no item behind and a retry returns a code', () => {
+  const env = mkInbox()
+  const cfgFile = `${env.repo}/.claude/truss.json`
+  const good = readFileSync(cfgFile, 'utf8')
+  writeFileSync(cfgFile, '{ not json')
+  const bad = fx(env, 'escalate', ['--kind', 'budget', '--title', 't', '--crew', 'c1', '--ref', 'r-bad', '--blocking'])
+  assert.notEqual(bad.status, 0, `${bad.stdout} ${bad.stderr}`)
+  assert.equal(opsOf(env).filter((o) => o.op === 'open').length, 0, 'no open row without a shown code')
+  writeFileSync(cfgFile, good)
+  const again = raise(env, 'budget', ['--crew', 'c1', '--ref', 'r-bad', '--blocking'])
+  assert.equal(again.deduped, false)
+  assert.match(again.code, CODE_RE)
+})
+
+test('inbox: notify-run decides main by the realpath of argv[1], not import.meta.main (Node 24.2+ only)', () => {
+  const src = readFileSync(NOTIFY_RUN, 'utf8')
+  assert.ok(!/^\s*if \(import\.meta\.main\)/m.test(src) && !src.includes('import.meta.main)'), 'no import.meta.main call')
+  assert.match(src, /realpathSync\(process\.argv\[1\]\)/)
+})
+
+test('inbox: the inbox skill lets the client type done and raise', () => {
+  const s = readFileSync(`${REAL_PLUGIN}/skills/inbox/SKILL.md`, 'utf8')
+  assert.match(s, /decision is one of `approve`, `reject`, `answer`, `done` or `dismiss`/)
+  assert.match(s, /--raise-usd <usd>/)
+})
+
+test('inbox: a client resolve of a push-pr item with done is accepted', () => {
+  const env = mkInbox()
+  const a = raise(env, 'push-pr', ['--crew', 'c1'])
+  putTranscript(env, [human(typed(a.id, a.code, 'done', 'merged'), afterOpen(env, a.id))])
+  const r = resolveOf(env, a.id, 'done', 'client', a.code)
+  assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
 })
 
 // ---------------------------------------------------------------------------------------------------------------

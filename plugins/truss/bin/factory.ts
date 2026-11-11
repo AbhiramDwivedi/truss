@@ -2251,12 +2251,15 @@ function holdOf(dir: string, repo: string, plan: Obj, slug: string, command: str
   if (!v.held) return undefined
   appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
   let escalateError: string | undefined
+  let clientNote = ''
   try {
-    escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
+    const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
+    // the one-time code exists only in this return value (the inbox keeps its hash); with no notify command nothing else delivers it, so the held entry carries it for the PM to relay
+    if (!esc.deduped && esc.code !== '' && esc.notified !== true) clientNote = `; client approval needed: ${esc.id} code ${esc.code} (relay to the client, who types /truss:inbox approve ${esc.id} ${esc.code} raise <usd>)`
   } catch (e) {
     escalateError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
   }
-  return { admitted: false, ...base, budget: true, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd, why: v.why, ...(escalateError === undefined ? {} : { escalateError }) }
+  return { admitted: false, ...base, budget: true, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd, why: v.why + clientNote, ...(escalateError === undefined ? {} : { escalateError }) }
 }
 
 // Memory first (free MB, then memory pressure and swap use, ADR-0026 item 57), then (for a planned crew) the effective parallelism. A sampler error admits and logs a sampler-error event.
