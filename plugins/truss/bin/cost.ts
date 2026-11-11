@@ -9,7 +9,7 @@ import { budgetRaises } from './inbox.ts'
 import { StoreBusy, configOf, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
-export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string }
+export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string; ref?: string }
 export type SweepOut = { rows: number; files: number; bad: number; found: number; busy?: true }
 type SweepOpts = { platform?: NodeJS.Platform; waitMs?: number }
 
@@ -52,6 +52,24 @@ function rowOf(line: Obj, sid: string, agentId: string | null): Obj | undefined 
 }
 
 const agentIdOf = (p: string): string => path.basename(p).replace(/^agent-/, '').replace(/\.jsonl$/, '')
+
+/** Whether the file exists, is not empty and its last byte is not a newline. */
+function endsTorn(p: string): boolean {
+  let fd: number
+  try {
+    fd = openSync(p, 'r')
+  } catch {
+    return false
+  }
+  try {
+    const size = fstatSync(fd).size
+    if (size === 0) return false
+    const b = Buffer.alloc(1)
+    return readSync(fd, b, 0, 1, size - 1) === 1 && b[0] !== 10
+  } finally {
+    closeSync(fd)
+  }
+}
 
 /** Reads every transcript of the session `dir` names from its cursor and appends the new usage rows to D/usage.jsonl, once per msgId. Throws StoreBusy when the lock stays busy. */
 export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOut {
@@ -152,7 +170,8 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
         }
       }
       // rows first, then the cursor: a crash between the two is repaired by the msgId set
-      if (fresh.length > 0) appendFileSync(usagePath, fresh.map((r) => JSON.stringify(r)).join('\n') + '\n')
+      // a torn tail (a writer died mid-row) is closed with a newline first, so the new rows start on a fresh line
+      if (fresh.length > 0) appendFileSync(usagePath, (endsTorn(usagePath) ? '\n' : '') + fresh.map((r) => JSON.stringify(r)).join('\n') + '\n')
       writeJsonAtomic(cursorPath, { files, project: tr.main === null ? null : path.basename(path.dirname(tr.main)), ccEstimate: estimate ?? null })
       return { rows: fresh.length, files: read, bad, found: list.length }
     },
@@ -281,7 +300,7 @@ export function budgetVerdict(dir: string, repo: string, plan: Obj | null, slug:
   type Check = { scope: 'run' | 'crew' | 'workType' | 'session'; ref: string; base: number; label: string; rows: (all: Obj[], of: (r: Obj) => string) => Obj[] }
   const checks: Check[] = []
   const sessionUsd = scoped(budget.sessionUsd)
-  if (slug === null && sessionUsd !== undefined) checks.push({ scope: 'session', ref: `budget:${sid}:session:session`, base: sessionUsd, label: 'session', rows: (all) => all })
+  if (sessionUsd !== undefined) checks.push({ scope: 'session', ref: `budget:${sid}:session:session`, base: sessionUsd, label: 'session', rows: (all) => all })
   const runUsd = scoped(budget.runUsd)
   if (runUsd !== undefined && since !== undefined) checks.push({ scope: 'run', ref: `budget:${sid}:run:run`, base: runUsd, label: 'run', rows: (all) => all.filter((r) => Date.parse(String(r.ts)) >= since) })
   const crewUsd = scoped(budget.crewUsd)
@@ -303,10 +322,11 @@ export function budgetVerdict(dir: string, repo: string, plan: Obj | null, slug:
   const of = attributor(dir, repo, slugs, process.platform)
   for (const c of checks) {
     const limitUsd = c.ref === '' ? c.base : c.base + raiseFor(raises, c.ref)
-    if (done.found === 0) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: no transcripts found for session ${sid}, so ${c.label} spend is unknown` }
+    const ref = c.scope === 'session' ? { ref: c.ref } : {}
+    if (done.found === 0) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: no transcripts found for session ${sid}, so ${c.label} spend is unknown`, ...ref }
     const s = sumOf(c.rows(all, of), cfg.pricing)
-    if (s.usd === null) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: ${c.label} spend not priced: ${s.unpriced.join(', ')}` }
-    if (s.usd >= limitUsd) return { held: true, scope: c.scope, spentUsd: s.usd, limitUsd, why: `budget: ${c.label} spent ${Math.round(s.usd * 10000) / 10000} USD, which reached the limit of ${limitUsd} USD` }
+    if (s.usd === null) return { held: true, scope: c.scope, spentUsd: null, limitUsd, why: `budget: ${c.label} spend not priced: ${s.unpriced.join(', ')}`, ...ref }
+    if (s.usd >= limitUsd) return { held: true, scope: c.scope, spentUsd: s.usd, limitUsd, why: `budget: ${c.label} spent ${Math.round(s.usd * 10000) / 10000} USD, which reached the limit of ${limitUsd} USD`, ...ref }
   }
   return { held: false }
 }
@@ -339,7 +359,9 @@ function costOf(f: Flags): Obj {
   const dir = flat(need(f, 'dir'))
   const repo = flat(need(f, 'repo'))
   const only = str(f, 'crew')
-  const swept = sweep(dir, repo)
+  const swept = sweepOrRead(dir, repo, {})
+  // a busy first sweep with no prior reading: the spend is unknown, never 0
+  const unknown = swept.busy === true && !existsSync(`${dir}/usage.jsonl`) && !existsSync(`${dir}/usage-cursor.json`)
   const pricing = configOf(repo).pricing
   const plan = planOf(dir)
   const slugs = slugsOf(plan)
@@ -371,8 +393,8 @@ function costOf(f: Flags): Obj {
     estimate = null
   }
   return {
-    run: { since: since === undefined ? null : plan?.approvedAt, usd: since === undefined ? null : run.usd, tokens: run.tokens },
-    session: { usd: session.usd },
+    run: { since: since === undefined ? null : plan?.approvedAt, usd: since === undefined || unknown ? null : run.usd, tokens: run.tokens },
+    session: unknown ? { usd: null, why: 'usage sweep busy and no earlier reading exists' } : { usd: session.usd },
     crews,
     unpriced: session.unpriced,
     notRecorded,
