@@ -98,8 +98,8 @@ function chained(lines: string[], sid: string, prev: string | null = null): stri
   return lines.map((l) => {
     const o = JSON.parse(l)
     if (!o.uuid) o.uuid = randomUUID()
-    if (o.sessionId === undefined) o.sessionId = sid
-    if (!o.parentUuid) o.parentUuid = prev
+    o.sessionId = sid
+    o.parentUuid = prev
     prev = o.uuid
     return JSON.stringify(o)
   })
@@ -232,7 +232,7 @@ test('inbox: events.jsonl carries ids and kinds only, never the quote, title, de
   const rb = resolveOf(env, b.id, 'done', 'pm', b.code, ['--note', NEEDLES.note])
   assert.equal(rb.status, 0, `${rb.stdout} ${rb.stderr}`)
   putTranscript(env, [human(typed(a.id, a.code, 'approve', NEEDLES.quote), afterOpen(env, a.id))])
-  const ra = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note', NEEDLES.note])
+  const ra = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note', NEEDLES.quote])
   assert.equal(ra.status, 0, `${ra.stdout} ${ra.stderr}`)
   const raw = readFileSync(`${env.dir}/events.jsonl`, 'utf8')
   for (const [name, needle] of Object.entries(NEEDLES)) assert.ok(!raw.includes(needle), `events.jsonl holds the ${name}`)
@@ -324,7 +324,7 @@ test('inbox: resolve by client is accepted with a fixture prompt and stores the 
   const a = raise(env, 'scope-change', ['--crew', 'c1'])
   const text = typed(a.id, a.code, 'approve', 'looks fine to me')
   putTranscript(env, [human(text, afterOpen(env, a.id))])
-  const r = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note', 'a note'])
+  const r = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note', 'looks fine to me'])
   const j = assertOneLine(r)
   assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
   assert.equal(j.id, a.id)
@@ -337,11 +337,11 @@ test('inbox: resolve by client is accepted with a fixture prompt and stores the 
   assert.equal(res.by, 'client')
   assert.equal(res.decision, 'approve')
   assert.equal(res.quote, text)
-  assert.equal(res.note, 'a note')
+  assert.equal(res.note, 'looks fine to me')
   const item = listOf(env).items.find((x) => x.id === a.id)
   assert.equal(item.state, 'resolved')
   assert.equal(item.by, 'client')
-  assert.equal(item.quote, text)
+  assert.equal(item.quote, text.replace(a.code, '[code]'), 'a listing redacts the code token')
   assert.equal(listOf(env, ['--open']).open, 0)
 })
 
@@ -568,14 +568,20 @@ test('inbox: unapplied lists resolved items until mark-applied', () => {
 })
 
 test('inbox: budgetRaises returns the approved budget raises', async () => {
-  const inbox = await import(INBOX_TS)
+  const inbox = await import(`${proofPlugin()}/bin/inbox.ts`)
   const env = mkInbox()
+  process.env.TRUSS_TEST_PROOF_ROOT = env.troot
   const other = 'sess-other'
   mkSession(env.common, other)
   const grant = (kind: string, ref: string, decision: string, extra: string[], dir = env.dir, sid = env.sid) => {
     const a = raise(env, kind, ['--crew', 'c1', '--ref', ref], 'budget', dir)
     const amount = extra[0] === '--raise-usd' ? `raise ${extra[1]} ` : ''
-    putTranscript(env, [human(typed(a.id, a.code, decision, `${amount}go ahead`), afterOpen(env, a.id))], sid)
+    const line = human(typed(a.id, a.code, decision, `${amount}go ahead`), afterOpen(env, a.id))
+    // the fold re-verifies every resolve, so a session's earlier prompts stay in its transcript
+    if (existsSync(transcriptOf(env, sid))) {
+      const have = readFileSync(transcriptOf(env, sid), 'utf8').split('\n').filter(Boolean)
+      appendFileSync(transcriptOf(env, sid), chained([line], sid, JSON.parse(have[have.length - 1]).uuid).join('\n') + '\n')
+    } else putTranscript(env, [line], sid)
     const r = resolveOf(env, a.id, decision, 'client', a.code, extra, dir)
     assert.equal(r.status, 0, `${r.stdout} ${r.stderr}`)
     return a
@@ -592,8 +598,9 @@ test('inbox: budgetRaises returns the approved budget raises', async () => {
 })
 
 test('inbox: a raise opened in session A and approved from session B books to A', async () => {
-  const inbox = await import(INBOX_TS)
+  const inbox = await import(`${proofPlugin()}/bin/inbox.ts`)
   const env = mkInbox()
+  process.env.TRUSS_TEST_PROOF_ROOT = env.troot
   const other = 'sess-other'
   const otherDir = mkSession(env.common, other)
   const ref = `budget:${env.sid}:crew:c1`
@@ -805,9 +812,9 @@ test('inbox: resolve by client needs the decision word directly before the id', 
 test('inbox: resolve reads the note from --note-file', () => {
   const env = mkInbox()
   const a = raise(env, 'scope-change', ['--crew', 'c1'])
-  putTranscript(env, [human(typed(a.id, a.code), afterOpen(env, a.id))])
-  const noteFile = `${mk('inbox-note-')}/note.txt`
   const note = 'note-from-file-marker'
+  putTranscript(env, [human(typed(a.id, a.code, 'approve', note), afterOpen(env, a.id))])
+  const noteFile = `${mk('inbox-note-')}/note.txt`
   writeFileSync(noteFile, note)
   const r = resolveOf(env, a.id, 'approve', 'client', a.code, ['--note-file', noteFile])
   assertOneLine(r)
