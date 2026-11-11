@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, cpSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, cpSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
@@ -586,4 +586,110 @@ st('gates-026: design-engineer tells the planner to put each crew\'s knowledge f
   const next = text.indexOf('5. **Stages.**', at)
   const step = text.slice(at, next > at ? next : at + 3000)
   for (const needle of ['knowledge files', 'owns', 'one crew per file per stage']) assert.ok(step.includes(needle), `step 4 Crews contains "${needle}":\n${step}`)
+})
+
+// ---------------------------------------------------------------- item 14: a test run reads nothing from .claude/worktrees
+
+// A throwaway git checkout of the plugin (plugins/truss, the root package.json and checks/), committed, so a test run there
+// resolves its own ROOT, HEAD and golden set. Decoys live only here, never in the real .claude/worktrees.
+function leakCheckout() {
+  const d = tmp('g026-leak-')
+  cpSync(REAL_PLUGIN, `${d}/plugins/truss`, { recursive: true, filter: (s) => !/[\\/]node_modules$/.test(s) })
+  cpSync(`${CHECKOUT}/package.json`, `${d}/package.json`)
+  if (existsSync(`${CHECKOUT}/checks`)) cpSync(`${CHECKOUT}/checks`, `${d}/checks`, { recursive: true })
+  // A tracked file under .claude, as the real checkout has, so git status lists an untracked worktree path whole instead of as `?? .claude/`.
+  mkdirSync(`${d}/.claude/rules`, { recursive: true })
+  cpSync(`${CHECKOUT}/.claude/rules/plugin-tests.md`, `${d}/.claude/rules/plugin-tests.md`)
+  git(d, ['init', '-q', '-b', 'main'])
+  git(d, ['config', 'user.name', 'Test Writer'])
+  git(d, ['config', 'user.email', 'tw@example.invalid'])
+  git(d, ['config', 'core.autocrlf', 'false'])
+  git(d, ['add', '-A'])
+  git(d, ['commit', '-q', '-m', 'seed'])
+  return d
+}
+const childEnv = (extra = {}) => {
+  const env = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('GIT_') && k !== 'NODE_TEST_CONTEXT' && k !== 'CLAUDE_STUB_REPLY') env[k] = v
+  return Object.assign(env, extra)
+}
+// The `*` globs of the root package.json test script, expanded the way npm test's shell does (no dot-dirs matched by a literal segment).
+function expandGlob(root: string, pattern: string): string[] {
+  let hits = ['']
+  for (const seg of pattern.split('/')) {
+    const next: string[] = []
+    const re = seg.includes('*') ? new RegExp('^' + seg.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$') : null
+    for (const h of hits) {
+      const at = h ? `${h}/` : ''
+      if (!re) { if (existsSync(`${root}/${at}${seg}`)) next.push(`${at}${seg}`); continue }
+      let names = []
+      try { names = readdirSync(`${root}/${h}`) } catch { names = [] }
+      for (const n of names) if (re.test(n) && !n.startsWith('.')) next.push(`${at}${n}`)
+    }
+    hits = next
+  }
+  return hits
+}
+const testGlobs = (root: string): string[] => {
+  const script = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).scripts.test
+  return script.split('&&').flatMap((part) => part.trim().replace(/^node --test\s+/, '').split(/\s+/).filter(Boolean))
+}
+
+// Expected-green guard (PO 11): exempt from the red record. The root package.json globs start at plugins/ and checks/, so they never
+// enter .claude/worktrees and this case passes before and after the fix. The live case below carries the red.
+st('gates-026: the suite run and evals read nothing from a decoy worktree holding a failing test and a bad golden file', () => {
+  const d = leakCheckout()
+  const decoy = `${d}/.claude/worktrees/g026-decoy/plugins/truss`
+  mkdirSync(`${decoy}/tests`, { recursive: true })
+  mkdirSync(`${decoy}/evals/golden`, { recursive: true })
+  writeFileSync(`${decoy}/tests/decoy.check.ts`, "import { test } from 'node:test'\ntest('decoy', () => { throw new Error('decoy test ran') })\n")
+  writeFileSync(`${decoy}/evals/golden/decoy-bad.json`, '{ this is not json')
+  const found = testGlobs(d).flatMap((g) => expandGlob(d, g))
+  assert.ok(found.includes('plugins/truss/tests/gates-026.check.ts'), `the glob expansion finds the checkout's own tests, got ${found.length}`)
+  assert.deepEqual(found.filter((p) => p.includes('.claude') || p.includes('decoy')), [], 'no decoy path is discovered by the test globs')
+  const logDir = tmp('g026-stublog-')
+  const r = spawnSync(process.execPath, [`${d}/plugins/truss/evals/run-model.ts`], {
+    cwd: d, encoding: 'utf8', windowsHide: true, timeout: 600000, maxBuffer: 64 * 1024 * 1024,
+    env: childEnv({ CLAUDE: `${d}/plugins/truss/tests/fixtures/claude-stub/claude.mjs`, CLAUDE_STUB_LOG: logDir }),
+  })
+  assert.equal(r.status, 0, say(r))
+  const outDir = String(r.stdout).replace(/\r/g, '').split('\n').map((l) => l.match(/(\S*truss-evals-[^\s"'`]*)/)).find(Boolean)?.[1]
+  assert.ok(outDir && existsSync(outDir), `run-model printed its results dir: ${say(r)}`)
+  try {
+    const results = JSON.parse(readFileSync(`${outDir}/results.json`, 'utf8'))
+    const entries = Array.isArray(results) ? results : Object.values(results.cases ?? results)
+    const own = readdirSync(`${d}/plugins/truss/evals/golden`).filter((f) => f.endsWith('.json'))
+    assert.ok(own.length > 0, "the checkout's own golden set is not empty")
+    assert.equal(entries.length, own.length, "the case count equals the checkout's own golden set, not the decoy's")
+    assert.ok(!JSON.stringify(entries).includes('decoy'), 'no result names the decoy')
+  } finally {
+    rmSync(outDir, { recursive: true, force: true, maxRetries: 10 })
+  }
+})
+
+// Red for its cause (the 19:48 leak): the real tests/evals-run-model.check.ts snapshots tree(<root>/.claude) before and after a run,
+// walking into .claude/worktrees, and fails on any new path whose basename is a golden case id. The copied stub writes such a file under
+// a new worktree on its first call, so the decoy appears mid-run, as a live crew worktree does.
+st('gates-026: a golden file appearing in a live worktree during a run-model test is not reported as run-model output', () => {
+  const d = leakCheckout()
+  const id = JSON.parse(readFileSync(`${d}/plugins/truss/evals/golden/${readdirSync(`${d}/plugins/truss/evals/golden`).filter((f) => f.endsWith('.json')).sort()[0]}`, 'utf8')).id
+  const decoyFile = `${d}/.claude/worktrees/g026-live/plugins/truss/evals/golden/${id}.json`
+  const stub = `${d}/plugins/truss/tests/fixtures/claude-stub/claude.mjs`
+  const src = readFileSync(stub, 'utf8')
+  const marker = 'const reply ='
+  assert.ok(src.includes(marker), 'the stub still has its reply line')
+  writeFileSync(stub, src.replace(marker, `const __fs = process.getBuiltinModule('fs')
+const __decoy = process.env.G026_DECOY
+if (__decoy && !__fs.existsSync(__decoy)) {
+  __fs.mkdirSync(process.getBuiltinModule('path').dirname(__decoy), { recursive: true })
+  __fs.writeFileSync(__decoy, '{}')
+}
+${marker}`))
+  const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern=prints a truss-evals-', `${d}/plugins/truss/tests/evals-run-model.check.ts`], {
+    cwd: d, encoding: 'utf8', windowsHide: true, timeout: 600000, maxBuffer: 64 * 1024 * 1024,
+    env: childEnv({ G026_DECOY: decoyFile }),
+  })
+  assert.ok(existsSync(decoyFile), `the stub planted the decoy during the run: ${decoyFile}`)
+  assert.ok(/^ok \d+ - run-model: prints a truss-evals-/m.test(String(r.stdout)) && r.status === 0,
+    `run-model check reported the decoy ${decoyFile} (exit ${r.status}):\n${String(r.stdout).slice(0, 2500)}`)
 })
