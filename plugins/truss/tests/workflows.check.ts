@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as reg from '../hooks/register.ts'
+import { parseLabel } from '../bin/factory.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, qcRuling } = reg
 
@@ -1259,6 +1260,32 @@ t('stage resume answers: skips red and done tasks; the builder prompt carries th
   assert.ok(had(r, 'a-stress'))
   passedShape(r.res[0], 'a', HEAD, 'a-qc', e)
 })
+// the branches a member prompt's first step merges, in order
+const firstMerges = (prompt) => {
+  const line = prompt.split('\n').find((l) => l.startsWith('Your first step')) || ''
+  return [...line.matchAll(/git merge --no-ff -m "[^"]*" ([^\s,]+)/g)].map((m) => m[1])
+}
+const conflictIsBlocked = (prompt) => assert.ok(prompt.split('\n').some((l) => /conflict/i.test(l) && /\bBLOCKED\b/.test(l) && /merge --abort/.test(l)), 'a merge conflict is reported BLOCKED, not resolved by dropping a side')
+t('stage resume answers: a task whose earlier member stopped with commits on its own branch (entry.prior) merges the crew branch and then that branch first; without prior only the crew branch', async () => {
+  const prior = [{ at: 'build-it', branch: 'worktree-wf_x-15' }, { at: 'fix, green check', branch: 'worktree-wf_x-16' }]
+  const e = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }], prior })
+  const r = await runStage([e], { labels: { ...base('a', { 'a-stress': RT0 }), ...fixers }, runner: greenSeq(gFail('TAIL-ONE'), gOk(HEAD2)) })
+  const p = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: build-it')).prompt
+  assert.deepEqual(firstMerges(p), ['truss/a', 'worktree-wf_x-15'])
+  conflictIsBlocked(p)
+  // the green fix builder of a crew whose earlier `fix, green check` member stopped carries that branch too
+  const f = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: fix, green check')).prompt
+  assert.deepEqual(firstMerges(f), ['truss/a', 'worktree-wf_x-16'])
+  conflictIsBlocked(f)
+  const plain = await runStage([{ ...e, prior: [] }], { labels: base('a', { 'a-stress': RT0 }) })
+  assert.deepEqual(firstMerges(plain.calls.find((c) => c.prompt.includes('Task: build-it')).prompt), ['truss/a'])
+})
+t('stage members: a CHECKPOINT restart in the same run merges the stopped member\'s branch after the crew branch', async () => {
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-tester': marked('CHECKPOINT', 'CHECKPOINT-NOTE: halfway', 'worktree-wf_y-3'), 'a-tester-2': done('feat/t2') }) })
+  assert.deepEqual(firstMerges(call(r, 'a-tester-2').prompt), ['truss/a', 'worktree-wf_y-3'])
+  conflictIsBlocked(call(r, 'a-tester-2').prompt)
+  assert.deepEqual(firstMerges(call(r, 'a-tester').prompt), ['truss/a'], 'a first member merges only the crew branch')
+})
 t('stage entry: guarded and ownTests keys (ADR-0019 item 9, stage 1) change nothing but the tester-file lists', async () => {
   const plain = rtCrew({ resume: 'answers', tasks: [T1, B1], done: ['write-tests'], answers: [{ at: 'build-it', text: 'ANSWER-FOR-BUILD' }] })
   const extra = { ...plain, guarded: ['tests/a.check.ts'], ownTests: ['tests/*.ts'] }
@@ -1434,4 +1461,119 @@ t('stage briefs: the tester and builder prompts tell the member to build only th
   const r = await runStage([entry('a')], { labels: base() })
   has(call(r, 'a-tester').prompt, M1)
   has(call(r, 'a-builder').prompt, M1)
+})
+
+// ---------------------------------------------------------------- wave 2 (contract-025 section 3, A0 workflow edits)
+
+const admitOnly = (answer) => ({ cmd }) => (cmd === 'admit' ? answer : undefined)
+const admitCalls = (r) => r.calls.filter((c) => c.runner?.cmd === 'admit')
+
+t('workflows 025: admit budget hold stops the crew BLOCKED with "BLOCKED: budget: <why>" and no member runs', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly(rj({ admitted: false, budget: true, scope: 'run', spentUsd: 9, limitUsd: 5, why: 'WHY-BUDGET-MARK 9 of 5 USD' })) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.ok(res.text.startsWith('BLOCKED: budget: '), res.text)
+  has(res.text, 'WHY-BUDGET-MARK 9 of 5 USD')
+  assert.ok(!res.text.includes('held by admission'), res.text)
+  assert.equal(admitCalls(r).length, 1, 'a budget hold is not retried')
+})
+t('workflows 025: admit awaiting-client hold stops the crew BLOCKED with "BLOCKED: awaiting client: <why>"', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly(rj({ admitted: false, awaiting: true, why: 'awaiting client: E-WHY-AWAIT-MARK' })) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.ok(res.text.startsWith('BLOCKED: awaiting client: '), res.text)
+  has(res.text, 'E-WHY-AWAIT-MARK')
+  assert.equal(admitCalls(r).length, 1, 'an awaiting hold is not retried')
+})
+t('workflows 025: admit exit 2 "store busy" twice makes exactly two admit runner calls, then a stop', async () => {
+  const r = await runStage([entry('a')], { labels: {}, runner: admitOnly({ exit: 2, stdout: 'store busy' }) })
+  const res = r.res[0]
+  assert.equal(res.state, 'stopped')
+  assert.equal(res.tag, 'BLOCKED')
+  assert.equal(admitCalls(r).length, 2)
+  assert.deepEqual(r.calls.filter((c) => !c.runner).map((c) => c.label), [], 'no agent is spawned after the stop')
+})
+t('workflows 025: admit exit 2 "store busy" once, then admitted, goes on and the crew passes', async () => {
+  const runner = ({ cmd, slug, n }) => (cmd === 'admit' && slug === 'a' && n === 0 ? { exit: 2, stdout: 'store busy' } : undefined)
+  const r = await runStage([entry('a')], { labels: base(), runner })
+  assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
+  assert.ok(admitCalls(r).length >= 3, 'the retry is one extra admit call, then the later spawns admit as before')
+})
+t('workflows 025: the qc prompt carries "Work type: <wt>." from the entry', async () => {
+  const r = await runStage([entry('a', { workType: 'docs' })], { labels: base() })
+  assert.ok(call(r, 'a-qc').prompt.split('\n').includes('Work type: docs.'), call(r, 'a-qc').prompt)
+})
+t('workflows 025: the qc prompt says "Work type: none." when the entry has no workType', async () => {
+  const r = await runStage([entry('a')], { labels: base() })
+  assert.ok(call(r, 'a-qc').prompt.split('\n').includes('Work type: none.'), call(r, 'a-qc').prompt)
+})
+t('workflows 025: qc copies the LONG-TERM-COST lines of a PASS report into the result as longTermCosts', async () => {
+  const L1 = 'LONG-TERM-COST: new public flag --x | later: every caller keeps it | reversal: costly'
+  const L2 = 'LONG-TERM-COST: new dependency foo | later: upgrades | reversal: cheap'
+  const text = `${PASS}\n## Notes\n${L1}\n  - ${L2}\nnot a line: LONG-TERM-COST: mid-line mention | later: x | reversal: cheap\n`
+  const r = await runStage([entry('a')], { labels: base('a', { 'a-qc': text }) })
+  const res = r.res[0]
+  assert.equal(res.state, 'passed', JSON.stringify(res))
+  assert.ok(Array.isArray(res.longTermCosts), 'longTermCosts is an array')
+  assert.equal(res.longTermCosts.length, 2, JSON.stringify(res.longTermCosts))
+  has(res.longTermCosts[0], L1)
+  has(res.longTermCosts[1], L2)
+})
+t('workflows 025: a qc PASS with no LONG-TERM-COST line has no longTermCosts entries', async () => {
+  const r = await runStage([entry('a')], { labels: base() })
+  assert.deepEqual(r.res[0].longTermCosts ?? [], [])
+})
+t('workflows 025: the designer prompt says version is 4 and that every crew gets a workType, required when unattended', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  const p = r.calls[0].prompt
+  has(p, 'version is 4')
+  has(p, 'give every crew a workType (one of ')
+  has(p, 'in an unattended run it is required')
+})
+t('workflows 025: the checker prompt asks to check each crew workType fits its work', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  has(call(r, 'truss-checker').prompt, "Check each crew's workType fits its work: a crew that changes behaviour is not docs or refactor.")
+})
+const LTC_PARAGRAPH = `Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line \`LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible\`. Don't write one for code style, for "more code to maintain", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client.`
+t('workflows 025: the prompt the qc agent receives carries the long-term cost paragraph', async () => {
+  const r = await runStage([entry('a', { workType: 'feature' })], { labels: base() })
+  has(call(r, 'a-qc').prompt, LTC_PARAGRAPH)
+})
+t('workflows 025: the prompt the checker agent receives carries the long-term cost paragraph', async () => {
+  const r = await runPlan({ labels: { 'truss-designer': ARCH(), 'truss-checker': AGREE } })
+  has(call(r, 'truss-checker').prompt, LTC_PARAGRAPH)
+})
+// Labels are routed by role so the test does not name the labels it is checking.
+const poLabels = () => {
+  let designs = 0
+  let reviews = 0
+  const crews = (slugs) => ({ report: 'Plan ready.', planJson: JSON.stringify({ crews: slugs.map((slug) => ({ slug })) }), planMd: '# PLANMD-MARK' })
+  const handler = (label) => {
+    if (/designer/.test(label)) return () => (designs++ === 0 ? crews(['a']) : crews(['a', 'b']))
+    if (/checker/.test(label)) return () => AGREE
+    return () => (reviews++ === 0 ? 'PO: REVISE\n1. a: the criteria only prove the code runs. Fix: add realistic data' : 'PO: ACCEPT')
+  }
+  return new Proxy({}, {
+    has: () => true,
+    get: (_, label) => (typeof label === 'string' ? handler(label) : undefined),
+    getOwnPropertyDescriptor: (_, label) => ({ configurable: true, enumerable: true, writable: true, value: handler(String(label)) }),
+  })
+}
+t('plan.js: every label it spawns parses to slug truss', async () => {
+  for (const fix of [false, true]) {
+    const args = planArgs({ fix })
+    args.truss.personas = { 'product-owner': { readOnly: true, loaded: true, agentType: 'proj:product-owner', model: 'sonnet', effort: 'low' } }
+    const r = await exec('plan.js', args, { labels: poLabels() })
+    if (r.error) throw r.error
+    assert.deepEqual(r.unscripted, [])
+    assert.equal(r.result.recheck?.ran, true, 'the revision changed the crew list, so the checking engineer re-checks')
+    assert.ok(r.labels.length >= 6, `designer, checker, po, revision, po, re-check all ran: ${r.labels.join(', ')}`)
+    for (const label of r.labels) {
+      const p = parseLabel(label)
+      assert.ok(p, `${fix ? 'fix run' : 'normal run'}: label ${label} does not parse`)
+      assert.equal(p.slug, 'truss', `${fix ? 'fix run' : 'normal run'}: label ${label} parses to slug ${p.slug}`)
+    }
+  }
 })

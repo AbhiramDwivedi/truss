@@ -43,6 +43,10 @@ Each row is a failure that shows up on long agent work, and the part of Truss th
 | Wrong model, wrong bill | Subagents inherit the main model, often the costliest. | Every spawn names its model and effort, or the hooks refuse it. Sonnet writes code; Opus plans and does QC. |
 | New asks mid-run | A new request derails the plan or gets lost. | The design engineer amends the running plan with a new goal, and its crews join without stopping the others. |
 | No memory of what went wrong | Every session starts from zero. | Hooks log spawns, stalls and reports to `events.jsonl`, and `/truss:retro` turns the counts into config changes. |
+| Diff noise | The builder reformats, renames or reorders lines the task didn't need, and the diff hides the real change. | The `DIFF` rule in member prompts asks for only the lines the task needs (prompt guidance). QC step 10 then checks every hunk, comparing `git diff` with `git diff -w`, and a pure reformat, rename or reorder is a finding. |
+| Unneeded dependencies | A package is added when the standard library or an existing dependency already does the job. | Core rule 15: a new dependency is named in the approved scope or has a `Why:` line in its commit message. The `DIFF` rule asks for it (prompt guidance), and QC step 10 checks each manifest addition against the rule. |
+| Symptom fixes | A bug fix guards the null, the empty value or the exception and leaves the cause. | The `DEBUG` rule in builder and fix prompts: reproduce the bug with a failing test first, then fix the cause (prompt guidance). QC step 10 flags a guard or catch whose report doesn't say why the value occurs. |
+| Context bloat and stale notes | Product calls and area rules sit in files every agent loads, and notes pile up and go stale. | Path-scoped knowledge: area rules in `.claude/rules/<area>.md` with `paths` globs, longer topics in `docs/knowledge/`, product calls in a lazy file. `factory knowledge-lint` runs before QC, and a failure the crew's diff caused fails the crew. |
 
 ## Built on what works in the field
 
@@ -59,6 +63,11 @@ Truss's rules come from practice, not theory: Anthropic's Claude Code guidance, 
 | Run parallel work in separate worktrees | One worktree per crew, with file ownership declared in the plan. |
 | Multi-agent work costs many times a chat; save it for work that splits | Small jobs run as crews with no foreman and no stress test; [What it costs](#what-it-costs) says when to skip Truss. |
 | Put must-always rules in hooks; prompts are only advice | The merge gate, plan gates, model checks and rework allowance are hooks. |
+
+Two outside sources were reviewed item by item against Truss:
+
+- **[Andrej Karpathy's field notes for Claude Code (CLAUDE.md gist)](https://gist.github.com/DiTo97/e734f688f6f63fc45211142c0e43d307).** Truss already covered most of its rules: scope, proof, tests first, reuse, non-goals. It took the three real gaps: the `DIFF` rule, core rule 15 for dependencies, and the `DEBUG` rule, plus QC step 10 to check them. The simplicity, failure-mode and communication rules were not added, because existing core rules, the stress test and the proof rule already cover them. [ADR-0036](docs/adr/0036-diff-hygiene-and-dependencies.md), section Declined, gives the item-by-item reasons.
+- **[Capital One Context Specs](https://www.capitalone.com/tech/open-source/open-source-context-specs/).** Truss took three ideas: eager and lazy context are different things, notes are reconciled instead of piled up, and "nothing to learn" is a normal outcome. It declined the tool itself, as a dependency or a file format: it is a second harness at v0.2, with no schema and no Windows support, and Truss uses Claude Code's own lazily loaded files instead. [ADR-0035](docs/adr/0035-path-scoped-knowledge.md), sections Context and "Left out", records why.
 
 ## How work moves
 

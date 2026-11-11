@@ -124,6 +124,23 @@ describe('factory.ts doctor: stress cases', () => {
     assert.equal(j.failed.length, 3)
   })
 
+  test('a malformed .claude/truss.json is one failed config probe, and the other probes still run and print', () => {
+    const env = mkEnv({ files: { '.claude/truss.json': '{ "merge": ' }, useRealPlugin: true })
+    const t = hex()
+    const slug = `crew-${t}`
+    writePlan(env.dir, planObj([crew(slug, { needs: [{ id: `ok-${t}`, why: 'w', probe: { kind: 'command', run: 'true' } }] })], { version: 3 }))
+    const { res, j } = doctor(env, ['--catalog', writeCatalog([])])
+    assert.equal(res.status, 1, `exit 1, got ${res.status}; stdout ${res.stdout.slice(0, 200)}`)
+    assert.equal(j.ok, false)
+    const cfg = j.probes.find((p: any) => p.name === 'config')
+    assert.ok(cfg, JSON.stringify(j.probes))
+    assert.equal(cfg.pass, false)
+    assert.equal(typeof cfg.detail, 'string')
+    assert.ok(cfg.detail.length > 0)
+    assert.ok(j.failed.includes('config'))
+    assert.deepEqual(j.passed, [`${slug}/ok-${t}`])
+  })
+
   test('a file probe on a missing path names the path in detail; an existing path passes', () => {
     const env = mkEnv({ config: CFG, useRealPlugin: true })
     const t = hex()

@@ -88,7 +88,7 @@ test('init: day-0 personas and the product-owner judge are proposed; roles mappi
   assert.match(INIT, /fallback only for an area no persona covers/)
 })
 
-test('ADR-0032 exists, follows the ADR format and the plugin is 0.24.0 with kit ^0.4.0', () => {
+test('ADR-0032 exists, follows the ADR format and the plugin is 0.25.0 with kit ^0.4.0', () => {
   assert.ok(existsSync(new URL('../docs/adr/0032-persona-agents.md', import.meta.url)))
   const adr = read('../docs/adr/0032-persona-agents.md')
   assert.match(adr.split('\n')[0], /^# ADR-0032: /)
@@ -97,7 +97,7 @@ test('ADR-0032 exists, follows the ADR format and the plugin is 0.24.0 with kit 
   const heads = adr.split('\n').filter((l) => /^## /.test(l))
   assert.deepEqual(heads, ['## Context', '## Decision Drivers', '## Considered Options', '## Decision', '## Consequences'])
   const pj = JSON.parse(read('../.claude-plugin/plugin.json'))
-  assert.match(pj.version, /^0\.24\.\d+$/)
+  assert.match(pj.version, /^0\.25\.\d+$/)
   assert.equal(pj.dependencies.find((d) => d.name === 'kit').version, '^0.4.0')
   assert.match(read('../CHANGELOG.md'), /^## 0\.22\.0 /m)
 })

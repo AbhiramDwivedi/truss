@@ -201,3 +201,26 @@ test('control 15: with no merge in progress, integrate of a branch the head alre
   assert.equal(head(wt), tip)
   assert.notEqual(mergeHead(wt), 0, 'no merge in progress')
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// prior: a stopped member's own commits reach its resumed successor
+
+test('prior 1: start --resume answers lists in entry.prior the branch of a QUESTION member with commits the crew branch lacks, and not one whose commits the crew branch already holds', () => {
+  const { env, wt } = runningWorld('x')
+  putFile(wt, 'crew/a.txt', 'a\n', 'crew a')
+  const crewHead = head(wt)
+  git(wt, ['checkout', '-q', '-b', 'member-q', crewHead])
+  putFile(wt, 'members/q.txt', 'q\n', 'member q work')
+  git(wt, ['checkout', '-q', '-b', 'member-held', crewHead])
+  const held = putFile(wt, 'members/held.txt', 'held\n', 'member held work')
+  git(wt, ['checkout', '-q', 'truss-x'])
+  git(wt, ['cherry-pick', held])
+  const run = deadRun(env, 'wf_prior', [
+    { label: 'x-builder', result: member('t-q', 'member-q', 'QUESTION') },
+    // CHECKPOINT never makes a task done, so only the prior rule itself keeps this cherry-picked branch out
+    { label: 'x-builder-2', result: member('t-held', 'member-held', 'CHECKPOINT') },
+  ])
+  const r = env.run('start', { slug: 'x', resume: 'answers', transcript: run.dir, answers: answersFile([]) })
+  assert.equal(r.status, 0, say(r))
+  assert.deepEqual(entryOf(r).prior, [{ at: 't-q', branch: 'member-q' }], say(r))
+})

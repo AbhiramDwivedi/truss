@@ -413,12 +413,20 @@ async function ask(crew, role, prompt, opts = {}) {
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
 // label and title, when given, ride on the admit so factory records the card title (an event in events.jsonl)
-// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; still one call, no retry here.
+// A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; a hold is never retried, only a store-busy exit is (below).
 async function admit(crew, at, label, title, persona = null, high = false) {
-  const r = await runFactory(crew, `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`, 'admitted')
+  const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
+  let r = await runFactory(crew, cmd, 'admitted')
+  // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
+  // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
+  if (r.exit === 2 && /store busy/.test(r.out)) {
+    r = await runFactory(crew, cmd, 'admitted')
+  }
   if (!isPlainObject(r.parsed) || typeof r.parsed.admitted !== 'boolean') throw new Stop('BLOCKED', `admission check failed: ${r.out}`, at)
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
+    if (r.parsed.budget === true) throw new Stop('BLOCKED', `BLOCKED: budget: ${why}`, at)
+    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
 }
@@ -575,6 +583,28 @@ const answersFor = (crew, name) => {
   return (crew.e.answers || []).filter((a) => !UX_STEPS.includes(a.at) &&((name !== null && a.at === name) || !names.has(a.at))).map((a) => `- ${a.text}`)
 }
 
+// the earlier member branch a resumed task (or `fix, <what>`) carries over from a run before this one: the factory lists it in
+// entry.prior only when the crew branch lacks its commits (factory.ts priorBranches); '' when none
+const priorOf = (crew, at) => {
+  const p = (Array.isArray(crew.e.prior) ? crew.e.prior : []).find((x) => x && x.at === at && typeof x.branch === 'string')
+  return p ? p.branch : ''
+}
+
+// a member's first step. --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch
+// equals the crew branch and the harness reaps the worktree as unchanged (bug 26). prev: the branch an earlier member of this
+// task committed on before it stopped (QUESTION, BLOCKED, PROPOSAL, CHECKPOINT). The new member's worktree forks from the
+// session checkout, not from that branch, so the step merges it too after the crew branch, or its commits are lost.
+function firstStep(e, prev) {
+  const crewMerge = `git merge --no-ff -m "merge ${e.branch}" ${e.branch}`
+  const tail = [`Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  if (typeof prev !== 'string' || prev === '' || prev === e.branch) return [`Your first step, before anything else: ${crewMerge}`, ...tail]
+  return [
+    `Your first step, before anything else: ${crewMerge}, then git merge --no-ff -m "merge ${prev}" ${prev}`,
+    `The second merge brings in the commits an earlier member made for this task on its branch ${prev}; the crew branch does not have them yet. Never drop either side: if either merge conflicts, run git merge --abort and stop with marker BLOCKED, naming the conflicting files.`,
+    ...tail,
+  ]
+}
+
 // the tests-check runner's extra lines: Attempt (testsGuard only), Backstop, then Head when the entry has one (ADR-0024 seam 1).
 // ADR-0026 item 51 4: the Head line names crew.head once the run has moved it, entry.head before that.
 const testsCheckExtra = (crew, ...lines) => {
@@ -666,8 +696,7 @@ function taskPrompt(crew, task, note) {
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
   if (note) body.push('', ...resumeLines(note))
-  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, (note && note.branch) || priorOf(crew, task.name))
   return memberPrompt(crew, task.role, { start, body })
 }
 
@@ -699,7 +728,8 @@ const namesFile = (finding, file) => finding.includes(file) || (file.includes('*
 // the paths a finding names that are not a tester file (nor a tester file's basename): its code half
 const namesCode = (finding, tf) => pathsIn(finding).some((p) => !tf.some((file) => p === file || (file.includes('*') && globToRegExp(file).test(p)) || file.endsWith(`/${p}`)))
 
-function fixPrompt(crew, what, detail, role = 'builder') {
+// prev: the branch of an earlier member of this fix that stopped (a restart in this run), else entry.prior's `fix, <what>`
+function fixPrompt(crew, what, detail, role = 'builder', prev = '') {
   const e = crew.e
   const tf = testerFiles(crew)
   const body = [`Task: fix, ${what}`]
@@ -712,8 +742,7 @@ function fixPrompt(crew, what, detail, role = 'builder') {
   body.push('', 'Fix this, and only this:', detail)
   const answers = answersFor(crew, null)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
-  // --no-ff: a plain merge fast-forwards when the member branch has no commits of its own, so the branch equals the crew branch and the harness reaps the worktree as unchanged (bug 26).
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, prev || priorOf(crew, `fix, ${what}`))
   return memberPrompt(crew, role, { start, body, debug: true })
 }
 
@@ -778,7 +807,8 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
   if (report.marker !== 'DONE') {
     const tag = ['QUESTION', 'BLOCKED', 'PROPOSAL', 'CHECKPOINT'].includes(report.marker) ? report.marker : 'BLOCKED'
     // member: the stop is the member's own report, which green may re-route (ADR-0027 F-70)
-    throw Object.assign(new Stop(tag, escalated ? `${report.text}\n\nThe product owner escalated this question: ${escalated}` : report.text, at), { member: true })
+    // branch: the member's own branch, for a successor that must carry its commits (greenFix); never in the crew result
+    throw Object.assign(new Stop(tag, escalated ? `${report.text}\n\nThe product owner escalated this question: ${escalated}` : report.text, at), { member: true, branch: typeof report.branch === 'string' ? report.branch : '' })
   }
   const fresh = learnedOf(report).map((item) => ({ ...item, task: at, member: label }))
   if (fresh.length) {
@@ -1209,11 +1239,12 @@ async function runMembers(crew, tasks) {
 }
 
 // fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
-async function fixBuilder(crew, what, detail, role = 'builder') {
+// prev: a branch an earlier fix member committed on before it stopped (greenFix's code half), merged in the first step
+async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
   const at = crew.step
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
+  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -1483,7 +1514,8 @@ async function greenFix(crew, what, detail) {
     await fixBuilder(crew, `${what}, tester file named by the fix builder`, said, 'tester')
     await testsBackstop(crew, what)
     if (!namesCode(String(err.text), tf)) return
-    await fixBuilder(crew, `${what}, the code half of the fix builder's report`, said)
+    // the stopped fix builder may have committed code on its branch already; the code-half builder carries it on
+    await fixBuilder(crew, `${what}, the code half of the fix builder's report`, said, 'builder', typeof err.branch === 'string' ? err.branch : '')
   }
   await testsBackstop(crew, what)
 }
@@ -1752,7 +1784,7 @@ function knowledgePrompt(crew, resume) {
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
   if (resume) body.push('', ...resumeLines(resume))
-  const start = [`Your first step, before anything else: git merge --no-ff -m "merge ${e.branch}" ${e.branch}`, `Work in your own worktree. The crew branch is ${e.branch}.`, '']
+  const start = firstStep(e, resume ? resume.branch : '')
   return `Knowledge: crew ${crew.slug}\n${memberPrompt(crew, 'writer', { start, body, noLearned: true })}`
 }
 
@@ -1890,6 +1922,11 @@ function lintResult(crew) {
   return { knowledgeLint: { ran: true, ...(fresh.length ? { failures: fresh } : {}), ...(old.length ? { predating: old } : {}), ...(l.warnings.length ? { warnings: l.warnings } : {}), ...counts } }
 }
 
+// contract-025 section 3, word for word
+const LONG_TERM_COST = "Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for \"more code to maintain\", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client."
+// Keep the two regexes in step with LINE_RE and NONE_RE in bin/guard.ts.
+const ltcLinesOf = (text) => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').filter((l) => { const m = /^\s*(?:(?:[-*+>]|\d+[.)])\s*)*[*_`]*LONG-TERM-COST[*_`]*\s*:[*_`]*\s*(.*?)[*_`\s]*$/.exec(l); return m !== null && !/^[*_`\s]*(?:none|n\/a|-)[*_`\s.]*$/i.test(m[1]) }).map((l) => l.trim())
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -1906,6 +1943,7 @@ function qcPrompt(crew) {
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `Acceptance test: ${acceptanceOf(e)}`,
+    `Work type: ${typeof e.workType === 'string' && e.workType ? e.workType : 'none'}.`,
     '',
     'Member proofs:',
     ...(crew.proofs.length ? crew.proofs : ['none']),
@@ -1919,6 +1957,7 @@ function qcPrompt(crew) {
     '',
     ...standardsLines(crew),
     ...knowledgeLines(crew),
+    LONG_TERM_COST,
     'Check that new code reuses what exists or names its consumer: each new function, export, option or file needs existing code that already does the job or a caller in the diff or in existing code. If there is neither, it is a finding.',
     "Check that every hunk traces to the task: a hunk that only reformats, renames or reorders lines the task didn't change is a finding, unless the project's formatter or a hook produced it (compare `git diff <base>...<branch>` with `git diff -w`). Check each manifest addition against core rule 15. A bug fix that adds a null or empty guard, or a catch, without saying why the value occurs is a finding.",
     "Check the goal file's Non-goals heading against the diff. Work that lands in a non-goal is a finding.",
@@ -1962,7 +2001,7 @@ async function qc(crew) {
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
