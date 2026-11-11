@@ -114,3 +114,9 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
 - Entry points: plugins/truss/workflows/plan.js (lines 203-204), plugins/truss/bin/factory.ts (sessionAudit).
 - Owner: truss-workflow-scripts.
+
+## Decision log line (decide)
+
+- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3419-3421`).
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
+- Owner: `truss-plugin-node`.
