@@ -9,10 +9,37 @@ import { configOf } from './store.ts'
 
 type Ops = { spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown; kill: (pid: number, signal: string) => unknown }
 
-/** Kills the process `pid` and its whole tree: taskkill /T /F on win32, else the process group (the child is detached, so it leads one). */
+/** The descendants of `pid`, found with `pgrep -P` level by level (a setsid child leaves the group, so the group kill misses it). A missing pgrep gives what was found so far. */
+function descendants(pid: number, ops: Ops): number[] {
+  const found: number[] = []
+  const queue = [pid]
+  while (queue.length > 0 && found.length < 1000) {
+    const parent = queue.shift() as number
+    let out = ''
+    try {
+      const r = ops.spawnSync('pgrep', ['-P', String(parent)], { windowsHide: true, encoding: 'utf8' }) as { error?: unknown; stdout?: unknown } | null
+      if (r === null || r === undefined || r.error !== undefined) return found
+      out = String(r.stdout ?? '')
+    } catch {
+      return found
+    }
+    for (const line of out.split('\n')) {
+      const n = Number(line.trim())
+      if (Number.isInteger(n) && n > 0 && n !== pid && !found.includes(n)) (found.push(n), queue.push(n))
+    }
+  }
+  return found
+}
+
+/** Kills the process `pid` and its whole tree: taskkill /T /F on win32, else the descendants (walked with pgrep -P) and the process group (the child is detached, so it leads one). */
 export function killTree(pid: number, platform: string = process.platform, ops: Ops): void {
-  if (platform === 'win32') ops.spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true })
-  else ops.kill(-pid, 'SIGKILL')
+  if (platform === 'win32') return void ops.spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true })
+  // walk first: killing the parent first would reparent its children out of reach
+  const kids = descendants(pid, ops)
+  for (const k of kids) {
+    try { ops.kill(k, 'SIGKILL') } catch { /* already gone */ }
+  }
+  ops.kill(-pid, 'SIGKILL')
 }
 
 /** The environment of the notify command. The title is left out on win32: cmd.exe expands %VAR% before it parses the command. */
