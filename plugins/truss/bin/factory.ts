@@ -1131,7 +1131,7 @@ function cmdOwnsExtend(f: Flags): Obj {
     savePlan(dir, plan)
     return { ok: true, slug, glob, owns }
   })
-  appendDecision(dir, `${slug} owns extended by ${glob} | ${reason}`)
+  appendDecision(dir, `${slug} owns extended by ${glob.replace(/\s+/g, ' ').replace(/\|/g, '/').trim()} | ${reason}`)
   return done
 }
 function cmdOwnsCheck(f: Flags): Obj {
