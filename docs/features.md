@@ -24,10 +24,17 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Docs: [store](knowledge/store.md) ("Inbox transcript proof"), `plugins/truss/docs/adr/0037-shared-store-and-inbox.md`.
 - Note: the skill passes the note via `--note-file`; `textOf` (`bin/inbox.ts:303`) reads it for `--note` and `--title`. Without a typed line the skill asks the human to type the decision line.
 
-## Contract-025 module stubs (guard, cost, worktypes, ledger)
+## Long-term cost guard
 
-- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` is now filled (see "Cost meter and budgets"); `cost` and `worktypes` feed admission and `plan-check`. `inbox` and `queue` left this list: they are filled in (the inbox entry above and the next entry).
-- Entry points: `plugins/truss/bin/inbox.ts`, `guard.ts`, `cost.ts`, `worktypes.ts`, `ledger.ts`.
+- What: `guard.ts` raises a blocking `long-term-cost` inbox item for each costly LONG-TERM-COST line (plan texts via `ltcPlan`, QC text via `ltcCrewGate`) and for deterministic triggers. Item ref `ltc:<sid>:<slug>:<sha12(what)>` (plan: `ltc:<sid>:plan:<rev>:<sha12(what)>`); an approved or open item with the ref is reused, a rejected one keeps blocking. `ltcTriggers` diffs `package.json` dependency names (four lists, via `git show`) and counts only added (`A`) `migrations/`, `*.sql`, `*.schema.json`, `schema.*` files; the diff runs with `--no-renames`, so a rename counts as a delete plus an add and does trigger; other ecosystems' manifests are not read. The two gates disagree on dismiss: `ltcPlanGate` treats dismiss/answer/done as cleared, `ltcCrewGate` needs `approve` and `raise` re-escalates a dismissed ref (`guard.ts:40-78, 100-107, 149-165`).
+- Entry points: `plugins/truss/bin/guard.ts`; tests `plugins/truss/tests/ltc-guard.check.ts`, `ltc-paragraph.check.ts`, fixtures `tests/fixtures/ltc/`.
+- Owner: `truss-plugin-node`.
+- Docs: `plugins/truss/docs/adr/0034-long-term-cost-guard.md`; [store](knowledge/store.md) ("E2E fixtures").
+
+## Contract-025 module stubs (cost, worktypes, ledger)
+
+- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` and `guard` are now filled (see "Cost meter and budgets", "Long-term cost guard"); `cost` and `worktypes` feed admission and `plan-check`. `inbox` and `queue` left this list: they are filled in (the inbox entry above and the next entry).
+- Entry points: `plugins/truss/bin/cost.ts`, `worktypes.ts`, `ledger.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Stub modules").
 
