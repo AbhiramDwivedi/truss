@@ -172,7 +172,29 @@ function proofMain(session: string): string | null {
   return null
 }
 
-const norm = (s: string): string => s.trim().split(/\s+/).filter(Boolean).join(' ')
+const commonOf = (dir: string): string | null => {
+  const r = spawnSync('git', ['-c', 'core.quotepath=off', '-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', windowsHide: true })
+  return r.status === 0 ? flat(r.stdout.trim()) : null
+}
+
+/**
+ * A typed line proves a resolve only for the repo its session ran in: inbox.jsonl is forgeable, so an open row copied from another repo
+ * would otherwise be proved by that repo's typed line. The transcript row's cwd is the only repo binding the client's file holds. A cwd under
+ * the repo (its worktrees included) or in the same git common dir passes; an existing cwd of another repo is refused. A row with no cwd, or
+ * a cwd that no longer exists and is not under the repo, cannot be shown foreign and passes.
+ */
+function ownsCwd(repo: string, cwd: unknown): boolean {
+  if (typeof cwd !== 'string' || cwd === '') return true
+  const c = flat(cwd).replace(/\/+$/, '')
+  const r = flat(repo).replace(/\/+$/, '')
+  if (c === r || c.startsWith(r + '/')) return true
+  if (!existsSync(c)) return true
+  const theirs = commonOf(c)
+  const ours = commonOf(r)
+  return ours === null || (theirs !== null && theirs === ours)
+}
+
+const norm = (s: string): string =>s.trim().split(/\s+/).filter(Boolean).join(' ')
 
 // A quote shown to anyone: the item's code token becomes [code]. A reopened item makes its spent code live again, so no listing prints it.
 const maskCode = (quote: unknown, id: string, codeHash: unknown): unknown =>
@@ -180,7 +202,7 @@ const maskCode = (quote: unknown, id: string, codeHash: unknown): unknown =>
 
 // The typed line that proves a resolve of `open` (decision, raise, and the stored quote when the row has one): its newest candidate when
 // `last`, else its first. rest is what follows `<decision> <id> <code> [raise <usd>]`, whitespace normalised.
-function proof(open: Obj, c: { decision: unknown; raiseUsd?: unknown; quote?: unknown }, cands: Cand[], last: boolean): { text: string; rest: string } | null {
+function proof(repo: string, open: Obj, c: { decision: unknown; raiseUsd?: unknown; quote?: unknown }, cands: Cand[], last: boolean): { text: string; rest: string } | null {
   if (typeof c.decision !== 'string' || !DECISIONS.includes(c.decision)) return null
   if (c.raiseUsd !== undefined && typeof c.raiseUsd !== 'number') return null
   const after = Date.parse(open.ts)
@@ -194,7 +216,8 @@ function proof(open: Obj, c: { decision: unknown; raiseUsd?: unknown; quote?: un
     if (c.raiseUsd !== undefined) {
       if (t[3] !== 'raise' || !/^\d+(\.\d+)?$/.test(t[4] ?? '') || Number(t[4]) !== c.raiseUsd) continue
       from = 5
-    }
+    } else if (t[3] === 'raise' && /^\d+(\.\d+)?$/.test(t[4] ?? '')) continue // a typed raise is never dropped: a row without raiseUsd cannot stand for it
+    if (!ownsCwd(repo, k.row.cwd)) continue
     found = { text: k.text, rest: t.slice(from).join(' ') }
     if (!last) break
   }
@@ -229,7 +252,7 @@ export function verifiedItems(repo: string): Map<string, Item> {
         else if (s.main === null) why = `no transcript of session ${r.session} under ${proofTranscriptRoot()}`
         else if (s.scan === null) why = `the transcript of session ${r.session} cannot be read`
         else {
-          const p = proof(it.open, r, s.scan.cands.get(String(it.open.id)) ?? [], false)
+          const p = proof(repo, it.open, r, s.scan.cands.get(String(it.open.id)) ?? [], false)
           if (p === null) why = `no line typed by the client in session ${r.session} backs this ${String(r.decision)}`
           else if (norm(String(r.note ?? '')) !== '' && norm(String(r.note)).slice(0, 4000) !== p.rest.slice(0, 4000)) it.noteUnbound = true
         }
@@ -392,11 +415,11 @@ function argsOf(text: string): string {
 // The newest typed prompt of this session's main transcript, newer than the open op, holding the id, the code and the decision word right before the id.
 // With a raise, the typed line is `<decision> <id> <code> raise <usd> [note]`: the amount is the one the client typed, not the agent's flag.
 // The decision is the first word the client typed, directly before the id; the code is the token after it (see proof).
-function typedProof(session: string, open: Obj, decision: string, raiseUsd?: number): { quote: string; rest: string } | { missing: string } {
+function typedProof(repo: string, session: string, open: Obj, decision: string, raiseUsd?: number): { quote: string; rest: string } | { missing: string } {
   const main = proofMain(session)
   if (main === null) return { missing: `no transcript of session ${session} under ${proofTranscriptRoot()}` }
   const scan = scanFile(main, session, new Set([String(open.id)]))
-  const p = scan === null ? null : proof(open, { decision, raiseUsd }, scan.cands.get(String(open.id)) ?? [], true)
+  const p = scan === null ? null : proof(repo, open, { decision, raiseUsd }, scan.cands.get(String(open.id)) ?? [], true)
   return p === null ? { missing: '' } : { quote: p.text.slice(0, 1000), rest: p.rest }
 }
 
@@ -432,7 +455,7 @@ function resolveItem(f: Flags): Obj {
     if (raiseUsd !== undefined && kind !== 'budget') throw refuse({ error: '--raise-usd is for the budget kind only' })
     if (codeHashOf(id, code) !== it.open.codeHash) throw refuse({ error: 'wrong code' })
     if (by === 'client') {
-      const p = typedProof(session, it.open, decision, raiseUsd)
+      const p = typedProof(repo, session, it.open, decision, raiseUsd)
       if ('missing' in p) {
         const line = `${decision} ${id} <code>${raiseUsd === undefined ? '' : ` raise ${raiseUsd}`}`
         const cfg = process.env.CLAUDE_CONFIG_DIR // read for this message only, never as a root
