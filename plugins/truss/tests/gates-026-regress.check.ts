@@ -2,7 +2,7 @@
 // `owns-extend`, the plan lock of `plan-write`, the fail-closed trailer check of `integrate`, and the stage.js stop on a
 // refusal that carries a `why` and no conflicts. Each case failed on the code before its fix.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import path from 'node:path'
@@ -228,4 +228,39 @@ st('gates-026-regress: a package.json that is not JSON raises one could-not-be-r
   const t = ltcTriggers(repo, base, head(repo))
   assert.equal(t.length, 1, JSON.stringify(t))
   assert.match(`${t[0].what} ${t[0].later}`, /could not be read/)
+})
+
+st('gates-026-regress: a package.json whose git show fails refuses instead of returning no triggers', () => {
+  const repo = mkRepo({ files: { 'package.json': JSON.stringify({ name: 'app' }) + '\n' } })
+  const base = head(repo)
+  putFile(repo, 'package.json', JSON.stringify({ name: 'app', dependencies: { 'new-dep': '1.0.0' } }) + '\n', 'add new-dep')
+  const tip = head(repo)
+  // the diff compares tree entries and never reads the blob, so it still succeeds once the loose blob is gone; git show does not
+  const oid = git(repo, ['rev-parse', `${tip}:package.json`])
+  const obj = `${repo}/.git/objects/${oid.slice(0, 2)}/${oid.slice(2)}`
+  assert.ok(existsSync(obj), 'precondition: the head blob is a loose object')
+  rmSync(obj, { force: true })
+  assert.notEqual(spawnSync('git', ['show', `${tip}:package.json`], { cwd: repo }).status, 0, 'precondition: git show fails')
+  assert.equal(spawnSync('git', ['diff', '--name-status', base, tip], { cwd: repo }).status, 0, 'precondition: the diff succeeds')
+  let got: unknown
+  try {
+    got = ltcTriggers(repo, base, tip)
+  } catch (e) {
+    assert.match(String((e as any)?.message ?? JSON.stringify((e as any)?.body ?? e)), /long-term-cost|package\.json|git show/)
+    return
+  }
+  assert.fail(`ltcTriggers returned ${JSON.stringify(got)} instead of refusing`)
+})
+
+st('gates-026-regress: a package.json deleted at head, or added with no base copy, does not refuse', () => {
+  const repo = mkRepo({ files: { 'package.json': JSON.stringify({ name: 'app' }) + '\n' } })
+  const base = head(repo)
+  git(repo, ['rm', '-q', 'package.json'])
+  git(repo, ['commit', '-q', '-m', 'delete package.json'])
+  assert.deepEqual(ltcTriggers(repo, base, head(repo)), [], 'a deleted package.json raises nothing')
+  const gone = head(repo)
+  putFile(repo, 'sub/package.json', JSON.stringify({ name: 'sub', dependencies: { fresh: '1.0.0' } }) + '\n', 'add sub')
+  const t = ltcTriggers(repo, gone, head(repo))
+  assert.equal(t.length, 1, JSON.stringify(t))
+  assert.match(t[0].what, /fresh/)
 })
