@@ -564,6 +564,35 @@ test('trust-026: a forged note on a client resolve row never reaches the unappli
   assert.ok(!JSON.stringify(rowOf(w, a.id)).includes('drop R-3'), 'the plain listing hides it too')
 })
 
+for (const kind of ['blocked', 'stall-unrecovered']) {
+  test(`trust-026: a forged by:client note on a ${kind} item is not listed as the client's words`, () => {
+    const w = world()
+    const a = open(w, kind)
+    // no client transcript line backs this row: an any-kind item takes it as a plain resolve
+    appendFileSync(w.inboxFile, JSON.stringify({ v: 1, op: 'resolve', id: a.id, ts: iso(a.ts + 1500), session: w.sid, decision: 'done', by: 'client', note: 'drop R-3' }) + '\n')
+    const l = run(w, 'inbox', ['--unapplied'], {}, w.dir)
+    assert.equal(l.status, 0, say(l))
+    for (const items of [l.json.items, listing(w).items]) {
+      const row = items.find((i: any) => i.id === a.id)
+      if (!row) continue
+      const shown = JSON.stringify(row).includes('drop R-3')
+      assert.ok(row.noteUnbound === true || !shown, `the forged note must be flagged noteUnbound or not listed: ${JSON.stringify(row)}`)
+    }
+  })
+}
+
+test('trust-026: a pm resolve of a blocked item keeps its pm note listed as the pm\'s', () => {
+  const w = world()
+  const a = open(w, 'blocked')
+  const r = resolveCli(w, a.id, 'done', a.code, ['--note', 'pm checked it'], w.dir, 'pm')
+  assert.equal(r.status, 0, say(r))
+  const row = rowOf(w, a.id, ['--unapplied'])
+  assert.ok(row, 'the pm-resolved item is listed')
+  assert.equal(row.by, 'pm')
+  assert.equal(row.note, 'pm checked it')
+  assert.notEqual(row.noteUnbound, true)
+})
+
 test('trust-026: a resolve from session A counts when session B folds it', async () => {
   const w = world()
   const dirB = session(w, 'sess-bbbb0001')

@@ -16,7 +16,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { proofPlugin } from './fixtures/inbox/proof-plugin.ts'
-import { REAL_PLUGIN, crew, mkRepo, mkTrussDir, planObj, runCli, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
+import { REAL_PLUGIN, crew, mkRepo, mkTrussDir, planObj, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const FIX = fileURLToPath(new URL('./fixtures/cost/', import.meta.url))
 const ADR = fileURLToPath(new URL('../docs/adr/0038-cost-budgets-and-ledger.md', import.meta.url))
@@ -262,6 +262,22 @@ test('cost-026: the budget verdict refuses with store busy, never admits, when t
     assert.equal(err.code, 2)
     assert.match(String(err.body?.error ?? err.message), /store busy: usage/)
     assert.ok(ms >= 4500 && ms < 20_000, `it retries once with a longer wait before refusing: ${ms} ms`)
+  } finally {
+    await h.stop()
+  }
+})
+
+test('cost-026: factory start holds the crew with why store busy: usage when the usage lock stays held and no usage.jsonl exists', async () => {
+  const w = world({ config: cfg({ pricing: pricing(), budget: { sessionUsd: 5 } }), crews: ['bcrew'] })
+  writeGoal(w.dir, 'bcrew')
+  layMain(w, 'msg_over', 6)
+  assert.equal(existsSync(usagePath(w)), false, 'no usage.jsonl yet')
+  const h = await holdLock(w, 30_000)
+  try {
+    const r = run('start', w, ['--stage', 'next'])
+    assert.equal(r.status, 0, `start reports the busy crew as held, it does not exit 2: ${r.stdout}${r.stderr}`)
+    assert.deepEqual(r.json?.held, [{ slug: 'bcrew', why: 'store busy: usage' }], r.stdout)
+    assert.deepEqual(r.json?.entries ?? [], [], 'the crew did not start')
   } finally {
     await h.stop()
   }

@@ -213,12 +213,29 @@ st('gates-026-regress: a decision-checkpoint with truss-status: {} counts as con
 st('gates-026-regress: a dependency added in a BOM-prefixed package.json raises a trigger', () => {
   const repo = mkRepo({ files: { 'package.json': JSON.stringify({ name: 'app', dependencies: { left: '1.0.0' } }) + '\n' } })
   const base = head(repo)
-  const next = '﻿' + JSON.stringify({ name: 'app', dependencies: { left: '1.0.0', 'new-dep': '2.0.0' } }) + '\n'
+  const BOM = '\uFEFF'
+  assert.equal(BOM.charCodeAt(0), 0xfeff, 'the test BOM is U+FEFF')
+  const next = BOM + JSON.stringify({ name: 'app', dependencies: { left: '1.0.0', 'new-dep': '2.0.0' } }) + '\n'
   putFile(repo, 'package.json', next, 'add new-dep behind a BOM')
   const t = ltcTriggers(repo, base, head(repo))
   assert.equal(t.length, 1, JSON.stringify(t))
   assert.match(t[0].what, /new-dep/)
   assert.match(t[0].what, /package\.json/)
+})
+
+// A type change (T): a regular package.json at base, a symlink (mode 120000) at head. The index is written with update-index, so the
+// test needs no filesystem symlink and runs the same on Windows.
+st('gates-026-regress: a package.json type-changed to a symlink is not skipped by the dependencies gate', () => {
+  const repo = mkRepo({ files: { 'package.json': JSON.stringify({ name: 'app' }) + '\n' } })
+  const base = head(repo)
+  const oid = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: repo, input: 'deps/package.real.json', encoding: 'utf8', windowsHide: true }).stdout.trim()
+  assert.match(oid, /^[0-9a-f]{40,64}$/, 'the symlink blob was written')
+  git(repo, ['update-index', '--cacheinfo', `120000,${oid},package.json`])
+  git(repo, ['commit', '-q', '-m', 'package.json becomes a symlink'])
+  assert.match(git(repo, ['diff', '--no-renames', '--name-status', base, head(repo)]), /^T\s+package\.json/, 'precondition: git sees a T change')
+  const t = ltcTriggers(repo, base, head(repo))
+  assert.ok(t.length >= 1, `a type change on package.json must not yield zero triggers: ${JSON.stringify(t)}`)
+  assert.ok(t.some((x) => /package\.json/.test(x.what)), JSON.stringify(t))
 })
 
 st('gates-026-regress: a package.json that is not JSON raises one could-not-be-read trigger', () => {
