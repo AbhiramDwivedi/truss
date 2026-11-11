@@ -453,7 +453,8 @@ function cmdPlanWrite(f: Flags): Obj {
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  if (existsSync(`${dir}/plan.json`)) {
+  const keepExisting = (): void => {
+    if (!existsSync(`${dir}/plan.json`)) return
     let existing
     try {
       existing = parsePlan(readFileSync(`${dir}/plan.json`, 'utf8'))
@@ -463,6 +464,7 @@ function cmdPlanWrite(f: Flags): Obj {
     if (existing === undefined) no('kept the existing plan: it is not a readable plan')
     else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
   }
+  keepExisting()
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -472,7 +474,11 @@ function cmdPlanWrite(f: Flags): Obj {
       return r === undefined ? [] : [typeof r === 'string' ? r : isObj(r) && typeof r.report === 'string' ? r.report : JSON.stringify(r)]
     })
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
-  writeFileSync(`${dir}/plan.json`, JSON.stringify({ ...carried, approvedAt: null }, null, 2) + '\n')
+  // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
+  withLock(dir, 'plan', () => {
+    keepExisting()
+    savePlan(dir, { ...carried, approvedAt: null })
+  })
   writeFileSync(`${dir}/plan.md`, md as string)
   const left = retirePlanRun(f, dir, run_.id)
   const drafts = writePersonaDrafts(dir, message)
@@ -992,7 +998,8 @@ function untrailered(wt: string, target: string, branch: string): string[] {
   const local = run(wt, ['rev-parse', '-q', '--verify', `refs/heads/${target}^{commit}`]).status === 0
   const not = local ? `refs/heads/${target}` : target
   const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', not])
-  if (r.status !== 0) return []
+  // fail closed: an unreadable range (an unknown target, a bad branch) is no proof that every commit carries a trailer
+  if (r.status !== 0) throw refuse({ merged: false, conflicts: [], missingTrailers: [], why: `could not read the commits of ${branch} that ${target} does not hold, so their trailers are unchecked: ${r.err.trim().split('\n')[0] ?? ''}` })
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
     .filter(([, crew, role]) => String(crew).trim() === '' && String(role).trim() === '').map(([id]) => String(id))
 }
@@ -1065,12 +1072,20 @@ function cmdMarkMerged(f: Flags): Obj {
   return { ok: true, slug, status: 'merged' }
 }
 // Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
-// another live crew the way plan-check does (same goal and stage, or another goal); logs a decision line.
+// another live crew the way plan-check does (same goal and stage, or another goal; a rule file another goal's crew of another stage
+// owns is exempt, as in plan-check); logs a decision line.
 function cmdOwnsExtend(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
   const glob = need(f, 'glob')
   const reason = need(f, 'reason').replace(/\s+/g, ' ').trim()
+  let rules: { path: string; paths: string[] }[] = []
+  try {
+    const repoDir = repoOf(f)
+    rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
+  } catch {
+    // no repo or git failed: no rule file is exempt, as plan-check
+  }
   const done = withLock(dir, 'plan', (): Obj => {
     const plan = loadPlan(dir)
     const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
@@ -1079,9 +1094,13 @@ function cmdOwnsExtend(f: Flags): Obj {
     for (const o of plan.crews) {
       if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
       if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
-      for (const g of Array.isArray(o.owns) ? o.owns : []) if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
+      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage
+      for (const g of Array.isArray(o.owns) ? o.owns : []) {
+        if (crossStage && g === glob && rules.some((r) => r.path === g)) continue
+        if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
+      }
     }
-    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage` })
+    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage, and to one crew of another goal` })
     const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
     if (!owns.includes(glob)) owns.push(glob)
     crew.owns = owns
