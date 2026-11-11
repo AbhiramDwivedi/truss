@@ -22,7 +22,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/bin/inbox.ts`, `plugins/truss/bin/notify-run.ts`, `plugins/truss/skills/inbox/SKILL.md`; tests `plugins/truss/tests/inbox.check.ts`, `plugins/truss/tests/trust-026.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Inbox transcript proof"), `plugins/truss/docs/adr/0037-shared-store-and-inbox.md`.
-- Note: the skill passes the note via `--note-file`; `textOf` in `inbox.ts` reads it for `--note` and `--title`, and `resolve` refuses a note that differs from the typed text. Without a typed line the skill asks the human to type the decision line.
+- Note: the skill passes the note via `--note-file`; `textOf` in `inbox.ts` reads it for `--note` and `--title`, and `resolve` refuses a passed note that differs from the typed text (an absent flag stores an empty note). Listings show an item's code token in a quote as `[code]` (`maskCode`, `inbox.ts:178`); `resolve`'s own output and the row keep the typed text. Gap: a slash line with no note leaves the code glued to `</command-args>`, so it is not masked (ADR-0037). Without a typed line the skill asks the human to type the decision line.
 
 ## Long-term cost guard
 
