@@ -3577,11 +3577,11 @@ function cmdDecisions(f: Flags): Obj {
 // ==== knowledge (ADR-0035) ====
 
 // `knowledge-lint [--base=<sha>] [--repo R] [--slug S [--dir D]]`: exit 0 whether or not it found failures; the caller reads `ok`.
-// With --slug it lints the crew worktree (its working tree, HEAD as the head) with the worktree's truss.json (the repo's when the
-// worktree has none); with no --base the base is `git merge-base <target> HEAD` there, and when that does not resolve, the head
-// of the crew's red record in --dir (the crew's head when its red check ran, so a later base than the fork point: the output then
-// carries `baseFallback: true`). Without --slug it lints the repo's own checkout, against --base when given. The output carries
-// `base` whenever the lint ran against one.
+// With --slug it lints the crew worktree (its working tree, HEAD as the head); with no --base the base is `git merge-base <target>
+// HEAD` there, and when that does not resolve, the head of the crew's red record in --dir (the crew's head when its red check ran,
+// so a later base than the fork point: the output then carries `baseFallback: true`); with neither, a failing result. Without
+// --slug it lints the repo's own checkout, against --base when given. With a base the config is the base commit's; a head that
+// loosens it or a side git cannot read is a failure. The output carries `base` whenever the lint ran against one.
 function cmdKnowledgeLint(f: Flags): Obj {
   const repo = repoOf(f)
   let at = repo
@@ -3600,15 +3600,23 @@ function cmdKnowledgeLint(f: Flags): Obj {
     at = crewWorktree(repo, slug)
     if (!existsSync(at)) throw usage(`no crew worktree for ${slug} at ${at}`)
     if (base === undefined) {
-      const target = settingsOf(repo).target
+      let target = ''
+      let targetErr: string | undefined
+      try {
+        target = settingsOf(repo).target
+      } catch (e) {
+        if (!(e instanceof CliError)) throw e
+        targetErr = e.message
+      }
       const mb = target === '' || target.startsWith('-') ? undefined : run(at, ['merge-base', target, 'HEAD'])
       if (mb !== undefined && mb.status === 0 && mb.out !== '') base = mb.out
       else {
-        const first = mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
+        const first = targetErr !== undefined ? `the target could not be read: ${targetErr}` : mb === undefined ? `no usable target (${target === '' ? 'none set' : JSON.stringify(target)})` : `git merge-base ${target} HEAD failed in ${at}${mb.err === '' ? '' : `: ${mb.err.split('\n')[0]}`}`
         const red = f.dir === undefined ? undefined : redRecord(dirOf(f), slug)
         const head = typeof red?.head === 'string' ? red.head : ''
         const second = f.dir === undefined ? 'no --dir, so no red record was read' : red === undefined ? `no red record for ${slug} in ${dirOf(f)}/checks` : head === '' ? `the red record for ${slug} names no head` : commitOf(head) !== undefined ? '' : `the red record head ${head} is not a commit of ${at}`
-        if (second !== '') throw usage(`no base for crew ${slug}: ${first}, and ${second}; pass --base`)
+        // a crew whose base cannot be found is not "lint did not run": it is a failure QC sees
+        if (second !== '') return { ok: false, failures: [{ check: 'config-unverified', path: '.claude/truss.json', message: `could not verify the crew's knowledge config: no base for crew ${slug}: ${first}, and ${second}; pass --base`, new: true }], warnings: [], predatingCount: 0, warningCount: 0 }
         base = head
         fallback = true
       }

@@ -404,7 +404,7 @@ t('lint 23: --slug lints the crew worktree (working tree and HEAD) with the base
   assert.equal(flag(given, '.claude/rules/main.md', /"main\/\*\*"/), true, '--base is used when given')
   // no merge-base: the target does not resolve, so the head of the crew red record is the base
   writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
-  assertUsageError(env.run('knowledge-lint', { slug: 's' }))
+  assert.equal(lint(env, ['--slug', 's']).failures[0].check, 'config-unverified', 'no base at all is a failing result, not a usage error')
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: forked, tail: '' }) + '\n')
   const red = lint(env, ['--slug', 's'])
   assert.equal(flag(red, '.claude/rules/main.md', /"main\/\*\*"/), true)
