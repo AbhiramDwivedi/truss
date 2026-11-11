@@ -174,6 +174,10 @@ function proofMain(session: string): string | null {
 
 const norm = (s: string): string => s.trim().split(/\s+/).filter(Boolean).join(' ')
 
+// A quote shown to anyone: the item's code token becomes [code]. A reopened item makes its spent code live again, so no listing prints it.
+const maskCode = (quote: unknown, id: string, codeHash: unknown): unknown =>
+  typeof quote === 'string' ? quote.replace(/\S+/g, (tok) => (codeHashOf(id, tok) === codeHash ? '[code]' : tok)) : quote
+
 // The typed line that proves a resolve of `open` (decision, raise, and the stored quote when the row has one): its newest candidate when
 // `last`, else its first. rest is what follows `<decision> <id> <code> [raise <usd>]`, whitespace normalised.
 function proof(open: Obj, c: { decision: unknown; raiseUsd?: unknown; quote?: unknown }, cands: Cand[], last: boolean): { text: string; rest: string } | null {
@@ -497,7 +501,7 @@ function listItems(f: Flags): Obj {
       row.decision = it.resolve.decision
       row.by = it.resolve.by
       row.note = it.resolve.note
-      row.quote = it.resolve.quote ?? null
+      row.quote = maskCode(it.resolve.quote ?? null, id, it.open.codeHash)
       if (it.resolve.raiseUsd !== undefined) row.raiseUsd = it.resolve.raiseUsd
       if (it.noteUnbound === true) row.noteUnbound = true
     } else if (it.reopened !== undefined) row.reopened = it.reopened
