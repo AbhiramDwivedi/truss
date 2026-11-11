@@ -189,9 +189,17 @@ test('release-026: every line citation in architecture.md and the knowledge file
   assert.match(bad[0], /hold none of OWNERLESS_MS/)
   assert.equal(citationFailures('seed', 'See `store.ts:99999`.').length, 1, 'a line past the end of the file must fail')
 
-  const docs = ['plugins/truss/docs/architecture.md', ...['product-decisions.md', 'store.md'].map((f) => `docs/knowledge/${f}`)]
+  const docs = ['plugins/truss/docs/architecture.md', ...['product-decisions.md', 'store.md'].map((f) => `docs/knowledge/${f}`), 'plugins/truss/skills/run/SKILL.md']
   const fails = docs.flatMap((d) => citationFailures(d, read(d)))
   assert.deepEqual(fails, [], `${fails.length} citation(s) do not resolve:\n${fails.join('\n')}`)
+})
+
+test('release-026: the run skill resume step filters the inbox by session with the CLI, not by hand', () => {
+  const skill = plugin('skills/run/SKILL.md')
+  const step = skill.split('\n').find((l) => /^1\. \*\*Resume\.\*\*/.test(l))
+  assert.ok(step, 'no step 1 Resume line in the --next flow')
+  assert.match(step, /inbox --unapplied --session/, 'the resume step does not run `factory inbox --unapplied --session <session id>`')
+  assert.doesNotMatch(step, /Keep only the rows whose `session` field/, 'the resume step still has the PM filter rows by session by hand')
 })
 
 test('release-026: the architecture doc states the stale-lock rule', () => {
