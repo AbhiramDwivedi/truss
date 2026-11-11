@@ -98,6 +98,16 @@ export function loadPlan(dir: string): Obj {
 export function savePlan(dir: string, plan: Obj): void {
   writeFileSync(`${dir}/plan.json`, JSON.stringify(plan, null, 2) + '\n')
 }
+// Re-reads plan.json under the plan lock, lets `change` edit that fresh copy, and saves it, so a write never drops another
+// command's edit (owns-extend, start, approve, mark-merged and the merge gate all write the plan).
+function patchPlan(dir: string, change: (plan: Obj) => void): Obj {
+  return withLock(dir, 'plan', (): Obj => {
+    const plan = loadPlan(dir)
+    change(plan)
+    savePlan(dir, plan)
+    return plan
+  })
+}
 
 // The repo's merge mode and target branch, and where they came from, as `settings` prints them.
 export function settingsOf(repo: string): { merge: string; target: string; source: string } {
@@ -642,14 +652,26 @@ function cmdPlanCheck(f: Flags): Obj {
     }
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
+  let rules: { path: string; paths: string[] }[] = []
+  if (repoDir !== undefined) {
+    try {
+      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
+    } catch {
+      // not a git repo or git failed: no rule check
+    }
+  }
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
       const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
       if (sameGoal && crews[i].stage !== crews[j].stage) continue
+      // The knowledge-owns rule makes one crew of each stage own a rule file, so two goals' crews in different stages each own the
+      // same rule file by design: that one exact glob is not an overlap between them.
+      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage
       // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
       if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
         for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
+          if (crossStage && ga === gb && rules.some((r) => r.path === ga)) continue
           if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
         }
       }
@@ -658,12 +680,6 @@ function cmdPlanCheck(f: Flags): Obj {
   // knowledge-owns rule: per stage, when the live crews' owns overlap a rule file's paths, one crew of the stage must own that rule file.
   // A repo with no rule files, or one git cannot list, adds no error here (the same fallback knowledgeArgsOf takes).
   if (repoDir !== undefined) {
-    let rules: { path: string; paths: string[] }[] = []
-    try {
-      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
-    } catch {
-      // not a git repo or git failed: no rule check
-    }
     const live = crews.filter((c) => c.status !== 'merged' && c.status !== 'dropped')
     const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((g: unknown): g is string => typeof g === 'string') : [])
     for (const rule of rules) {
@@ -698,7 +714,7 @@ function cmdApprove(f: Flags): Obj {
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
   const s = settingsOf(repo)
   const approvedAt = new Date().toISOString()
-  savePlan(dir, { ...plan, approvedAt })
+  patchPlan(dir, (p) => { p.approvedAt = approvedAt })
   appendDecision(dir, `plan approved (${by}): merge ${s.merge}, target ${s.target} from ${s.source}; approvedAt ${approvedAt}; scope frozen | the plan is approved by ${by}, so crews may start`)
   return { approvedAt }
 }
@@ -972,7 +988,10 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
 // Non-merge commits in HEAD..branch that the target does not hold and that carry neither Truss-Crew nor Truss-Role, `<sha> <subject>`
 // each; [] when the range can't be read. A commit already in the target (a main commit that reached the branch by a merge) never counts.
 function untrailered(wt: string, target: string, branch: string): string[] {
-  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', `refs/heads/${target}`])
+  // a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits
+  const local = run(wt, ['rev-parse', '-q', '--verify', `refs/heads/${target}^{commit}`]).status === 0
+  const not = local ? `refs/heads/${target}` : target
+  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', not])
   if (r.status !== 0) return []
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
     .filter(([, crew, role]) => String(crew).trim() === '' && String(role).trim() === '').map(([id]) => String(id))
@@ -1041,8 +1060,7 @@ function cmdMarkMerged(f: Flags): Obj {
       ? `knowledge config gate: truss-${slug} has no fork point with the pre-merge tip of ${target}`
       : (knowledgeConfigRefusal(repo, fork, crewHead) ?? landedWhy(pre.old, pre.landed))
   if (cfgWhy !== undefined) throw refuse({ ok: false, slug, merged: false, why: cfgWhy })
-  crew.status = 'merged'
-  savePlan(dir, plan)
+  patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'merged' })
   appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
   return { ok: true, slug, status: 'merged' }
 }
@@ -2148,7 +2166,7 @@ function cmdStart(f: Flags): Obj {
       }
       const wt = ensureWorktree(repo, slug, settings.target)
       crew.status = 'running'
-      savePlan(dir, plan)
+      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
       appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
       slots--
       direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
@@ -2178,7 +2196,7 @@ function cmdStart(f: Flags): Obj {
     }
     const wt = ensureWorktree(repo, slug, settings.target)
     crew.status = 'running'
-    savePlan(dir, plan)
+    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
     appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(roles, 'planner'), by: 'factory' })
     appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--
@@ -3091,10 +3109,10 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     if (run(onTarget.path, ['merge', '--ff-only', head]).status !== 0) return { rework: 'target moved' }
   } else if (run(repo, ['update-ref', targetRef, head, oldSha]).status !== 0) return { rework: 'target moved' }
   // step 5: record, then clean up
-  const fresh = loadPlan(dir)
-  const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
-  if (entry !== undefined) entry.status = 'merged'
-  savePlan(dir, fresh)
+  const fresh = patchPlan(dir, (fresh) => {
+    const entry = fresh.crews.find((c: Obj) => isObj(c) && c.slug === slug)
+    if (entry !== undefined) entry.status = 'merged'
+  })
   if (gates !== undefined) appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | land: process ${gates.process}, qc ${gates.qc}, red ${gates.red}${red !== undefined ? `, red record exit ${red.exit}` : ''}${needQc && ruling !== undefined ? `, QC PASS on ${ruling.head}` : ''}`)
   else appendDecision(dir, `crew ${slug} merged into ${target} at ${head} | QC PASS on ${ruling?.head}, red record exit ${red?.exit}, patch ${patch}, acceptance test green on the merged head`)
   // contract-025 section 4: the merge is final by now, so a ledger failure is a decision line, never a refusal

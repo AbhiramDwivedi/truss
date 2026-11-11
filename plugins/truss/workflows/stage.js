@@ -1183,6 +1183,9 @@ async function integrateNow(crew, branch, at) {
   // commits whose Truss-Crew or Truss-Role line git does not parse as a trailer: a stop that names them, never a resolver or a QC role FAIL
   const bad = r.parsed && Array.isArray(r.parsed.trailers) ? r.parsed.trailers.map(String) : []
   if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
+  // commits with no Truss trailer at all: the same stop, never a resolver (its merge would put the bare commit on the crew branch)
+  const bare = r.parsed && Array.isArray(r.parsed.missingTrailers) ? r.parsed.missingTrailers.map(String) : []
+  if (bare.length) throw new Stop('BLOCKED', `${branch} not merged: these commits carry neither a Truss-Crew nor a Truss-Role trailer: ${bare.join('; ')}. Reword those commits to end with both trailers, or rerun the task.`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflictsOf(r), at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
