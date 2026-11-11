@@ -100,7 +100,10 @@ function ghRun(args: string[]): { status: number; out: string; err: string } {
   return { status: r.status ?? 1, out: r.stdout ?? '', err: (r.stderr ?? '').trim() }
 }
 
-function ghCands(repo: string, cfg: Obj): Cand[] {
+const GH_LIMIT = 50
+
+// `cut.capped` is set when gh returned a full page: the listing may then omit open issues, so it cannot prove an item left.
+function ghCands(repo: string, cfg: Obj, cut: { capped: boolean } = { capped: false }): Cand[] {
   const fx = process.env.TRUSS_GH_FIXTURE
   let issues: any[]
   let collaborators: Set<string> | undefined
@@ -110,7 +113,7 @@ function ghCands(repo: string, cfg: Obj): Cand[] {
     collaborators = new Set(Array.isArray(data.collaborators) ? data.collaborators.map(String) : [])
   } else {
     const label = typeof cfg.ghLabel === 'string' ? cfg.ghLabel : 'truss'
-    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', '50'])
+    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', String(GH_LIMIT)])
     if (r.status !== 0) throw new Error(`gh issue list failed: ${r.err.slice(0, 200)}`)
     try {
       issues = JSON.parse(r.out)
@@ -118,6 +121,7 @@ function ghCands(repo: string, cfg: Obj): Cand[] {
       throw new Error('gh issue list printed no JSON')
     }
     if (!Array.isArray(issues)) throw new Error('gh issue list printed no list')
+    cut.capped = issues.length >= GH_LIMIT
   }
   const isCollab = (login: string): boolean => {
     if (collaborators) return collaborators.has(login)
@@ -159,15 +163,17 @@ function intake(f: Flags): Obj {
   const errors: { source: string; error: string }[] = []
   for (const source of [...new Set(sources)]) {
     let cands: Cand[]
+    const cut = { capped: false }
     try {
-      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(repo, cfg)
+      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(repo, cfg, cut)
     } catch (e) {
       errors.push({ source, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) })
       continue
     }
     // An issue closed or a line ticked is no longer listed: a `new` item of this source that the listing dropped leaves `new`.
+    // A full gh page may hide open issues, so a capped listing drops nothing: `dropped` is terminal.
     const listed = new Set(cands.map((c) => c.key))
-    lockQueue(repo, () => {
+    if (!cut.capped) lockQueue(repo, () => {
       for (const it of allItems(repo)) {
         if (it.state !== 'new' || it.source !== source || listed.has(String(it.key))) continue
         it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date().toISOString(), from: 'new', to: 'dropped', by: 'intake' }]

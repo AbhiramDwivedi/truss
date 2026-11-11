@@ -31,7 +31,7 @@ const realRepo = (opts: Parameters<typeof mkRepo>[0] = {}): string => flat(realp
 
 // ---- item 11: the notify kill ----
 
-test('fixes-026: the notify kill reaches a setsid grandchild', { skip: process.platform !== 'linux' && 'the walk reads /proc and the grandchild is a setsid leader (Linux only)' }, async () => {
+test('fixes-026: the notify kill reaches a setsid grandchild', { skip: process.platform !== 'linux' && 'the walk uses pgrep -P and the grandchild is a setsid leader (Linux only)' }, async () => {
   // The parent leads a detached group (as notify-run's child does). Its grandchild is detached too (libuv calls setsid), so it leaves the group.
   // Both hold the write end of the test's stdout pipe: the pipe closes only when the whole tree is dead.
   const code = [
