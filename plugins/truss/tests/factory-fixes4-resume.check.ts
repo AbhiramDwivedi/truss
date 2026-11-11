@@ -169,7 +169,7 @@ function heldBranch(env: any, wt: string): void {
   putFile(mw, 'src/s/a.ts', 'a\n')
   putFile(mw, 'src/s/b.ts', 'b\n')
   git(mw, ['add', '--', 'src/s/a.ts', 'src/s/b.ts'])
-  git(mw, ['commit', '-q', '-m', 'member both'])
+  git(mw, ['commit', '-q', '-m', 'member both\n\nTruss-Crew: s\nTruss-Role: builder'])
   putFile(wt, 'src/s/a.ts', 'a\n', 'split a')
   putFile(wt, 'src/s/b.ts', 'b\n', 'split b')
 }
@@ -178,7 +178,7 @@ const mergeHead = (wt: string): number => gitStatus(wt, ['rev-parse', '-q', '--v
 test('i44 1: while a conflicted merge is in progress in the crew worktree, integrate of a branch the head already holds never answers contained: true', () => {
   const { env, wt } = crewEnv()
   const mc = memberWt(env, 'member-conf')
-  putFile(mc, 'a.txt', 'member side\n', 'member edit')
+  putFile(mc, 'a.txt', 'member side\n', 'member edit\n\nTruss-Crew: s\nTruss-Role: builder')
   putFile(wt, 'a.txt', 'crew side\n', 'crew edit')
   heldBranch(env, wt)
   const first = env.run('integrate', { slug: 's', branch: 'member-conf' })
