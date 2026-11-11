@@ -13,7 +13,7 @@ import { goalOf, RUN_GOAL } from '../hooks/intake.ts'
 import { fencedBlock, qcFails, qcK, localTime, parsePlan, planVerdict, unbannered } from '../hooks/register.ts'
 import type { QcFile } from '../hooks/register.ts'
 import { budgetsOf, lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from './knowledge.ts'
-import type { KCfg } from './knowledge.ts'
+import type { KCfg, LintResult } from './knowledge.ts'
 import type { Catalog } from '../retro/catalog.ts'
 
 // retro/ is loaded lazily, so a plugin copy without it still runs every other command; a command that needs it says so.
@@ -124,7 +124,9 @@ function docKeysOf(repo: string): { featureMap?: string; adrDir?: string } {
 }
 // ADR-0035: the path-scoped knowledge keys of truss.json, each a valid repo path or its default.
 export function knowledgeCfgOf(repo: string): KCfg {
-  const cfg = configOf(repo)
+  return knowledgeCfgFrom(configOf(repo))
+}
+function knowledgeCfgFrom(cfg: Obj): KCfg {
   return {
     featureMap: repoPathOf(cfg.featureMap) ?? 'docs/features.md',
     productDecisions: repoPathOf(cfg.productDecisions) ?? 'docs/knowledge/product-decisions.md',
@@ -3614,8 +3616,45 @@ function cmdKnowledgeLint(f: Flags): Obj {
     if (sha === undefined) throw usage(`--base ${base} is not a commit of ${at}`)
     base = sha
   }
-  const kcfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
-  return { ...knowledgeLint(at, kcfg, base), ...(base === undefined ? {} : { base }), ...(fallback ? { baseFallback: true } : {}) }
+  const headCfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
+  if (base === undefined) return knowledgeLint(at, headCfg, undefined)
+  // A crew must not loosen the lint that judges it: with a base, the crew is linted against the base's config, and a head config
+  // that raises a budget or moves a knowledge path is a hard failure. A base that cannot be read fails closed.
+  const guard = baseKnowledgeCfg(at, base)
+  const res = knowledgeLint(at, guard.cfg ?? headCfg, base)
+  const loosened = guard.cfg === undefined ? [guard.error] : loosenings(guard.cfg, headCfg)
+  const out: LintResult =
+    loosened.length === 0
+      ? res
+      : { ...res, ok: false, failures: [...res.failures, { check: 'config-loosened', path: '.claude/truss.json', message: `the crew loosened its own knowledge lint: ${loosened.join('; ')}. Revert it; the lint runs against the base config`, new: true }] }
+  return { ...out, base, ...(fallback ? { baseFallback: true } : {}) }
+}
+// The base commit's knowledge config, or why it could not be read.
+function baseKnowledgeCfg(at: string, base: string): { cfg?: KCfg; error: string } {
+  const spec = `${base}:.claude/truss.json`
+  const ls = run(at, ['ls-tree', '--name-only', base, '--', '.claude/truss.json'])
+  if (ls.status !== 0) return { error: `could not read .claude/truss.json at base ${base}: ${ls.err.split('\n')[0]}` }
+  if (ls.out === '') return { cfg: knowledgeCfgFrom({}), error: '' }
+  const show = run(at, ['show', spec])
+  if (show.status !== 0) return { error: `could not read .claude/truss.json at base ${base}: ${show.err.split('\n')[0]}` }
+  try {
+    const v = JSON.parse(show.out)
+    if (!isObj(v)) return { error: `.claude/truss.json at base ${base} is not an object` }
+    return { cfg: knowledgeCfgFrom(v), error: '' }
+  } catch {
+    return { error: `.claude/truss.json at base ${base} is not valid JSON` }
+  }
+}
+// The ways `head` is looser than `base`: a raised budget, or a knowledge path that points somewhere else (the lint then reads other files).
+function loosenings(base: KCfg, head: KCfg): string[] {
+  const out: string[] = []
+  for (const k of Object.keys(base.budgets) as (keyof KCfg['budgets'])[]) {
+    if (head.budgets[k] > base.budgets[k]) out.push(`knowledgeBudgets.${k} raised from ${base.budgets[k]} to ${head.budgets[k]}`)
+  }
+  for (const k of ['featureMap', 'productDecisions', 'knowledgeDir', 'rulesDir', 'agentsIndex'] as const) {
+    if (head[k] !== base[k]) out.push(`${k} changed from ${base[k]} to ${head[k]}`)
+  }
+  return out
 }
 // `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
 function cmdKnowledgeMigrate(f: Flags): Obj {

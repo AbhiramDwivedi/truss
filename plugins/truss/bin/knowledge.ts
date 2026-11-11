@@ -123,12 +123,19 @@ function inlineList(s: string): string[] {
   const out: string[] = []
   let cur = ''
   let q = ''
+  let depth = 0
   for (const ch of inner) {
     if (q) {
       if (ch === q) q = ''
       else cur += ch
     } else if (ch === '"' || ch === "'") q = ch
-    else if (ch === ',') {
+    else if (ch === '{') {
+      depth++
+      cur += ch
+    } else if (ch === '}' && depth > 0) {
+      depth--
+      cur += ch
+    } else if (ch === ',' && depth === 0) {
       out.push(cur.trim())
       cur = ''
     } else cur += ch

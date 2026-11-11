@@ -515,8 +515,11 @@ t('lint 27: with --slug the knowledge config comes from the crew worktree\'s tru
   const wt = addCrewWorktree(env.repo, 's')
   commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n` })
   const j = lint(env, ['--slug', 's'])
-  assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === 'policy/x.md'), JSON.stringify(j.failures))
-  assert.ok(!j.failures.some((f) => f.path === '.claude/rules/y.md'), 'the main checkout\'s rulesDir is not used')
+  // the crew's own truss.json moves rulesDir: that is a loosening, so the lint judges the crew with the base config instead
+  assert.equal(j.ok, false)
+  assert.ok(j.failures.some((f) => f.check === 'config-loosened'), JSON.stringify(j.failures))
+  assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), 'the base rulesDir is used')
+  assert.ok(!j.failures.some((f) => f.path === 'policy/x.md'), 'the crew\'s rulesDir is not used')
   unlinkSync(`${wt}/.claude/truss.json`)
   const k = lint(env, ['--slug', 's'])
   assert.ok(k.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), JSON.stringify(k.failures))
@@ -799,4 +802,26 @@ t('schema 1: the schema declares productDecisions, knowledgeDir, rulesDir and ag
   assert.ok(validate(b, { rule: -1 }).length > 0)
   assert.ok(validate(b, { rule: 'x' }).length > 0)
   assert.ok(validate(b, { nope: 1 }).length > 0)
+})
+
+t('lint 13: a diff against --base that raises a knowledge budget or moves a knowledge path fails config-loosened, and the crew is linted with the base config; tightening passes', () => {
+  const cfg = { merge: 'sequential', target: 'main' }
+  const env = world(GOOD, cfg)
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  // raise the budget and put AGENTS.md over the default budget of 60 lines
+  commit(env.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, knowledgeBudgets: { agentsIndex: 500 } }), 'AGENTS.md': `${GOOD['AGENTS.md']}${lines(80)}` })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.ok(j.failures.some((f) => f.check === 'config-loosened' && f.new === true && /knowledgeBudgets\.agentsIndex raised from 60 to 500/.test(f.message)), JSON.stringify(j.failures))
+  assert.ok(j.failures.some((f) => f.check === 'over-budget' && f.path === 'AGENTS.md'), 'linted against the base budget')
+  // moving a path is a loosening too
+  const env2 = world(GOOD, cfg)
+  const base2 = git(env2.repo, ['rev-parse', 'HEAD'])
+  commit(env2.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, rulesDir: 'elsewhere' }) })
+  assert.ok(lint(env2, [`--base=${base2}`]).failures.some((f) => f.check === 'config-loosened' && /rulesDir changed/.test(f.message)))
+  // tightening is allowed
+  const env3 = world(GOOD, { ...cfg, knowledgeBudgets: { rule: 40 } })
+  const base3 = git(env3.repo, ['rev-parse', 'HEAD'])
+  commit(env3.repo, { '.claude/truss.json': JSON.stringify({ ...cfg, knowledgeBudgets: { rule: 30 } }) })
+  assert.ok(!lint(env3, [`--base=${base3}`]).failures.some((f) => f.check === 'config-loosened'))
 })

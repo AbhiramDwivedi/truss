@@ -406,6 +406,19 @@ t('product file 2: args.truss.productDecisions overrides it everywhere, and noth
   }
 })
 
+t('product file 2b: repoRel normalises backslashes and folds the repo prefix case on win32 and darwin only', async () => {
+  const cases: [string, string, string, string][] = [
+    ['win32', 'C:\\Repo', 'c:\\REPO\\Docs\\Calls.md', 'Docs/Calls.md'],
+    ['darwin', '/Users/X/repo', '/users/x/REPO/Kb/Calls.md', 'Kb/Calls.md'],
+    ['linux', '/home/x/repo', '/HOME/x/repo/kb/calls.md', '/HOME/x/repo/kb/calls.md'],
+  ]
+  for (const [platform, repo, file, want] of cases) {
+    const labels = labelsFor({ 'a-builder': ASK, 'a-builder-2': done('feat/b2'), 'a-po': 'PO: DECIDE\nInclude archived items.\nReason: r' })
+    const r = await runStage([OLD()], { labels, truss: { repo, platform, productDecisions: file, personas: { 'product-owner': PO_PERSONA } } })
+    has(callOf(r, 'a-qc').prompt, `Product decisions file: ${want}\n`)
+  }
+})
+
 t('product file 3: a crew with no product-owner persona still names the product decisions file', async () => {
   const r = await runStage([OLD()], { labels: labelsFor(PLAIN) })
   has(callOf(r, 'a-qc').prompt, 'Product decisions file: docs/knowledge/product-decisions.md')

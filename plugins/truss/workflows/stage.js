@@ -1694,9 +1694,13 @@ function standardsLines(crew) {
 
 // ---------------------------------------------------------------- the knowledge step (ADR-0033)
 
+// `/` separators; the repo prefix is compared folded on win32 and darwin (F.platform, else the host's), and the returned path keeps its case
 const repoRel = (f) => {
-  const root = `${F.repo.replace(/\/+$/, '')}/`
-  return String(f).startsWith(root) ? String(f).slice(root.length) : String(f)
+  const platform = typeof F.platform === 'string' ? F.platform : typeof process !== 'undefined' ? process.platform : ''
+  const fold = platform === 'win32' || platform === 'darwin' ? (s) => s.toLowerCase() : (s) => s
+  const root = `${flatPath(F.repo).replace(/\/+$/, '')}/`
+  const p = flatPath(f)
+  return fold(p).startsWith(fold(root)) ? p.slice(root.length) : p
 }
 const crewTasks = (crew) => (crew.tasks && crew.tasks.length ? crew.tasks : crew.e.tasks) || []
 // a crew has code tasks unless its tasks are all writer tasks (none known: a merge-ready resume, so code)
