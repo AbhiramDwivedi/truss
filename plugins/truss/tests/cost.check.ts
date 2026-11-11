@@ -374,7 +374,7 @@ test('cost: a held usage lock still gives a verdict', async () => {
   }
 })
 
-test('cost: a busy usage lock before the first sweep does not hold and crewCost stays null', async () => {
+test('cost: a busy usage lock before the first sweep is refused with store busy and crewCost stays null', async () => {
   const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
   lay(w, ['budget'])
   // a live owner holds locks/usage and no sweep has ever finished: there is no usage-cursor.json
@@ -384,9 +384,17 @@ test('cost: a busy usage lock before the first sweep does not hold and crewCost 
   assert.equal(existsSync(`${w.dir}/usage-cursor.json`), false)
   try {
     const c = await realCost()
-    const v = withRoot(w, () => c.budgetVerdict(w.dir, w.repo, planOf(w), 'bcrew'))
-    assert.equal(v.held, false, JSON.stringify(v))
-    assert.ok(!String(v.why ?? '').includes('first usage sweep'), `why: ${v.why}`)
+    let v: any
+    let err: any
+    try {
+      v = withRoot(w, () => c.budgetVerdict(w.dir, w.repo, planOf(w), 'bcrew'))
+    } catch (e) {
+      err = e
+    }
+    assert.equal(v, undefined, `no verdict is returned while the lock is busy and no ledger exists: ${JSON.stringify(v)}`)
+    assert.ok(err, 'budgetVerdict throws StoreBusy')
+    assert.equal(err.code, 2)
+    assert.match(String(err.body?.error ?? err.message), /store busy: usage/)
     const cc = withRoot(w, () => c.crewCost(w.dir, w.repo, 'bcrew'))
     assert.equal(cc.usd, null, JSON.stringify(cc))
   } finally {
