@@ -100,7 +100,10 @@ function ghRun(args: string[]): { status: number; out: string; err: string } {
   return { status: r.status ?? 1, out: r.stdout ?? '', err: (r.stderr ?? '').trim() }
 }
 
-function ghCands(cfg: Obj): Cand[] {
+const GH_LIMIT = 50
+
+// `cut.capped` is set when gh returned a full page: the listing may then omit open issues, so it cannot prove an item left.
+function ghCands(repo: string, cfg: Obj, cut: { capped: boolean } = { capped: false }): Cand[] {
   const fx = process.env.TRUSS_GH_FIXTURE
   let issues: any[]
   let collaborators: Set<string> | undefined
@@ -110,7 +113,7 @@ function ghCands(cfg: Obj): Cand[] {
     collaborators = new Set(Array.isArray(data.collaborators) ? data.collaborators.map(String) : [])
   } else {
     const label = typeof cfg.ghLabel === 'string' ? cfg.ghLabel : 'truss'
-    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', '50'])
+    const r = ghRun(['issue', 'list', '--label', label, '--state', 'open', '--json', 'number,title,body,url,author', '--limit', String(GH_LIMIT)])
     if (r.status !== 0) throw new Error(`gh issue list failed: ${r.err.slice(0, 200)}`)
     try {
       issues = JSON.parse(r.out)
@@ -118,6 +121,7 @@ function ghCands(cfg: Obj): Cand[] {
       throw new Error('gh issue list printed no JSON')
     }
     if (!Array.isArray(issues)) throw new Error('gh issue list printed no list')
+    cut.capped = issues.length >= GH_LIMIT
   }
   const isCollab = (login: string): boolean => {
     if (collaborators) return collaborators.has(login)
@@ -134,7 +138,8 @@ function ghCands(cfg: Obj): Cand[] {
     const text = body === '' ? title : `${title}\n\n${body}`
     out.push({
       key: `gh:${i.number}`, title: title.slice(0, 200), text: text.slice(0, 4000), url: typeof i.url === 'string' ? i.url : null, author: login,
-      state: login !== null && isCollab(login) ? 'new' : 'triage', source: 'gh',
+      // A stored issue is not vetted again: its state is the item's own, so the collaborator call is made for new issues only.
+      state: existsSync(itemPath(repo, idOf(`gh:${i.number}`))) || (login !== null && isCollab(login)) ? 'new' : 'triage', source: 'gh',
     })
   }
   return out
@@ -151,18 +156,31 @@ function intake(f: Flags): Obj {
   let sources = listOf(f, 'source')
   for (const s of sources) if (s !== 'md' && s !== 'gh') throw usage(`unknown --source ${s}`)
   if (sources.length === 0) sources = Array.isArray(cfg.sources) && cfg.sources.length > 0 ? cfg.sources.map(String) : ['md']
+  for (const s of sources) if (s !== 'md' && s !== 'gh') throw usage(`unknown intake source ${s} in .claude/truss.json`)
   const added: string[] = []
   const changed: string[] = []
   let seen = 0
   const errors: { source: string; error: string }[] = []
   for (const source of [...new Set(sources)]) {
     let cands: Cand[]
+    const cut = { capped: false }
     try {
-      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(cfg)
+      cands = source === 'md' ? mdCands(repo, cfg) : ghCands(repo, cfg, cut)
     } catch (e) {
       errors.push({ source, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) })
       continue
     }
+    // An issue closed or a line ticked is no longer listed: a `new` item of this source that the listing dropped leaves `new`.
+    // A full gh page may hide open issues, so a capped listing drops nothing: `dropped` is terminal.
+    const listed = new Set(cands.map((c) => c.key))
+    if (!cut.capped) lockQueue(repo, () => {
+      for (const it of allItems(repo)) {
+        if (it.state !== 'new' || it.source !== source || listed.has(String(it.key))) continue
+        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date().toISOString(), from: 'new', to: 'dropped', by: 'intake' }]
+        it.state = 'dropped'
+        writeJsonAtomic(itemPath(repo, it.id), it)
+      }
+    })
     let sAdded = 0
     let sSeen = 0
     mkdirSync(itemsDirOf(repo), { recursive: true })
@@ -263,7 +281,8 @@ function queueNext(f: Flags): Obj {
         writeJsonAtomic(itemPath(repo, it.id), it)
       }
     }
-    const mine = items.find((i) => (i.state === 'claimed' || i.state === 'running') && i.session === session)
+    // A `running` item is held by its crews (unattended step 7); only a `claimed` one is handed back.
+    const mine = items.find((i) => i.state === 'claimed' && i.session === session)
     if (mine) {
       mine.claimedAt = new Date(now).toISOString()
       writeJsonAtomic(itemPath(repo, mine.id), mine)
