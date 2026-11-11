@@ -113,6 +113,8 @@ export function mkTrussDir(): string {
 /** Writes `<dir>/plan.json` (2-space JSON, trailing newline). */
 export function writePlan(dir: string, plan: unknown): void {
   writeFileSync(`${dir}/plan.json`, JSON.stringify(plan, null, 2) + '\n')
+  // an unapproved plan is approved through a gate that blocks on a missing ltc-plan.json: seed the empty one plan-write would leave
+  if ((plan as any)?.approvedAt === null && !existsSync(`${dir}/ltc-plan.json`)) writeFileSync(`${dir}/ltc-plan.json`, JSON.stringify({ rev: 'test', ids: [] }, null, 2) + '\n')
 }
 
 /** Reads `<dir>/plan.json` parsed. */
