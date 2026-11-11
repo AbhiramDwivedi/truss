@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares } from './store.ts'
+import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -655,6 +655,26 @@ function cmdPlanCheck(f: Flags): Obj {
       }
     }
   }
+  // knowledge-owns rule: per stage, when the live crews' owns overlap a rule file's paths, one crew of the stage must own that rule file.
+  // A repo with no rule files, or one git cannot list, adds no error here (the same fallback knowledgeArgsOf takes).
+  if (repoDir !== undefined) {
+    let rules: { path: string; paths: string[] }[] = []
+    try {
+      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
+    } catch {
+      // not a git repo or git failed: no rule check
+    }
+    const live = crews.filter((c) => c.status !== 'merged' && c.status !== 'dropped')
+    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((g: unknown): g is string => typeof g === 'string') : [])
+    for (const rule of rules) {
+      for (const stage of [...new Set(live.map((c) => c.stage))]) {
+        const inStage = live.filter((c) => c.stage === stage)
+        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => globsOverlap(g, p))))
+        if (hit.length === 0 || inStage.some((c) => ownsOf(c).some((g) => globsOverlap(g, rule.path)))) continue
+        errors.push(`${rule.path}: rule file matched by crew ${hit.map(name).join(', ')} of stage ${String(stage)} and owned by no crew of that stage; add ${rule.path} to the owns of one crew of stage ${String(stage)}`)
+      }
+    }
+  }
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name) }
@@ -949,6 +969,14 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
     .filter(([, crew, role, body]) => missed(crew, 'Truss-Crew', body) || missed(role, 'Truss-Role', body)).map(([id]) => String(id))
 }
+// Non-merge commits in HEAD..branch that the target does not hold and that carry neither Truss-Crew nor Truss-Role, `<sha> <subject>`
+// each; [] when the range can't be read. A commit already in the target (a main commit that reached the branch by a merge) never counts.
+function untrailered(wt: string, target: string, branch: string): string[] {
+  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', `refs/heads/${target}`])
+  if (r.status !== 0) return []
+  return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
+    .filter(([, crew, role]) => String(crew).trim() === '' && String(role).trim() === '').map(([id]) => String(id))
+}
 // The git operation left unconcluded in a worktree, if any: a rebase (`rebase-merge` or `rebase-apply` in its git dir, checked
 // first since a rebase's own picks and merges can set the heads below), a merge, a cherry-pick or a revert.
 function operationInProgress(wt: string): 'rebase' | 'merge' | 'cherry-pick' | 'revert' | undefined {
@@ -974,6 +1002,8 @@ function cmdIntegrate(f: Flags): Obj {
   }
   const trailers = unparsedTrailers(c.wt, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
+  const missingTrailers = untrailered(c.wt, c.target, branch)
+  if (missingTrailers.length > 0) throw refuse({ merged: false, conflicts: [], missingTrailers })
   // ADR-0024 item 32: a branch whose merge would leave the crew head's tree unchanged (one the head already holds, even after a
   // rewrite split its commits) isn't merged. A conflict or a merge-tree failure falls back to the --no-ff merge below.
   const mt = run(c.wt, ['merge-tree', '--write-tree', 'HEAD', branch])
@@ -1015,6 +1045,33 @@ function cmdMarkMerged(f: Flags): Obj {
   savePlan(dir, plan)
   appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
   return { ok: true, slug, status: 'merged' }
+}
+// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
+// another live crew the way plan-check does (same goal and stage, or another goal); logs a decision line.
+function cmdOwnsExtend(f: Flags): Obj {
+  const dir = dirOf(f)
+  const slug = need(f, 'slug')
+  const glob = need(f, 'glob')
+  const reason = need(f, 'reason').replace(/\s+/g, ' ').trim()
+  const done = withLock(dir, 'plan', (): Obj => {
+    const plan = loadPlan(dir)
+    const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
+    if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
+    const overlaps: { slug: string; glob: string }[] = []
+    for (const o of plan.crews) {
+      if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
+      if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
+      for (const g of Array.isArray(o.owns) ? o.owns : []) if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
+    }
+    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage` })
+    const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
+    if (!owns.includes(glob)) owns.push(glob)
+    crew.owns = owns
+    savePlan(dir, plan)
+    return { ok: true, slug, glob, owns }
+  })
+  appendDecision(dir, `${slug} owns extended by ${glob} | ${reason}`)
+  return done
 }
 function cmdOwnsCheck(f: Flags): Obj {
   const c = crewCtx(f)
@@ -2271,7 +2328,7 @@ function holdOf(dir: string, repo: string, plan: Obj, slug: string, command: str
   let escalateError: string | undefined
   let clientNote = ''
   try {
-    const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
+    const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${v.why}`.slice(0, 200), detail: `${v.why}\nscope ${v.scope}, spent ${v.spentUsd === null ? 'unknown' : `${v.spentUsd} USD`}, limit ${v.limitUsd} USD; held at ${command} of crew ${slug}`, crews: [slug], ref: typeof (v as Obj).ref === 'string' && (v as Obj).ref !== '' ? String((v as Obj).ref) : `budget:${sid}:${v.scope}:${v.scope === 'run' ? 'run' : slug}`, blocking: true })
     // the one-time code exists only in this return value (the inbox keeps its hash); with no notify command nothing else delivers it, so the held entry carries it for the PM to relay
     if (!esc.deduped && esc.code !== '' && esc.notified !== true) clientNote = `; client approval needed: ${esc.id} code ${esc.code} (relay to the client, who types /truss:inbox approve ${esc.id} ${esc.code} raise <usd>)`
   } catch (e) {
@@ -2978,6 +3035,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   } catch (e) {
     return { refused: e instanceof CliError && Array.isArray(e.body.outside) ? `owns-check: outside ${(e.body.outside as string[]).join(', ')}` : `owns-check failed: ${(e as Error).message}` }
   }
+  // the gate reads refs/heads/<target> throughout and fails closed: a remote-tracking name such as origin/main is refused up front, with the fix
+  if (run(repo, ['rev-parse', '--verify', '-q', `refs/heads/${target}^{commit}`]).status !== 0) return { refused: `target ${target} is not a local branch (refs/heads/${target} does not resolve); create it with \`git branch ${target} <commit>\` or set \`target\` in .claude/truss.json to a local branch` }
   // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
   const since = runStart(plan) ?? 0
   const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
@@ -3885,7 +3944,7 @@ const COMMANDS: Record<string, (f: Flags) => Obj> = {
   'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'gated-merge': cmdGatedMerge, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
-  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
+  sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
   ...INBOX_COMMANDS, ...COST_COMMANDS, ...QUEUE_COMMANDS, ...WORKTYPE_COMMANDS,
   heavy: () => {
