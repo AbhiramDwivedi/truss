@@ -16,7 +16,7 @@ sources:
   - plugins/truss/tests/gates-026.check.ts
   - plugins/truss/tests/gates-026-regress.check.ts
   - plugins/truss/tests/fixes-026.check.ts
-verified: 253f37c5f4b83221c55da9fd036a3aef22febfe7
+verified: a45b9a912505344dea541c9c556be25b60829d3d
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
