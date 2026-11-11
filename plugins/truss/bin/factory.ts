@@ -3405,8 +3405,6 @@ function isSessionDirUnderCommon(repo: string, dir: string, platform: string = p
 }
 function cmdDecide(f: Flags): Obj {
   const dir = dirOf(f)
-  // --run is the first command of a run: its session dir may not exist yet, so it makes one, but only directly under <common>/truss
-  if (f.run !== undefined && f.line === undefined && f.checker === undefined && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir)) mkdirSync(dir, { recursive: true })
   const forms = (['line', 'checker', 'run'] as const).filter((k) => f[k] !== undefined)
   if (forms.length !== 1) throw usage('decide takes exactly one of --line, --checker (with --recommend, --text, --outcome) or --run')
   const form = forms[0]
@@ -3418,6 +3416,9 @@ function cmdDecide(f: Flags): Obj {
     if (/[\r\n]/.test(v)) throw usage(`--${k} holds a newline; a decision is one line`)
     vals[k] = v
   }
+  // --run is the first command of a run: its session dir may not exist yet, so it makes one, but only directly under <common>/truss
+  // and only once the goal text is valid, so a refusal leaves nothing behind
+  if (form === 'run' && vals.run.trim() !== '' && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir)) mkdirSync(dir, { recursive: true })
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
   let line: string
   if (form === 'line') {
