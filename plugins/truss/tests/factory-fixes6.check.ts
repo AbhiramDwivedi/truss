@@ -482,7 +482,7 @@ function memberBranch(env: any, name: string, file: string, text: string): strin
   git(env.repo, ['worktree', 'add', '-q', '-b', name, mw, 'truss-s'])
   git(mw, ['config', 'user.name', 'T'])
   git(mw, ['config', 'user.email', 't@example.invalid'])
-  return putFile(mw, file, text, `${name} work`) as string
+  return putFile(mw, file, text, `${name} work\n\nTruss-Crew: s\nTruss-Role: builder`) as string
 }
 const count = (cwd: string): string => git(cwd, ['rev-list', '--count', '--all'])
 const gitDir = (wt: string): string => git(wt, ['rev-parse', '--git-dir'])
