@@ -316,8 +316,11 @@ export function escalate(repo: string, dir: string, input: EscalateInput): Escal
         }
       }
     }
-    const id = idOf()
-    open = { v: 1, op: 'open', id, ts, kind: input.kind, session, crews, ref, blocking, title, detail, codeHash: codeHashOf(id, code) }
+    // 24-bit ids can collide across sessions: redraw while the id is already in the shared file (read under the lock)
+    const taken = existsSync(file) ? readFileSync(file, 'utf8') : ''
+    let id = idOf()
+    while (taken.includes(`"id":"${id}"`)) id = idOf()
+    open ={ v: 1, op: 'open', id, ts, kind: input.kind, session, crews, ref, blocking, title, detail, codeHash: codeHashOf(id, code) }
     // the code outlives a process that dies after the append; removed when the item resolves, listed only by `inbox --recover-codes`
     writeJsonAtomic(codeFile(flat(dir), id), { id, code }, { mode: 0o600 })
     appendFileSync(file, JSON.stringify(open) + '\n')
