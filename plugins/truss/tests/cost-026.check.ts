@@ -204,8 +204,12 @@ async function holdLock(w: W, holdMs: number): Promise<{ stop: () => Promise<voi
 test('cost-026: the budget verdict waits at most its 1000 ms bound while another process holds the lock over a 100 MB transcript', async () => {
   const c = await realCost()
   const cap = { pricing: pricing(), budget: { crewUsd: 5 } }
-  // no over-cap rows in usage.jsonl: not held (a busy lock is not a hold)
+  // a prior usage.jsonl with no over-cap rows: a busy lock reads the last ledger and is not a hold
+  // (a busy lock with no ledger at all is refused with StoreBusy, pinned below)
   const a = world({ config: cfg(cap), crews: ['bcrew'] })
+  layMain(a, 'msg_prior', 1)
+  assert.equal(cost(a).status, 0)
+  assert.equal(existsSync(usagePath(a)), true, 'a prior usage.jsonl exists')
   layBudget(a)
   bigMain(a, 100)
   const ha = await holdLock(a, 6000)
