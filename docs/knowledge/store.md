@@ -10,9 +10,10 @@ sources:
   - plugins/truss/bin/queue.ts
   - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
+  - plugins/truss/tests/fixtures/ltc/e2e.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 483238c5bbfdaf03e57b30eb2a21911c6bb95e68
+verified: 8698ec586a609891bfaf9c7e9849d4861be0cf5e
 ---
 
 # Store, holds and contract-025 stubs
@@ -61,9 +62,14 @@ The proof guards only `factory resolve`: a same-user agent can append a `resolve
 
 A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
 
+## E2E fixtures and the direct solo flow
+
+- `tests/fixtures/ltc/e2e.ts` holds `mkE2eWorld` (the ltc world plus a bare origin and a test-only price table), `originRefs`, `layBudgetCrew` and `runUnattendedFlow`: the PM's end-of-run flow of `/truss:run --next` through real factory processes (intake, unattended `--on`, queue-next, plan-write, plan-check, approve `--by auto`, start, crew commit, land, escalate push-pr, queue-set running then done, unattended `--off`). Reuse it for any later e2e case.
+- A solo crew with a version 4 plan and workType `docs` starts direct through `factory start --slug S --stage next` (creates worktree `truss-S`, sets running); `land --slug S` merges it locally and writes one row to `<common>/truss/shared/ledger.jsonl` (factory.ts:2068-2080, 3075). The session needs `goals/S.md` (test helper `writeGoal`).
+
 ## Stub modules
 
-`guard`, `cost`, `worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue` and `cost` are implemented); a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
+`worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue`, `cost` and `guard` are implemented; see `features.md` "Long-term cost guard"); a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
