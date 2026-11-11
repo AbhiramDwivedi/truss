@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/unattended.check.ts
   - plugins/truss/tests/fixtures/ltc/harness.ts
   - plugins/truss/tests/gates-026.check.ts
-verified: 0b905b5f254e4eef6ab23fa7ff6e1c0058a02f9d
+verified: f6e31155f14d1777c69188bc0e4d2eed1d3b6543
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
