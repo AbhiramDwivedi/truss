@@ -40,7 +40,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (factory.ts:2182, 2200). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field.
 
-`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once after 2 s on exit 2 `store busy` (stage.js:420-429). The pause runs inside a factory runner command: scripts have no timers. `qc()` returns `longTermCosts` (lines matching `^\s*(?:-\s*)?LONG-TERM-COST:`) only when non-empty (stage.js:1903, 1979).
+`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once after 2 s on exit 2 `store busy` (stage.js:420-429). The pause runs inside a factory runner command: scripts have no timers. `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:1903, 1979).
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, foreman crews in `foremen`, held ones in `held` with `why` (factory.ts:1247, `stageOut`).
 
