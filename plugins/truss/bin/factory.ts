@@ -559,6 +559,27 @@ const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'ref
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
 const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
 const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
+// Rule-file `paths` globs use `{a,b}` alternation and a leading `**`, which the literal-prefix compare above cannot read: expand the braces,
+// match a wildcard-free owns exactly, and compare only the last segment when either side starts with `**`.
+const braceExpand = (g: string): string[] => {
+  const m = /\{([^{}]*)\}/.exec(g)
+  return m === null ? [g] : m[1].split(',').flatMap((alt) => braceExpand(g.slice(0, m.index) + alt + g.slice(m.index + m[0].length)))
+}
+const globRe = (g: string): RegExp => new RegExp('^' + g.replace(/[.+^$()|\\{}[\]]/g, '\\$&').replace(/\*\*\/|\*\*|\*|\?/g, (t) => (t === '**/' ? '(?:.*/)?' : t === '**' ? '.*' : t === '*' ? '[^/]*' : '[^/]')) + '$')
+const ruleGlobsOverlap = (a: string, b: string): boolean =>
+  braceExpand(a).some((x) =>
+    braceExpand(b).some((y) => {
+      const wild = (s: string): boolean => /[*?[]/.test(s)
+      if (!wild(x)) return globRe(y).test(x)
+      if (!wild(y)) return globRe(x).test(y)
+      if (x.startsWith('**') || y.startsWith('**')) {
+        const tx = x.slice(x.lastIndexOf('/') + 1)
+        const ty = y.slice(y.lastIndexOf('/') + 1)
+        return !wild(tx) ? globRe(ty).test(tx) : !wild(ty) ? globRe(tx).test(ty) : true
+      }
+      return globsOverlap(x, y)
+    }),
+  )
 // one crew's `after` names the other's slug: the two never run together
 const orderedByAfter = (a: Obj, b: Obj): boolean => (Array.isArray(a.after) && a.after.includes(b.slug)) || (Array.isArray(b.after) && b.after.includes(a.slug))
 
@@ -694,7 +715,7 @@ function cmdPlanCheck(f: Flags): Obj {
     for (const rule of rules) {
       for (const stage of [...new Set(live.map((c) => c.stage))]) {
         const inStage = live.filter((c) => c.stage === stage)
-        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => globsOverlap(g, p))))
+        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => ruleGlobsOverlap(g, p))))
         if (hit.length === 0 || inStage.some((c) => ownsOf(c).some((g) => globsOverlap(g, rule.path)))) continue
         errors.push(`${rule.path}: rule file matched by crew ${hit.map(name).join(', ')} of stage ${String(stage)} and owned by no crew of that stage; add ${rule.path} to the owns of one crew of stage ${String(stage)}`)
       }
