@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic } from './store.ts'
+import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -3390,9 +3390,12 @@ function cmdFinish(f: Flags): Obj {
 const RECOMMENDS = ['answer', 'defer', 'pass']
 // True when `dir` is a direct child of <git common dir>/truss; the compare is on real, normalised paths (case-insensitive on win32).
 function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
-  const r = spawnSync('git', ['-c', 'core.quotepath=off', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repo, encoding: 'utf8', windowsHide: true })
-  const common = r.error || r.status !== 0 ? '' : (r.stdout ?? '').trim()
-  if (common === '') return false
+  let common: string
+  try {
+    common = commonDir(repo)
+  } catch {
+    return false
+  }
   const norm = (p: string): string => (platform === 'win32' ? flat(p).toLowerCase() : flat(p))
   const target = path.resolve(dir)
   if (!/^[A-Za-z0-9._-]+$/.test(path.basename(target))) return false
