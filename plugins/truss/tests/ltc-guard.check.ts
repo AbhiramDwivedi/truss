@@ -203,12 +203,24 @@ test('ltc guard: lines that only mention the marker are not read', () => {
 })
 
 test('ltc guard: a none-word line is no cost, an empty what with other fields still is', () => {
-  for (const f of ['LONG-TERM-COST: none', 'LONG-TERM-COST: None', '- **LONG-TERM-COST:** N/A', 'LONG-TERM-COST: -', 'LONG-TERM-COST:', '**LONG-TERM-COST:** **none**', '`LONG-TERM-COST: none`']) {
+  for (const f of ['LONG-TERM-COST: none', 'LONG-TERM-COST: None', '- **LONG-TERM-COST:** N/A', 'LONG-TERM-COST: -', '**LONG-TERM-COST:** **none**', '`LONG-TERM-COST: none`']) {
     assert.deepEqual(ltcLines(f), [], JSON.stringify(f))
     assert.deepEqual(stageLtcLinesOf(f), [], `stage.js: ${JSON.stringify(f)}`)
   }
   assert.deepEqual(ltcLines('LONG-TERM-COST: | later: l | reversal: costly'), [{ what: '(unnamed cost)', later: 'l', reversal: 'costly' }])
   assert.deepEqual(ltcLines('LONG-TERM-COST: none of the existing tables | later: l'), [{ what: 'none of the existing tables', later: 'l', reversal: 'costly' }])
+})
+
+test('ltc guard: a bare LONG-TERM-COST line is kept and blocks (814f9f9, fail closed)', () => {
+  for (const f of ['LONG-TERM-COST:', '**LONG-TERM-COST:**', '- LONG-TERM-COST:   ']) {
+    assert.deepEqual(ltcLines(f), [{ what: '(unnamed cost)', later: '', reversal: 'costly' }], JSON.stringify(f))
+    assert.equal(stageLtcLinesOf(f).length, 1, `stage.js: ${JSON.stringify(f)}`)
+  }
+  const w = mkWorld()
+  const pw = planWrite(w, 'wf_ltcplan6-aaa', designerResult(['LONG-TERM-COST:']))
+  assert.equal(pw.status, 0, say(pw))
+  assert.equal(pw.json.longTermCosts.length, 1, say(pw))
+  assert.equal(cli(w, 'approve', ['--by', 'client']).status, 1)
 })
 
 test('ltc guard: a qc:false crew adding Data/Migrations/x.cs is blocked at land', () => {

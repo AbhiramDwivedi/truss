@@ -14,8 +14,8 @@ export type LtcLine = { what: string; later: string; reversal: Reversal }
 const KIND = 'long-term-cost'
 // Markdown at the line start is allowed (bullet, number, quote, bold, italic, code); the marker itself stays case-sensitive. Keep in step with ltcLinesOf in workflows/stage.js.
 const LINE_RE = /^\s*(?:(?:[-*+>]|\d+[.)])\s*)*[*_`]*LONG-TERM-COST[*_`]*\s*:[*_`]*\s*(.*?)[*_`\s]*$/
-// A body that is only a none-word means "no cost": the line is not a cost.
-const NONE_RE = /^[*_`\s]*(?:none|n\/a|-)?[*_`\s.]*$/i
+// A body that is only an explicit none-word means "no cost": the line is not a cost. An empty body is NOT one: a bare marker has flagged a cost and stays (814f9f9).
+const NONE_RE = /^[*_`\s]*(?:none|n\/a|-)[*_`\s.]*$/i
 const sha12 = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 12)
 const sessionOf = (dir: string): string => path.posix.basename(flat(dir).replace(/\/+$/, ''))
 
