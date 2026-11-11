@@ -353,7 +353,7 @@ const knowledgeResult = (crew, stopped = false) => {
 }
 
 function stopResult(crew, err) {
-  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
+  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
   if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
   return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
@@ -2028,6 +2028,7 @@ async function qc(crew) {
       j = await runQc(crew)
       if (!j.verdict) throw new Stop('BLOCKED', `no verdict from two QCs:\n${j.text || 'no result'}`, 'qc')
     }
+    crew.ltc = ltcLinesOf(j.text) // a QC FAIL's cost lines ride on the stopped result too (stopResult)
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
     if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
     crew.fails++
