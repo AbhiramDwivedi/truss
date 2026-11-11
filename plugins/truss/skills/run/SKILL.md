@@ -495,7 +495,7 @@ A crew counts as merged when its branch is in the branch the next stage builds o
 
 1. Tell its foreman: "Merge `<target>` into `<crew branch>` with `git merge <target>`; never rebase or cherry-pick. Resolve the conflicts, run the checks, have a fresh QC engineer rule on the merged branch only if its patch id changed or the checks don't pass again on the merged head (otherwise the PASS stands), and send your final report on its PASS." A foreman that has ended is resumed by the message.
 2. Wait for its report. The newest QC engineer file must pass the gate above against the merged branch; a PASS on any other head, with no matching patch id, doesn't count. If either fails, send the failure back to the foreman.
-3. Fast-forward the target: `git switch <target>`, then `git merge --ff-only <crew branch>`. If that refuses, the branch doesn't contain the target's head yet: go back to step 1.
+3. Run `node <plugin>/bin/factory.ts knowledge-config-gate --repo <repo> --branch <crew branch>`. On exit 1 don't merge: the crew loosened its own knowledge lint or the config could not be verified, and the `why` says which; a crew can't make that change, so send it back, and a real relocation is the client's to make on main, outside a crew. Then fast-forward the target: `git switch <target>`, then `git merge --ff-only <crew branch>`. If that refuses, the branch doesn't contain the target's head yet: go back to step 1.
 4. Set the crew's `status` to `"merged"` in `plan.json`, and start the next queued crew or stage (section 6).
 
 **single**: start one integrator:
@@ -512,7 +512,7 @@ Agent({
 })
 ```
 
-Its brief names the target, the integration branch (`truss-<short goal>`, from `<target>`; a `truss/` prefix fails when a branch named `truss` exists), every crew branch in merge order with each crew's summary, the approved scope the crews implement (the `decisions.md` lines that bear on them, quoted word for word, apart from your summaries), and the check commands. It builds nothing beyond that scope. It merges each branch with `git merge --no-ff`, resolves conflicts from both sides' intent, runs the checks and reports with these sections, in order: `## Summary`, `## Branch`, `## Changes`, `## Proof`, `## Checks run`, `## Open questions`. When a conflict's fix is a crew's call, it says so under Open questions rather than guessing.
+Its brief names the target, the integration branch (`truss-<short goal>`, from `<target>`; a `truss/` prefix fails when a branch named `truss` exists), every crew branch in merge order with each crew's summary, the approved scope the crews implement (the `decisions.md` lines that bear on them, quoted word for word, apart from your summaries), and the check commands. It builds nothing beyond that scope. Before each merge it runs `node <plugin>/bin/factory.ts knowledge-config-gate --repo <repo> --branch <crew branch> --into <integration branch>`; on exit 1 it does not merge that branch and puts the `why` under Open questions. It merges each branch with `git merge --no-ff`, resolves conflicts from both sides' intent, runs the checks and reports with these sections, in order: `## Summary`, `## Branch`, `## Changes`, `## Proof`, `## Checks run`, `## Open questions`. When a conflict's fix is a crew's call, it says so under Open questions rather than guessing.
 
 Then have a QC engineer rule on the integration branch:
 

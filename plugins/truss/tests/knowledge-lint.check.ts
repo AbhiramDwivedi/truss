@@ -804,7 +804,92 @@ t('schema 1: the schema declares productDecisions, knowledgeDir, rulesDir and ag
   assert.ok(validate(b, { nope: 1 }).length > 0)
 })
 
-t('lint 13: a diff against --base that raises a knowledge budget or moves a knowledge path fails config-loosened, and the crew is linted with the base config; tightening passes', () => {
+const CFG_KEY = '.claude/truss.json'
+const verdict = (j, check) => j.failures.find((f) => f.check === check)
+
+t('config 2: an unreadable base says it could not verify, never that the crew loosened anything', () => {
+  const cfg = { merge: 'sequential', target: 'main', rulesDir: '.claude/rules' }
+  const env = world(GOOD, cfg)
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  const blob = git(env.repo, ['rev-parse', `HEAD:${CFG_KEY}`])
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ merge: 'sequential', target: 'main' }) })
+  unlinkSync(`${env.repo}/.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`)
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-unverified').message, /could not verify/)
+  assert.equal(verdict(j, 'config-loosened'), undefined)
+})
+
+t('config 3: a non-JSON base or head, and a non-object head, fail as could not verify, with exit 0', () => {
+  const cfg = { merge: 'sequential', target: 'main' }
+  const badBase = world(GOOD, cfg)
+  const base = commit(badBase.repo, { [CFG_KEY]: '{not json' })
+  commit(badBase.repo, { [CFG_KEY]: JSON.stringify(cfg) })
+  const a = lint(badBase, [`--base=${base}`])
+  assert.equal(a.ok, false)
+  assert.match(verdict(a, 'config-unverified').message, /not valid JSON/)
+  for (const [text, why] of [['{not json', /not valid JSON/], ['[1]', /not an object/]]) {
+    const env = world(GOOD, cfg)
+    const b = git(env.repo, ['rev-parse', 'HEAD'])
+    commit(env.repo, { [CFG_KEY]: text })
+    const j = lint(env, [`--base=${b}`])
+    assert.equal(j.ok, false)
+    assert.match(verdict(j, 'config-unverified').message, why)
+  }
+})
+
+t('config 4: a crew head with a malformed truss.json gives a failing lint result through --slug, not a lint that did not run', () => {
+  const { env } = goodWorld()
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { [CFG_KEY]: '{not json' })
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(j.ok, false)
+  assert.ok(verdict(j, 'config-unverified'), JSON.stringify(j.failures))
+  assert.equal(verdict(j, 'config-unverified').new, true)
+})
+
+t('config 5: a base with no truss.json compares against the defaults', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main' })
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  const base = commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ knowledgeBudgets: { rule: 41 } }) })
+  assert.match(verdict(lint(env, [`--base=${base}`]), 'config-loosened').message, /knowledgeBudgets\.rule raised from 40 to 41/)
+  commit(env.repo, { [CFG_KEY]: JSON.stringify({ knowledgeBudgets: { rule: 39 } }) })
+  assert.equal(verdict(lint(env, [`--base=${base}`]), 'config-loosened'), undefined)
+})
+
+t('config 6: deleting the file is a loosening when the base set a knowledge key', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main', featureMap: 'docs/map.md' })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  const j = lint(env, [`--base=${base}`])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-loosened').message, /deleted while the base set featureMap/)
+})
+
+t('config 7: --slug catches a budget raise committed on the crew branch', () => {
+  const { env } = goodWorld()
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { [CFG_KEY]: JSON.stringify({ merge: 'sequential', target: 'main', knowledgeBudgets: { agentsIndex: 500 } }) })
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(j.ok, false)
+  assert.match(verdict(j, 'config-loosened').message, /knowledgeBudgets\.agentsIndex raised from 60 to 500/)
+})
+
+t('config 8: an untracked truss.json in the main checkout gives no false config-loosened', () => {
+  const env = world(GOOD, { merge: 'sequential', target: 'main' })
+  git(env.repo, ['rm', '-q', CFG_KEY])
+  commit(env.repo, { 'src/none.ts': 'export {}\n' })
+  const wt = addCrewWorktree(env.repo, 's')
+  commit(wt, { 'src/a.ts': 'export const a = 3\n' })
+  writeFileSync(`${env.repo}/${CFG_KEY}`, JSON.stringify({ merge: 'sequential', target: 'main', knowledgeBudgets: { rule: 1 }, rulesDir: 'main-only' }))
+  const j = lint(env, ['--slug', 's'])
+  assert.equal(verdict(j, 'config-loosened'), undefined, JSON.stringify(j.failures))
+  assert.equal(verdict(j, 'config-unverified'), undefined, JSON.stringify(j.failures))
+})
+
+t('config 1: a diff against --base that raises a knowledge budget or moves a knowledge path fails config-loosened, and the crew is linted with the base config; tightening passes', () => {
   const cfg = { merge: 'sequential', target: 'main' }
   const env = world(GOOD, cfg)
   const base = git(env.repo, ['rev-parse', 'HEAD'])

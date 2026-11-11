@@ -2970,6 +2970,9 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   if (ltcBase.status !== 0 || ltcBase.out === '') return { refused: `long-term cost gate: git merge-base refs/heads/${target} refs/heads/truss-${slug} failed${ltcBase.err === '' ? '' : `: ${ltcBase.err.split('\n')[0]}`}` }
   const ltcHead = run(wt, ['rev-parse', '--verify', `refs/heads/truss-${slug}`])
   if (ltcHead.status !== 0 || ltcHead.out === '') return { refused: `long-term cost gate: git rev-parse refs/heads/truss-${slug} failed${ltcHead.err === '' ? '' : `: ${ltcHead.err.split('\n')[0]}`}` }
+  // ADR-0035: from the commits alone, before anything else can open a client item or touch a branch
+  const cfgRefusal = knowledgeConfigRefusal(wt, ltcBase.out, ltcHead.out)
+  if (cfgRefusal !== undefined) return { refused: cfgRefusal }
   const gate = ltcCrewGate(repo, dir, slug, { qcText: latestQc(slug, qcFiles, since)?.text ?? null, base: ltcBase.out, head: ltcHead.out })
   if (gate.refused !== undefined) return { refused: gate.refused }
   const allowance = intOr(plan.reworkAllowance, 2, 0)
@@ -3616,45 +3619,77 @@ function cmdKnowledgeLint(f: Flags): Obj {
     if (sha === undefined) throw usage(`--base ${base} is not a commit of ${at}`)
     base = sha
   }
-  const headCfg = knowledgeCfgOf(at !== repo && existsSync(`${at}/.claude/truss.json`) ? at : repo)
-  if (base === undefined) return knowledgeLint(at, headCfg, undefined)
-  // A crew must not loosen the lint that judges it: with a base, the crew is linted against the base's config, and a head config
-  // that raises a budget or moves a knowledge path is a hard failure. A base that cannot be read fails closed.
-  const guard = baseKnowledgeCfg(at, base)
-  const res = knowledgeLint(at, guard.cfg ?? headCfg, base)
-  const loosened = guard.cfg === undefined ? [guard.error] : loosenings(guard.cfg, headCfg)
-  const out: LintResult =
-    loosened.length === 0
-      ? res
-      : { ...res, ok: false, failures: [...res.failures, { check: 'config-loosened', path: '.claude/truss.json', message: `the crew loosened its own knowledge lint: ${loosened.join('; ')}. Revert it; the lint runs against the base config`, new: true }] }
+  if (base === undefined) return knowledgeLint(at, knowledgeCfgOf(repo), undefined)
+  // A crew must not loosen the lint that judges it: with a base, the crew is linted against the base commit's config and never
+  // against a working tree's. A head config that loosens it, or a side that cannot be read, is a failure, not a lint that did not run.
+  const guard = knowledgeConfigGuard(at, base, 'HEAD')
+  const res = knowledgeLint(at, guard.baseCfg ?? guard.headCfg ?? knowledgeCfgFrom({}), base)
+  const finding = guard.unverified !== undefined
+    ? { check: 'config-unverified', message: `could not verify the crew's knowledge config: ${guard.unverified}` }
+    : guard.loosened.length > 0
+      ? { check: 'config-loosened', message: `the crew loosened its own knowledge lint: ${guard.loosened.join('; ')}. Revert it; the lint runs against the base config` }
+      : undefined
+  const out: LintResult = finding === undefined ? res : { ...res, ok: false, failures: [...res.failures, { ...finding, path: '.claude/truss.json', new: true }] }
   return { ...out, base, ...(fallback ? { baseFallback: true } : {}) }
 }
-// The base commit's knowledge config, or why it could not be read.
-function baseKnowledgeCfg(at: string, base: string): { cfg?: KCfg; error: string } {
-  const spec = `${base}:.claude/truss.json`
-  const ls = run(at, ['ls-tree', '--name-only', base, '--', '.claude/truss.json'])
-  if (ls.status !== 0) return { error: `could not read .claude/truss.json at base ${base}: ${ls.err.split('\n')[0]}` }
-  if (ls.out === '') return { cfg: knowledgeCfgFrom({}), error: '' }
-  const show = run(at, ['show', spec])
-  if (show.status !== 0) return { error: `could not read .claude/truss.json at base ${base}: ${show.err.split('\n')[0]}` }
+// ADR-0035: .claude/truss.json as a commit holds it, never as a working tree does.
+function committedTrussJson(at: string, rev: string): { raw?: Obj; absent?: boolean; error?: string } {
+  const ls = run(at, ['ls-tree', '--full-tree', '--name-only', rev, '--', '.claude/truss.json'])
+  if (ls.status !== 0) return { error: `could not read .claude/truss.json at ${rev}: ${ls.err.split('\n')[0]}` }
+  if (ls.out === '') return { absent: true }
+  const show = run(at, ['show', `${rev}:.claude/truss.json`])
+  if (show.status !== 0) return { error: `could not read .claude/truss.json at ${rev}: ${show.err.split('\n')[0]}` }
   try {
     const v = JSON.parse(show.out)
-    if (!isObj(v)) return { error: `.claude/truss.json at base ${base} is not an object` }
-    return { cfg: knowledgeCfgFrom(v), error: '' }
+    return isObj(v) ? { raw: v } : { error: `.claude/truss.json at ${rev} is not an object` }
   } catch {
-    return { error: `.claude/truss.json at base ${base} is not valid JSON` }
+    return { error: `.claude/truss.json at ${rev} is not valid JSON` }
   }
 }
-// The ways `head` is looser than `base`: a raised budget, or a knowledge path that points somewhere else (the lint then reads other files).
-function loosenings(base: KCfg, head: KCfg): string[] {
-  const out: string[] = []
-  for (const k of Object.keys(base.budgets) as (keyof KCfg['budgets'])[]) {
-    if (head.budgets[k] > base.budgets[k]) out.push(`knowledgeBudgets.${k} raised from ${base.budgets[k]} to ${head.budgets[k]}`)
+// The comparison behind both the lint and the merge gate: commits only. `unverified` says a side could not be read (fail closed);
+// `loosened` lists what the head loosens, by key and numeric budget only, because a path value is the crew's own text.
+function knowledgeConfigGuard(at: string, base: string, head: string): { baseCfg?: KCfg; headCfg?: KCfg; loosened: string[]; unverified?: string } {
+  const b = committedTrussJson(at, base)
+  const h = committedTrussJson(at, head)
+  const baseCfg = b.error === undefined ? knowledgeCfgFrom(b.raw ?? {}) : undefined
+  const headCfg = h.error === undefined ? knowledgeCfgFrom(h.raw ?? {}) : undefined
+  if (baseCfg === undefined || headCfg === undefined) return { baseCfg, headCfg, loosened: [], unverified: [b.error, h.error].filter((e) => e !== undefined).join('; ') }
+  const loosened: string[] = []
+  const pathKeys = ['featureMap', 'productDecisions', 'knowledgeDir', 'rulesDir', 'agentsIndex'] as const
+  if (h.absent === true && b.raw !== undefined) {
+    const set = ['knowledgeBudgets', ...pathKeys].filter((k) => Object.hasOwn(b.raw as Obj, k))
+    if (set.length > 0) loosened.push(`.claude/truss.json deleted while the base set ${set.join(', ')}`)
   }
-  for (const k of ['featureMap', 'productDecisions', 'knowledgeDir', 'rulesDir', 'agentsIndex'] as const) {
-    if (head[k] !== base[k]) out.push(`${k} changed from ${base[k]} to ${head[k]}`)
+  for (const k of Object.keys(baseCfg.budgets) as (keyof KCfg['budgets'])[]) {
+    if (headCfg.budgets[k] > baseCfg.budgets[k]) loosened.push(`knowledgeBudgets.${k} raised from ${baseCfg.budgets[k]} to ${headCfg.budgets[k]}`)
   }
-  return out
+  for (const k of pathKeys) {
+    if (headCfg[k] !== baseCfg[k]) loosened.push(`${k} changed`)
+  }
+  return { baseCfg, headCfg, loosened }
+}
+// Why this head may not merge, or undefined. Used by mergeCrew and by knowledge-config-gate, so every merge path gets the same answer.
+function knowledgeConfigRefusal(at: string, base: string, head: string): string | undefined {
+  const g = knowledgeConfigGuard(at, base, head)
+  if (g.unverified !== undefined) return `knowledge config gate: could not verify .claude/truss.json, so the merge is refused: ${g.unverified}`
+  if (g.loosened.length > 0) return `knowledge config gate: a crew cannot make this change to its own knowledge lint: ${g.loosened.join('; ')}. If it is right (a real relocation of the knowledge dir, say), the client makes it on main, outside a crew`
+  return undefined
+}
+// `knowledge-config-gate --branch B [--into T]`: the merge gate for the merges no factory command performs (the foreman path's
+// fast-forward and the single-mode integrator's merges). Exit 0 when B may merge into T (default: the target), 1 when not.
+function cmdKnowledgeConfigGate(f: Flags): Obj {
+  const repo = repoOf(f)
+  const branch = need(f, 'branch')
+  const into = str(f, 'into') ?? settingsOf(repo).target
+  const no = (why: string): CliError => refuse({ ok: false, branch, into, why: `knowledge config gate: ${why}` })
+  if (branch.startsWith('-') || into === '' || into.startsWith('-')) throw no('the branch or target name is not usable')
+  const head = run(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`])
+  if (head.status !== 0 || head.out === '') throw no(`branch ${branch} does not resolve`)
+  const base = run(repo, ['merge-base', `refs/heads/${into}`, head.out])
+  if (base.status !== 0 || base.out === '') throw no(`git merge-base ${into} ${branch} failed${base.err === '' ? '' : `: ${base.err.split('\n')[0]}`}`)
+  const why = knowledgeConfigRefusal(repo, base.out, head.out)
+  if (why !== undefined) throw refuse({ ok: false, branch, into, why })
+  return { ok: true, branch, into, base: base.out, head: head.out }
 }
 // `knowledge-migrate [--apply]`: moves the product calls out of the personas into productDecisions; never commits.
 function cmdKnowledgeMigrate(f: Flags): Obj {
@@ -3672,7 +3707,7 @@ function cmdRulesIndex(f: Flags): Obj {
 
 const COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
-  'knowledge-lint': cmdKnowledgeLint, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
+  'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
