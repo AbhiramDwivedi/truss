@@ -494,9 +494,13 @@ test('inbox: the notify tree kill takes the platform as a parameter, taskkill on
   const d = fake()
   killTree(4321, 'darwin', d.ops)
   assert.deepEqual(d.calls, [['spawnSync', 'pgrep', ['-P', '4321'], { encoding: 'utf8', windowsHide: true }], ['kill', -4321, 'SIGKILL']])
+  // linux walks /proc first; inject the seam so the host's real /proc never decides: no answer falls back to pgrep -P
   const l = fake()
-  killTree(4321, 'linux', l.ops)
+  killTree(4321, 'linux', { ...l.ops, procChildren: () => undefined })
   assert.deepEqual(l.calls, [['spawnSync', 'pgrep', ['-P', '4321'], { encoding: 'utf8', windowsHide: true }], ['kill', -4321, 'SIGKILL']])
+  const p = fake()
+  killTree(4321, 'linux', { ...p.ops, procChildren: (pid: number) => (pid === 4321 ? [4400] : []) })
+  assert.deepEqual(p.calls, [['kill', 4400, 'SIGKILL'], ['kill', -4321, 'SIGKILL']])
 })
 
 test('inbox: a real escalate of client-question with blocking on crew c1 fires notify once with the row, and start and admit refuse c1 with awaiting client while c2 starts and is admitted', () => {

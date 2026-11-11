@@ -6,10 +6,11 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { test } from 'node:test'
+import { isSessionDirUnderCommon } from '../bin/factory.ts'
 import { killTree } from '../bin/notify-run.ts'
 import { createExclusive, sharedDir, withLock, writeJsonAtomic } from '../bin/store.ts'
 import { REAL_PLUGIN, crew, flat, mkEnv, mkRepo, planObj, pluginCopy, runCli, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
@@ -31,7 +32,7 @@ const realRepo = (opts: Parameters<typeof mkRepo>[0] = {}): string => flat(realp
 
 // ---- item 11: the notify kill ----
 
-test('fixes-026: the notify kill reaches a setsid grandchild', { skip: process.platform !== 'linux' && 'the walk uses pgrep -P and the grandchild is a setsid leader (Linux only)' }, async () => {
+test('fixes-026: the notify kill reaches a setsid grandchild', { skip: process.platform !== 'linux' && 'the walk reads /proc on linux and the grandchild is a setsid leader (Linux only)' }, async () => {
   // The parent leads a detached group (as notify-run's child does). Its grandchild is detached too (libuv calls setsid), so it leaves the group.
   // Both hold the write end of the test's stdout pipe: the pipe closes only when the whole tree is dead.
   const code = [
@@ -260,6 +261,62 @@ test('fixes-026: factory decide run refuses a dir outside common truss', () => {
   const ok = runCli(`${pluginCopy()}/bin/factory.ts`, 'decide', ['--repo', repo, '--dir', `${repo}/.git/truss/sess-ok`, '--run', 'goal'], repo)
   assert.equal(ok.status, 0, ok.stdout + ok.stderr)
   assert.ok(existsSync(`${repo}/.git/truss/sess-ok`))
+})
+
+test('fixes-026: decide run creates the session dir through a symlinked repo path', { skip: process.platform === 'win32' && 'symlinks need privileges on win32' }, () => {
+  const repo = realRepo({ config: CONFIG })
+  const link = `${flat(realpathSync(tmp('fixes-link-')))}/via`
+  symlinkSync(repo, link)
+  assert.equal(existsSync(`${repo}/.git/truss`), false, '<common>/truss must not exist yet')
+  const dir = `${link}/.git/truss/sess-link`
+  const r = runCli(`${pluginCopy()}/bin/factory.ts`, 'decide', ['--repo', repo, '--dir', dir, '--run', 'a linked goal'], repo)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.ok(existsSync(`${repo}/.git/truss/sess-link`), 'decide did not make the session dir')
+  assert.match(readFileSync(`${repo}/.git/truss/sess-link/decisions.md`, 'utf8'), /^## Run \S+ \| a linked goal$/m)
+})
+
+test('fixes-026: decide run matches the session dir case-insensitively on the win32 fixture', () => {
+  const repo = realRepo({ config: CONFIG })
+  assert.equal(existsSync(`${repo}/.git/truss`), false)
+  // pure check through the platform seam of the guard cmdDecide uses; nothing is created
+  assert.equal(isSessionDirUnderCommon(repo, `${repo}/.GIT/Truss/sess-a`, 'win32'), true, 'a case-different path is refused on win32')
+  assert.equal(isSessionDirUnderCommon(repo, `${repo}/.git/trussx/sess-a`, 'win32'), false, 'a sibling of truss was accepted')
+  assert.equal(isSessionDirUnderCommon(repo, `${repo}/.git/other/sess-a`, 'win32'), false, 'a dir outside common truss was accepted')
+  assert.equal(isSessionDirUnderCommon(repo, `${repo}/.GIT/Truss/sess-a`, 'linux'), false, 'case must matter off win32')
+})
+
+test('fixes-026: the notify kill reaches a setsid grandchild without pgrep on linux', { skip: process.platform !== 'linux' && 'the /proc walk is linux only' }, async () => {
+  const code = [
+    `const { spawn } = require('node:child_process')`,
+    `const g = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] })`,
+    `console.log('GRANDCHILD ' + g.pid)`,
+    `setInterval(() => {}, 1000)`,
+  ].join('\n')
+  const parent = spawn(process.execPath, ['-e', code], { detached: true, stdio: ['ignore', 'pipe', 'inherit'] })
+  const closed = new Promise<boolean>((resolve) => parent.stdout.on('close', () => resolve(true)))
+  let gpid = 0
+  try {
+    let buf = ''
+    gpid = await new Promise<number>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('the grandchild never reported')), 15000)
+      parent.stdout.on('data', (d) => {
+        buf += d
+        const m = /GRANDCHILD (\d+)/.exec(buf)
+        if (m) (clearTimeout(t), resolve(Number(m[1])))
+      })
+    })
+    const pgrepCalls: string[] = []
+    // pgrep is missing through the ops seam: any attempt to run it reports ENOENT
+    const spawnSyncNoPgrep = (cmd: string) => (cmd === 'pgrep' ? (pgrepCalls.push(cmd), { status: null, stdout: '', stderr: '', error: Object.assign(new Error('spawn pgrep ENOENT'), { code: 'ENOENT' }) }) : { status: 0, stdout: '', stderr: '' })
+    killTree(parent.pid as number, 'linux', { spawnSync: spawnSyncNoPgrep, kill: (p, s) => process.kill(p, s as NodeJS.Signals) })
+    const ended = await Promise.race([closed, new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000))])
+    assert.equal(ended, true, `the setsid grandchild ${gpid} outlived killTree without pgrep`)
+    assert.deepEqual(pgrepCalls, [], 'the linux walk fell back to pgrep')
+  } finally {
+    for (const p of [gpid, parent.pid as number]) {
+      try { if (p > 0) process.kill(p, 'SIGKILL') } catch { /* already dead */ }
+    }
+  }
 })
 
 // ---- item 13: a0 gaps ----
