@@ -235,7 +235,7 @@ function proof(repo: string, open: Obj, c: { decision: unknown; raiseUsd?: unkno
 export function verifiedItems(repo: string): Map<string, Item> {
   const items = fold(readJsonl(`${sharedDir(repo)}/inbox.jsonl`).rows)
   const ask = new Map<string, Set<string>>() // session -> ids whose client rows need a transcript
-  const needsProof = (it: RawItem, r: Obj): boolean => r.by === 'client' && KINDS[String(it.open.kind)]?.by !== 'any'
+  const needsProof = (_it: RawItem, r: Obj): boolean => r.by === 'client'
   for (const [id, it] of items) for (const r of it.rows) if (needsProof(it, r) && typeof r.session === 'string') (ask.get(r.session) ?? ask.set(r.session, new Set()).get(r.session)!).add(id)
   const scanned = new Map<string, { scan: FileScan | null; main: string | null }>()
   for (const [session, ids] of ask) {
@@ -248,9 +248,10 @@ export function verifiedItems(repo: string): Map<string, Item> {
       let why = ''
       let proven: string | null = null
       if (r.by !== 'client' && r.by !== 'pm') why = `the row says by ${JSON.stringify(r.by)}, not client or pm`
-      else if (KINDS[kind]?.by === 'any') why = ''
-      else if (r.by === 'pm') why = `${kind} is resolved by the client, not by pm`
+      else if (r.by === 'pm' && KINDS[kind]?.by !== 'any') why = `${kind} is resolved by the client, not by pm`
+      else if (r.by === 'pm') why = ''
       else {
+        const anyKind = KINDS[kind]?.by === 'any' // the row counts either way; an unproven note is flagged, never shown as the client's
         const s = typeof r.session === 'string' ? scanned.get(r.session) : undefined
         if (s === undefined) why = 'the row names no session'
         else if (s.main === null) why = `no transcript of session ${r.session} under ${proofTranscriptRoot()}`
@@ -262,6 +263,10 @@ export function verifiedItems(repo: string): Map<string, Item> {
             proven = p.rest.slice(0, 4000)
             if (norm(String(r.note ?? '')) !== '' && norm(String(r.note)).slice(0, 4000) !== proven) it.noteUnbound = true
           }
+        }
+        if (anyKind && why !== '') {
+          why = ''
+          if (norm(String(r.note ?? '')) !== '') it.noteUnbound = true
         }
       }
       if (why === '') {

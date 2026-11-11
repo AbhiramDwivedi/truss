@@ -45,7 +45,7 @@ const DEP_KEYS = ['dependencies', 'devDependencies', 'peerDependencies', 'option
 // The package names a package.json text declares, per section. Empty text is an empty file; text that is not JSON is null, never an empty set.
 function depsOf(text: string): Map<string, Set<string>> | null {
   const out = new Map<string, Set<string>>()
-  const body = text.replace(/^﻿/, '')
+  const body = text.replace(/^\uFEFF/, '')
   if (body.trim() === '') return out
   try {
     const j = JSON.parse(body)
@@ -76,11 +76,11 @@ export function ltcTriggers(repo: string, base: string, head: string): { what: s
   for (let i = 0; i + 1 < toks.length; i += 2) {
     const status = toks[i]
     const file = toks[i + 1]
-    if (file === undefined || (status !== 'A' && status !== 'M')) continue
+    if (file === undefined || (status !== 'A' && status !== 'M' && status !== 'T')) continue
     const p = flat(file)
     const name = path.posix.basename(p)
     if (name === 'package.json') {
-      // the diff status says the file exists at head (A, M) and at base (M): a failed show there is not "no deps"
+      // the diff status says the file exists at head (A, M, T) and at base (M, T): a failed show there is not "no deps"
       const show = (rev: string): string => {
         const r = git(repo, ['show', `${rev}:${p}`])
         if (r.status !== 0) throw refuse({ error: `long-term-cost: git show ${rev}:${p} failed, so the dependencies of ${p} are unknown: ${r.err}` })
