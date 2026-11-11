@@ -204,6 +204,8 @@ The cost grows with history. Every client resolve stays in the file for good, so
 
 **Rows written before 0.26.** They are not grandfathered by a version or a date, because both are fields a forger writes. They go through the same proof. A 0.25.0 row with a good proof counts, its note is flagged unbound when it does not match, and its budget raise stays. A row whose transcript is gone counts as absent: the item reopens, its raise stops counting, and the listing carries the reason and the row's `by`, `ts` and decision, so the client sees why it came back.
 
+**Raise and repo binding.** A row with no `raiseUsd` is never proved by a typed line that carries `raise <usd>`: the typed amount cannot be dropped by a row, so a forged plain approve neither lifts the block nor stops the real resolve. A typed line also proves a row only for the repo its session ran in: the transcript row's `cwd` must lie under the repo (worktrees included) or share its git common dir, so an open and resolve row copied from another repo's inbox is refused. A row with no `cwd`, or a `cwd` that no longer exists outside the repo, cannot be shown foreign and passes (real Claude Code rows carry `cwd`).
+
 **Residual risks.**
 
 - A process running as the same OS user can write a transcript line that passes these checks. It can read the code from the sidecar or from the agent's own output, and it can give the line a valid `uuid`, `sessionId` and `parentUuid`. The proof raises the cost of forging; it does not end it.
