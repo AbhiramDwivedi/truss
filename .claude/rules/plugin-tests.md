@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/unattended.check.ts
   - plugins/truss/tests/fixtures/ltc/harness.ts
   - plugins/truss/tests/gates-026.check.ts
-verified: 04ae4b1ab9efcb11f0a7a984790cd43c4e1b3550
+verified: 0b905b5f254e4eef6ab23fa7ff6e1c0058a02f9d
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
@@ -28,4 +28,6 @@ verified: 04ae4b1ab9efcb11f0a7a984790cd43c4e1b3550
 - Test a crew's merge gate through the real CLI (`fixtures/ltc/harness.ts` `crewWorld`, `clientResolves`): a solo or lean crew merges through `land` (plan v4, crew `process`, `owns: ['**']` so the owns-check never masks the gate); a full crew through `finish --transcript <mkRun dir> --result <file>`. Assert the refusal text matches the gate's pattern, not only exit 1.
 - A client resolve in a test is the typed line `/truss:inbox approve <id> <code>` in `<troot>/<proj>/<sid>.jsonl`, ts one second after the `open` op; read the code from the notify recorder's stdin row. With `--raise-usd`, `typedProof` (`inbox.ts:222-225`) needs `<decision> <id> <code> raise <usd>`, so the helper must type the amount (`harness.ts:81`).
 - Reproducing a run-model or evals leak in a temp checkout needs a tracked file under `.claude` (copy `.claude/rules/plugin-tests.md`); with none, `git status` shows untracked `?? .claude/` and the "checkout status changed" assertion fails first, for another cause (`gates-026.check.ts` `leakCheckout()`).
+- Prove a guard's regression test red by mutating the checkout copy (tests copy the plugin via `mkEnv`/`pluginCopy`): for a race, `git checkout <fix>^ -- <files>`, run, then `git checkout HEAD -- <files>`. Test a lock-guarded read-modify-write deterministically: create `<dir>/locks/plan.lock/owner.json` (live `pid`, `host`, `token`, fresh `since`), start the CLI async, change `plan.json`, remove the lock; no sleep decides pass or fail (`gates-026.check.ts` plan-write case, `gates-026-regress.check.ts:60`).
+- The eval runner takes only the `qc` and `checker` roles (`evals/case.schema.json`), so no golden can exercise the design-engineer; pin its prompt rules by prose tests.
 - During an in-progress merge, `git checkout HEAD -- <file>` restores the pre-merge file. To undo a temporary mutation, use `git checkout <merged-branch> -- <file>` (seen as `not built: escalate` failures in `inbox.check.ts`).
