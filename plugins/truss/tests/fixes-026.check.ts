@@ -347,3 +347,84 @@ test('fixes-026: the feature map states the sessionUsd ruling', () => {
   assert.match(entry, /(?<!un)attended[^.\n]*\bcapped by `sessionUsd`/i, 'the entry does not say attended sessions are capped by sessionUsd')
   assert.match(entry, /one typed raise/i, 'the entry does not say one typed raise lifts the hold')
 })
+
+// ---- item 13: a QC FAIL keeps its long-term costs (stubbed agents; the exec helper is a minimal copy of workflows.check.ts exec) ----
+
+const ROLES_026 = {
+  planner: { agentType: 'truss:planning-engineer', model: 'opus', effort: 'medium', isolation: 'none' },
+  tester: { agentType: 'proj:tester', model: 'sonnet', effort: 'medium', isolation: 'worktree' },
+  builder: { agentType: 'proj:builder', model: 'sonnet', effort: 'low', isolation: 'worktree' },
+  resolver: { agentType: 'proj:resolver', model: 'sonnet', effort: 'medium', isolation: 'none' },
+  writer: { agentType: 'truss:writer', model: 'opus', effort: 'medium', isolation: 'worktree' },
+  rca: { agentType: 'general-purpose', model: 'opus', effort: 'medium', isolation: 'none' },
+  stress: { agentType: 'truss:qc-engineer', model: 'opus', effort: 'medium', isolation: 'worktree' },
+  qc: { agentType: 'truss:qc-engineer', model: 'opus', effort: 'medium', isolation: 'none' },
+  runner: { agentType: 'general-purpose', model: 'sonnet', effort: 'low', isolation: 'none' },
+}
+
+async function runStage026(labels: Record<string, any>) {
+  const HEAD = 'a1'.repeat(20)
+  const stagePath = `${flat(REAL_PLUGIN)}/workflows/stage.js`
+  const body = readFileSync(stagePath, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
+  const rj = (obj: any) => ({ exit: 0, stdout: JSON.stringify(obj) })
+  const unscripted: string[] = []
+  const agent = async (prompt: string, opts: any = {}) => {
+    await new Promise((r) => setImmediate(r))
+    if (/-runner(-\d+)?$/.test(String(opts.label))) {
+      const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
+      let m: any = null
+      if (mh) {
+        const cut = mh[1].indexOf(' -- ')
+        m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
+      } else {
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions)\b([^\n`]*)/)
+      }
+      if (!m) throw new Error(`unparsable runner prompt for label ${opts.label}`)
+      const expect = (m[2].match(/--expect\s+([^\s`]+)/) || [])[1]
+      const plain = expect === 'red' ? { ok: true } : { ok: true, head: HEAD }
+      return m[1] === 'admit' ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 })
+        : m[1] === 'reap' ? rj({ reaped: [], skipped: [] })
+        : m[1] === 'check' ? rj(mh ? { ...plain, heavy: { label: 'a-check', waitedMs: 0, exit: 0 } } : plain)
+        : m[1] === 'owns-check' ? rj({ ok: true, outside: [] })
+        : m[1] === 'tests-check' ? rj({ ok: true, tests: [] })
+        : rj({ merged: true })
+    }
+    if (!Object.hasOwn(labels, opts.label)) {
+      unscripted.push(String(opts.label))
+      throw new Error(`unscripted label: ${opts.label}`)
+    }
+    return structuredClone(labels[opts.label])
+  }
+  const parallel = async (thunks: any[]) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
+  const pipeline = async (list: any[], ...stages: any[]) => Promise.all(list.map(async (item, i) => {
+    try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null }
+  }))
+  const crewEntry = {
+    slug: 'a', stage: 1, goalFile: '/proj/.truss/goals/a.md', goal: 'GOAL-TEXT', owns: ['src/**', 'tests/*.ts'],
+    acceptanceTest: 'node --test tests/a.check.ts', highImpact: ['src/core/**'], stressTest: false, scope: 'SCOPE-VERBATIM: build a, nothing else',
+    worktree: '/wt/a', branch: 'truss/a', base: 'd4'.repeat(20), architecture: '/proj/docs/ARCH.md', adrs: ['/proj/docs/adr/0001-x.md'],
+    resume: null, tasks: [], done: [], answers: [], spent: 0, labelFrom: {},
+  }
+  const args = { truss: { kind: 'stage', dir: '/proj/.truss', repo: '/proj', plugin: flat(REAL_PLUGIN), target: 'main', reworkAllowance: 0, roles: ROLES_026, scriptPath: stagePath, crews: [crewEntry] } }
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, () => {}, structuredClone(args), {})
+  assert.deepEqual(unscripted, [], `unscripted label(s): ${unscripted.join(', ')}`)
+  return result
+}
+
+test('fixes-026: a QC FAIL still returns its long-term costs', async () => {
+  const L1 = 'LONG-TERM-COST: new public flag --x | later: every caller keeps it | reversal: costly'
+  const L2 = 'LONG-TERM-COST: new dependency foo | later: upgrades | reversal: cheap'
+  const qcText = `VERDICT: FAIL\n\n## Findings\n- FINDING-1: broken\n\n## Notes\n${L1}\n  - ${L2}\n`
+  const task = { name: 'write-tests', role: 'tester', effort: 'medium', files: ['tests/a.check.ts'], reads: ['src/a.ts'], brief: 'BRIEF-T1', after: [] }
+  const done = (branch: string) => ({ task: 'whatever', marker: 'DONE', branch, commit: 'c0'.repeat(20), proof: 'PROOF', text: `finished ${branch}` })
+  const res = (await runStage026({
+    'a-planner': { tasks: [task], stop: null }, 'a-tester': done('feat/t'), 'a-builder': done('feat/b'), 'a-qc': qcText,
+  }))[0]
+  // rework allowance 0: the FAIL ends the crew without a fix round, so it is stopped (BLOCKED at qc), not passed
+  assert.notEqual(res.state, 'passed', JSON.stringify(res))
+  assert.ok(Array.isArray(res.longTermCosts), `a failed crew's result has no longTermCosts: ${JSON.stringify(res)}`)
+  assert.equal(res.longTermCosts.length, 2, JSON.stringify(res.longTermCosts))
+  assert.ok(res.longTermCosts[0].includes(L1), res.longTermCosts[0])
+  assert.ok(res.longTermCosts[1].includes(L2), res.longTermCosts[1])
+})
