@@ -482,6 +482,97 @@ st('gates-026: the merge gate refuses a non-local branch and says why', () => {
   assert.equal(git(env.repo, ['rev-parse', 'main']), head(env.repo), 'nothing was merged')
 })
 
+// 8cfa75e regression: with target origin/main there is no refs/heads/origin/main, the log failed, and that read as no bare commits.
+st('gates-026: integrate refuses an untrailered commit when the target is origin/main, and passes a commit already in it', () => {
+  const env = mkEnv({ config: { merge: 'sequential', target: 'origin/main' }, files: { 'a.txt': 'base\n' } })
+  git(env.repo, ['update-ref', 'refs/remotes/origin/main', 'refs/heads/main'])
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'running' })]))
+  const wt = addCrewWorktree(env.repo, 's')
+  const start = head(wt)
+  const mw = memberWt(env, 'member')
+  const bare = putFile(mw, 'src/s/a.ts', 'a\n', 'bare work with no trailers')
+  putFile(mw, 'src/s/c.ts', 'c\n', `both trailers\n\n${TRAILERS}`)
+  const res = env.run('integrate', { slug: 's', branch: 'member' })
+  assert.equal(res.status, 1, say(res))
+  const j = assertOneLine(res)
+  assert.equal(j.merged, false)
+  assert.deepEqual(j.missingTrailers, [`${bare} bare work with no trailers`], 'the bare commit is named under an origin/main target')
+  assert.equal(head(wt), start, 'nothing merged')
+  // a bare commit the target already holds (reached through a merge of origin/main) is not named
+  git(mw, ['reset', '-q', '--hard', 'truss-s'])
+  putFile(env.repo, 'main-only.txt', 'm\n', 'main work with no trailers')
+  git(env.repo, ['update-ref', 'refs/remotes/origin/main', 'refs/heads/main'])
+  git(mw, ['merge', '--no-ff', '-q', '-m', 'merge origin main', 'main'])
+  putFile(mw, 'src/s/new.ts', 'n\n', `member work\n\n${TRAILERS}`)
+  const ok = env.run('integrate', { slug: 's', branch: 'member' })
+  assert.equal(ok.status, 0, say(ok))
+  assert.equal(ok.json?.merged, true, say(ok))
+})
+
+// stage.js half of 8cfa75e: integrate's missingTrailers body stops the crew, with no resolver.
+st('gates-026: a missingTrailers integrate refusal stops the crew BLOCKED naming the commits, with no resolver', async () => {
+  const r = await runStage([entry('a')], {
+    labels: base('a'),
+    runner: (p) => (p.cmd === 'integrate' ? rj({ merged: false, conflicts: [], missingTrailers: ['c0ffee bare work for a'] }, 1) : undefined),
+  })
+  assert.equal(r.res[0].state, 'stopped', JSON.stringify(r.res[0]))
+  assert.equal(r.res[0].tag, 'BLOCKED')
+  assert.ok(r.res[0].text.includes('c0ffee bare work for a'), r.res[0].text)
+  assert.ok(r.res[0].text.includes('neither a Truss-Crew nor a Truss-Role'), r.res[0].text)
+  assert.ok(!r.calls.some((c) => /-resolver/.test(String(c.label))), 'no resolver is spawned')
+  assert.equal(r.calls.filter((c) => c.runner?.cmd === 'integrate').length, 1, 'integrate ran once')
+})
+
+// 8cfa75e regression: patchPlan. mark-merged read the plan, ran git, then saved its stale copy, dropping an owns-extend that landed between.
+const runAsync = (factory: string, cmd: string, args: string[], cwd: string) => new Promise<{ status: number | null; out: string }>((resolve) => {
+  const c = spawn(process.execPath, [factory, cmd, ...args], { cwd, windowsHide: true })
+  let out = ''
+  c.stdout.on('data', (d) => (out += d))
+  c.stderr.on('data', (d) => (out += d))
+  c.on('close', (status) => resolve({ status, out }))
+})
+
+st('gates-026: mark-merged does not drop an owns-extend that lands while it runs', async () => {
+  for (let round = 0; round < 3; round++) {
+    const env = mkEnv({ config: CFG, files: { 'a.txt': 'base\n' } })
+    writePlan(env.dir, planObj([crew('x', { owns: ['src/x/**'], status: 'running' }), crew('y', { owns: ['src/y/**'], status: 'running' })]))
+    const wt = addCrewWorktree(env.repo, 'x')
+    putFile(wt, 'src/x/a.ts', 'x\n', 'work')
+    git(env.repo, ['merge', '-q', '--no-ff', '-m', 'merge x outside finish', 'truss-x'])
+    const base = ['--dir', env.dir, '--repo', env.repo]
+    const mm = runAsync(env.factory, 'mark-merged', [...base, '--slug', 'x'], env.repo)
+    const globs: string[] = []
+    for (let i = 0; i < 8; i++) {
+      globs.push(`docs/y${i}.md`)
+      const r = await runAsync(env.factory, 'owns-extend', [...base, '--slug', 'y', '--glob', `docs/y${i}.md`, '--reason', 'race'], env.repo)
+      assert.equal(r.status, 0, r.out)
+    }
+    const m = await mm
+    assert.equal(m.status, 0, m.out)
+    const plan = readPlan(env.dir)
+    assert.equal(plan.crews.find((c) => c.slug === 'x').status, 'merged')
+    assert.deepEqual(plan.crews.find((c) => c.slug === 'y').owns, ['src/y/**', ...globs], `round ${round}: every owns-extend survives the mark-merged write`)
+  }
+})
+
+st('gates-026: plan-check does not call one rule file in two goals\' stages an overlap, but still refuses another shared glob', () => {
+  const w = ruleWorld()
+  const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-10-01T00:00:00.000Z', approval: 'auto', approvedAt: '2026-10-01T00:00:00.000Z' })
+  const v3 = (cs) => planObj(cs, { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] })
+  const crews = [
+    crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'plugins/truss/tests/one.check.ts', 'shared/**'] }),
+    crew('g2', { stage: 2, goal: 'goal-two', owns: [RULE, 'plugins/truss/tests/two.check.ts'] }),
+  ]
+  writePlan(w.dir, v3(crews))
+  const ok = planCheck(w)
+  assert.equal(ok.status, 0, `the one rule file shared across stages is no overlap: ${say(ok)}`)
+  crews[1].owns.push('shared/**')
+  writePlan(w.dir, v3(crews))
+  const bad = planCheck(w)
+  assert.equal(bad.status, 1, say(bad))
+  assert.ok(assertOneLine(bad).errors.some((e) => e.includes('shared/**') && e.includes('another goal')), say(bad))
+})
+
 // ---------------------------------------------------------------- item 10: the bug-2 resume path
 
 // Expected green when written: the path exists and has no direct test. Factory half: start --resume answers puts the earlier member
