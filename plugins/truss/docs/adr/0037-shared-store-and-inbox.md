@@ -1,6 +1,6 @@
 # ADR-0037: keep cross-session state in one shared store and route every client exception through an inbox
 
-Status: accepted, 2026-11-10
+Status: accepted, 2026-11-10; amended 2026-11-11 (see the amendment at the end)
 Decided by: PM and product owner (review of contract-025 revision 2)
 
 ## Context
@@ -51,7 +51,7 @@ We will keep two roots. D, the session dir, holds what belongs to one session: `
 
 Outside a git repo every command that needs `<common>` exits 2 with `needs a git repo` (`bin/store.ts:127`).
 
-`bin/store.ts` is the only code that locks files, writes shared state or finds transcripts. No new module imports `factory.ts`, because its top-level `await` would make an import cycle; `factory.ts` re-exports the helpers that moved to `store.ts`.
+`bin/store.ts` is the only code that locks files, writes shared state or sets a transcript root; `proofMain` in `bin/inbox.ts` walks the project dirs under the proof root (see the amendment). No new module imports `factory.ts`, because its top-level `await` would make an import cycle; `factory.ts` re-exports the helpers that moved to `store.ts`.
 
 **The lock.** `withLock(dir, name, fn, {waitMs = 5000})` (`bin/store.ts:231`) makes `<dir>/locks/<name>.lock` with `mkdirSync`, writes `owner.json`, runs `fn`, and removes the lock only if its token is still its own. A busy lock is retried every 25 ms. After `waitMs` it throws `StoreBusy`, exit 2 with `{error: "store busy: <name>"}` (`bin/store.ts:149`). A lock is stale when its owner pid is dead on the same host, when it has no readable owner file after 10 s, or when it is older than 120 s (`bin/store.ts:155-156`). A process never takes a second lock while it holds one.
 
@@ -95,15 +95,16 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 **Commands.** Each prints one JSON line and exits 0 for ok, 1 for a refusal, 2 for a usage error.
 
 - `factory escalate --kind k (--title t | --title-file p) [--detail d | --detail-file p] [--crew s]... [--ref key] [--blocking]` prints `{id, kind, deduped, code, notified}`. On a dedupe `code` is null.
-- `factory inbox [--open | --unapplied] [--kind k] [--crew s]` prints `{items, open}`. The filters narrow `items` only: `open` is the total of open items whatever the filters. `--unapplied` lists resolved items with no `applied` op from this session.
+- `factory inbox [--open | --unapplied [--session sid]] [--kind k] [--crew s]` prints `{items, open}`. The filters narrow `items` only: `open` is the total of open items whatever the filters. `--unapplied` lists resolved items with no `applied` op from this session; with `--session sid` it lists only the items that session opened and reads `applied` for that session. An item whose resolve row did not count is open and carries `reopened`; a counted row whose note is not the typed text carries `noteUnbound`.
+- `factory inbox --recover-codes` needs no `--dir` and prints `{codes: [{id, code, session}]}`, the surviving codes of open items.
 - `factory resolve <id> --decision d --by client|pm --code c [--note-file f | --note t] [--raise-usd n]`. Untrusted note text goes through `--note-file`.
 - `factory mark-applied <id>`.
 
 **Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
 
-**The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores only `codeHash = sha256(id + code)`. The code reaches the client in the PM's message and in the notify row; `factory inbox` never shows it. With a `budget` key and no `notify`, the budget hold's `why` (the held entry of `start`, the output of `admit`) carries the id and code for the PM to relay (`factory.ts` `holdOf`).
+**The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores `codeHash = sha256(id + code)` in the inbox file; the plain code stays only in a sidecar file until the item resolves (see the amendment). The code reaches the client in the PM's message and in the notify row. `factory inbox` shows no code of an open item, and only `--recover-codes` prints the code of one. In a resolved item's `quote`, `maskCode` in `bin/inbox.ts` replaces each whitespace-separated token that hashes to the item's code with `[code]`, because a resolve row that later stops counting makes that spent code live again. Known gap: a `/truss:inbox` slash line with no note ends `CODE</command-args>`, that token doesn't hash to the code, and the listing shows the code. The mask covers the listing only: the output of `resolve` and the row in `S/inbox.jsonl` keep the typed line. With a `budget` key and no `notify`, the budget hold's `why` (the held entry of `start`, the output of `admit`) carries the id and code for the PM to relay (`factory.ts` `holdOf`).
 
-**Refusals.** `resolve` exits 1 on an item already resolved, on `--by pm` for a client kind, on `--raise-usd` for any kind but budget, on a wrong code, and on `--by client` with no human-typed proof (below). `budgetRaises(repo, session)` returns the approved budget raises; `blockingFor(repo, session, slug)` returns the ids that hold a crew, and start and admit refuse it with `awaiting client: E-…`.
+**Refusals.** `resolve` exits 1 on an item already resolved, on `--by pm` for a client kind, on `--raise-usd` for any kind but budget, on a wrong code, and on `--by client` with no human-typed proof (below) or with a note that differs from what the client typed after the code. `budgetRaises(repo, session)` returns the approved budget raises; `blockingFor(repo, session, slug)` returns the ids that hold a crew, and start and admit refuse it with `awaiting client: E-…`.
 
 **Events carry ids and kinds only.** The `escalate`, `resolve` and `notify-error` events hold `id`, `kind`, `blocking`, `decision`, `by`, and an error text of at most 200 characters (`docs/events.schema.json:22-52`). The title, detail, note, quote and code stay in the inbox file. `tests/inbox.check.ts:211` pins this.
 
@@ -123,19 +124,20 @@ We will accept `resolve --by client` only with proof that the human typed the de
 
 **The `/truss:inbox` skill.** `skills/inbox/SKILL.md` sets `disable-model-invocation: true`, so the model can't start it; only a human typing the slash command can. With no arguments it lists the open items. `/truss:inbox <approve|reject|answer|done|dismiss> <E-id> <code> [raise <usd>] [note…]` (a `--raise-usd` must equal the typed `raise <usd>`, else resolve refuses; `budgetRaises` keys a raise on the session its ref names) runs `factory resolve <E-id> --decision <d> --by client --code <code>`.
 
-**What `resolve --by client` checks.** It reads the main transcript of this session, found by `transcriptsOf(sid)` under `$TRUSS_TRANSCRIPTS_ROOT`, else `$CLAUDE_CONFIG_DIR/projects`, else `.claude/projects` in the home dir (`bin/store.ts:397-401`). It looks for a line with `type: "user"` that:
+**What `resolve --by client` checks.** It reads the main transcript of this session, found by `proofMain` in `bin/inbox.ts` under `proofTranscriptRoot()` in `bin/store.ts`: `.claude/projects` in the OS user's home dir, never a root from the environment. It looks for a line with `type: "user"` that:
 
 - is not `isMeta` and not `isSidechain`, and is not `isCompactSummary` or `isVisibleInTranscriptOnly`;
-- has no `origin`, or `origin.kind` is `human` (a task-notification line carries an agent's return text, not a human's);
-- is not command output: its text holds no `bash-input`, `bash-stdout`, `bash-stderr` or `local-command-*` tag (`inbox.ts:187`, `:208`), because the first `<command-args>` anywhere in such text would otherwise count;
+- has `origin.kind` `human` and `promptSource` `typed`, or is the `/truss:inbox` slash shape (`SLASH_SHAPE`) with `origin` absent or human and `promptSource` absent or typed; any other line with no `origin` is refused;
+- is not command output or an agent's return: its text holds none of the `OUTPUT_TAG` tags (`bash-input`, `bash-stdout`, `bash-stderr`, `local-command-stdout`, `local-command-stderr`, `local-command-caveat`, `task-notification`), because the first `<command-args>` anywhere in such text would otherwise count;
+- has a string `uuid`, a `sessionId` equal to the session, and a `parentUuid` that resolves to an earlier row of the same file; `parentUuid` may be null only when no user or assistant row comes before it (`chainOk`);
 - is not a scheduled line: no `wakeupSource`, `scheduledTaskId` or `scheduledFireId`, and `turnOrigin` (if present) is `human` and `promptSource` (if present) is `typed` (a `/loop` wakeup line has no `origin` and no `isMeta`, and its text is the `prompt` the agent passed to ScheduleWakeup);
 - has string content, or only text blocks and no `tool_result`;
 - is newer than the item's `open` op;
-- contains the E-id and the code, and the decision word is the first word of the `<command-args>` text (or of the prompt, without a leading `/truss:inbox`), directly before the E-id (`inbox.ts:200-201`; `reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
+- starts with `<decision> <E-id> <code>` in the `<command-args>` text (or in the prompt, without a leading `/truss:inbox`), where the code hashes to the item's `codeHash`, and with a raise goes on `raise <usd>` with the same amount (`proof` in `bin/inbox.ts`; `reject <id> <code> I do not approve this` is a reject; the word `approve` in the note doesn't make it an approve).
 
 The text of that line, cut to 1000 characters, is stored as `quote`. There is no `--quote` flag, so an agent never types the quote. A retro can check each quote against the human-typed prompts of all the project's sessions.
 
-Known limit: `promptSource` must be `typed`, so a plain-text `approve <id> <code>` the client typed while the agent was busy (`promptSource: "queued"`, `origin.kind` and `turnOrigin` human) is refused, and so is a `claude -p` prompt (`promptSource: "sdk"`). The `/truss:inbox` slash line is unaffected. The client types the line again when the agent is idle.
+Known limit: a `promptSource` other than `typed` is refused, so a plain-text `approve <id> <code>` the client typed while the agent was busy (`promptSource: "queued"`, `origin.kind` and `turnOrigin` human) is refused, and so is a `claude -p` prompt (`promptSource: "sdk"`). A line with no `promptSource` counts only in the slash shape. The client types the line again when the agent is idle.
 
 **The probed slash-command shape.** The tester took the shape from real transcripts and recorded a scrubbed sample in `tests/fixtures/inbox/slash-command.jsonl`. A human slash command is a main-thread user line, `isSidechain: false` and no `isMeta`, whose content is one string:
 
@@ -160,8 +162,8 @@ That line holds the id, the decision word and the code, so it qualifies. The lin
 
 **Negative**
 
-- **Residual risk.** An agent with Bash, running as the same OS user, can append a fake line to the transcript file. truss can't stop a same-user process. This fix raises the bar from typing one flag to deliberate tampering with Claude Code's files. A wider path exists: the same agent can append a `resolve` row to `S/inbox.jsonl` directly, which skips the transcript proof altogether. Readers fold whatever rows the file holds; what is left against either forgery is a retro that checks each `quote` against the human-typed prompts.
-- The proof rests on Claude Code's transcript layout, which is not a documented interface. A change to it makes every client resolve fail closed until truss follows; the plain-prompt fallback covers the case where the arguments move.
+- **Residual risk.** An agent with Bash, running as the same OS user, can write a transcript line that passes the proof, because every field the proof reads sits in a file that user can write. truss can't stop a same-user process. This fix raises the bar from typing one flag to deliberate tampering with Claude Code's files. A `resolve` row appended to `S/inbox.jsonl` with no such line no longer counts (see the amendment). What is left against a forged transcript line is a retro that checks each `quote` against the human-typed prompts.
+- The proof rests on Claude Code's transcript layout, which is not a documented interface. A change to it makes every client resolve fail closed until truss follows, and because a resolve is proved again at every read, it also makes items already resolved block again. The plain-prompt fallback covers the case where the arguments move.
 - **Append-only rows are a long-term cost.** `S/inbox.jsonl` and `S/ledger.jsonl` grow without bound, at about 1 KB per row (contract-025 §9). Every later reader is bound to the row shape, and changing it means migrating the history or reading both shapes forever.
 - A live lock held past 120 s can be broken by a waiter.
 - `notify` runs a shell line from committed config on every teammate's machine.
@@ -169,6 +171,41 @@ That line holds the id, the decision word and the code, so it qualifies. The lin
 **Neutral**
 
 - The events log stays small and free of client text; a reader who needs the text reads the inbox.
-- The `/truss:inbox` skill with no arguments can't show an item's code, because only its hash is stored.
+- The `/truss:inbox` skill with no arguments shows no code: it lists open items, and the inbox file holds only their hash. It runs `--recover-codes` only when the client asks about an item whose code was lost.
 
-**What reversing touches.** Moving shared state back into session dirs touches `bin/store.ts` (`sharedDir`), every reader of `S/inbox.jsonl`, `S/ledger.jsonl` and `S/queue/`, the `blockingFor` call sites in `factory start` and `factory admit`, and the existing rows, which would need a migration. Dropping the transcript proof touches `resolve` in `bin/inbox.ts`, `skills/inbox/SKILL.md`, `tests/fixtures/inbox/` and the resolve cases of `tests/inbox.check.ts`, and reopens R-56. Replacing the mkdir lock touches only `withLock` in `bin/store.ts` and `tests/store.check.ts`.
+**What reversing touches.** Moving shared state back into session dirs touches `bin/store.ts` (`sharedDir`), every reader of `S/inbox.jsonl`, `S/ledger.jsonl` and `S/queue/`, the `blockingFor` call sites in `factory start` and `factory admit`, and the existing rows, which would need a migration. Dropping the transcript proof touches `resolve` and `verifiedItems` in `bin/inbox.ts`, `longTermItems` in `bin/guard.ts`, `skills/inbox/SKILL.md`, `tests/fixtures/inbox/`, the resolve cases of `tests/inbox.check.ts` and `tests/trust-026.check.ts`, and reopens R-56. Replacing the mkdir lock touches only `withLock` in `bin/store.ts` and `tests/store.check.ts`.
+
+## Amendment 2026-11-11: a resolve row counts only with verified client proof
+
+Decided by: the PM and the product owner, with the client away (decision 23:53 of the 0.26.0 run). Source: 0.26.0 goal item 1. The cases are in `tests/trust-026.check.ts`.
+
+Until this amendment the proof guarded only `factory resolve`. Readers folded every row of `S/inbox.jsonl`, so any process with shell access could append a `resolve` row and lift a block.
+
+**The verified fold.** `verifiedItems(repo)` in `bin/inbox.ts` is the one reading of the inbox. `blockingFor`, `budgetRaises`, the dedupe in `escalate`, `resolve`, `mark-applied`, `factory inbox` and `longTermItems` in `bin/guard.ts` all use it. It judges each resolve row in file order:
+
+- For `blocked` and `stall-unrecovered`, the kinds a PM may resolve, a row that says `pm` or `client` counts with no proof.
+- For every other kind, only a `by: client` row can count, and only when it is proved again, at read time, against the main transcript of the session the row names. Any session's fold verifies the same way.
+
+The first row that counts wins. A row that does not count is absent, so a forged row can neither lift a block nor stop the real resolve, and its raise is not counted. The item stays open, and the listing carries `reopened: {reason, by, ts, decision}` for the first row that failed.
+
+**What the proof requires.** The read-time proof uses the same `typedText`, `chainOk` and `proof` as `resolve`, so a row counts only with a typed transcript line that meets every condition listed under "What `resolve --by client` checks". The row's own decision and `raiseUsd` must match that line, and a row that stores a `quote` must have a typed line that starts with it. A proof replayed from another item fails on the id and the code. A swapped decision word fails the word check.
+
+**The note.** `resolve` refuses a `--note` or `--note-file` that differs from the rest of the typed line after `<decision> <id> <code> [raise <usd>]`, whitespace normalised, and a note given as empty when words were typed. At read time the note does not decide whether the row counts, because the client typed the decision and the code. A counted row whose note does not match keeps its decision and carries `noteUnbound` in the listing.
+
+**The slash shape is inferred.** No real `/truss:inbox` row was found in any transcript when this was planned. `typedText` accepts the shape of its sibling commands: `origin.kind` human with no `promptSource`, and no `origin` at all, each only as `SLASH_SHAPE`, and neither needs a `promptId`. `tests/fixtures/inbox/slash-origin-human.jsonl` and `slash-no-origin.jsonl` hold those shapes. The first real `/truss:inbox` resolve tests the inference. When it does not match, `resolve` refuses, and the refusal tells the client what to type as a plain prompt.
+
+**The proof-only root.** `proofTranscriptRoot()` in `bin/store.ts` is `.claude/projects` under `os.userInfo().homedir`. It reads no `TRUSS_TRANSCRIPTS_ROOT`, `CLAUDE_CONFIG_DIR` or `HOME`, so a caller can't point the proof at a file of its own. `transcriptsOf` keeps its environment-based root for reading spend and for the queue's stale rule, which grant no authority. The cost is a client on a non-default `CLAUDE_CONFIG_DIR`: the proof fails closed, so that client can't resolve any client item, budget raises included, and has no workaround. The refusal names `CLAUDE_CONFIG_DIR` and the root it looked in; the variable is read for that message only.
+
+**The cost of proving at read time.** `scanFile` reads each transcript whole, searches its bytes for each item id, and parses only the lines that hold an id and `"type":"user"`. It keeps one scan per file per process, valid while the path, size, mtime, ctime and inode are the same and the ids it holds cover the ids asked for. Nothing is cached on disk, because a cache file would be no harder to forge than the row it vouches for.
+
+The cost grows with history. Every client resolve stays in the file for good, so each process that folds the inbox reads every transcript named by a client resolve row. Its read time grows linearly with the total size of those transcripts, and its search time with that size times the number of resolved items per transcript. Every factory command is a new process, so the cache does not carry over between commands, and nothing prunes old rows. The cases pin two points on that curve: one admit over a 100 MB transcript stays within 2000 ms and reads the file once, and an admit over 20 resolved items in 5 transcripts of 4 MB each stays within 2000 ms and reads each file once. A transcript too large for a Buffer counts as unreadable, and its rows do not count.
+
+**The escalate code survives a crash.** Inside the lock and before the append, `escalate` writes `D/escalate-code-<id>.json`, `{id, code}`, created with mode 0600. `resolve` removes it from the dir of the session that raised the item. `factory inbox --recover-codes` walks the session dirs under `<common>/truss/` and prints the code of each open item whose sidecar hash matches, so a later session that doesn't know the dead session's dir can recover it. A code alone lifts nothing, because a resolve still needs the typed line. The default listing carries no code of an open item.
+
+**Rows written before 0.26.** They are not grandfathered by a version or a date, because both are fields a forger writes. They go through the same proof. A 0.25.0 row with a good proof counts, its note is flagged unbound when it does not match, and its budget raise stays. A row whose transcript is gone counts as absent: the item reopens, its raise stops counting, and the listing carries the reason and the row's `by`, `ts` and decision, so the client sees why it came back.
+
+**Residual risks.**
+
+- A process running as the same OS user can write a transcript line that passes these checks. It can read the code from the sidecar or from the agent's own output, and it can give the line a valid `uuid`, `sessionId` and `parentUuid`. The proof raises the cost of forging; it does not end it.
+- A deleted or rotated transcript makes an item block again (fail closed), and its budget raise stops counting. The same happens to every resolved item if Claude Code changes the undocumented `uuid`, `parentUuid` or `sessionId` fields. The client resolves the item again by typing the decision with its code. `--recover-codes` can't supply that code, because the first resolve removed the sidecar; it is in the client's original message and in the old row's `quote` in `S/inbox.jsonl`.
+- A `by: pm` row for `blocked` or `stall-unrecovered` needs no proof, so any process that can append to the inbox can lift those two kinds. That is the kinds' rule, not a gap in the proof.

@@ -1,0 +1,5 @@
+{"type":"mode","mode":"normal","sessionId":"__SID__"}
+{"type":"permission-mode","permissionMode":"auto","sessionId":"__SID__"}
+{"type":"file-history-snapshot","messageId":"00000000-0000-4000-8000-0000000000c1","snapshot":{"messageId":"00000000-0000-4000-8000-0000000000c1","trackedFileBackups":{},"timestamp":"__TS__"},"isSnapshotUpdate":false}
+{"type":"file-history-snapshot","messageId":"__UUID__","snapshot":{"messageId":"__UUID__","trackedFileBackups":{},"timestamp":"__TS__"},"isSnapshotUpdate":false}
+{"parentUuid":null,"isSidechain":false,"promptId":"00000000-0000-4000-8000-0000000000b3","type":"user","message":{"role":"user","content":"approve E-ID CODE go ahead"},"uuid":"__UUID__","timestamp":"__TS__","permissionMode":"auto","origin":{"kind":"human"},"promptSource":"typed","turnOrigin":"human","turnPosition":{"promptIndex":1,"turnIndex":1},"userType":"external","entrypoint":"cli","cwd":"/scrubbed/repo","sessionId":"__SID__","version":"0.0.0","gitBranch":"main"}
