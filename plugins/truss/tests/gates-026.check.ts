@@ -573,6 +573,64 @@ st('gates-026: plan-check does not call one rule file in two goals\' stages an o
   assert.ok(assertOneLine(bad).errors.some((e) => e.includes('shared/**') && e.includes('another goal')), say(bad))
 })
 
+// R-71 regression (3fe1b7d): owns-extend exempts a rule file another goal's crew of another stage owns, as plan-check does.
+st('gates-026: owns-extend lets a crew of another goal and stage own a rule file, but refuses another shared glob', () => {
+  const w = ruleWorld()
+  const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-10-01T00:00:00.000Z', approval: 'auto', approvedAt: '2026-10-01T00:00:00.000Z' })
+  const crews = [
+    crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'shared/**'] }),
+    crew('g2', { stage: 2, goal: 'goal-two', owns: ['plugins/truss/tests/two.check.ts'] }),
+  ]
+  writePlan(w.dir, planObj(crews, { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] }))
+  const ext = (glob: string) => runCli(REAL_FACTORY, 'owns-extend', ['--dir', w.dir, '--repo', w.repo, '--slug', 'g2', '--glob', glob, '--reason', 'R'], w.repo)
+  const bad = ext('shared/**')
+  assert.equal(bad.status, 1, say(bad))
+  assert.ok(assertOneLine(bad).overlaps.some((o) => o.glob === 'shared/**'), say(bad))
+  const ok = ext(RULE)
+  assert.equal(ok.status, 0, say(ok))
+  assert.ok(assertOneLine(ok).owns.includes(RULE), say(ok))
+})
+
+// R-71 regression (3fe1b7d): plan-write re-checks the existing plan under the plan lock. An approve that lands while it waits must not be overwritten.
+st('gates-026: plan-write does not overwrite a plan approved while it waits for the plan lock', async () => {
+  const env = mkEnv({ useRealPlugin: true })
+  const fenced = (json: string) => `Report.\n\n\`\`\`\`json plan.json\n${json}\n\`\`\`\`\n\n\`\`\`\`markdown plan.md\nmd\n\`\`\`\`\n`
+  const fresh = { ...planObj([crew('arch', { stage: 0, verdict: 'design' })], { approval: 'client', approvedAt: null }), goal: 'NEW' }
+  const { dir: tdir } = mkRun(env.transcripts, 'wf_plan', [{ id: 'aarch', label: 'truss-designer', agentType: 'truss:design-engineer', metaModel: 'opus', result: { report: fenced(JSON.stringify(fresh)) }, startTs: '2026-10-29T10:00:00.000Z' }])
+  writePlan(env.dir, { ...fresh, goal: 'OLD', approvedAt: null })
+  // hold the plan lock (a live owner, fresh since) so plan-write blocks on it
+  const lock = `${env.dir}/locks/plan.lock`
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(`${lock}/owner.json`, JSON.stringify({ pid: process.pid, host: 'held-by-test', token: 't', since: Date.now() }))
+  const pw = runAsync(env.factory, 'plan-write', ['--dir', env.dir, '--repo', env.repo, '--transcript', tdir, '--label', 'truss-designer'], env.repo)
+  await new Promise((r) => setTimeout(r, 2000))
+  // the approve lands, then the lock is released
+  writePlan(env.dir, { ...fresh, goal: 'APPROVED', approvedAt: '2026-10-29T11:00:00.000Z' })
+  rmSync(lock, { recursive: true, force: true })
+  const r = await pw
+  assert.equal(r.status, 1, `plan-write must refuse once the plan is approved: ${r.out.slice(0, 500)}`)
+  assert.ok(r.out.includes('approved'), r.out.slice(0, 500))
+  const after = readPlan(env.dir)
+  assert.equal(after.goal, 'APPROVED')
+  assert.equal(after.approvedAt, '2026-10-29T11:00:00.000Z')
+})
+
+// R-71 regression (3fe1b7d): an unreadable commit range is no proof that every commit carries a trailer, so integrate refuses (fails closed).
+st('gates-026: integrate refuses, naming why, when the target cannot be resolved so the trailers are unchecked', () => {
+  const env = mkEnv({ config: { merge: 'sequential', target: 'no-such-target' }, files: { 'a.txt': 'base\n' } })
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'running' })]))
+  const wt = addCrewWorktree(env.repo, 's')
+  const start = head(wt)
+  const mw = memberWt(env, 'member')
+  putFile(mw, 'src/s/a.ts', 'a\n', 'bare work with no trailers')
+  const res = env.run('integrate', { slug: 's', branch: 'member' })
+  assert.equal(res.status, 1, say(res))
+  const j = assertOneLine(res)
+  assert.equal(j.merged, false)
+  assert.ok(String(j.why).includes('trailers are unchecked'), say(res))
+  assert.equal(head(wt), start, 'nothing merged')
+})
+
 // ---------------------------------------------------------------- item 10: the bug-2 resume path
 
 // Expected green when written: the path exists and has no direct test. Factory half: start --resume answers puts the earlier member
