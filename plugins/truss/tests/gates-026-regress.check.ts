@@ -29,11 +29,21 @@ function goalsWorld(plan: Record<string, unknown>[]) {
 st('gates-026-regress: owns-extend lets a crew of another goal and stage own a rule file', () => {
   const env = goalsWorld([
     crew('p', { goal: 'g1', stage: 1, owns: [RULE], status: 'running' }),
-    crew('q', { goal: 'g2', stage: 2, owns: ['src/q/**'], status: 'running' }),
+    crew('q', { goal: 'g2', stage: 2, owns: ['src/q/**'], status: 'running', after: ['p'] }),
   ])
   const r = env.run('owns-extend', { slug: 'q', glob: RULE, reason: 'REASON-RULE-FILE' })
   assert.equal(r.status, 0, say(r))
   assert.deepEqual(readPlan(env.dir).crews.find((c) => c.slug === 'q').owns, ['src/q/**', RULE])
+})
+
+st('gates-026-regress: owns-extend refuses a rule file for a later-stage crew not ordered after the owner', () => {
+  const env = goalsWorld([
+    crew('p', { goal: 'g1', stage: 1, owns: [RULE], status: 'running' }),
+    crew('q', { goal: 'g2', stage: 2, owns: ['src/q/**'], status: 'running' }),
+  ])
+  const r = env.run('owns-extend', { slug: 'q', glob: RULE, reason: 'REASON-NO-AFTER' })
+  assert.equal(r.status, 1, say(r))
+  assert.equal(assertOneLine(r).ok, false)
 })
 
 st('gates-026-regress: owns-extend refuses another goal\'s crew for a plain file, and a rule file in the same stage', () => {
