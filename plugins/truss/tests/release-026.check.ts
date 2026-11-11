@@ -143,7 +143,12 @@ const tokensOf = (text) => {
   return [...out]
 }
 // A citation whose clause and line name no code symbol is pinned here, path:line -> a token the cited lines hold.
-const ABOUT = {}
+const ABOUT = {
+  'skills/run/SKILL.md:8': 'only one who talks to the client',
+  'bin/factory.ts:3102': 'is not a local branch',
+  'ui/server/main.ts:80': "join(uiDir, 'web')",
+  'worktypes.ts:1': 'The built-in profiles',
+}
 
 // Failures of every `path:line` citation in one doc: the file or line is missing, or the cited lines hold none of the names the citation is about.
 function citationFailures(docName, doc, about = ABOUT) {
