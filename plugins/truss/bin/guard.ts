@@ -42,13 +42,17 @@ export function ltcLines(text: string): LtcLine[] {
 
 const DEP_KEYS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 
-// The package names a package.json text declares, per section (empty when it is missing or not JSON).
-function depsOf(text: string): Map<string, Set<string>> {
+// The package names a package.json text declares, per section. Empty text is an empty file; text that is not JSON is null, never an empty set.
+function depsOf(text: string): Map<string, Set<string>> | null {
   const out = new Map<string, Set<string>>()
+  const body = text.replace(/^﻿/, '')
+  if (body.trim() === '') return out
   try {
-    const j = JSON.parse(text)
+    const j = JSON.parse(body)
     for (const k of DEP_KEYS) if (isObj(j?.[k])) out.set(k, new Set(Object.keys(j[k]).map(packageName)))
-  } catch {}
+  } catch {
+    return null
+  }
   return out
 }
 const allNames = (m: Map<string, Set<string>>): Set<string> => new Set([...m.values()].flatMap((s) => [...s]))
@@ -76,8 +80,18 @@ export function ltcTriggers(repo: string, base: string, head: string): { what: s
     const p = flat(file)
     const name = path.posix.basename(p)
     if (name === 'package.json') {
-      const before = status === 'A' ? new Map<string, Set<string>>() : depsOf(git(repo, ['show', `${base}:${p}`]).out)
-      const after = depsOf(git(repo, ['show', `${head}:${p}`]).out)
+      // the diff status says the file exists at head (A, M) and at base (M): a failed show there is not "no deps"
+      const show = (rev: string): string => {
+        const r = git(repo, ['show', `${rev}:${p}`])
+        if (r.status !== 0) throw refuse({ error: `long-term-cost: git show ${rev}:${p} failed, so the dependencies of ${p} are unknown: ${r.err}` })
+        return r.out
+      }
+      const before = status === 'A' ? new Map<string, Set<string>>() : depsOf(show(base))
+      const after = depsOf(show(head))
+      if (before === null || after === null) {
+        add(`${p} could not be read as JSON, so its dependencies are unknown`, 'the client must check by hand which dependencies the change adds')
+        continue
+      }
       const known = allNames(before)
       const later = 'the client carries its updates, its licence and its supply chain'
       for (const dep of [...allNames(after)].filter((x) => !known.has(x)).sort()) add(`a dependency ${dep} added to ${p}`, later)
