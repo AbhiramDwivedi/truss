@@ -299,7 +299,7 @@ test('run-model: prints a truss-evals-* tmpdir holding results.json and one raw 
       git('status', ...f).split('\n').filter((l) => !l.includes('.claude/worktrees/')).join('\n'))
   const statusBefore = status()
   const trussBefore = new Set(tree(join(COMMON, 'truss')))
-  const claudeBefore = new Set(tree(join(ROOT, '.claude')))
+  const claudeBefore = new Set(claudeSnap(ROOT).keys())
   const { r, outDir, results, outFiles } = run()
   assert.equal(r.status, 0, r.stderr)
   assert.ok(outDir, 'no truss-evals-* path printed')
@@ -321,7 +321,7 @@ test('run-model: prints a truss-evals-* tmpdir holding results.json and one raw 
   }
   for (const [label, before, after] of [
     ['.git/truss', trussBefore, tree(join(COMMON, 'truss'))],
-    ['.claude', claudeBefore, tree(join(ROOT, '.claude'))],
+    ['.claude', claudeBefore, [...claudeSnap(ROOT).keys()]],
   ] as const) {
     const bad = after.filter((p) => !before.has(p) && looksLikeOutput(p))
     assert.deepEqual(bad, [], `run-model wrote under ${label}`)
