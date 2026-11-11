@@ -138,7 +138,7 @@ Then commit the file alone on the target branch: `git switch <target>` if needed
 
 **Size.** Classify the size as in "Classify the size".
 
-- `large` → triage and end: escalate `intake-triage` with `--ref queue:<id>` and `--title-file`, run `factory queue-set --id <id> --state triage`, and end the run.
+- `large` → triage and end: escalate `intake-triage` with `--ref queue:<id>` and `--title-file`, run `factory queue-set --id <id> --state triage`, run `factory unattended --off` and end the run.
 - `small` → proceeds as it does today: one `functional` requirement with `Source: goal`, from your goal sentence.
 - `standard` → start the fact-finder as in "Find the facts first". Branches the facts answer get `by: "fact"`. Never call `AskUserQuestion`; the hook refuses it while the run is unattended. Run `remaining` instead of `next`, and give every other branch it prints `by: "default"` with the recommended answer as its note, plus a non-blocking `client-question`: `factory escalate --kind client-question --title-file <p> --ref brief:<sid>:<branch> --repo <repo> --dir <truss dir>`, without `--blocking`. `<sid>` is the session id, `<branch>` is the branch id, and `<p>` is a file in `<truss dir>` that holds the branch's `Ask` from `branches.md`. Each default becomes a requirement with `Source: default`, and the crews go on building against it while the question waits in the inbox.
 

@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: 0f45841f922bc23bdabc7f057df22206d7dd8e27
+verified: af304d965400136f9e09a76f854a01b938a7a0d4
 ---
 
 # Product decisions
@@ -20,9 +20,16 @@ verified: 0f45841f922bc23bdabc7f057df22206d7dd8e27
 - Answer: assert the paragraph byte for byte on the prompts the stubbed agents received (a-qc through `runStage`, truss-checker through `runPlan`, in `plugins/truss/tests/workflows.check.ts`), not on script source text. The source-text test in `wiring-025.check.ts` was deleted.
 - Decided by: product-owner persona, applied in commit f197412 (crew a0-foundation).
 
+## d2-product-prose: usage files, budget terms and prose pins (21:23)
+
+- Question: where do `usage.jsonl` and `usage-cursor.json` live; are agent count and cost budget one term; are the retro and init test pins phrase-scoped?
+- Answer: `usage.jsonl` and `usage-cursor.json` stay in the session dir `D`, not in `shared/` (`plugins/truss/bin/cost.ts`); the crew notes' wording lost to the contract and the doc describes the code. The agent count and the cost budget are distinct terms and stay in separate sentences. The retro and init pins stay phrase-scoped: they pin a phrase, not a whole sentence.
+- Reason: contract-025 lines 73-74 place the two files in `D` (a sweep reads only its own session's transcripts) and its line 611 calls the two terms distinct.
+- Decided by: product-owner persona (crew d2-product-prose, 21:23).
+
 ## b-cost: busy usage lock before the first sweep
 
 - Question: with a busy usage lock and no `usage-cursor.json`, should `budgetVerdict` hold until the first sweep lands?
-- Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` still returns `usd: null` ('usage sweep still running') while unswept, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
+- Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` returns `usd: null` ('usage sweep busy') while the usage lock stays busy, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
 - Reason: contract-025 section 4 lists only those holds; the first-sweep hold BLOCKED 3 of 4 crews started together (ADR-0038, `plugins/truss/bin/cost.ts` `budgetVerdict`). Known limit: no budget is enforced until the first sweep lands.
 - Decided by: product-owner persona (crew b-cost).
