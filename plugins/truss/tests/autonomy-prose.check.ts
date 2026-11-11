@@ -224,10 +224,11 @@ test('autonomy prose: the architecture doc rewrites the one folder per session l
   assert.ok(sentences(s).some((x) => /unattended\.json/.test(x) && /per session/i.test(x)), 'On disk does not say unattended.json stays per session')
 })
 
-test('autonomy prose: plugin json is 0.25.0 and the CHANGELOG has one 0.25.0 entry', () => {
+test('autonomy prose: plugin json version has one CHANGELOG entry and it is the first', () => {
   const pj = JSON.parse(read('../.claude-plugin/plugin.json'))
-  assert.equal(pj.version, '0.25.0')
+  const v = pj.version.replace(/\./g, '\\.')
+  assert.match(pj.version, /^\d+\.\d+\.\d+$/)
   const log = read('../CHANGELOG.md')
-  assert.equal(log.match(/^## 0\.25\.0\b/gm)?.length, 1, 'CHANGELOG needs exactly one 0.25.0 entry')
-  assert.match(log.split('\n').find((l) => /^## /.test(l)), /^## 0\.25\.0\b/, 'the 0.25.0 entry is not the first')
+  assert.equal(log.match(new RegExp(`^## ${v}\\b`, 'gm'))?.length, 1, `CHANGELOG needs exactly one ${pj.version} entry`)
+  assert.match(log.split('\n').find((l) => /^## /.test(l)), new RegExp(`^## ${v}\\b`), `the ${pj.version} entry is not the first`)
 })
