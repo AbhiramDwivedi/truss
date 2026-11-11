@@ -13,7 +13,7 @@ sources:
   - plugins/truss/tests/fixtures/ltc/e2e.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 8698ec586a609891bfaf9c7e9849d4861be0cf5e
+verified: 7c93f173a49abfc47e5f16ad805a3405ac9b66d3
 ---
 
 # Store, holds and contract-025 stubs
@@ -69,7 +69,7 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 
 ## Stub modules
 
-`worktypes`, `ledger` and `queue` export the final contract-025 signatures (`queue`, `cost` and `guard` are implemented; see `features.md` "Long-term cost guard"); a replacing crew keeps these exports exactly. `inbox.ts` is no longer a stub (crew a1-inbox); it keeps these exports:
+No module is a stub any more: all six are implemented (`worktypes.ts:1` still calls itself an "A0 stub"; the comment is stale). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (cost.ts:163-174, 327-336). The exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.

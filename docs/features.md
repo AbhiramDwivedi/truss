@@ -31,12 +31,19 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/docs/adr/0034-long-term-cost-guard.md`; [store](knowledge/store.md) ("E2E fixtures").
 
-## Contract-025 module stubs (cost, worktypes, ledger)
+## Contract-025 modules (cost, worktypes, ledger)
 
-- What: stub modules with the final exported signatures; later crews fill in the bodies and keep the exports. `cost` and `guard` are now filled (see "Cost meter and budgets", "Long-term cost guard"); `cost` and `worktypes` feed admission and `plan-check`. `inbox` and `queue` left this list: they are filled in (the inbox entry above and the next entry).
+- What: no stubs are left: `cost`, `worktypes` and `ledger` are filled and keep the contract-025 exports; `cost` and `worktypes` feed admission and `plan-check`. The header comment of `worktypes.ts` still says "A0 stub"; the body is the real one.
 - Entry points: `plugins/truss/bin/cost.ts`, `worktypes.ts`, `ledger.ts`.
 - Owner: `truss-plugin-node`.
-- Docs: [store](knowledge/store.md) ("Stub modules").
+- Docs: [store](knowledge/store.md) ("Stub modules"); the `bin/` module table in `plugins/truss/docs/architecture.md`.
+
+## Run one queued item unattended (--next)
+
+- What: `/truss:run --next` sets the unattended flag, takes in and claims one queue item, gates it (`ELIGIBLE: yes|no`), briefs it on defaults, always plans it, approves only `--by auto` and merges locally; every client call becomes an inbox item. Every early end and the normal end run `factory unattended --off`; a present client clears a leftover flag with `factory unattended --off --dir <truss dir>`.
+- Entry points: `plugins/truss/skills/run/SKILL.md` ("Run one queued item unattended"), `plugins/truss/tests/autonomy-prose.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0039](../plugins/truss/docs/adr/0039-unattended-start.md).
 
 ## Cost meter and budgets
 
