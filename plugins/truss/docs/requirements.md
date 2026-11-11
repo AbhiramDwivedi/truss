@@ -499,6 +499,46 @@ Kind: constraint
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 
+## R-72: The crew lead is the project manager agent, with the foreman name kept as an alias for one release
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+Example: Given a plan and a run started after the rename, when the program manager starts a crew lead, then it starts `truss:project-manager`; and when a 0.26.0 plan or brief names `truss:foreman`, then that agent type still resolves and the CHANGELOG says in which release the alias goes.
+
+## R-73: Role and config keys that name the foreman have new names, and the old names still parse
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+Example: Given a roles.json or .claude/truss.json that uses an old foreman key (for example a `foreman` prompt override), when factory reads it, then it is read as the new project-manager key, and a test covers each such alias.
+
+## R-74: Labels, slugs and transcripts written before the rename keep parsing
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+Example: Given a Workflow transcript or crew report from 0.26.0 whose labels or event fields name the foreman, when finish, the retro or the cost meter reads it, then it parses and counts it as it did before the rename.
+
+## R-75: Docs, skills, agent prompts and tests use the new role names, and the rename is recorded in an ADR
+Status: open
+Kind: constraint
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+
+## R-76: Prose names the project manager and the program manager in full; a file that keeps PM defines it
+Status: open
+Kind: constraint
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+
+## R-77: Only alias code, alias tests, the CHANGELOG and historical ADRs still say foreman
+Status: open
+Kind: nfr
+Measure: 0 lines from `grep -rni foreman` over plugins/truss, docs and checks outside alias code, alias tests, the CHANGELOG and historical ADRs, with the plugin suite and root checks at exit 0
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Source: goal
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
