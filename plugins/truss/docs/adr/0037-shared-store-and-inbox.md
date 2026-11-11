@@ -101,7 +101,7 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 
 **Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
 
-**The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores only `codeHash = sha256(id + code)`. The code reaches the client in the PM's message and in the notify row; `factory inbox` never shows it.
+**The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores only `codeHash = sha256(id + code)`. The code reaches the client in the PM's message and in the notify row; `factory inbox` never shows it. With a `budget` key and no `notify`, the budget hold's `why` (the held entry of `start`, the output of `admit`) carries the id and code for the PM to relay (`factory.ts` `holdOf`).
 
 **Refusals.** `resolve` exits 1 on an item already resolved, on `--by pm` for a client kind, on `--raise-usd` for any kind but budget, on a wrong code, and on `--by client` with no human-typed proof (below). `budgetRaises(repo, session)` returns the approved budget raises; `blockingFor(repo, session, slug)` returns the ids that hold a crew, and start and admit refuse it with `awaiting client: E-…`.
 
@@ -121,7 +121,7 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 
 We will accept `resolve --by client` only with proof that the human typed the decision.
 
-**The `/truss:inbox` skill.** `skills/inbox/SKILL.md` sets `disable-model-invocation: true`, so the model can't start it; only a human typing the slash command can. With no arguments it lists the open items. `/truss:inbox <approve|reject|answer|dismiss> <E-id> <code> [note…]` runs `factory resolve <E-id> --decision <d> --by client --code <code>`.
+**The `/truss:inbox` skill.** `skills/inbox/SKILL.md` sets `disable-model-invocation: true`, so the model can't start it; only a human typing the slash command can. With no arguments it lists the open items. `/truss:inbox <approve|reject|answer|done|dismiss> <E-id> <code> [raise <usd>] [note…]` (a `--raise-usd` must equal the typed `raise <usd>`, else resolve refuses; `budgetRaises` keys a raise on the session its ref names) runs `factory resolve <E-id> --decision <d> --by client --code <code>`.
 
 **What `resolve --by client` checks.** It reads the main transcript of this session, found by `transcriptsOf(sid)` under `$TRUSS_TRANSCRIPTS_ROOT`, else `$CLAUDE_CONFIG_DIR/projects`, else `.claude/projects` in the home dir (`bin/store.ts:397-401`). It looks for a line with `type: "user"` that:
 

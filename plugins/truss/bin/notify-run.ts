@@ -3,6 +3,8 @@
 // The command is the one place a shell is used. Imports node: builtins and relative paths only, and never factory.ts.
 
 import { spawn, spawnSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { configOf } from './store.ts'
 
 type Ops = { spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown; kill: (pid: number, signal: string) => unknown }
@@ -68,4 +70,12 @@ async function main(): Promise<void> {
   process.exit(0)
 }
 
-if (import.meta.main) await main()
+// import.meta.main needs Node 24.2+; the realpath argv[1] check is the one factory.ts uses and works on 24.0 and 24.1.
+const isMain = (): boolean => {
+  try {
+    return process.argv[1] !== undefined && pathToFileURL(realpathSync(process.argv[1])).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href
+  } catch {
+    return false
+  }
+}
+if (isMain()) await main()
