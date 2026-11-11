@@ -11,9 +11,10 @@ sources:
   - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
   - plugins/truss/tests/fixtures/ltc/e2e.ts
+  - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: af27c3a5c55c0500bdbcdd741df041dcb039f2c9
+verified: 9c71e2c1218a44a658ab80e97ac06edc99c49790
 ---
 
 # Store, holds and contract-025 stubs
@@ -48,11 +49,12 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 
 ## Cost meter (`bin/cost.ts`)
 
-- `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts:57). `platform` is a parameter so tests cover win32.
-- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:60, 156). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:67-69, 154).
+- `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts:75). `platform` is a parameter so tests cover win32.
+- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:78, 175). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:86-87, 134).
+- Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (store.ts:376-392). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts:57-72, 174).
 - Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
-- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:284-291); `queue-next` must use the session ref. Every `why` starts `budget: `.
-- A busy usage lock before the first sweep (no cursor) is unknown spend: `crewCost` gives `usd: null`, but `budgetVerdict` does not hold and reads `usage.jsonl` as it stands, so no budget is enforced until the first sweep lands (cost.ts:171, 329).
+- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:303-310). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (cost.ts:303, 325; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
+- A busy usage lock before the first sweep (no cursor) is unknown spend: `crewCost` gives `usd: null`, but `budgetVerdict` does not hold and reads `usage.jsonl` as it stands, so no budget is enforced until the first sweep lands (cost.ts:183-193, 348). `factory cost` reads through `sweepOrRead` too: on a busy lock it prints `sweep.busy: true`, and with no `usage.jsonl` and no cursor `run.usd` and `session.usd` are null with `session.why` `usage sweep busy and no earlier reading exists` (cost.ts:362-364, 396-397).
 - The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:249-256). Pricing web search needs a new rate field.
 - Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
 
@@ -69,11 +71,12 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 ## E2E fixtures and the direct solo flow
 
 - `tests/fixtures/ltc/e2e.ts` holds `mkE2eWorld` (the ltc world plus a bare origin and a test-only price table), `originRefs`, `layBudgetCrew` and `runUnattendedFlow`: the PM's end-of-run flow of `/truss:run --next` through real factory processes (intake, unattended `--on`, queue-next, plan-write, plan-check, approve `--by auto`, start, crew commit, land, escalate push-pr, queue-set running then done, unattended `--off`). Reuse it for any later e2e case.
+- `tests/fixtures/cost/lock-holder.ts` (args: store.ts path, session dir, hold ms) holds the usage lock from a spawned process and prints `{"held":true}` when it has it. Spawn it and await that line before calling `budgetVerdict`: the verdict blocks the test's event loop, so an in-process holder can never release.
 - A solo crew with a version 4 plan and workType `docs` starts direct through `factory start --slug S --stage next` (creates worktree `truss-S`, sets running); `land --slug S` merges it locally and writes one row to `<common>/truss/shared/ledger.jsonl` (factory.ts:2068-2080, 3075). The session needs `goals/S.md` (test helper `writeGoal`).
 
 ## Stub modules
 
-No module is a stub any more: all six are implemented (`worktypes.ts:1` still calls itself an "A0 stub"; the comment is stale). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (cost.ts:163-174, 327-336). The exports:
+No module is a stub any more: all six are implemented (`worktypes.ts:1` still calls itself an "A0 stub"; the comment is stale). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (cost.ts:183-193, 347-356). The exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`, plus `verifiedItems`, which the contract does not name (ADR-0037 amendment).
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
