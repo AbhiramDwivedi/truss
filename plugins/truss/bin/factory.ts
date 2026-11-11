@@ -3389,7 +3389,7 @@ function cmdFinish(f: Flags): Obj {
 // The clock stamps every line. Each refusal exits 2 and writes nothing; no form writes a continuation line.
 const RECOMMENDS = ['answer', 'defer', 'pass']
 // True when `dir` is a direct child of <git common dir>/truss; the compare is on real, normalised paths (case-insensitive on win32).
-function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
+export function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
   let common: string
   try {
     common = commonDir(repo)
@@ -3400,10 +3400,17 @@ function isSessionDirUnderCommon(repo: string, dir: string, platform: string = p
   const target = path.resolve(dir)
   if (!/^[A-Za-z0-9._-]+$/.test(path.basename(target))) return false
   const parent = path.dirname(target)
-  const real = (p: string): string => (existsSync(p) ? realpathSync(p) : p)
+  // <common>/truss may not exist yet: resolve the nearest existing ancestor with realpath and re-append the missing tail, so a repo
+  // reached through a symlink (macOS /var -> /private/var) compares equal to the real common dir
+  const real = (p: string): string => {
+    let head = p
+    const tail: string[] = []
+    while (!existsSync(head) && path.dirname(head) !== head) (tail.unshift(path.basename(head)), (head = path.dirname(head)))
+    return path.join(existsSync(head) ? realpathSync(head) : head, ...tail)
+  }
   return norm(real(parent)) === norm(path.join(real(common), 'truss'))
 }
-function cmdDecide(f: Flags): Obj {
+export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   const dir = dirOf(f)
   const forms = (['line', 'checker', 'run'] as const).filter((k) => f[k] !== undefined)
   if (forms.length !== 1) throw usage('decide takes exactly one of --line, --checker (with --recommend, --text, --outcome) or --run')
@@ -3418,7 +3425,7 @@ function cmdDecide(f: Flags): Obj {
   }
   // --run is the first command of a run: its session dir may not exist yet, so it makes one, but only directly under <common>/truss
   // and only once the goal text is valid, so a refusal leaves nothing behind
-  if (form === 'run' && vals.run.trim() !== '' && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir)) mkdirSync(dir, { recursive: true })
+  if (form === 'run' && vals.run.trim() !== '' && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir, platform)) mkdirSync(dir, { recursive: true })
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
   let line: string
   if (form === 'line') {

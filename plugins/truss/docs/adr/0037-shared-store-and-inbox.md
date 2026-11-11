@@ -113,6 +113,7 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 1. factory runs `bin/notify-run.ts` with `spawnSync`, a 15 s timeout and `{repo, row}` on stdin (`tests/inbox.check.ts:384`).
 2. notify-run starts the client's command with `spawn(cfg.notify, {shell: true, detached: true, windowsHide})`, writes the open row plus the code to its stdin, and waits up to 10 s.
 3. On timeout it kills the whole process tree: a negative-pid SIGKILL of the group on POSIX, `taskkill /T /F /PID <pid>` on win32. The platform is a parameter (`tests/inbox.check.ts:468`), and a grandchild that sleeps dies within 11 s (`tests/inbox.check.ts:426`).
+   - **Amendment 2026-11-11 (0.26.0).** A `setsid` descendant leaves the group, so the group kill alone misses it. On POSIX the kill first walks the descendants (from `/proc/<pid>/task/*/children` on linux, `pgrep -P` on macOS and other POSIX, through the `Ops` seam) and SIGKILLs each, then the group. A missing walk tool gives what was found so far; win32 is unchanged.
 4. The command gets `TRUSS_INBOX_ID`, `TRUSS_INBOX_KIND` and `TRUSS_INBOX_REPO`. `TRUSS_INBOX_TITLE` is set only off win32, because cmd.exe expands `%VAR%` before it parses the line, so a title could inject a command.
 5. Notify fails open. Any failure gives `notified: false` and a `notify-error` event, and the escalation still succeeds. With no `notify` key, `notified` is null.
 
