@@ -301,6 +301,40 @@ test('trust-026: a proof replayed from another item is refused', async () => {
   assert.equal(rowOf(w, b.id).state, 'open')
 })
 
+test('trust-026: a typed line from another repo does not prove a resolve here', async () => {
+  const other = realpathSync(mkdtempSync(path.join(os.tmpdir(), 't26-other-')))
+  assert.equal(spawnSync('git', ['init', '-q', other], { windowsHide: true }).status, 0, 'a real foreign repo')
+  const w = world()
+  const a = open(w)
+  const p = put(w, a.id, a.code, { mutate: (r) => ({ ...r, cwd: other }) })
+  const r = resolveCli(w, a.id, 'approve', a.code)
+  assert.equal(r.status, 1, `the typed line ran in another repo: ${say(r)}`)
+  forge(w, a.id, { quote: `approve ${a.id} ${a.code}` }) // the same row folded from inbox.jsonl
+  assert.ok((await blocked(w)).includes(a.id), 'a foreign cwd leaves the item blocking')
+  assert.equal(rowOf(w, a.id).state, 'open')
+  // control: the same line with a cwd in a worktree under this repo proves it
+  const b = open(w)
+  put(w, b.id, b.code, { sid: w.sid, mutate: (r) => ({ ...r, cwd: `${w.repo}/.claude/worktrees/x` }) })
+  const ok = resolveCli(w, b.id, 'approve', b.code)
+  assert.equal(ok.status, 0, `a cwd under the repo is its own: ${say(ok)}`)
+  assert.deepEqual(await blocked(w), [a.id])
+  rmSync(other, { recursive: true, force: true })
+})
+
+test('trust-026: a row without raiseUsd cannot stand for a typed raise', async () => {
+  const w = world()
+  const a = openBudget(w)
+  put(w, a.id, a.code, { text: `approve ${a.id} ${a.code} raise 5` })
+  forge(w, a.id, { quote: `approve ${a.id} ${a.code}` }) // a prefix of the typed raise line, no raiseUsd
+  assert.deepEqual(await blocked(w), [a.id], 'the typed raise is not dropped by a forged plain approve')
+  assert.equal(rowOf(w, a.id).state, 'open')
+  assert.deepEqual(await raises(w), [])
+  const r = resolveCli(w, a.id, 'approve', a.code) // the agent resolves without the amount
+  assert.equal(r.status, 1, `a typed raise needs --raise-usd: ${say(r)}`)
+  assert.equal(resolveCli(w, a.id, 'approve', a.code, ['--raise-usd', '5']).status, 0)
+  assert.deepEqual(await raises(w), [{ ref: `budget:${w.sid}:run:run`, raiseUsd: 5 }])
+})
+
 // note binding
 
 /** One resolve attempt on a fresh item: the client typed `approve <id> <code>[ raise <usd>][ <tail>]`; the agent passes the note by --note or --note-file. */
