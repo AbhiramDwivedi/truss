@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock } from './store.ts'
+import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -96,7 +96,7 @@ export function loadPlan(dir: string): Obj {
 }
 // Writes the plan object back to D/plan.json, 2-space JSON with a trailing newline.
 export function savePlan(dir: string, plan: Obj): void {
-  writeFileSync(`${dir}/plan.json`, JSON.stringify(plan, null, 2) + '\n')
+  writeJsonAtomic(`${dir}/plan.json`, plan)
 }
 // Re-reads plan.json under the plan lock, lets `change` edit that fresh copy, and saves it, so a write never drops another
 // command's edit (owns-extend, start, approve, mark-merged and the merge gate all write the plan).
