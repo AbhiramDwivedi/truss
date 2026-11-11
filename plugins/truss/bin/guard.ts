@@ -12,7 +12,10 @@ export type Reversal = 'cheap' | 'costly' | 'irreversible'
 export type LtcLine = { what: string; later: string; reversal: Reversal }
 
 const KIND = 'long-term-cost'
-const LINE_RE = /^\s*(?:-\s*)?LONG-TERM-COST:(.*)$/
+// Markdown at the line start is allowed (bullet, number, quote, bold, italic, code); the marker itself stays case-sensitive. Keep in step with ltcLinesOf in workflows/stage.js.
+const LINE_RE = /^\s*(?:(?:[-*+>]|\d+[.)])\s*)*[*_`]*LONG-TERM-COST[*_`]*\s*:[*_`]*\s*(.*?)[*_`\s]*$/
+// A body that is only an explicit none-word means "no cost": the line is not a cost. An empty body is NOT one: a bare marker has flagged a cost and stays (814f9f9).
+const NONE_RE = /^[*_`\s]*(?:none|n\/a|-)[*_`\s.]*$/i
 const sha12 = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 12)
 const sessionOf = (dir: string): string => path.posix.basename(flat(dir).replace(/\/+$/, ''))
 
@@ -21,7 +24,7 @@ export function ltcLines(text: string): LtcLine[] {
   const out: LtcLine[] = []
   for (const raw of String(text ?? '').split('\n')) {
     const m = LINE_RE.exec(raw.replace(/\r$/, ''))
-    if (m === null) continue
+    if (m === null || NONE_RE.test(m[1])) continue
     const parts = m[1].split('|').map((s) => s.trim())
     let later = ''
     let rev = ''
@@ -69,10 +72,10 @@ export function ltcTriggers(repo: string, base: string, head: string): { what: s
       continue
     }
     if (status !== 'A') continue
-    if (/(^|\/)migrations\//.test(p)) add(`a migration ${p}`, 'a stored data shape the client must migrate and keep compatible')
-    else if (name.endsWith('.sql')) add(`a new SQL file ${p}`, 'a stored data shape the client must keep compatible')
-    else if (name.endsWith('.schema.json')) add(`a new schema ${p}`, 'a public data shape every reader is bound to')
-    else if (name.startsWith('schema.')) add(`a new schema file ${p}`, 'a stored data shape every reader is bound to')
+    if (/(^|\/)migrations\//i.test(p)) add(`a migration ${p}`, 'a stored data shape the client must migrate and keep compatible')
+    else if (name.toLowerCase().endsWith('.sql')) add(`a new SQL file ${p}`, 'a stored data shape the client must keep compatible')
+    else if (name.toLowerCase().endsWith('.schema.json')) add(`a new schema ${p}`, 'a public data shape every reader is bound to')
+    else if (name.toLowerCase().startsWith('schema.')) add(`a new schema file ${p}`, 'a stored data shape every reader is bound to')
   }
   return out
 }
