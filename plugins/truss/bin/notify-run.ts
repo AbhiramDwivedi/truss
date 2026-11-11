@@ -3,16 +3,66 @@
 // The command is the one place a shell is used. Imports node: builtins and relative paths only, and never factory.ts.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { configOf } from './store.ts'
 
-type Ops = { spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown; kill: (pid: number, signal: string) => unknown }
+type Ops = {
+  spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown
+  kill: (pid: number, signal: string) => unknown
+  /** The direct children of `pid` from /proc (linux); undefined when /proc has no answer. Optional: the real one is used when absent. */
+  procChildren?: (pid: number) => number[] | undefined
+}
 
-/** Kills the process `pid` and its whole tree: taskkill /T /F on win32, else the process group (the child is detached, so it leads one). */
+/** The direct children of `pid` from /proc/<pid>/task/<tid>/children; undefined when the file is not readable (no /proc, or a kernel without it). */
+function procChildren(pid: number): number[] | undefined {
+  try {
+    const out: number[] = []
+    for (const tid of readdirSync(`/proc/${pid}/task`)) {
+      for (const w of readFileSync(`/proc/${pid}/task/${tid}/children`, 'utf8').split(/\s+/)) if (w !== '') out.push(Number(w))
+    }
+    return out
+  } catch {
+    return undefined
+  }
+}
+
+/** The descendants of `pid`, level by level (a setsid child leaves the group, so the group kill misses it): from /proc on linux, else `pgrep -P`. A missing walk tool gives what was found so far. */
+function descendants(pid: number, ops: Ops, platform: string = process.platform): number[] {
+  const found: number[] = []
+  const queue = [pid]
+  const viaProc = platform === 'linux' ? (ops.procChildren ?? procChildren) : undefined
+  while (queue.length > 0 && found.length < 1000) {
+    const parent = queue.shift() as number
+    let out = ''
+    try {
+      const kids = viaProc === undefined ? undefined : viaProc(parent)
+      if (kids !== undefined) out = kids.join('\n')
+      else {
+      const r = ops.spawnSync('pgrep', ['-P', String(parent)], { windowsHide: true, encoding: 'utf8' }) as { error?: unknown; stdout?: unknown } | null
+      if (r === null || r === undefined || r.error !== undefined) return found
+      out = String(r.stdout ?? '')
+      }
+    } catch {
+      return found
+    }
+    for (const line of out.split('\n')) {
+      const n = Number(line.trim())
+      if (Number.isInteger(n) && n > 0 && n !== pid && !found.includes(n)) (found.push(n), queue.push(n))
+    }
+  }
+  return found
+}
+
+/** Kills the process `pid` and its whole tree: taskkill /T /F on win32, else the descendants (walked from /proc on linux, with pgrep -P elsewhere) and the process group (the child is detached, so it leads one). */
 export function killTree(pid: number, platform: string = process.platform, ops: Ops): void {
-  if (platform === 'win32') ops.spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true })
-  else ops.kill(-pid, 'SIGKILL')
+  if (platform === 'win32') return void ops.spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true })
+  // walk first: killing the parent first would reparent its children out of reach
+  const kids = descendants(pid, ops, platform)
+  for (const k of kids) {
+    try { ops.kill(k, 'SIGKILL') } catch { /* already gone */ }
+  }
+  ops.kill(-pid, 'SIGKILL')
 }
 
 /** The environment of the notify command. The title is left out on win32: cmd.exe expands %VAR% before it parses the command. */
