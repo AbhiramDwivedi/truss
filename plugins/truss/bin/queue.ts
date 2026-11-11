@@ -227,7 +227,19 @@ function queueNext(f: Flags): Obj {
   const cfg = isObj(configOf(repo).intake) ? configOf(repo).intake : {}
   const ttl = typeof cfg.claimTtlHours === 'number' && cfg.claimTtlHours > 0 ? cfg.claimTtlHours : 24
   const verdict = budgetVerdict(dir, repo, null, null)
-  if (verdict.held) return { item: null, held: { why: verdict.why } }
+  if (verdict.held) {
+    // contract: queue-next raises the blocking budget escalation. The ref is the one budgetVerdict matches a client raise against (budget:<sid>:<scope>:<scope>), so an approved raise lifts this hold and a repeated tick dedupes.
+    const sid = path.basename(dir)
+    let escalateError: string | undefined
+    let clientNote = ''
+    try {
+      const esc = escalate(repo, dir, { kind: 'budget', title: `budget: ${verdict.why}`.slice(0, 200), detail: `${verdict.why}\nscope ${verdict.scope}, spent ${verdict.spentUsd === null ? 'unknown' : `${verdict.spentUsd} USD`}, limit ${verdict.limitUsd} USD; held at queue-next`, ref: `budget:${sid}:${verdict.scope}:${verdict.scope}`, blocking: true })
+      if (!esc.deduped && esc.code !== '' && esc.notified !== true) clientNote = `; client approval needed: ${esc.id} code ${esc.code} (relay to the client, who types /truss:inbox approve ${esc.id} ${esc.code} raise <usd>)`
+    } catch (e) {
+      escalateError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+    }
+    return { item: null, held: { why: verdict.why + clientNote, ...(escalateError === undefined ? {} : { escalateError }) } }
+  }
   const claimed = lockQueue(repo, () => {
     const now = Date.now()
     const items = allItems(repo)
