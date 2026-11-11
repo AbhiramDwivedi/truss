@@ -13,7 +13,7 @@ sources:
   - plugins/truss/tests/fixtures/ltc/e2e.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 7c93f173a49abfc47e5f16ad805a3405ac9b66d3
+verified: 3918891ff77d3e3b5906973f36f8171f5d0c068a
 ---
 
 # Store, holds and contract-025 stubs
@@ -22,7 +22,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## The store (`bin/store.ts`)
 
-- It is the only lock, atomic-write and transcript-finding code. New modules import `CliError`, `usage`, `refuse`, `flat` and the other moved helpers from `./store.ts`, never from `factory.ts` (store.ts:119-131).
+- It is the only lock and atomic-write code, and it holds both transcript roots: `transcriptsOf` for spend and the queue's stale rule, `proofTranscriptRoot` for the inbox proof. `proofMain` in `bin/inbox.ts` walks the proof root itself. New modules import `CliError`, `usage`, `refuse`, `flat` and the other moved helpers from `./store.ts`, never from `factory.ts`.
 - `withLock(dir, name, fn, {waitMs, platform, fs, host, now})` holds `<dir>/locks/<name>.lock/owner.json` with `{pid, host, token, since}` (store.ts:229-234). Only the owner's token releases it.
 - A lock is stale when: the owner is a dead pid on the same host, or `since` is over `STALE_AGE_MS` (120 s) old, or there is no `owner.json` and the dir is over `OWNERLESS_MS` (10 s) old (store.ts:155-156, 245-251).
 - Busy past `waitMs` (default 5000) throws `StoreBusy`: `CliError` code 2, body `{error: 'store busy: <name>'}` (store.ts:149-153, 254).
@@ -56,9 +56,11 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 ## Inbox transcript proof
 
-`typedText` and `typedProof` in `bin/inbox.ts:171-196` accept a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with no `origin` or `origin.kind` `human`, string content or text blocks, and no `tool_result`. It also refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count; the slash line is unaffected. Task-notification returns and compact summaries carry the id and code, so they would forge an approval. It also refuses command-output lines (a line holding `bash-input`, `bash-stdout`, `bash-stderr` or `local-command-*` tags, `inbox.ts:187`, `:208`), because `argsOf` takes the first `<command-args>` anywhere in the text. A line must be newer than the `open` op and hold the id and the code, and the decision must be the first word of the `<command-args>` text (or of the prompt) directly before the id (`inbox.ts:200-201`), so a note's word cannot flip the decision.
+`typedText` in `bin/inbox.ts` accepts a transcript line only when it is a main-thread user line (not `isSidechain`, `isMeta`, `isCompactSummary` or `isVisibleInTranscriptOnly`) with string content or text blocks and no `tool_result`. Either `origin.kind` is `human` and `promptSource` is `typed`, or the text is the `/truss:inbox` slash shape (`SLASH_SHAPE`) with `origin` absent or human and `promptSource` absent or typed. It refuses scheduled lines (`wakeupSource`, `scheduledTaskId` or `scheduledFireId` present, `turnOrigin` not `human`, `promptSource` not `typed`), so a `/loop` wakeup, a queued prompt and a `claude -p` prompt never count. It refuses every `OUTPUT_TAG` line (`bash-input`, `bash-stdout`, `bash-stderr`, `local-command-stdout`, `local-command-stderr`, `local-command-caveat`, `task-notification`), because task-notification returns carry the id and code and `argsOf` takes the first `<command-args>` anywhere in the text. `scanFile` also needs a string `uuid` and a `sessionId` equal to the session, and `chainOk` a `parentUuid` that resolves to an earlier row of the file (null only when no user or assistant row comes before it). `proof` needs a timestamp after the `open` op and arguments starting `<decision> <id> <code>`, where the code hashes to `codeHash`, then `raise <usd>` when the row has a raise, so a note's word cannot flip the decision.
 
-The proof guards only `factory resolve`: a same-user agent can append a `resolve` row to `S/inbox.jsonl` and the fold accepts it. Only a retro comparing each `quote` with the typed prompts catches it (ADR-0037, Consequences). Change proof-check behaviour here and in `docs/features.md` together.
+The proof guards every read, not only `factory resolve`. `verifiedItems` is the one reading of the inbox, used by `blockingFor`, `budgetRaises`, the `escalate` dedupe, `resolve`, `mark-applied`, `factory inbox` and `longTermItems` in `bin/guard.ts`. A `by: client` row on a client kind counts only when its proof holds against the main transcript of the session it names; the first row that counts wins, and an unverified row is absent, with `reopened` in the listing. A row for `blocked` or `stall-unrecovered` needs no proof. A note that isn't the typed text is refused at `resolve` and flagged `noteUnbound` at read. Rows from before 0.26 get the same proof; the ruling is in the ADR-0037 amendment.
+
+Proof reads use `proofTranscriptRoot()` and `readProofFile` in `bin/store.ts`: `.claude/projects` under `os.userInfo().homedir`, never an env var, so a non-default `CLAUDE_CONFIG_DIR` fails closed. `proofMain` in `bin/inbox.ts` walks that root. Tests stub those two seams with `tests/fixtures/inbox/proof-plugin.ts`, because `TRUSS_TRANSCRIPTS_ROOT` no longer reaches the proof. `scanFile` caches one scan per file per process; the cost per process still grows with the transcripts the history names (ADR-0037 amendment). A process running as the same OS user can still write a passing line, and a deleted or rotated transcript makes the item block again. Change proof-check behaviour here and in `docs/features.md` together.
 
 A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
 
@@ -71,7 +73,7 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 
 No module is a stub any more: all six are implemented (`worktypes.ts:1` still calls itself an "A0 stub"; the comment is stale). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (cost.ts:163-174, 327-336). The exports:
 
-- `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`.
+- `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`, plus `verifiedItems`, which the contract does not name (ADR-0037 amendment).
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.
 - `cost.ts` (implemented): `sweep`, `budgetVerdict`, `crewCost`, `COST_COMMANDS`.
 - `worktypes.ts`: `profilesOf`, `workTypeErrors`, `WORKTYPE_COMMANDS`.
