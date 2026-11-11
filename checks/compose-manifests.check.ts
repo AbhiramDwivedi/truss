@@ -123,6 +123,13 @@ describe('compose manifests', () => {
     const got = Object.fromEntries(depList().map((d) => [d.name, `${d.marketplace}:${d.version}`]))
     assert.deepEqual(got, Object.fromEntries(Object.entries(DEPS).map(([n, v]) => [n, `claude-ops:${v}`])), 'plugin.json dependencies differ')
   })
+  it('cm 1b: the READMEs and architecture doc state the plugin.json dependency ranges, not stale ones', () => {
+    for (const f of [...READMES, 'plugins/truss/docs/architecture.md']) {
+      const t = txt(f)
+      for (const v of Object.values(DEPS)) assert.ok(t.includes(v), `${f} does not state ${v}`)
+      for (const stale of ['^0.8.4', '^0.3.1']) assert.ok(!t.includes(stale), `${f} still states ${stale}`)
+    }
+  })
   it('cm 2: the truss catalog allows claude-ops dependencies', () => {
     assert.deepEqual(rd(CATALOG).allowCrossMarketplaceDependenciesOn, ['claude-ops'], 'catalog lacks allowCrossMarketplaceDependenciesOn: ["claude-ops"]')
   })

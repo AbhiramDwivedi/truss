@@ -16,7 +16,7 @@ Without the claude-ops marketplace, truss fails to load. To fix it, run `claude 
 
 ## What installs
 
-This branch holds only the catalog, `.claude-plugin/marketplace.json`, and this page. The first command adds the catalog `claude-ops`, and the second the catalog `truss`. The third installs the plugin `truss` from the `plugins/truss` directory of the `main` branch, with its three dependencies from claude-ops: kit `^0.3.1`, worktrees `^0.8.4` and subagent-limits `^0.3.1`. The catalog allows them with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. Nothing else in the repo installs: a plugin-only install gets no `ui/`.
+This branch holds only the catalog, `.claude-plugin/marketplace.json`, and this page. The first command adds the catalog `claude-ops`, and the second the catalog `truss`. The third installs the plugin `truss` from the `plugins/truss` directory of the `main` branch, with its three dependencies from claude-ops: kit `^0.4.0`, worktrees `>=0.8.4 <0.11.0` and subagent-limits `^0.3.2`. The catalog allows them with `allowCrossMarketplaceDependenciesOn: ["claude-ops"]`. Nothing else in the repo installs: a plugin-only install gets no `ui/`.
 
 ## Read the manual
 
