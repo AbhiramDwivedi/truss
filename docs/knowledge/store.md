@@ -11,9 +11,10 @@ sources:
   - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
   - plugins/truss/tests/fixtures/ltc/e2e.ts
+  - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: f43393635fda3d2ff06fcd2c9cdf49db568cbb63
+verified: 9c71e2c1218a44a658ab80e97ac06edc99c49790
 ---
 
 # Store, holds and contract-025 stubs
@@ -70,6 +71,7 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 ## E2E fixtures and the direct solo flow
 
 - `tests/fixtures/ltc/e2e.ts` holds `mkE2eWorld` (the ltc world plus a bare origin and a test-only price table), `originRefs`, `layBudgetCrew` and `runUnattendedFlow`: the PM's end-of-run flow of `/truss:run --next` through real factory processes (intake, unattended `--on`, queue-next, plan-write, plan-check, approve `--by auto`, start, crew commit, land, escalate push-pr, queue-set running then done, unattended `--off`). Reuse it for any later e2e case.
+- `tests/fixtures/cost/lock-holder.ts` (args: store.ts path, session dir, hold ms) holds the usage lock from a spawned process and prints `{"held":true}` when it has it. Spawn it and await that line before calling `budgetVerdict`: the verdict blocks the test's event loop, so an in-process holder can never release.
 - A solo crew with a version 4 plan and workType `docs` starts direct through `factory start --slug S --stage next` (creates worktree `truss-S`, sets running); `land --slug S` merges it locally and writes one row to `<common>/truss/shared/ledger.jsonl` (factory.ts:2068-2080, 3075). The session needs `goals/S.md` (test helper `writeGoal`).
 
 ## Stub modules
