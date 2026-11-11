@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import * as nodeFs from 'node:fs'
-import { homedir, hostname } from 'node:os'
+import { homedir, hostname, userInfo } from 'node:os'
 import path from 'node:path'
 
 // ==== core (moved unchanged from factory.ts) ====
@@ -293,10 +293,11 @@ const tmpOf = (p: string): string => `${p}.${process.pid}-${randomUUID()}.tmp`
 const RETRY_RENAME = new Set(['EPERM', 'EBUSY', 'EACCES'])
 
 // Writes obj as JSON to a tmp file, then renames it over p. A rename refused with EPERM, EBUSY or EACCES is retried 10 times, 20 ms apart.
-export function writeJsonAtomic(p: string, obj: unknown, opts: { fs?: FsLike } = {}): void {
-  const { fs } = opts
+// mode (for a file holding a secret) is the creation mode of the tmp file, so p never exists with a wider one.
+export function writeJsonAtomic(p: string, obj: unknown, opts: { fs?: FsLike; mode?: number } = {}): void {
+  const { fs, mode } = opts
   const tmp = tmpOf(p)
-  fn(fs, 'writeFileSync')(tmp, JSON.stringify(obj, null, 2) + '\n')
+  fn(fs, 'writeFileSync')(tmp, JSON.stringify(obj, null, 2) + '\n', mode === undefined ? undefined : { mode })
   try {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -393,6 +394,13 @@ export function readJsonl(p: string): { rows: Obj[]; bad: number } {
 }
 
 // ==== transcripts ====
+
+// The root the inbox proof reads a transcript under: the OS user's home and .claude/projects, never an env var, so the caller cannot point
+// the proof at a file of its own. Reading spend (transcriptsOf) grants no authority; a proof does.
+export const proofTranscriptRoot = (): string => flat(path.join(userInfo().homedir, '.claude', 'projects'))
+
+// The one read of a transcript for the inbox proof (the tests stub it by re-export, so every proof read goes through it).
+export const readProofFile = (p: string, opts: { fs?: FsLike } = {}): Buffer => fn(opts.fs, 'readFileSync')(p) as Buffer
 
 // Where Claude Code keeps session transcripts: $TRUSS_TRANSCRIPTS_ROOT, else $CLAUDE_CONFIG_DIR/projects, else ~/.claude/projects.
 // main is <root>/<project>/<sid>.jsonl; agents are <root>/<project>/<sid>/subagents/**/agent-*.jsonl, each with its agent-*.meta.json
