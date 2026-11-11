@@ -93,6 +93,21 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/workflows/stage.js` (`ltcLinesOf`, `qc`); tests `plugins/truss/tests/workflows.check.ts`.
 - Owner: `truss-workflow-scripts`.
 
+## Owns extension and knowledge-owns rule
+
+- What: `factory owns-extend --slug S --glob G --reason R` edits `plan.json` under the `plan` lock, refuses a glob overlapping another live crew, and appends a decision line; it replaces hand-editing owns. `plan-check` refuses a stage whose crews' owns overlap a rule file's `paths` when no crew of that stage owns the rule file (skipped silently without git). One exact rule-file glob may be owned by crews of different goals and stages only when one crew's `after` names the other (`orderedByAfter`); both commands apply this, and any other shared glob is an overlap. The knowledge-owns rule matches owns to rule `paths` with `ruleGlobsOverlap` (brace expansion, exact match for a wildcard-free path, last-segment compare for a leading `**`); the crew-vs-crew check keeps the literal-prefix `globsOverlap`. Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically. TODO: `plugins/truss/docs/plan.schema.json` has no crew `after` property, so a plan using it fails the schema (`additionalProperties: false`).
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdOwnsExtend`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers").
+
+## Merge gates and heavy slot bounds
+
+- What: `integrate` refuses a non-merge member commit with no Truss trailers unless the target already holds it, and fails closed (a `why` saying trailers are unchecked) when `git log` cannot read the range; `stage.js` `integrateNow` stops BLOCKED on a refusal with a `why` and no `conflicts`, and sends an `inProgress` refusal to the resolver. A `truss-status: {}` line with no fields falls back to the stdout JSON for `met`. The merge gate refuses a non-local target branch with the fix. `check()` in `stage.js` re-waits a busy heavy slot 3 rounds (about 27 min), then stops BLOCKED; `releaseHeavySlot` retries on win32.
+- Entry points: `plugins/truss/bin/factory.ts` (`untrailered`, `mergeCrew`), `plugins/truss/workflows/stage.js` (`check`, `HEAVY_WAIT_ROUNDS`), `plugins/truss/resources/index.ts`, `plugins/truss/tests/gates-026.check.ts`.
+- Owner: `truss-plugin-node` (bin, resources), `truss-workflow-scripts` (stage.js).
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "One heavy slot").
+- Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
+
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
