@@ -8,6 +8,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ltcLines } from '../bin/guard.ts'
 import { CHEAP, COSTLY, ID_RE, assertOneLine, clientResolves, cli, codeOf, crewWorld, decisionsOf, designerResult, ltcItems, mkWorld, planWrite, say } from './fixtures/ltc/harness.ts'
+import { clientTypes, crew, git, mk, planObj } from './fixtures/ltc/harness.ts'
+import { writePlan } from './fixtures/workflow-run/harness.ts'
+import { commitMessages, eventLines, inboxOps, itemsOf, layBudgetCrew, ledgerRows, mkE2eWorld, originRefs, refNames, runUnattendedFlow, textsUnder } from './fixtures/ltc/e2e.ts'
+import { existsSync, readFileSync } from 'node:fs'
 
 const PKG_BASE = '{\n  "name": "client-app",\n  "dependencies": {}\n}\n'
 const PKG_WITH_DEP = '{\n  "name": "client-app",\n  "dependencies": {\n    "left-pad": "1.3.0"\n  }\n}\n'
@@ -206,4 +210,84 @@ test('ltc guard: a cheap QC line does not block', () => {
   assert.equal(r.json.merged, true, say(r))
   assert.equal(cw.merged(), true)
   assert.equal(ltcItems(w).length, 0, 'a cheap QC line opens no inbox item')
+})
+
+// ---- Round 4: end to end, real factory processes in a temp git repo with a bare origin (contract-025 sections 4, 6, 7) ----
+
+/** The flow's end state, the facts both the end-of-run case and the hostile-title case rest on. */
+function assertFlowLanded(w: any, f: any): void {
+  assert.equal(git(w.repo, ['merge-base', '--is-ancestor', f.crewHead, 'refs/heads/main']) === '', true)
+  assert.equal(git(w.repo, ['show', 'refs/heads/main:src/' + f.slug + '/retry.ts']), 'export const retries = 3', 'the crew work is on local main')
+  assert.equal(f.pushPr.length, 1, `exactly one push-pr item: ${JSON.stringify(f.pushPr)}`)
+  assert.equal(f.pushPr[0].state, 'open')
+  assert.equal(f.originAfter, f.originBefore, 'nothing was pushed: the origin refs are byte-equal')
+  assert.equal(ledgerRows(w).length, 1, `one ledger row: ${JSON.stringify(ledgerRows(w))}`)
+}
+
+test('e2e 025: a crew priced at 5.20 against crewUsd 5 opens exactly one budget inbox item, a repeat admit opens no second, and a client resolve with raise-usd 3 lets the next admit pass', () => {
+  const w = mkE2eWorld({ budget: { crewUsd: 5 } })
+  writePlan(w.dir, planObj([crew('bcrew')]))
+  layBudgetCrew(w)
+  const first = cli(w, 'admit', ['--slug', 'bcrew'])
+  assert.equal(first.status, 1, say(first))
+  assert.equal(first.json.admitted, false, say(first))
+  assert.equal(first.json.budget, true, say(first))
+  assert.ok(String(first.json.why).startsWith('budget:'), say(first))
+  const items = itemsOf(w, 'budget')
+  assert.equal(items.length, 1, `exactly one budget item: ${JSON.stringify(items)}`)
+  assert.equal(items[0].state, 'open')
+  assert.equal(items[0].blocking, true)
+  const id = items[0].id
+  const second = cli(w, 'admit', ['--slug', 'bcrew'])
+  assert.equal(second.status, 1, say(second))
+  assert.equal(second.json.admitted, false, say(second))
+  assert.equal(itemsOf(w, 'budget').length, 1, 'a repeat admit opens no second item')
+  assert.equal(inboxOps(w).filter((o) => o.op === 'open' && o.kind === 'budget').length, 1, 'one open op in the inbox file')
+  // the client types the approval in this session, then resolves with a raise of 3 (limit 5 + 3 = 8 against 5.2 spent)
+  const code = clientTypes(w, id, 'approve')
+  const res = cli(w, 'resolve', [id, '--decision', 'approve', '--by', 'client', '--code', code, '--raise-usd', '3'])
+  assert.equal(res.status, 0, say(res))
+  const third = cli(w, 'admit', ['--slug', 'bcrew'])
+  assert.equal(third.status, 0, say(third))
+  assert.equal(third.json.admitted, true, say(third))
+  assert.equal(itemsOf(w, 'budget').length, 1, 'still the one item, now resolved')
+  assert.equal(itemsOf(w, 'budget')[0].state, 'resolved')
+})
+
+test('e2e 025: an unattended next run claims through queue-next, approves by auto, finishes and lands locally, opens exactly one push-pr item and leaves the bare origin refs unchanged', () => {
+  const w = mkE2eWorld({}, { 'docs/queue.md': '- [ ] add a retry to the uploader\n' })
+  const f = runUnattendedFlow(w)
+  assertFlowLanded(w, f)
+  assert.equal(readFileSync(`${w.shared}/queue/items/${f.id}.json`, 'utf8').includes('"state": "done"'), true, 'the queue item is done')
+  assert.equal(existsSync(`${w.dir}/unattended.json`), false, 'unattended is off')
+  const row = ledgerRows(w)[0]
+  assert.equal(row.crew, f.slug)
+  assert.equal(row.workType, 'docs')
+  assert.equal(row.head, git(w.repo, ['rev-parse', 'refs/heads/main']))
+  assert.equal(originRefs(w), f.originBefore)
+})
+
+test('e2e 025: a hostile queue title reaches no branch name, commit message, ledger row or events line, and its dollar subshell never runs', () => {
+  const marker = `${mk('ltc-marker-')}/pwned.marker`
+  const title = `fix \`rm -rf ~\` $(touch ${marker}) --force`
+  const w = mkE2eWorld({}, { 'docs/queue.md': `- [ ] ${title}\n  second line \`$(touch ${marker})\` --force\n` })
+  const f = runUnattendedFlow(w)
+  assertFlowLanded(w, f)
+  const fragments = ['rm -rf', '$(', '`', 'touch', '--force', marker, 'pwned']
+  const clean = (what: string, text: string): void => {
+    for (const x of fragments) assert.ok(!text.includes(x), `${what} holds the title fragment ${JSON.stringify(x)}`)
+  }
+  clean('a branch name (before land)', f.branchesBeforeLand.join('\n'))
+  clean('a branch name (after land)', f.branches.join('\n'))
+  clean('a ref name', refNames(w))
+  clean('a commit message', commitMessages(w))
+  clean('the ledger row', JSON.stringify(ledgerRows(w)))
+  clean('an events.jsonl line', eventLines(w).join('\n'))
+  assert.ok(eventLines(w).length > 0, 'the session logged events')
+  for (const [p, text] of Object.entries(textsUnder(w.dir, ['.json', '.md', '.jsonl']))) {
+    if (p.endsWith('/unattended.json')) continue
+    clean(`the session file ${p.slice(w.dir.length)}`, text)
+  }
+  clean('the push-pr inbox item', JSON.stringify(itemsOf(w, 'push-pr')))
+  assert.equal(existsSync(marker), false, 'the subshell never ran')
 })
