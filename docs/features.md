@@ -26,7 +26,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Long-term cost guard
 
-- What: `guard.ts` raises a blocking `long-term-cost` inbox item for each costly LONG-TERM-COST line (plan texts via `ltcPlan`, QC text via `ltcCrewGate`) and for deterministic triggers. Item ref `ltc:<sid>:<slug>:<sha12(what)>` (plan: `ltc:<sid>:plan:<rev>:<sha12(what)>`); an approved or open item with the ref is reused, a rejected one keeps blocking. `ltcTriggers` diffs `package.json` dependency names (four lists, via `git show`) and counts only added (`A`) `migrations/`, `*.sql`, `*.schema.json`, `schema.*` files; the diff runs with `--no-renames`, so a rename counts as a delete plus an add and does trigger; other ecosystems' manifests are not read. The two gates disagree on dismiss: `ltcPlanGate` treats dismiss/answer/done as cleared, `ltcCrewGate` needs `approve` and `raise` re-escalates a dismissed ref (`guard.ts:40-78, 100-107, 149-165`).
+- What: `guard.ts` raises a blocking `long-term-cost` inbox item for each costly LONG-TERM-COST line (plan texts via `ltcPlan`, QC text via `ltcCrewGate`) and for deterministic triggers. Item ref `ltc:<sid>:<slug>:<sha12(what)>` (plan: `ltc:<sid>:plan:<rev>:<sha12(what)>`); an approved or open item with the ref is reused, a rejected one keeps blocking. `ltcTriggers` diffs `package.json` dependency names (four lists, via `git show`) and counts only added (`A`) `migrations/`, `*.sql`, `*.schema.json`, `schema.*` files (matched case-insensitively); a LONG-TERM-COST line may carry markdown at its start (bullet, number, quote, bold, code) and a none-word body (`none`, `n/a`, `-`, empty) is no cost; the diff runs with `--no-renames`, so a rename counts as a delete plus an add and does trigger; other ecosystems' manifests are not read. The two gates disagree on dismiss: `ltcPlanGate` treats dismiss/answer/done as cleared, `ltcCrewGate` needs `approve` and `raise` re-escalates a dismissed ref (`guard.ts:40-78, 100-107, 149-165`).
 - Entry points: `plugins/truss/bin/guard.ts`; tests `plugins/truss/tests/ltc-guard.check.ts`, `ltc-paragraph.check.ts`, fixtures `tests/fixtures/ltc/`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/docs/adr/0034-long-term-cost-guard.md`; [store](knowledge/store.md) ("E2E fixtures").
@@ -82,7 +82,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Long-term cost lines in QC
 
-- What: `stage.js` `qc()` returns `longTermCosts` from QC output lines starting `LONG-TERM-COST:`, only when there are any; a line is never a FAIL.
+- What: `stage.js` `qc()` returns `longTermCosts` from QC output lines starting `LONG-TERM-COST:` (markdown at the line start allowed; none-word bodies skipped), only when there are any; a line is never a FAIL.
 - Entry points: `plugins/truss/workflows/stage.js` (`ltcLinesOf`, `qc`); tests `plugins/truss/tests/workflows.check.ts`.
 - Owner: `truss-workflow-scripts`.
 

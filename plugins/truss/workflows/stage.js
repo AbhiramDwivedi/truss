@@ -1924,7 +1924,8 @@ function lintResult(crew) {
 
 // contract-025 section 3, word for word
 const LONG_TERM_COST = "Long-term cost: when the change adds a cost the client carries after this run (a public interface or stored data shape that is costly to change, a new runtime dependency or service, a recurring money or operations cost, or a decision an ADR would record), write one line `LONG-TERM-COST: <what> | later: <the cost> | reversal: cheap|costly|irreversible`. Don't write one for code style, for \"more code to maintain\", or for a cost the approved scope already names. A LONG-TERM-COST line is never a FAIL; the merge waits for the client."
-const ltcLinesOf = (text) => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').filter((l) => /^\s*(?:-\s*)?LONG-TERM-COST:/.test(l)).map((l) => l.trim())
+// Keep the two regexes in step with LINE_RE and NONE_RE in bin/guard.ts.
+const ltcLinesOf = (text) => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').filter((l) => { const m = /^\s*(?:(?:[-*+>]|\d+[.)])\s*)*[*_`]*LONG-TERM-COST[*_`]*\s*:[*_`]*\s*(.*?)[*_`\s]*$/.exec(l); return m !== null && !/^[*_`\s]*(?:none|n\/a|-)?[*_`\s.]*$/i.test(m[1]) }).map((l) => l.trim())
 
 function qcPrompt(crew) {
   const e = crew.e

@@ -161,6 +161,70 @@ test('ltc guard: a line with no valid reversal counts as costly', () => {
   assert.equal(cli(w, 'approve', ['--by', 'client']).status, 1)
 })
 
+// ltcLinesOf of workflows/stage.js, loaded from its source so the two line regexes cannot drift apart
+const stageLtcLinesOf = new Function(`${/^const ltcLinesOf = .*$/m.exec(readFileSync(new URL('../workflows/stage.js', import.meta.url), 'utf8'))[0]}\nreturn ltcLinesOf`)()
+
+const FORMS = [
+  'LONG-TERM-COST: x | later: l | reversal: costly',
+  '- LONG-TERM-COST: x | later: l | reversal: costly',
+  '* LONG-TERM-COST: x | later: l | reversal: costly',
+  '+ LONG-TERM-COST: x | later: l | reversal: costly',
+  '1. LONG-TERM-COST: x | later: l | reversal: costly',
+  '2) LONG-TERM-COST: x | later: l | reversal: costly',
+  '> LONG-TERM-COST: x | later: l | reversal: costly',
+  '   \t LONG-TERM-COST: x | later: l | reversal: costly',
+  '**LONG-TERM-COST:** x | later: l | reversal: costly',
+  '- **LONG-TERM-COST**: x | later: l | reversal: costly',
+  '`LONG-TERM-COST: x | later: l | reversal: costly`',
+  'LONG-TERM-COST: x | later: l | reversal: costly\r',
+]
+const COSTLY_X = [{ what: 'x', later: 'l', reversal: 'costly' }]
+
+test('ltc guard: a LONG-TERM-COST line is read in each markdown form', () => {
+  for (const f of FORMS) {
+    assert.deepEqual(ltcLines(f), COSTLY_X, JSON.stringify(f))
+    assert.equal(stageLtcLinesOf(f).length, 1, `stage.js: ${JSON.stringify(f)}`)
+  }
+  assert.deepEqual(ltcLines('intro\r\n- **LONG-TERM-COST**: x | later: l | reversal: costly\r\n'), COSTLY_X)
+  assert.equal(stageLtcLinesOf('intro\r\n> LONG-TERM-COST: x\r\n').length, 1)
+})
+
+test('ltc guard: lines that only mention the marker are not read', () => {
+  for (const f of [
+    'Long-term cost: when the change adds a cost, write one line',
+    '> Long-term cost:',
+    'see `LONG-TERM-COST: <what>` for the format',
+    'No LONG-TERM-COST: here',
+    'long-term-cost: x | later: l | reversal: costly',
+  ]) {
+    assert.deepEqual(ltcLines(f), [], JSON.stringify(f))
+    assert.deepEqual(stageLtcLinesOf(f), [], `stage.js: ${JSON.stringify(f)}`)
+  }
+})
+
+test('ltc guard: a none-word line is no cost, an empty what with other fields still is', () => {
+  for (const f of ['LONG-TERM-COST: none', 'LONG-TERM-COST: None', '- **LONG-TERM-COST:** N/A', 'LONG-TERM-COST: -', 'LONG-TERM-COST:', '**LONG-TERM-COST:** **none**', '`LONG-TERM-COST: none`']) {
+    assert.deepEqual(ltcLines(f), [], JSON.stringify(f))
+    assert.deepEqual(stageLtcLinesOf(f), [], `stage.js: ${JSON.stringify(f)}`)
+  }
+  assert.deepEqual(ltcLines('LONG-TERM-COST: | later: l | reversal: costly'), [{ what: '(unnamed cost)', later: 'l', reversal: 'costly' }])
+  assert.deepEqual(ltcLines('LONG-TERM-COST: none of the existing tables | later: l'), [{ what: 'none of the existing tables', later: 'l', reversal: 'costly' }])
+})
+
+test('ltc guard: a qc:false crew adding Data/Migrations/x.cs is blocked at land', () => {
+  const w = mkWorld()
+  const cw = crewWorld(w, { process: 'lean', qc: false, files: { 'Data/Migrations/x.cs': 'class X {}\n' } })
+  const id = assertBlocked(cw, cw.land())
+  blockedThenApproved(w, cw, id)
+})
+
+test('ltc guard: a qc:false crew adding schema.SQL is blocked at land', () => {
+  const w = mkWorld()
+  const cw = crewWorld(w, { process: 'lean', qc: false, files: { 'db/schema.SQL': 'select 1;\n' } })
+  const id = assertBlocked(cw, cw.land())
+  blockedThenApproved(w, cw, id)
+})
+
 test('ltc guard: a qc:false crew adding a dependency is blocked at land', () => {
   const w = mkWorld({}, { 'package.json': PKG_BASE })
   const cw = crewWorld(w, { process: 'lean', qc: false, files: { 'package.json': PKG_WITH_DEP } })
