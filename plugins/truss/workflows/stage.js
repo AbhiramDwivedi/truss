@@ -1185,11 +1185,11 @@ async function integrateNow(crew, branch, at) {
   if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
   // commits with no Truss trailer at all: the same stop, never a resolver (its merge would put the bare commit on the crew branch)
   const bare = r.parsed && Array.isArray(r.parsed.missingTrailers) ? r.parsed.missingTrailers.map(String) : []
-  if (bare.length) throw new Stop('BLOCKED', `${branch} not merged: these commits carry neither a Truss-Crew nor a Truss-Role trailer: ${bare.join('; ')}. Reword those commits to end with both trailers, or rerun the task.`, at)
+  if (bare.length) throw new Stop('BLOCKED', `BLOCKED: ${branch} not merged: these commits carry neither a Truss-Crew nor a Truss-Role trailer: ${bare.join('; ')}. Reword those commits to end with both trailers, or rerun the task.`, at)
   // a refusal with no conflicts and a reason (an unreadable commit range) is no merge conflict: a stop that carries the reason, never a
   // resolver; an operation in progress (inProgress) goes to the resolver, the one that can conclude it
   const conflicts = conflictsOf(r)
-  if (!conflicts.length && !(r.parsed && r.parsed.inProgress) && r.parsed && typeof r.parsed.why === 'string' && r.parsed.why) throw new Stop('BLOCKED', `${branch} not merged: ${r.parsed.why}`, at)
+  if (!conflicts.length && !(r.parsed && r.parsed.inProgress) && r.parsed && typeof r.parsed.why === 'string' && r.parsed.why) throw new Stop('BLOCKED', `BLOCKED: ${branch} not merged: ${r.parsed.why}`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflicts, at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
