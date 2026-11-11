@@ -62,7 +62,7 @@ We will keep the queue as one JSON snapshot per item in `S/queue/items/`, feed i
 
 `queue-set` refuses any other transition with exit 1 and leaves the item unchanged. `done` and `dropped` have no way out. Each move appends a `history` row; a note comes in through `--note-file`, never as an argument.
 
-A claim is stale when another session made it more than `claimTtlHours` ago (default 24). `queue-next` releases it to `new` with `by: "stale"` before it claims. The earlier session's work is not resumed. Each `queue-next` that returns this session's own item refreshes its `claimedAt`, so a live, ticking session never goes stale.
+A claim is stale when another session made it more than `claimTtlHours` ago (default 24). `queue-next` releases it to `new` with `by: "stale"` before it claims. The earlier session's work is not resumed. Each `queue-next` that returns this session's own item refreshes its `claimedAt`, so a live, ticking session never goes stale. A `running` item of another session is released the same way only when its `claimedAt` is older than `claimTtlHours` and the newest mtime across the owner's main and agent transcripts (`ownerIdle`, through `transcriptsOf`) is older too: an owner mid-run makes no `queue-next` call, so claim age alone can't tell a live run from a crash. No transcript counts as no activity.
 
 Without `--dir`, `intake` has no inbox to escalate to: a new `triage` item is stored, and `errors` reports that the `intake-triage` escalation was not raised. Run intake with `--dir` to raise it; a later intake does not escalate an item it already holds.
 
