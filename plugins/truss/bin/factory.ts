@@ -1000,11 +1000,16 @@ function cmdMarkMerged(f: Flags): Obj {
   const crewHead = gateGit(repo, ['rev-parse', '--verify', `refs/heads/truss-${slug}^{commit}`]).out
   const pre = preMergeOf(repo, target, crewHead)
   const fork = pre.old === undefined ? undefined : gateGit(repo, ['merge-base', pre.old, crewHead]).out
+  const nextStep = `Next step: this check could not separate the crew's change from the client's. Once the client has confirmed the config change is theirs, the existing recovery is a hand edit of this crew's "status" to "merged" in plan.json.`
+  const landedWhy = (old: string, landed: string): string | undefined => {
+    const why = knowledgeConfigRefusal(repo, old, landed)
+    return why === undefined ? undefined : `${why}. ${nextStep}`
+  }
   const cfgWhy = pre.old === undefined || pre.landed === undefined
-    ? `knowledge config gate: could not verify .claude/truss.json, so the merge is not recorded: ${pre.why}`
+    ? `knowledge config gate: could not verify .claude/truss.json, so the merge is not recorded: ${pre.why}. ${nextStep}`
     : fork === undefined || fork === ''
       ? `knowledge config gate: truss-${slug} has no fork point with the pre-merge tip of ${target}`
-      : (knowledgeConfigRefusal(repo, fork, crewHead) ?? knowledgeConfigRefusal(repo, pre.old, pre.landed))
+      : (knowledgeConfigRefusal(repo, fork, crewHead) ?? landedWhy(pre.old, pre.landed))
   if (cfgWhy !== undefined) throw refuse({ ok: false, slug, merged: false, why: cfgWhy })
   crew.status = 'merged'
   savePlan(dir, plan)
@@ -3802,7 +3807,8 @@ function cmdGatedMerge(f: Flags): Obj {
     if (inProgress() !== head) throw no(`no merge of ${branch} is in progress in ${into}'s worktree`)
   } else {
     if (inProgress() !== '') throw no(`a merge is already in progress in ${into}'s worktree`)
-    const m = run(at, ['merge', '--no-ff', '--no-commit', '--no-edit', head])
+    // By name, so the message is git's own "Merge branch 'x'"; MERGE_HEAD is then held to the head the gate read.
+    const m = run(at, ['merge', '--no-ff', '--no-commit', '--no-edit', branch])
     if (m.status !== 0) {
       const files = run(at, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
       if (files.length > 0) throw no('merge conflict: resolve it, git add the files, then run this command again with --continue', { conflict: true, files })
@@ -3810,19 +3816,42 @@ function cmdGatedMerge(f: Flags): Obj {
       throw no(`git merge failed: ${(m.err || m.out).split('\n')[0]}`)
     }
     if (inProgress() === '') return { ok: true, merged: true, upToDate: true, branch, into, old, head: old, mode: 'no-ff' }
+    if (inProgress() !== head) {
+      run(at, ['merge', '--abort'])
+      throw no(`${branch} moved during the merge; run this again`)
+    }
   }
-  const tree = gateGit(at, ['write-tree'])
-  if (tree.status !== 0 || tree.out === '') throw no(`unresolved paths remain in ${into}'s worktree: ${tree.err.split('\n')[0]}`)
-  const landing = landingRefusal(at, old, tree.out, target)
-  if (landing !== undefined) {
+  const gate = (): void => {
+    const tree = gateGit(at, ['write-tree'])
+    if (tree.status !== 0 || tree.out === '') throw no(`unresolved paths remain in ${into}'s worktree: ${tree.err.split('\n')[0]}`)
+    const landing = landingRefusal(at, old, tree.out, target)
+    if (landing === undefined) return
     run(at, ['merge', '--abort'])
     throw no(landing)
   }
-  const c = run(at, ['commit', '--no-edit'])
-  if (c.status !== 0) {
-    run(at, ['merge', '--abort'])
-    throw no(`git commit failed: ${(c.err || c.out).split('\n')[0]}`)
+  // Refused text for one hook, run by git so core.hooksPath and git's own sh apply. Git before 2.36 has no `git hook`: only a hook that exists then stops the merge.
+  const hookRefusal = (name: string, args: string[] = []): string | undefined => {
+    const h = run(at, ['hook', 'run', '--ignore-missing', name, ...(args.length > 0 ? ['--', ...args] : [])])
+    if (h.status === 0) return undefined
+    if (/is not a git command/.test(h.err)) return existsSync(run(at, ['rev-parse', '--path-format=absolute', '--git-path', `hooks/${name}`]).out) ? `the ${name} hook cannot be run: git hook needs git 2.36 or later` : undefined
+    const said = h.err || h.out
+    return `the ${name} hook refused the merge commit${said === '' ? ', printing nothing' : `: ${said}`}`
   }
+  // Git keeps the conflict resolution only while MERGE_HEAD stands, so a refusal on --continue leaves the merge for the retry; a clean merge has nothing to keep.
+  const stopped = (why: string): CliError => {
+    if (resume) return no(`${why}. The resolved index and MERGE_HEAD are kept: fix that, git add any change, then run this command again with --continue to retry`)
+    run(at, ['merge', '--abort'])
+    return no(why)
+  }
+  gate() // first, so a loosening is cleared whatever a hook would say
+  // The hooks raw git runs: `git merge` runs pre-merge-commit, `git merge --continue` is `git commit` and runs pre-commit, both then commit-msg.
+  // Run here because `git commit` would pick pre-commit for both, and `merge --no-commit` runs neither; hence --no-verify below.
+  const msgFile = run(at, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_MSG']).out
+  const hookWhy = hookRefusal(resume ? 'pre-commit' : 'pre-merge-commit') ?? hookRefusal('commit-msg', [msgFile])
+  if (hookWhy !== undefined) throw stopped(hookWhy)
+  gate() // again, since a hook can change the index, and this is the tree that lands
+  const c = run(at, ['commit', '--no-edit', '--no-verify', '--cleanup=strip'])
+  if (c.status !== 0) throw stopped(`git commit failed: ${c.err || c.out || `exit ${c.status} with no output, as from a prepare-commit-msg hook`}`)
   return { ok: true, merged: true, branch, into, old, head: run(at, ['rev-parse', 'HEAD']).out, mode: 'no-ff' }
 }
 // The target's tip just before `head` reached it and the tip that first held it, from the target's reflog (a commit graph cannot tell them apart after a

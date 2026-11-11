@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { cli, crewWorld, git, mk, mkWorld, say } from './fixtures/ltc/harness.ts'
 
@@ -443,4 +443,188 @@ test('config gate 26: into an integration branch, a crew that raises past what m
   const r = cli(w, 'knowledge-config-gate', ['--branch', 'truss-a', '--into', 'integration'])
   assert.equal(r.status, 1, say(r))
   assert.match(r.json.why, LOOSENED)
+})
+
+// ---- gated-merge honours the hooks a raw merge honours ----
+
+// A real hook. git runs it through its own sh on every platform, so a #!/bin/sh file serves Windows as well.
+const hook = (dir, name, body) => {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(`${dir}/${name}`, `#!/bin/sh\n${body}\n`)
+  chmodSync(`${dir}/${name}`, 0o755)
+}
+const hooksOf = (w) => `${w.repo}/.git/hooks`
+const mergeHead = (at) => git(at, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], true)
+const gated = (w, ...more) => cli(w, 'gated-merge', ['--branch', 'truss-a', '--into', 'integration', ...more])
+const message = (at) => git(at, ['log', '-1', '--format=%B'])
+// A merge of truss-a into integration stopped on a conflict in src/shared.txt, with the conflict resolved and staged.
+function resolvedConflict(w) {
+  const at = integration(w)
+  const cw = crewWorld(w, { process: 'solo', files: { 'src/shared.txt': 'crew\n' } })
+  mkdirSync(`${at}/src`, { recursive: true })
+  writeFileSync(`${at}/src/shared.txt`, 'integration\n')
+  git(at, ['add', 'src/shared.txt'])
+  git(at, ['commit', '-q', '-m', 'integration side'])
+  const first = gated(w)
+  assert.equal(first.json.conflict, true, say(first))
+  writeFileSync(`${at}/src/shared.txt`, 'resolved\n')
+  git(at, ['add', 'src/shared.txt'])
+  return { at, cw, before: tipOf(w, 'integration') }
+}
+
+test('config gate 27: a hook that refuses --continue leaves the resolved merge in place, quotes the hook and says a re-run retries', () => {
+  const w = mkWorld()
+  const { at, cw, before } = resolvedConflict(w)
+  hook(hooksOf(w), 'pre-commit', 'echo "lint says no" >&2\nexit 1')
+  const r = gated(w, '--continue')
+  assert.equal(r.status, 1, say(r))
+  assert.equal(r.json.merged, false)
+  assert.match(r.json.why, /pre-commit hook refused/, say(r))
+  assert.match(r.json.why, /lint says no/, say(r))
+  assert.match(r.json.why, /--continue/, say(r))
+  assert.equal(tipOf(w, 'integration'), before)
+  assert.equal(mergeHead(at), cw.head, 'MERGE_HEAD survives the refusal')
+  assert.equal(git(at, ['show', ':src/shared.txt']), 'resolved', 'the resolved index survives the refusal')
+  unlinkSync(`${hooksOf(w)}/pre-commit`)
+  const retry = gated(w, '--continue')
+  assert.equal(retry.status, 0, say(retry))
+  gitIn(at, ['merge-base', '--is-ancestor', cw.head, 'HEAD'])
+})
+
+test('config gate 28: a silent hook on --continue still names itself and the retry, and a loosening in the resolved index still clears the merge', () => {
+  const w = mkWorld()
+  const { at, cw } = resolvedConflict(w)
+  hook(hooksOf(w), 'pre-commit', 'exit 1')
+  const r = gated(w, '--continue')
+  assert.equal(r.status, 1, say(r))
+  assert.match(r.json.why, /pre-commit hook refused/, say(r))
+  assert.match(r.json.why, /--continue/, say(r))
+  assert.equal(mergeHead(at), cw.head)
+
+  writeFileSync(`${at}/${CFG}`, withCfg(w, { rulesDir: 'elsewhere' }))
+  git(at, ['add', CFG])
+  const bad = gated(w, '--continue')
+  assert.equal(bad.status, 1, say(bad))
+  assert.match(bad.json.why, LOOSENED)
+  assert.equal(mergeHead(at), '', 'a gate refusal clears the merge, even with a failing hook')
+})
+
+test('config gate 29: a clean --no-ff runs pre-merge-commit from core.hooksPath; a refusal leaves the target unmoved, no MERGE_HEAD and dirty tracked files alone', () => {
+  const w = mkWorld()
+  const at = integration(w)
+  writeFileSync(`${at}/keep.txt`, 'committed\n')
+  git(at, ['add', 'keep.txt'])
+  git(at, ['commit', '-q', '-m', 'a tracked file'])
+  crewWorld(w, { process: 'solo' })
+  writeFileSync(`${at}/keep.txt`, 'dirty\n')
+  const hooks = mk('gate-hooks-')
+  git(w.repo, ['config', 'core.hooksPath', hooks])
+  hook(hooks, 'pre-merge-commit', 'echo "merge checks failed" >&2\nexit 1')
+  const before = tipOf(w, 'integration')
+  const r = gated(w)
+  assert.equal(r.status, 1, say(r))
+  assert.equal(r.json.merged, false)
+  assert.match(r.json.why, /pre-merge-commit hook refused/, say(r))
+  assert.match(r.json.why, /merge checks failed/, say(r))
+  assert.equal(tipOf(w, 'integration'), before)
+  assert.equal(mergeHead(at), '', 'no merge left in progress')
+  assert.equal(readFileSync(`${at}/keep.txt`, 'utf8'), 'dirty\n', 'the unrelated dirty file survives')
+})
+
+test('config gate 30: a strict pre-commit does not block a clean --no-ff merge, the same as a raw merge', () => {
+  const w = mkWorld()
+  const at = integration(w)
+  crewWorld(w, { process: 'solo' })
+  hook(hooksOf(w), 'pre-commit', 'exit 1')
+  const r = gated(w)
+  assert.equal(r.status, 0, say(r))
+  assert.equal(r.json.merged, true)
+  gitIn(at, ['merge-base', '--is-ancestor', 'refs/heads/truss-a', 'HEAD'])
+})
+
+test('config gate 31: --continue answers to pre-commit and not to pre-merge-commit, as git merge --continue does', () => {
+  const w = mkWorld()
+  const { at, cw } = resolvedConflict(w)
+  hook(hooksOf(w), 'pre-merge-commit', 'exit 1')
+  const r = gated(w, '--continue')
+  assert.equal(r.status, 0, say(r))
+  gitIn(at, ['merge-base', '--is-ancestor', cw.head, 'HEAD'])
+})
+
+test('config gate 32: a hook that stages a loosening is judged, so the gate sees the tree that would land', () => {
+  const w = mkWorld()
+  const at = integration(w)
+  crewWorld(w, { process: 'solo' })
+  const blob = gitIn(w.repo, ['hash-object', '-w', '--stdin'], withCfg(w, { rulesDir: 'elsewhere' }))
+  hook(hooksOf(w), 'pre-merge-commit', `git cat-file blob ${blob} > ${CFG}\ngit add ${CFG}`)
+  const before = tipOf(w, 'integration')
+  const r = gated(w)
+  assert.equal(r.status, 1, say(r))
+  assert.match(r.json.why, LOOSENED)
+  assert.equal(tipOf(w, 'integration'), before)
+  assert.equal(mergeHead(at), '')
+})
+
+test('config gate 33: commit-msg still refuses a clean --no-ff merge, as it does a raw one', () => {
+  const w = mkWorld()
+  const at = integration(w)
+  crewWorld(w, { process: 'solo' })
+  hook(hooksOf(w), 'commit-msg', 'echo "bad message" >&2\nexit 1')
+  const before = tipOf(w, 'integration')
+  const r = gated(w)
+  assert.equal(r.status, 1, say(r))
+  assert.match(r.json.why, /commit-msg hook refused/, say(r))
+  assert.match(r.json.why, /bad message/, say(r))
+  assert.equal(tipOf(w, 'integration'), before)
+  assert.equal(mergeHead(at), '')
+})
+
+test('config gate 34: the merge commit names the crew branch like a raw merge, and a conflict leaves no comment lines in it', () => {
+  const w = mkWorld()
+  const at = integration(w)
+  crewWorld(w, { process: 'solo' })
+  const r = gated(w)
+  assert.equal(r.status, 0, say(r))
+  assert.equal(message(at), "Merge branch 'truss-a' into integration")
+
+  const w2 = mkWorld()
+  const { at: at2 } = resolvedConflict(w2)
+  const done = gated(w2, '--continue')
+  assert.equal(done.status, 0, say(done))
+  const text = message(at2)
+  assert.equal(text.split('\n')[0], "Merge branch 'truss-a' into integration", text)
+  assert.doesNotMatch(text, /Conflicts:|^#/m, text)
+})
+
+test('config gate 35: mark-merged names the recovery when it cannot separate the crew from the client, and offers no override flag', () => {
+  const w = mkWorld()
+  crewWorld(w, { process: 'solo' })
+  git(w.repo, ['merge', '-q', '--no-ff', '--no-edit', 'truss-a'])
+  git(w.repo, ['reflog', 'expire', '--expire=now', '--expire-unreachable=now', '--all'])
+  const blind = cli(w, 'mark-merged', ['--slug', 'a'])
+  assert.equal(blind.status, 1, say(blind))
+  assert.match(blind.json.why, /could not verify[\s\S]*Next step:[\s\S]*could not separate[\s\S]*plan\.json/, say(blind))
+  assert.doesNotMatch(blind.json.why, /--[a-z]/, say(blind))
+
+  const w2 = mkWorld()
+  crewWorld(w2, { process: 'solo' })
+  git(w2.repo, ['checkout', '-q', '-b', 'pulled'])
+  commitMain(w2, withCfg(w2, { knowledgeBudgets: { rule: 90 } }), 'client raises upstream')
+  git(w2.repo, ['merge', '-q', '--no-ff', '--no-edit', 'truss-a'])
+  git(w2.repo, ['checkout', '-q', 'main'])
+  git(w2.repo, ['merge', '-q', '--ff-only', 'pulled'])
+  const pulled = cli(w2, 'mark-merged', ['--slug', 'a'])
+  assert.equal(pulled.status, 1, say(pulled))
+  assert.match(pulled.json.why, /Next step:[\s\S]*could not separate[\s\S]*plan\.json/, say(pulled))
+  assert.equal(planStatus(w2, 'a'), 'running')
+})
+
+test('config gate 36: a crew\'s own loosening at mark-merged gets no hand-edit recovery', () => {
+  const w = mkWorld()
+  crewWorld(w, { process: 'solo', files: { [CFG]: withCfg(w, { knowledgeBudgets: { rule: 500 } }) } })
+  git(w.repo, ['merge', '-q', '--no-ff', '--no-edit', 'truss-a'])
+  const r = cli(w, 'mark-merged', ['--slug', 'a'])
+  assert.equal(r.status, 1, say(r))
+  assert.match(r.json.why, LOOSENED)
+  assert.doesNotMatch(r.json.why, /Next step:/, say(r))
 })

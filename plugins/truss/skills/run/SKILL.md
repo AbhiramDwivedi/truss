@@ -531,7 +531,7 @@ The plugin doesn't save reports for agents you start outside a crew. Read its ha
 
 When the plan has more than one stage, integrate stage by stage. Once a stage's crews have all passed their QC engineers, the integrator merges their branches into the integration branch and a fresh integration QC engineer rules on it. On its PASS, set those crews to `"merged"`. The next stage's foremen build on the integration branch: their brief names it, and each foreman resets its worktree to it first. Start a fresh integrator for each later stage, named `integrator-2`, then `integrator-3`, with the same brief and the integration branch's head.
 
-**Scrub before merge.** For a retro fix goal, run `node <plugin>/retro/cli.ts scrub <changed files>` on every changed file before each merge of the fix, in the same Bash call as the push or merge and joined to it with `&&`, as in `node <plugin>/retro/cli.ts scrub <changed files> && git merge --no-ff <branch>`. Never pipe scrub's output or join it with `;` or `||`, since a pipe or a `;` lets the push or merge run after a hit. A hit blocks the merge (R-32), and the fix goes back to its foreman to remove it.
+**Scrub before merge.** For a retro fix goal, run `node <plugin>/retro/cli.ts scrub <changed files>` on every changed file before each merge of the fix, in the same Bash call as the push or merge and joined to it with `&&`, as in `node <plugin>/retro/cli.ts scrub <changed files> && node <plugin>/bin/factory.ts gated-merge --repo <repo> --branch <branch>`. Never pipe scrub's output or join it with `;` or `||`, since a pipe or a `;` lets the push or merge run after a hit. A hit blocks the merge (R-32), and the fix goes back to its foreman to remove it.
 
 ### Reconcile what the run learned
 
