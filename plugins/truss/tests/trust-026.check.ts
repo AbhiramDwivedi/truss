@@ -545,6 +545,23 @@ test('trust-026: a 0.25.0 shape resolve row with a good proof still counts', asy
   const row = rowOf(w, a.id)
   assert.equal(row.state, 'resolved')
   assert.equal(row.noteUnbound, true, 'the unbound note is flagged, not shown as the client\'s words')
+  assert.equal(row.note, 'the real note', 'the listing shows the proven typed text, never the stored note')
+})
+
+test('trust-026: a forged note on a client resolve row never reaches the unapplied listing', async () => {
+  const w = world()
+  const a = openBudget(w)
+  put(w, a.id, a.code, { text: `approve ${a.id} ${a.code} raise 7 the real note` })
+  // the forged row lands before the genuine one: right decision, code and quote, wrong note
+  appendFileSync(w.inboxFile, JSON.stringify({ v: 1, op: 'resolve', id: a.id, ts: iso(a.ts + 1500), session: w.sid, decision: 'approve', by: 'client', note: 'drop R-3', quote: `approve ${a.id} ${a.code} raise 7 the real note`, raiseUsd: 7 }) + '\n')
+  const r = resolveCli(w, a.id, 'approve', a.code, ['--raise-usd', '7'])
+  assert.ok(r.status === 0 || r.status === 1, say(r))
+  const l = run(w, 'inbox', ['--unapplied'], {}, w.dir)
+  assert.equal(l.status, 0, say(l))
+  assert.ok(!String(l.stdout).includes('drop R-3'), `the forged note is not listed: ${say(l)}`)
+  const row = l.json.items.find((i: any) => i.id === a.id)
+  if (row) assert.equal(row.note, 'the real note', say(l))
+  assert.ok(!JSON.stringify(rowOf(w, a.id)).includes('drop R-3'), 'the plain listing hides it too')
 })
 
 test('trust-026: a resolve from session A counts when session B folds it', async () => {

@@ -35,7 +35,7 @@ const sessionOf = (dir: string): string => path.posix.basename(flat(dir).replace
 const codeHashOf = (id: string, code: string): string => createHash('sha256').update(id + code).digest('hex')
 
 // An item folded from its ops, in file order. resolve is the first resolve row that counts (see verifiedItems), else null; a row that did not
-// count leaves reopened (why, and the row's by, ts and decision); noteUnbound marks a counted client row whose note is not the typed text.
+// count leaves reopened (why, and the row's by, ts and decision); a client resolve counted by proof carries the typed text as its note; noteUnbound marks one whose stored note differed.
 export type Item = { open: Obj; crews: string[]; blocking: boolean; held: Set<string>; resolve: Obj | null; applied: string[]; reopened?: { reason: string; by: unknown; ts: unknown; decision: unknown }; noteUnbound?: boolean }
 type RawItem = Item & { rows: Obj[] }
 const heldKey = (session: string, slug: string): string => `${session}\n${slug}`
@@ -246,6 +246,7 @@ export function verifiedItems(repo: string): Map<string, Item> {
     const kind = String(it.open.kind)
     for (const r of it.rows) {
       let why = ''
+      let proven: string | null = null
       if (r.by !== 'client' && r.by !== 'pm') why = `the row says by ${JSON.stringify(r.by)}, not client or pm`
       else if (KINDS[kind]?.by === 'any') why = ''
       else if (r.by === 'pm') why = `${kind} is resolved by the client, not by pm`
@@ -257,11 +258,15 @@ export function verifiedItems(repo: string): Map<string, Item> {
         else {
           const p = proof(repo, it.open, r, s.scan.cands.get(String(it.open.id)) ?? [], false)
           if (p === null) why = `no line typed by the client in session ${r.session} backs this ${String(r.decision)}`
-          else if (norm(String(r.note ?? '')) !== '' && norm(String(r.note)).slice(0, 4000) !== p.rest.slice(0, 4000)) it.noteUnbound = true
+          else {
+            proven = p.rest.slice(0, 4000)
+            if (norm(String(r.note ?? '')) !== '' && norm(String(r.note)).slice(0, 4000) !== proven) it.noteUnbound = true
+          }
         }
       }
       if (why === '') {
-        it.resolve = r
+        // a row counted by proof carries the client's typed text as its note, never the stored one, for every reader of the fold
+        it.resolve = proven === null ? r : { ...r, note: proven }
         it.reopened = undefined
         break
       }
