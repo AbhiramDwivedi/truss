@@ -14,6 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { REAL_PLUGIN, assertOneLine, crew, flat, mkRepo, planObj, pluginCopy, runCli, validateEvent, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
+import { proofPlugin } from './fixtures/inbox/proof-plugin.ts'
 
 const FIX = `${REAL_PLUGIN}/tests/fixtures/inbox`
 const NOTIFY_RUN = `${REAL_PLUGIN}/bin/notify-run.ts`
@@ -40,8 +41,8 @@ function mk(prefix: string): string {
   return d
 }
 
-/** The factory CLI of a private copy of the plugin (real bin/, so the real inbox.ts and notify-run.ts). */
-const factory = (): string => `${pluginCopy()}/bin/factory.ts`
+/** The factory CLI of a private copy of the plugin whose proof root is $TRUSS_TEST_PROOF_ROOT (real bin/, so the real inbox.ts and notify-run.ts). */
+const factory = (): string => `${proofPlugin()}/bin/factory.ts`
 
 type Env = { repo: string; common: string; shared: string; inboxFile: string; sid: string; dir: string; troot: string }
 
@@ -64,7 +65,7 @@ function mkInbox(config: Record<string, unknown> = {}): Env {
 
 /** Runs `factory <command> --repo R --dir D <args>` as a real process; `dir` picks another session's dir. */
 function fx(env: Env, command: string, args: string[] = [], extraEnv: Record<string, string> = {}, dir = env.dir) {
-  return runCli(factory(), command, ['--repo', env.repo, '--dir', dir, ...args], env.repo, { TRUSS_TRANSCRIPTS_ROOT: env.troot, ...extraEnv })
+  return runCli(factory(), command, ['--repo', env.repo, '--dir', dir, ...args], env.repo, { TRUSS_TRANSCRIPTS_ROOT: env.troot, TRUSS_TEST_PROOF_ROOT: env.troot, ...extraEnv })
 }
 
 /** escalate with exit 0 expected; returns the printed object. */
@@ -91,14 +92,28 @@ const listOf = (env: Env, flags: string[] = []): any => {
 const afterOpen = (env: Env, id: string, plusMs = 1000): string => new Date(Date.parse(opsOf(env).find((o) => o.op === 'open' && o.id === id).ts) + plusMs).toISOString()
 /** One main-thread human prompt line. */
 const human = (content: unknown, ts: string, over: Record<string, unknown> = {}): string =>
-  JSON.stringify({ parentUuid: null, isSidechain: false, type: 'user', message: { role: 'user', content }, uuid: randomUUID(), timestamp: ts, ...over })
+  JSON.stringify({ parentUuid: null, isSidechain: false, type: 'user', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content }, uuid: randomUUID(), timestamp: ts, ...over })
+/** The real row shape: a sessionId equal to the session and a parentUuid that resolves to the previous row of the file (null only for the first). */
+function chained(lines: string[], sid: string, prev: string | null = null): string[] {
+  return lines.map((l) => {
+    const o = JSON.parse(l)
+    if (!o.uuid) o.uuid = randomUUID()
+    if (o.sessionId === undefined) o.sessionId = sid
+    if (!o.parentUuid) o.parentUuid = prev
+    prev = o.uuid
+    return JSON.stringify(o)
+  })
+}
 const typed = (id: string, code: string, decision = 'approve', tail = 'go ahead'): string => `/truss:inbox ${decision} ${id} ${code} ${tail}`
 const transcriptOf = (env: Env, sid = env.sid): string => `${env.troot}/proj-a1/${sid}.jsonl`
 function putTranscript(env: Env, lines: string[], sid = env.sid): void {
   mkdirSync(path.dirname(transcriptOf(env, sid)), { recursive: true })
-  writeFileSync(transcriptOf(env, sid), lines.join('\n') + '\n')
+  writeFileSync(transcriptOf(env, sid), chained(lines, sid).join('\n') + '\n')
 }
-const addTranscript = (env: Env, lines: string[]): void => appendFileSync(transcriptOf(env), lines.join('\n') + '\n')
+const addTranscript = (env: Env, lines: string[]): void => {
+  const have = readFileSync(transcriptOf(env), 'utf8').split('\n').filter(Boolean)
+  appendFileSync(transcriptOf(env), chained(lines, env.sid, have.length ? JSON.parse(have[have.length - 1]).uuid : null).join('\n') + '\n')
+}
 /** The fixture transcript with the placeholders filled. */
 const fixtureLines = (id: string, code: string, ts: string, file = 'slash-command.jsonl'): string[] =>
   readFileSync(`${FIX}/${file}`, 'utf8').split('\n').filter(Boolean).map((l) => l.replaceAll('__ID__', id).replaceAll('__CODE__', code).replaceAll('__TS__', ts))
