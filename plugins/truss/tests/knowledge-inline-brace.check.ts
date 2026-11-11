@@ -14,3 +14,7 @@ test('inline frontmatter list treats an unbalanced brace as a literal, so its co
   assert.deepEqual(parseFrontmatter('---\npaths: [a{b, c{d,e}.ts]\n---\n')?.data.paths, ['a{b', 'c{d,e}.ts'])
   assert.deepEqual(parseFrontmatter('---\npaths: [a}b, c.ts]\n---\n')?.data.paths, ['a}b', 'c.ts'])
 })
+
+test('inline frontmatter list does not take a quoted closing brace for the end of a group', () => {
+  assert.deepEqual(parseFrontmatter('---\npaths: [a{b, "c}d", e.ts]\n---\n')?.data.paths, ['a{b', 'c}d', 'e.ts'])
+})

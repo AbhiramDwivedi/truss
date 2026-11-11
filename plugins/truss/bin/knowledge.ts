@@ -127,7 +127,8 @@ function inlineList(s: string): string[] {
   const chars = Array.from(inner)
   // a `{` opens a brace group only if a `}` comes before the next `{`; otherwise it is literal, as the glob dialect says
   const closes = (from: number): boolean => {
-    for (let j = from + 1; j < chars.length; j++) {
+    for (let j = from + 1, open = ''; j < chars.length; j++) {
+      if (open !== '' || chars[j] === '"' || chars[j] === "'") { open = chars[j] === open ? '' : open || (chars[j] as string); continue }
       if (chars[j] === '}') return true
       if (chars[j] === '{') return false
     }
