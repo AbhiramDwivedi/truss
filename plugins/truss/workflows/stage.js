@@ -512,7 +512,7 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   const status = statusOf(res.status)
   // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or
   // unparseable status falls back to the stdout rule
-  if (status) {
+  if (status && Object.keys(status).length > 0) {
     const parsed = { ...(fromStdout || {}), ...status }
     if (typeof status.ran === 'boolean') parsed.heavy = { ...(isPlainObject(fromStdout && fromStdout.heavy) ? fromStdout.heavy : {}), ran: status.ran }
     return { met: status[key] === true, parsed, exit: res.exit, out: `exit ${res.exit}\n${res.stdout}` }
@@ -1186,9 +1186,10 @@ async function integrateNow(crew, branch, at) {
   // commits with no Truss trailer at all: the same stop, never a resolver (its merge would put the bare commit on the crew branch)
   const bare = r.parsed && Array.isArray(r.parsed.missingTrailers) ? r.parsed.missingTrailers.map(String) : []
   if (bare.length) throw new Stop('BLOCKED', `${branch} not merged: these commits carry neither a Truss-Crew nor a Truss-Role trailer: ${bare.join('; ')}. Reword those commits to end with both trailers, or rerun the task.`, at)
-  // a refusal with no conflicts and a reason (an unreadable commit range, an operation in progress) is no merge conflict: a stop that carries the reason, never a resolver
+  // a refusal with no conflicts and a reason (an unreadable commit range) is no merge conflict: a stop that carries the reason, never a
+  // resolver; an operation in progress (inProgress) goes to the resolver, the one that can conclude it
   const conflicts = conflictsOf(r)
-  if (!conflicts.length && r.parsed && typeof r.parsed.why === 'string' && r.parsed.why) throw new Stop('BLOCKED', `${branch} not merged: ${r.parsed.why}`, at)
+  if (!conflicts.length && !(r.parsed && r.parsed.inProgress) && r.parsed && typeof r.parsed.why === 'string' && r.parsed.why) throw new Stop('BLOCKED', `${branch} not merged: ${r.parsed.why}`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflicts, at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
