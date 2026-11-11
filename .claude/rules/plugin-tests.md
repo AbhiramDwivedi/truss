@@ -10,7 +10,8 @@ sources:
   - plugins/truss/bin/factory.ts
   - plugins/truss/tests/gate-trussfile.check.ts
   - plugins/truss/tests/unattended.check.ts
-verified: 483238c5bbfdaf03e57b30eb2a21911c6bb95e68
+  - plugins/truss/tests/fixtures/ltc/harness.ts
+verified: 8698ec586a609891bfaf9c7e9849d4861be0cf5e
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
@@ -23,4 +24,6 @@ verified: 483238c5bbfdaf03e57b30eb2a21911c6bb95e68
 - A change to proof-check behaviour in `bin/inbox.ts` needs `docs/features.md` and `docs/knowledge/store.md` updated too; they sit outside a builder's file list, so the stage or knowledge member owns them.
 - Reach `sessionAudit` (`factory.ts:2549`) through `factory finish` with a second run of plan labels next to the stage run (`auditOf`, `wiring-025.check.ts:319`). An unparsable label starting a `truss:` agent type is flagged.
 - Run a registered hook handler under plain node: import `hooks/register.ts`, call `register(on)` with a fake `on` that captures the handler whose tool filter matches (`a[1].tool`, a string or an array) and returns a chain with a stub `.catch`. Call the handler with a fake `$` (`process.run`, `session.cwd` and `id`, `env`, `clock`, `ui`, `fs`, `state`) and a `next` that records its calls (`gate-trussfile.check.ts:256` `drive()`, `unattended.check.ts`).
+- Test a crew's merge gate through the real CLI (`fixtures/ltc/harness.ts` `crewWorld`, `clientResolves`): a solo or lean crew merges through `land` (plan v4, crew `process`, `owns: ['**']` so the owns-check never masks the gate); a full crew through `finish --transcript <mkRun dir> --result <file>`. Assert the refusal text matches the gate's pattern, not only exit 1.
+- A client resolve in a test is the typed line `/truss:inbox approve <id> <code>` in `<troot>/<proj>/<sid>.jsonl`, ts one second after the `open` op; read the code from the notify recorder's stdin row. With `--raise-usd`, `typedProof` (`inbox.ts:222-225`) needs `<decision> <id> <code> raise <usd>`, so the helper must type the amount (`harness.ts:81`).
 - During an in-progress merge, `git checkout HEAD -- <file>` restores the pre-merge file. To undo a temporary mutation, use `git checkout <merged-branch> -- <file>` (seen as `not built: escalate` failures in `inbox.check.ts`).
