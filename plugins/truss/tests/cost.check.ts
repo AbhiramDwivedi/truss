@@ -290,6 +290,42 @@ test('cost: the 5.20 crew held at crewUsd 5 gives budgetVerdict held with scope 
   assert.deepEqual({ held: v.held, scope: v.scope, spentUsd: Number(v.spentUsd.toFixed(9)), limitUsd: v.limitUsd }, { held: true, scope: 'crew', spentUsd: 5.2, limitUsd: 5 })
 })
 
+// End to end through the real inbox: hold, escalation with the code in the held entry (no notify key), client-path resolve with a typed raise, admit.
+function typeApproval(w: W, id: string, code: string, tail: string): void {
+  const line = { parentUuid: null, isSidechain: false, type: 'user', message: { role: 'user', content: `/truss:inbox approve ${id} ${code} ${tail}` }, uuid: `u-${id}`, timestamp: new Date(Date.now() + 60000).toISOString() }
+  mkdirSync(`${w.root}/${w.key}`, { recursive: true })
+  appendFileSync(`${w.root}/${w.key}/${w.sid}.jsonl`, JSON.stringify(line) + '\n')
+}
+const resolveCli = (w: W, id: string, code: string, extra: string[]) => runCli(FACTORY, 'resolve', [id, '--decision', 'approve', '--by', 'client', '--code', code, ...extra, '--repo', w.repo, '--dir', w.dir], w.repo, w.env)
+
+test('cost: a held crew shows its code with no notify key; the client-path raise lets it run, and a raise too small still holds it', () => {
+  const w = world({ config: cfg({ pricing: pricing(), budget: BUDGET }), crews: ['bcrew'] })
+  lay(w, ['budget'])
+  const held = admit(w, 'bcrew')
+  assert.equal(held.status, 1, held.stdout + held.stderr)
+  const m = /client approval needed: (E-\d{8}-[0-9a-f]{6}) code ([A-Z2-9]{6})/.exec(String(held.json?.why))
+  assert.ok(m, `the held why carries the id and the one-time code: ${held.json?.why}`)
+  const [, id, code] = m
+  // too small: 5.2 spent against 5 + 0.1 is still held, and the amount the agent passes must be the typed one
+  typeApproval(w, id, code, 'raise 0.1')
+  const liar = resolveCli(w, id, code, ['--raise-usd', '3'])
+  assert.equal(liar.status, 1, `a --raise-usd that differs from the typed one is refused: ${liar.stdout}`)
+  const small = resolveCli(w, id, code, ['--raise-usd', '0.1'])
+  assert.equal(small.status, 0, small.stdout + small.stderr)
+  const still = admit(w, 'bcrew')
+  assert.equal(still.status, 1, `a raise of 0.1 does not clear 5.2 against 5.1: ${still.stdout}`)
+  assert.equal(still.json?.budget, true)
+  // a new item (the first is resolved), approved with a raise of 3: 5.2 < 8
+  const m2 = /client approval needed: (E-\d{8}-[0-9a-f]{6}) code ([A-Z2-9]{6})/.exec(String(still.json?.why))
+  assert.ok(m2, `the reopened item shows its code: ${still.json?.why}`)
+  typeApproval(w, m2[1], m2[2], 'raise 3')
+  const ok = resolveCli(w, m2[1], m2[2], ['--raise-usd', '3'])
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr)
+  const go = admit(w, 'bcrew')
+  assert.equal(go.status, 0, `the 5.20 crew is under 5 + 0.1 + 3: ${go.stdout}${go.stderr}`)
+  assert.equal(go.json?.admitted, true)
+})
+
 test('cost: a raise of 3 from budgetRaises lifts the crewUsd 5 limit to 8 and the 5.20 crew is admitted', async () => {
   // a private plugin copy whose bin/inbox.ts keeps the real exports and overrides budgetRaises only (plugin-tests rule)
   const d = tmp('cost-plugin-')
