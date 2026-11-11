@@ -5,8 +5,8 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { escalate } from './inbox.ts'
-import { flat, git, isObj, packageName, readJsonl, sharedDir, writeJsonAtomic } from './store.ts'
+import { escalate, verifiedItems } from './inbox.ts'
+import { CliError, flat, git, isObj, packageName, refuse, writeJsonAtomic } from './store.ts'
 
 export type Reversal = 'cheap' | 'costly' | 'irreversible'
 export type LtcLine = { what: string; later: string; reversal: Reversal }
@@ -42,33 +42,50 @@ export function ltcLines(text: string): LtcLine[] {
 
 const DEP_KEYS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 
-// The package names a package.json text declares (empty when it is missing or not JSON).
-function depsOf(text: string): Set<string> {
-  const out = new Set<string>()
+// The package names a package.json text declares, per section (empty when it is missing or not JSON).
+function depsOf(text: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
   try {
     const j = JSON.parse(text)
-    for (const k of DEP_KEYS) if (isObj(j?.[k])) for (const name of Object.keys(j[k])) out.add(packageName(name))
+    for (const k of DEP_KEYS) if (isObj(j?.[k])) out.set(k, new Set(Object.keys(j[k]).map(packageName)))
   } catch {}
   return out
 }
+const allNames = (m: Map<string, Set<string>>): Set<string> => new Set([...m.values()].flatMap((s) => [...s]))
 
 /** The deterministic triggers of the change base..head: a dependency, a migration, a *.sql, a *.schema.json or a schema.* file added. */
 export function ltcTriggers(repo: string, base: string, head: string): { what: string; later: string; reversal: 'costly' }[] {
-  const d = git(repo, ['diff', '--no-renames', '--name-status', base, head])
-  if (d.status !== 0) return []
+  // -z: a name holding a tab, quote or newline comes back raw, not C-quoted. A failed diff or one over the 1 MB buffer of store.ts git() refuses: no triggers is not an answer.
+  let d: { status: number; out: string; err: string }
+  try {
+    d = git(repo, ['diff', '--no-renames', '--name-status', '-z', base, head])
+  } catch (e) {
+    if (e instanceof CliError && /ENOBUFS/.test(e.message)) throw refuse({ error: 'long-term-cost: the git diff output is over the 1 MB size limit, so its triggers cannot be read; split the change or have the client check it by hand' })
+    throw e
+  }
+  if (d.status !== 0) throw refuse({ error: `long-term-cost: git diff ${base}..${head} failed, so the change's triggers are unknown: ${d.err}` })
   const out: { what: string; later: string; reversal: 'costly' }[] = []
   const add = (what: string, later: string): void => {
     out.push({ what, later, reversal: 'costly' })
   }
-  for (const line of d.out.split('\n')) {
-    const [status, file] = line.split('\t')
+  const toks = d.out.split('\0')
+  for (let i = 0; i + 1 < toks.length; i += 2) {
+    const status = toks[i]
+    const file = toks[i + 1]
     if (file === undefined || (status !== 'A' && status !== 'M')) continue
     const p = flat(file)
     const name = path.posix.basename(p)
     if (name === 'package.json') {
-      const before = status === 'A' ? new Set<string>() : depsOf(git(repo, ['show', `${base}:${p}`]).out)
+      const before = status === 'A' ? new Map<string, Set<string>>() : depsOf(git(repo, ['show', `${base}:${p}`]).out)
       const after = depsOf(git(repo, ['show', `${head}:${p}`]).out)
-      for (const dep of [...after].filter((x) => !before.has(x)).sort()) add(`a dependency ${dep} added to ${p}`, 'the client carries its updates, its licence and its supply chain')
+      const known = allNames(before)
+      const later = 'the client carries its updates, its licence and its supply chain'
+      for (const dep of [...allNames(after)].filter((x) => !known.has(x)).sort()) add(`a dependency ${dep} added to ${p}`, later)
+      // a name already in the file, moved out of devDependencies into a shipped section
+      for (const dep of [...allNames(after)].filter((x) => known.has(x)).sort()) {
+        const shipped = DEP_KEYS.filter((k) => k !== 'devDependencies')
+        if (shipped.some((k) => after.get(k)?.has(dep) === true && before.get(k)?.has(dep) !== true)) add(`a dependency ${dep} moved into dependencies in ${p}`, later)
+      }
       continue
     }
     if (status !== 'A') continue
@@ -80,21 +97,16 @@ export function ltcTriggers(repo: string, base: string, head: string): { what: s
   return out
 }
 
-// ---- inbox reads: the fold of S/inbox.jsonl (inbox.ts does not export its fold) ----
+// ---- inbox reads: the verified fold of inbox.ts, so a resolve row without client proof never counts ----
 
 type Seen = { id: string; ref: string | null; decision: string | null }
 function longTermItems(repo: string): Seen[] {
-  const items = new Map<string, Seen & { kind: string }>()
-  for (const r of readJsonl(`${sharedDir(repo)}/inbox.jsonl`).rows) {
-    if (typeof r.id !== 'string') continue
-    if (r.op === 'open') {
-      if (!items.has(r.id)) items.set(r.id, { id: r.id, kind: String(r.kind), ref: typeof r.ref === 'string' ? r.ref : null, decision: null })
-    } else if (r.op === 'resolve') {
-      const it = items.get(r.id)
-      if (it !== undefined && it.decision === null) it.decision = String(r.decision)
-    }
+  const out: Seen[] = []
+  for (const [id, it] of verifiedItems(repo)) {
+    if (it.open.kind !== KIND) continue
+    out.push({ id, ref: typeof it.open.ref === 'string' ? it.open.ref : null, decision: it.resolve === null ? null : String(it.resolve.decision) })
   }
-  return [...items.values()].filter((i) => i.kind === KIND)
+  return out
 }
 
 const itemOf = (repo: string, id: string): Seen | undefined => longTermItems(repo).find((i) => i.id === id)
@@ -139,17 +151,18 @@ export function ltcPlan(repo: string, dir: string, texts: string[], rev: string)
   return { ids }
 }
 
-/** The ids in D/ltc-plan.json that are open or rejected. */
+/** The ids in D/ltc-plan.json that are open or rejected. A missing, corrupt or non-array plan refuses: it never opens the gate. */
 export function ltcPlanGate(repo: string, dir: string): string[] {
   const p = `${dir}/ltc-plan.json`
-  if (!existsSync(p)) return []
-  let ids: unknown = []
+  const bad = (why: string): CliError => refuse({ error: `long-term-cost: ltc-plan.json is ${why}; run plan-write to write it again` })
+  if (!existsSync(p)) throw bad('missing')
+  let ids: unknown
   try {
     ids = JSON.parse(readFileSync(p, 'utf8')).ids
   } catch {
-    return []
+    throw bad('unreadable')
   }
-  if (!Array.isArray(ids)) return []
+  if (!Array.isArray(ids)) throw bad('not a list of ids')
   return ids.map(String).filter((id) => {
     const it = itemOf(repo, id)
     return it === undefined || it.decision === null || it.decision === 'reject'
@@ -159,7 +172,14 @@ export function ltcPlanGate(repo: string, dir: string): string[] {
 /** Escalates a crew's QC lines and triggers; `refused` is set until each item is resolved approve. */
 export function ltcCrewGate(repo: string, dir: string, slug: string, ctx: { qcText: string | null; base: string; head: string }): { refused?: string } {
   const sid = sessionOf(dir)
-  const lines = [...(ctx.qcText === null ? [] : ltcLines(ctx.qcText).filter((l) => l.reversal !== 'cheap')), ...ltcTriggers(repo, ctx.base, ctx.head)]
+  let triggers: ReturnType<typeof ltcTriggers>
+  try {
+    triggers = ltcTriggers(repo, ctx.base, ctx.head)
+  } catch (e) {
+    if (e instanceof CliError) return { refused: String(e.body.error ?? e.message) }
+    throw e
+  }
+  const lines = [...(ctx.qcText === null ? [] : ltcLines(ctx.qcText).filter((l) => l.reversal !== 'cheap')), ...triggers]
   const ids: string[] = []
   for (const line of lines) {
     const id = raise(repo, dir, `ltc:${sid}:${slug}:${sha12(line.what)}`, line, [slug])
