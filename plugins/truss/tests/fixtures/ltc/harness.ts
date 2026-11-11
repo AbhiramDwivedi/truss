@@ -78,14 +78,14 @@ const typedLine = (content: string, ts: string): string =>
   JSON.stringify({ parentUuid: null, isSidechain: false, type: 'user', message: { role: 'user', content }, uuid: randomUUID(), timestamp: ts })
 
 /** The client types `/truss:inbox <decision> <id> <code>` in this session: one main-thread human line, newer than the item's open op. */
-export function clientTypes(w: World, id: string, decision: string): string {
+export function clientTypes(w: World, id: string, decision: string, extra = ''): string {
   const code = codeOf(w, id)
   const open = opsOf(w).find((o) => o.op === 'open' && o.id === id)
   assert.ok(open, `no open op for ${id}`)
   const ts = new Date(Date.parse(open.ts) + 1000).toISOString()
   const file = `${w.troot}/proj-ltc/${w.sid}.jsonl`
   mkdirSync(path.dirname(file), { recursive: true })
-  appendFileSync(file, typedLine(`/truss:inbox ${decision} ${id} ${code} ok`, ts) + '\n')
+  appendFileSync(file, typedLine(`/truss:inbox ${decision} ${id} ${code} ${extra ? extra + ' ' : ''}ok`, ts) + '\n')
   return code
 }
 

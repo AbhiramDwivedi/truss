@@ -244,7 +244,7 @@ test('e2e 025: a crew priced at 5.20 against crewUsd 5 opens exactly one budget 
   assert.equal(itemsOf(w, 'budget').length, 1, 'a repeat admit opens no second item')
   assert.equal(inboxOps(w).filter((o) => o.op === 'open' && o.kind === 'budget').length, 1, 'one open op in the inbox file')
   // the client types the approval in this session, then resolves with a raise of 3 (limit 5 + 3 = 8 against 5.2 spent)
-  const code = clientTypes(w, id, 'approve')
+  const code = clientTypes(w, id, 'approve', 'raise 3')
   const res = cli(w, 'resolve', [id, '--decision', 'approve', '--by', 'client', '--code', code, '--raise-usd', '3'])
   assert.equal(res.status, 0, say(res))
   const third = cli(w, 'admit', ['--slug', 'bcrew'])
