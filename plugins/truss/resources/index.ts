@@ -125,7 +125,7 @@ function readOwner(lock: string): any {
 // A stale lock is removed by store.ts takeOver: one breaker at a time holds <lock>.break and removes the lock only while its
 // token is still the one judged stale. It never renames the lock aside, which could move a lock that has just turned live.
 /** Takes the one heavy slot. Returns the owner's token, or null while someone else holds it. */
-export function takeHeavySlot(dir: string, owner: { label?: string; slug?: string; pid?: number } = {}): string | null {
+export function takeHeavySlot(dir: string, owner: { label?: string; slug?: string; pid?: number } = {}, platform: string = process.platform): string | null {
   const lock = lockDir(dir)
   mkdirSync(`${dir}/resources`, { recursive: true })
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -133,7 +133,7 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
       mkdirSync(lock)
     } catch (e: any) {
       // on win32 a lock dir that is pending delete refuses mkdir with EPERM or EACCES: that is contention, not a fault
-      if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return null
+      if (platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return null
       if (e.code !== 'EEXIST') throw e
       const o = readOwner(lock)
       let stale = false
@@ -146,7 +146,7 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
         }
       }
       if (!stale) return null
-      if (!takeOver(lock, o && typeof o.token === 'string' ? o.token : null, process.platform)) return null
+      if (!takeOver(lock, o && typeof o.token === 'string' ? o.token : null, platform)) return null
       continue
     }
     const token = randomUUID()
@@ -157,10 +157,10 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
 }
 
 /** Removes the lock when token is the owner's. Any other token leaves it. */
-export function releaseHeavySlot(dir: string, token: string): void {
+export function releaseHeavySlot(dir: string, token: string, platform: string = process.platform, rm: typeof rmSync = rmSync): void {
   const lock = lockDir(dir)
   const o = readOwner(lock)
-  if (o && o.token === token) rmSync(lock, { recursive: true, force: true })
+  if (o && o.token === token) rm(lock, platform === 'win32' ? { recursive: true, force: true, maxRetries: 5, retryDelay: 20 } : { recursive: true, force: true })
 }
 
 // --- process groups (Decision 4): signal a recorded group, never a pattern ---
