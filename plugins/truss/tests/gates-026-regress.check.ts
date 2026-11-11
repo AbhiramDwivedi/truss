@@ -123,12 +123,13 @@ const entry = {
   scope: 'SCOPE', worktree: '/wt/a', branch: 'truss/a', base: BASE, architecture: '/proj/docs/ARCH.md', adrs: [], resume: null, tasks: [], done: [], answers: [], spent: 0, labelFrom: {},
 }
 
-async function runStage(integrate: unknown) {
+async function runStage(integrate: unknown, logs: string[] = []) {
   const body = readFileSync(STAGE_PATH, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls: { label: string }[] = []
   const labels: Record<string, unknown> = {
     'a-planner': { tasks: [B1], stop: null },
     'a-builder': { task: 'x', marker: 'DONE', branch: 'feat/b', commit: 'c0'.repeat(20), proof: 'PROOF-B', text: 'done' },
+    'a-resolver': { task: 'x', marker: 'DONE', branch: 'feat/r', commit: 'c1'.repeat(20), proof: 'PROOF-R', text: 'resolved' },
     'a-qc': `VERDICT: PASS\n\n## Proof checked\nHead: ${HEAD}\nPatch: ${'e5'.repeat(20)}\n`,
   }
   const agent = async (prompt: string, opts: { label?: string } = {}) => {
@@ -139,7 +140,7 @@ async function runStage(integrate: unknown) {
       const cmd = m?.[1]
       const inner = cmd === 'heavy' ? String(prompt).match(/ -- .*factory\.ts\s+([\w-]+)(.*)$/m) : null
       const real = inner ? inner[1] : cmd
-      if (cmd === 'integrate') return integrate
+      if (cmd === 'integrate') return typeof integrate === 'function' ? integrate() : integrate
       if (cmd === 'admit') return rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 })
       if (cmd === 'reap') return rj({ reaped: [], skipped: [] })
       if (real === 'check') {
@@ -150,6 +151,8 @@ async function runStage(integrate: unknown) {
       if (cmd === 'owns-check') return rj({ ok: true, outside: [] })
       if (cmd === 'tests-check') return rj({ ok: true, tests: [] })
       if (cmd === 'sync') return rj({ merged: true })
+      if (cmd === 'decision-checkpoint') logs.push('RAN decision-checkpoint')
+      if (cmd === 'decision-checkpoint') return { exit: 0, stdout: JSON.stringify({ crew: 'a', checkpoint: true }), status: 'truss-status: {}' }
       if (cmd === 'knowledge-lint') return rj({ ok: true, failures: [], warnings: [] })
       return rj({ ok: true, decisions: [] })
     }
@@ -159,7 +162,7 @@ async function runStage(integrate: unknown) {
   const parallel = async (thunks: any[]) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items: any[], ...stages: any[]) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const s of stages) prev = await s(prev, item, i); return prev } catch { return null } }))
   const args = { truss: { kind: 'stage', dir: '/proj/.truss', repo: '/proj', plugin: REAL_PLUGIN, target: 'main', reworkAllowance: 2, roles: ROLES, scriptPath: STAGE_PATH, crews: [entry] } }
-  const result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, () => {}, structuredClone(args), {})
+  const result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, (m: unknown) => { logs.push(String(m)) },structuredClone(args), {})
   return { res: result as any[], calls }
 }
 
@@ -169,4 +172,27 @@ st('gates-026-regress: an integrate refusal with a why and no conflicts stops th
   assert.equal(r.res[0].tag, 'BLOCKED')
   assert.ok(r.res[0].text.includes('WHY-UNREADABLE-RANGE'), r.res[0].text)
   assert.ok(!r.calls.some((c) => /-resolver/.test(c.label)), 'no resolver is spawned')
+})
+
+// The real shape of factory.ts's operation-in-progress refusal (cmdIntegrate): conflicts [], inProgress, a why. The resolver is the one
+// that can conclude the operation, so it must be reached; a plain why with no conflicts and no inProgress still stops the crew.
+st('gates-026-regress: an operation-in-progress refusal reaches the resolver while another why-only refusal still stops BLOCKED', async () => {
+  let n = 0
+  const refusal = rj({ merged: false, conflicts: [], inProgress: 'rebase', why: 'a rebase is in progress in /wt/a; conclude or abort it before integrating feat/b' }, 1)
+  const r = await runStage(() => (n++ === 0 ? refusal : rj({ merged: true, head: HEAD })))
+  assert.ok(r.calls.some((c) => /-resolver/.test(c.label)), `the resolver is spawned for an operation in progress: ${JSON.stringify(r.calls.map((c) => c.label))}`)
+  assert.notEqual(r.res[0].state, 'stopped', `the crew is not stopped BLOCKED: ${JSON.stringify(r.res[0])}`)
+  const other = await runStage(rj({ merged: false, conflicts: [], why: 'WHY-OTHER-REFUSAL' }, 1))
+  assert.equal(other.res[0].state, 'stopped', JSON.stringify(other.res[0]))
+  assert.equal(other.res[0].tag, 'BLOCKED')
+  assert.ok(other.res[0].text.includes('WHY-OTHER-REFUSAL'), other.res[0].text)
+  assert.ok(!other.calls.some((c) => /-resolver/.test(c.label)), 'no resolver for a plain refusal')
+})
+
+// An empty `truss-status: {}` carries no field, so met falls back to the stdout JSON, as the stage.js comment says.
+st('gates-026-regress: a decision-checkpoint with truss-status: {} counts as confirmed from its stdout JSON', async () => {
+  const logs: string[] = []
+  const r = await runStage(rj({ merged: true, head: HEAD }), logs)
+  assert.ok(logs.includes('RAN decision-checkpoint'), `precondition: the crew ran decision-checkpoint: ${JSON.stringify(logs)}`)
+  assert.ok(!logs.some((l) => /not confirmed/.test(l) && /decision-checkpoint/.test(l)), JSON.stringify(logs))
 })

@@ -561,11 +561,18 @@ st('gates-026: plan-check does not call one rule file in two goals\' stages an o
   const v3 = (cs) => planObj(cs, { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] })
   const crews = [
     crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'plugins/truss/tests/one.check.ts', 'shared/**'] }),
-    crew('g2', { stage: 2, goal: 'goal-two', owns: [RULE, 'plugins/truss/tests/two.check.ts'] }),
+    crew('g2', { stage: 2, goal: 'goal-two', owns: [RULE, 'plugins/truss/tests/two.check.ts'], after: ['g1'] }),
   ]
+  // ruling: the exemption holds only when one crew's after names the other; without after the same plan is an overlap
+  const noAfter = structuredClone(crews)
+  delete noAfter[1].after
+  writePlan(w.dir, v3(noAfter))
+  const unordered = planCheck(w)
+  assert.equal(unordered.status, 1, `the rule file in two unordered crews is an overlap: ${say(unordered)}`)
+  assert.ok(assertOneLine(unordered).errors.some((e) => e.includes(RULE) && e.includes('another goal')), say(unordered))
   writePlan(w.dir, v3(crews))
   const ok = planCheck(w)
-  assert.equal(ok.status, 0, `the one rule file shared across stages is no overlap: ${say(ok)}`)
+  assert.equal(ok.status, 0, `the one rule file shared across stages by crews ordered by after is no overlap: ${say(ok)}`)
   crews[1].owns.push('shared/**')
   writePlan(w.dir, v3(crews))
   const bad = planCheck(w)
@@ -581,11 +588,18 @@ st('gates-026: owns-extend lets a crew of another goal and stage own a rule file
     crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'shared/**'] }),
     crew('g2', { stage: 2, goal: 'goal-two', owns: ['plugins/truss/tests/two.check.ts'] }),
   ]
-  writePlan(w.dir, planObj(crews, { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] }))
+  const goals = { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] }
+  writePlan(w.dir, planObj(crews, goals))
   const ext = (glob: string) => runCli(REAL_FACTORY, 'owns-extend', ['--dir', w.dir, '--repo', w.repo, '--slug', 'g2', '--glob', glob, '--reason', 'R'], w.repo)
   const bad = ext('shared/**')
   assert.equal(bad.status, 1, say(bad))
   assert.ok(assertOneLine(bad).overlaps.some((o) => o.glob === 'shared/**'), say(bad))
+  // ruling: without after between the two crews the rule file is an overlap too
+  const unordered = ext(RULE)
+  assert.equal(unordered.status, 1, `unordered crews may not both own the rule file: ${say(unordered)}`)
+  assert.ok(assertOneLine(unordered).overlaps.some((o) => o.glob === RULE), say(unordered))
+  crews[1].after = ['g1']
+  writePlan(w.dir, planObj(crews, goals))
   const ok = ext(RULE)
   assert.equal(ok.status, 0, say(ok))
   assert.ok(assertOneLine(ok).owns.includes(RULE), say(ok))
