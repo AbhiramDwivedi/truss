@@ -559,6 +559,8 @@ const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'ref
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
 const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
 const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
+// one crew's `after` names the other's slug: the two never run together
+const orderedByAfter = (a: Obj, b: Obj): boolean => (Array.isArray(a.after) && a.after.includes(b.slug)) || (Array.isArray(b.after) && b.after.includes(a.slug))
 
 function cmdPlanCheck(f: Flags): Obj {
   const plan = loadPlan(dirOf(f))
@@ -671,8 +673,9 @@ function cmdPlanCheck(f: Flags): Obj {
       const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
       if (sameGoal && crews[i].stage !== crews[j].stage) continue
       // The knowledge-owns rule makes one crew of each stage own a rule file, so two goals' crews in different stages each own the
-      // same rule file by design: that one exact glob is not an overlap between them.
-      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage
+      // same rule file by design: that one exact glob is not an overlap between them, provided one crew's after names the other
+      // (they never run together); without after it is the same overlap error as any other glob.
+      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage && orderedByAfter(crews[i], crews[j])
       // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
       if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
       for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
@@ -1073,7 +1076,7 @@ function cmdMarkMerged(f: Flags): Obj {
 }
 // Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
 // another live crew the way plan-check does (same goal and stage, or another goal; a rule file another goal's crew of another stage
-// owns is exempt, as in plan-check); logs a decision line.
+// owns is exempt, as in plan-check, only when one crew's after names the other); logs a decision line.
 function cmdOwnsExtend(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -1094,7 +1097,7 @@ function cmdOwnsExtend(f: Flags): Obj {
     for (const o of plan.crews) {
       if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
       if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
-      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage
+      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage && orderedByAfter(o, crew)
       for (const g of Array.isArray(o.owns) ? o.owns : []) {
         if (crossStage && g === glob && rules.some((r) => r.path === g)) continue
         if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
@@ -3073,7 +3076,7 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
     return { refused: e instanceof CliError && Array.isArray(e.body.outside) ? `owns-check: outside ${(e.body.outside as string[]).join(', ')}` : `owns-check failed: ${(e as Error).message}` }
   }
   // the gate reads refs/heads/<target> throughout and fails closed: a remote-tracking name such as origin/main is refused up front, with the fix
-  if (run(repo, ['rev-parse', '--verify', '-q', `refs/heads/${target}^{commit}`]).status !== 0) return { refused: `target ${target} is not a local branch (refs/heads/${target} does not resolve); create it with \`git branch ${target} <commit>\` or set \`target\` in .claude/truss.json to a local branch` }
+  if (run(repo, ['rev-parse', '--verify', '-q', `refs/heads/${target}^{commit}`]).status !== 0) return { refused: `target ${target} is not a local branch (refs/heads/${target} does not resolve); set \`target\` in .claude/truss.json to a local branch (\`git branch --list\` names them), or make one from it with \`git branch <local-name> ${target}\` and set \`target\` to <local-name>` }
   // contract-025 section 3 (finding #22): every crew, solo and qc:false included, passes the long-term cost gate; its QC text is the newest QC file, if any
   const since = runStart(plan) ?? 0
   const qcFiles = reportsOf(dir, slug).map((r) => (/^qc(-\d+)?\.md$/.test(r.name) ? { ...r, name: `${slug}-${r.name}` } : r))
