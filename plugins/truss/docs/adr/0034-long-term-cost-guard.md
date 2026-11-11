@@ -46,7 +46,7 @@ We will give the same paragraph, word for word, to every agent that judges a pla
 
 It lives in five places: the `LONG_TERM_COST` constants of `workflows/stage.js` (the QC prompt) and `workflows/plan.js` (the checker prompt), and `agents/design-engineer.md`, `agents/checking-engineer.md` and `agents/qc-engineer.md`. `tests/ltc-paragraph.check.ts` fails when any copy differs by a byte.
 
-`ltcLines(text)` (`bin/guard.ts:20-38`) reads the lines that match `^\s*(?:-\s*)?LONG-TERM-COST:` (`bin/guard.ts:15`). It splits each on `|`: the first field is `what`, and the fields starting `later:` and `reversal:` fill the rest. A line with no valid reversal (not `cheap`, `costly` or `irreversible`) counts as `costly` (`bin/guard.ts:34`), so a sloppy line blocks rather than slips through.
+`ltcLines(text)` (`bin/guard.ts:20-38`) reads the lines that match `^\s*(?:-\s*)?LONG-TERM-COST:` (`bin/guard.ts:15`). It splits each on `|`: the first field is `what`, and the fields starting `later:` and `reversal:` fill the rest. A line with no valid reversal (not `cheap`, `costly` or `irreversible`) counts as `costly` (`bin/guard.ts:34`), so a sloppy line blocks rather than slips through. A line with an empty `what` is kept, with `what` set to `(unnamed cost)`: dropping it would let a costly or irreversible cost merge unseen.
 
 `stage.js` `qc()` copies a passing QC's lines into its result as `longTermCosts` (`workflows/stage.js:2003`).
 

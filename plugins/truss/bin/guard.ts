@@ -31,9 +31,8 @@ export function ltcLines(text: string): LtcLine[] {
       if (l !== null && later === '') later = l[1].trim()
       else if (r !== null && rev === '') rev = r[1].trim().toLowerCase()
     }
-    if (parts[0] === '') continue
-    const reversal: Reversal =rev === 'cheap' || rev === 'costly' || rev === 'irreversible' ? rev : 'costly'
-    out.push({ what: parts[0], later, reversal })
+    const reversal: Reversal = rev === 'cheap' || rev === 'costly' || rev === 'irreversible' ? rev : 'costly'
+    out.push({ what: parts[0] === '' ? '(unnamed cost)' : parts[0], later, reversal })
   }
   return out
 }
