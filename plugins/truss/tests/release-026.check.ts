@@ -92,6 +92,7 @@ test('release-026: the version-pin tests follow plugin.json on a bumped copy', (
       [path.join(tmp, 'plugins', 'truss', 'tests', 'autonomy-prose.check.ts'), 'plugin json'],
       [path.join(tmp, 'plugins', 'truss', 'tests', 'personas-prose.check.ts'), 'ADR-0032 exists'],
       [path.join(tmp, 'checks', 'compose-manifests.check.ts'), 'cm 1:'],
+      [path.join(tmp, 'plugins', 'truss', 'tests', 'crew-knowledge-prose.check.ts'), 'ADR-0033 exists'],
     ]
     for (const [file, pattern] of runs) {
       const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', `--test-name-pattern=${pattern}`, file], { cwd: tmp, env, encoding: 'utf8', windowsHide: true })
