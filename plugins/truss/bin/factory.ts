@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic } from './store.ts'
+import { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -2385,7 +2385,9 @@ function holdOf(dir: string, repo: string, plan: Obj, slug: string, command: str
   if (!isObj(configOf(repo).budget)) return undefined
   const v = budgetVerdict(dir, repo, plan, slug)
   if (!v.held) return undefined
-  appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
+  // one event per hold: a repeat admit under the same crew, scope and limit writes none (a raised limit is a new hold)
+  const last = eventsOf(dir).filter((e) => e.event === 'budget-hold' && e.crew === slug && e.scope === v.scope).pop()
+  if (last === undefined || last.limitUsd !== v.limitUsd) appendEvent(dir, { event: 'budget-hold', crew: slug, scope: v.scope, spentUsd: v.spentUsd, limitUsd: v.limitUsd })
   let escalateError: string | undefined
   let clientNote = ''
   try {
@@ -3386,7 +3388,29 @@ function cmdFinish(f: Flags): Obj {
 //   --run '<goal>'                                                   -> `## Run <UTC start> | <goal>`
 // The clock stamps every line. Each refusal exits 2 and writes nothing; no form writes a continuation line.
 const RECOMMENDS = ['answer', 'defer', 'pass']
-function cmdDecide(f: Flags): Obj {
+// True when `dir` is a direct child of <git common dir>/truss; the compare is on real, normalised paths (case-insensitive on win32).
+export function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
+  let common: string
+  try {
+    common = commonDir(repo)
+  } catch {
+    return false
+  }
+  const norm = (p: string): string => (platform === 'win32' ? flat(p).toLowerCase() : flat(p))
+  const target = path.resolve(dir)
+  if (!/^[A-Za-z0-9._-]+$/.test(path.basename(target))) return false
+  const parent = path.dirname(target)
+  // <common>/truss may not exist yet: resolve the nearest existing ancestor with realpath and re-append the missing tail, so a repo
+  // reached through a symlink (macOS /var -> /private/var) compares equal to the real common dir
+  const real = (p: string): string => {
+    let head = p
+    const tail: string[] = []
+    while (!existsSync(head) && path.dirname(head) !== head) (tail.unshift(path.basename(head)), (head = path.dirname(head)))
+    return path.join(existsSync(head) ? realpathSync(head) : head, ...tail)
+  }
+  return norm(real(parent)) === norm(path.join(real(common), 'truss'))
+}
+export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   const dir = dirOf(f)
   const forms = (['line', 'checker', 'run'] as const).filter((k) => f[k] !== undefined)
   if (forms.length !== 1) throw usage('decide takes exactly one of --line, --checker (with --recommend, --text, --outcome) or --run')
@@ -3399,6 +3423,9 @@ function cmdDecide(f: Flags): Obj {
     if (/[\r\n]/.test(v)) throw usage(`--${k} holds a newline; a decision is one line`)
     vals[k] = v
   }
+  // --run is the first command of a run: its session dir may not exist yet, so it makes one, but only directly under <common>/truss
+  // and only once the goal text is valid, so a refusal leaves nothing behind
+  if (form === 'run' && vals.run.trim() !== '' && !existsSync(dir) && isSessionDirUnderCommon(repoOf(f), dir, platform)) mkdirSync(dir, { recursive: true })
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw usage(`--dir is not a directory: ${dir}`)
   let line: string
   if (form === 'line') {
@@ -4000,17 +4027,26 @@ function cmdRulesIndex(f: Flags): Obj {
 
 // ==== main ====
 
-const COMMANDS: Record<string, (f: Flags) => Obj> = {
+const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
   'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'gated-merge': cmdGatedMerge, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex,
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
-  ...INBOX_COMMANDS, ...COST_COMMANDS, ...QUEUE_COMMANDS, ...WORKTYPE_COMMANDS,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
+}
+// A plugin module's command key never replaces a core command or another module's: main refuses and names the keys.
+const PLUGIN_COMMANDS: Record<string, (f: Flags) => Obj>[] = [INBOX_COMMANDS, COST_COMMANDS, QUEUE_COMMANDS, WORKTYPE_COMMANDS]
+const SHADOWED: string[] = []
+const COMMANDS: Record<string, (f: Flags) => Obj> = { ...CORE_COMMANDS }
+for (const group of PLUGIN_COMMANDS) {
+  for (const [k, fn] of Object.entries(group)) {
+    if (Object.hasOwn(COMMANDS, k)) SHADOWED.push(k)
+    else COMMANDS[k] = fn
+  }
 }
 
 // `decision-reply <id> ack|change [--note T]` takes two words before or among its flags: each word that is not a flag or a flag's
@@ -4037,6 +4073,7 @@ function positionalsToFlags(argv: string[], names: string[]): string[] {
 export function main(argv: string[]): { body: Obj; code: number } {
   try {
     const [command, ...rest] = argv
+    if (SHADOWED.length > 0) throw refuse({ error: `a plugin command key shadows a core command: ${SHADOWED.join(', ')}` })
     const fn = command === undefined ? undefined : COMMANDS[command]
     if (fn === undefined) throw usage(`unknown command: ${command ?? '(none)'}; commands: ${Object.keys(COMMANDS).join(', ')}`)
     const argv2 = command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : command === 'resolve' || command === 'mark-applied' ? positionalsToFlags(rest, ['id']) : rest

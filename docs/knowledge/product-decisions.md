@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: 8fe4e88318b58b2ffe581c6c8fd0bed04688908f
+verified: 0f45841f922bc23bdabc7f057df22206d7dd8e27
 ---
 
 # Product decisions

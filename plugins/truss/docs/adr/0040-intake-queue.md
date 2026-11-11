@@ -88,6 +88,7 @@ factory queue-set --id id --state s [--note-file p] --repo R [--dir D]   -> {id,
 
 1. It checks `budgetVerdict(dir, repo, null, null)`, the session budget. When that holds, it returns `held` and claims nothing.
 2. Under the `queue` lock, it first releases stale claims, then returns this session's `claimed` or `running` item if it has one, and otherwise claims the oldest `new` item. Oldest means source order: intake stamps each item with a strictly increasing `addedAt`, taking GitHub issues in ascending issue number and md items in file order.
+   - **Amendment 2026-11-11 (0.26.0).** `queue-next` returns only this session's `claimed` item, not a `running` one, so a blocked running item no longer holds the session.
 3. When `D/unattended.json` exists, it writes the item's id into it (ADR-0039).
 
 Returning the session's own item first makes a repeated `--next` in the same session pick up where it left off.
@@ -111,6 +112,7 @@ Returning the session's own item first makes a repeated `--next` in the same ses
 
 - **Withdrawn items are never seen.** A source that withdraws an item (a closed GitHub issue, an md line ticked or deleted) is never seen again, so the item stays `new` and can still be claimed until the client drops it with `queue-set --state dropped`.
 - **A blocked running item holds its session.** A `running` item held on a blocking client question is returned by every `queue-next` of that session, so that session claims nothing else until the question is answered or the item released.
+- **Amendment 2026-11-11 (0.26.0).** The two bullets above no longer hold: a blocked `running` item does not hold its session, and `intake` moves a stored `new` item to `dropped` when an uncapped listing of its source omits it. That drop is final, so a mis-edited queue file or a changed `queueFile`/`ghLabel` drops queued work and `queue-set` cannot undo it. Such drops carry `by: 'intake'` in the item history, which is the way to recover them.
 - **The shared queue only grows.** No command deletes an item, and `done` and `dropped` are final, so `S/queue/items/` gains one file per item for good. The contract names no index, so finding the oldest `new` item reads every file. Each item's `history` only grows too. Every later reader is bound to the `v:1` shape, and changing it means migrating every stored item.
 - **The md queue and the stored queue can disagree.** Truss never writes the queue file, and an md key is a hash of the text. Editing a line adds a new item and leaves the old one `new`, where `queue-next` can still claim it. Ticking a line `[x]` or deleting it changes nothing that is already stored. The client must drop the old item with `queue-set --state dropped`.
 - A stale claim restarts its item from scratch, so work can be done twice (contract-025 section 9, risk 7).
