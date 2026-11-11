@@ -614,11 +614,20 @@ const testsCheckExtra = (crew, ...lines) => {
   return all.length ? all.join('\n') : null
 }
 
+// Starvation bound (gates item 8): the heavy slot is not FIFO, and one heavy run waits at most HEAVY_WAIT_MS (540 s, under
+// the 600 s Bash timeout) in factory. check() runs heavy up to HEAVY_WAIT_ROUNDS = 3 times in all, so a crew waits at most
+// 3 rounds of 540 s, about 27 minutes, for the slot. Non-FIFO: a crew can still lose every round and block. No sleep
+// between rounds, since each run already waits inside factory.
+const HEAVY_WAIT_ROUNDS = 3
+
 async function check(crew, expect) {
-  const r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect))
-  const h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
-  if (h && typeof h === 'object' && h.ran === false) throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
-  return r
+  let r, h
+  for (let round = 1; round <= HEAVY_WAIT_ROUNDS; round++) {
+    r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect))
+    h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
+    if (!(h && typeof h === 'object' && h.ran === false)) return r
+  }
+  throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
 }
 
 // ---------------------------------------------------------------- prompts
@@ -1174,6 +1183,9 @@ async function integrateNow(crew, branch, at) {
   // commits whose Truss-Crew or Truss-Role line git does not parse as a trailer: a stop that names them, never a resolver or a QC role FAIL
   const bad = r.parsed && Array.isArray(r.parsed.trailers) ? r.parsed.trailers.map(String) : []
   if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
+  // commits with no Truss trailer at all: the same stop, never a resolver (its merge would put the bare commit on the crew branch)
+  const bare = r.parsed && Array.isArray(r.parsed.missingTrailers) ? r.parsed.missingTrailers.map(String) : []
+  if (bare.length) throw new Stop('BLOCKED', `${branch} not merged: these commits carry neither a Truss-Crew nor a Truss-Role trailer: ${bare.join('; ')}. Reword those commits to end with both trailers, or rerun the task.`, at)
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflictsOf(r), at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
