@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 9c71e2c1218a44a658ab80e97ac06edc99c49790
+verified: 79a35cdd6258516a3f7ce4670d6a0bccc763313c
 ---
 
 # Store, holds and contract-025 stubs
@@ -25,10 +25,11 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 - It is the only lock and atomic-write code, and it holds both transcript roots: `transcriptsOf` for spend and the queue's stale rule, `proofTranscriptRoot` for the inbox proof. `proofMain` in `bin/inbox.ts` walks the proof root itself. New modules import `CliError`, `usage`, `refuse`, `flat` and the other moved helpers from `./store.ts`, never from `factory.ts`.
 - `withLock(dir, name, fn, {waitMs, platform, fs, host, now})` holds `<dir>/locks/<name>.lock/owner.json` with `{pid, host, token, since}` (store.ts:229-234). Only the owner's token releases it.
-- A lock is stale when: the owner is a dead pid on the same host, or `since` is over `STALE_AGE_MS` (120 s) old, or there is no `owner.json` and the dir is over `OWNERLESS_MS` (10 s) old (store.ts:155-156, 245-251).
+- A lock is stale when: the owner is a dead pid on the same host, or `since` is over `STALE_AGE_MS` (120 s) old, or there is no `owner.json` and the dir is over `OWNERLESS_MS` (3 s, inside `withLock`'s default 5 s wait) old (store.ts:155-158, 260).
 - Busy past `waitMs` (default 5000) throws `StoreBusy`: `CliError` code 2, body `{error: 'store busy: <name>'}` (store.ts:149-153, 254).
-- Takeover never renames a lock aside: that would open a window where the path is free while a live owner is still running. One breaker at a time holds the mutex `<lock>.break`, re-reads `owner.json`, and removes the lock only if the token is still the one judged stale. An ownerless lock's age is re-checked under the mutex. A mutex over 10 s old is cleared after an ino+mtime re-check (store.ts:179-225). This deviates from contract-025 section 2 line 83.
+- Takeover never renames a lock aside: that would open a window where the path is free while a live owner is still running. One breaker at a time holds the mutex `<lock>.break`, re-reads `owner.json`, and removes the lock only if the token is still the one judged stale. An ownerless lock's age is re-checked under the mutex. A mutex over `OWNERLESS_MS` (3 s) old is cleared after an ino+mtime re-check (store.ts:195-205). This deviates from contract-025 section 2 line 83.
 - `opts.fs` is `Partial<typeof node:fs>`; an omitted function falls back to the real one (store.ts:135-137). `appendJsonl` takes the lock named by its second argument under the dir it is given; its file argument is relative to that dir.
+- Orphan tmp files: `writeJsonAtomic`, `createExclusive` and `withLock` call `sweepTmp`, which removes `<name>.<pid>-<uuid>.tmp` files older than 120 s whose pid is dead, or older than 24 h whatever the pid. It runs at most once a minute per dir per process; a live writer's fresh tmp is never removed (store.ts:295-323).
 - The test title "a lock older than 200 s is taken over" stays as pinned by contract-025; the code threshold is 120 s. See `product-decisions.md`.
 
 ## Stored row shapes
