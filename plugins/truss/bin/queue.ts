@@ -4,11 +4,11 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { budgetVerdict } from './cost.ts'
 import { escalate } from './inbox.ts'
-import { configOf, createExclusive, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, usage, withLock, writeJsonAtomic } from './store.ts'
+import { configOf, createExclusive, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, transcriptsOf, usage, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 const STATES = ['new', 'claimed', 'running', 'triage', 'done', 'dropped']
@@ -220,6 +220,17 @@ export function dataNotice(title: string, text: string): string {
   return `${FIRST_LINE}\n${fence}\n${body}\n${fence}`
 }
 
+/** True when the owner's newest main or agent transcript write is older than the claim ttl. A running owner makes no queue-next call, so claim age alone cannot tell a live run from a crash. No transcript, or one that vanishes before the stat, counts as no activity. */
+function ownerIdle(sid: string, now: number, ttl: number): boolean {
+  const t = transcriptsOf(sid)
+  for (const p of [...(t.main === null ? [] : [t.main]), ...t.agents.map((a) => a.path)]) {
+    try {
+      if (now - statSync(p).mtimeMs <= ttl * 3600_000) return false
+    } catch { /* gone between listing and stat: no activity */ }
+  }
+  return true
+}
+
 function queueNext(f: Flags): Obj {
   const repo = repoOf(f)
   const dir = dirOf(f, true) as string
@@ -244,8 +255,8 @@ function queueNext(f: Flags): Obj {
     const now = Date.now()
     const items = allItems(repo)
     for (const it of items) {
-      if (it.state === 'claimed' && it.session !== session && (it.claimedAt === null || now - Date.parse(String(it.claimedAt)) > ttl * 3600_000 || Number.isNaN(Date.parse(String(it.claimedAt))))) {
-        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date(now).toISOString(), from: 'claimed', to: 'new', by: 'stale' }]
+      if ((it.state === 'claimed' || it.state === 'running') && it.session !== session && (it.claimedAt === null || now - Date.parse(String(it.claimedAt)) > ttl * 3600_000 || Number.isNaN(Date.parse(String(it.claimedAt)))) && (it.state === 'claimed' || ownerIdle(String(it.session), now, ttl))) {
+        it.history = [...(Array.isArray(it.history) ? it.history : []), { ts: new Date(now).toISOString(), from: it.state, to: 'new', by: 'stale' }]
         it.state = 'new'
         it.session = null
         it.claimedAt = null
