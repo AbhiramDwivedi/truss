@@ -116,7 +116,7 @@ The retro reports the approve rate of `long-term-cost` items. Above 90% over 10 
 
 - A plan id with no matching inbox item counts as blocking (fail closed). An unreadable `D/ltc-plan.json` counts as no ids (`bin/guard.ts:142-148`); `writeJsonAtomic` makes a torn file unlikely, but a hand-edited one opens the plan gate.
 - The two gates read a `dismiss` decision differently. `ltcPlanGate` passes an item that is resolved `dismiss`, `answer` or `done`, because it blocks only on open or rejected items. `ltcCrewGate` passes only `approve`, and `raise` escalates a fresh item for a ref whose only item was dismissed.
-- Renamed files don't trigger, because only status `A` (and `M` for `package.json`) counts. A migration moved into place by a rename passes.
+- The diff runs with `--no-renames`, so a rename is read as a delete plus an add and triggers like any added file. A `package.json` moved to a new path counts every dependency in it as added, because the new path has no earlier copy.
 
 **Risks.**
 

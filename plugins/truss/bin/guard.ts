@@ -51,7 +51,7 @@ function depsOf(text: string): Set<string> {
 
 /** The deterministic triggers of the change base..head: a dependency, a migration, a *.sql, a *.schema.json or a schema.* file added. */
 export function ltcTriggers(repo: string, base: string, head: string): { what: string; later: string; reversal: 'costly' }[] {
-  const d = git(repo, ['diff', '--name-status', base, head])
+  const d = git(repo, ['diff', '--no-renames', '--name-status', base, head])
   if (d.status !== 0) return []
   const out: { what: string; later: string; reversal: 'costly' }[] = []
   const add = (what: string, later: string): void => {
