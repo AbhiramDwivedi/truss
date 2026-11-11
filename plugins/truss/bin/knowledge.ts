@@ -123,19 +123,29 @@ function inlineList(s: string): string[] {
   const out: string[] = []
   let cur = ''
   let q = ''
-  let depth = 0
-  for (const ch of inner) {
+  let inGroup = false
+  const chars = Array.from(inner)
+  // a `{` opens a brace group only if a `}` comes before the next `{`; otherwise it is literal, as the glob dialect says
+  const closes = (from: number): boolean => {
+    for (let j = from + 1; j < chars.length; j++) {
+      if (chars[j] === '}') return true
+      if (chars[j] === '{') return false
+    }
+    return false
+  }
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i] as string
     if (q) {
       if (ch === q) q = ''
       else cur += ch
     } else if (ch === '"' || ch === "'") q = ch
-    else if (ch === '{') {
-      depth++
+    else if (ch === '{' && !inGroup && closes(i)) {
+      inGroup = true
       cur += ch
-    } else if (ch === '}' && depth > 0) {
-      depth--
+    } else if (ch === '}' && inGroup) {
+      inGroup = false
       cur += ch
-    } else if (ch === ',' && depth === 0) {
+    } else if (ch === ',' && !inGroup) {
       out.push(cur.trim())
       cur = ''
     } else cur += ch

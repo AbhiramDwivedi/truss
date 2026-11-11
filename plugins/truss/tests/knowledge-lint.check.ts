@@ -496,34 +496,45 @@ t('lint 26: --slug says which base it used: base always, baseFallback true when 
   assert.equal(lint(env, ['--slug', 's', `--base=${forked.slice(0, 10)}`]).base, forked, '--base is reported as the full sha')
   assert.equal('base' in lint(env), false, 'no base, no key')
   writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'no-such-branch' }))
-  const none = env.run('knowledge-lint', { slug: 's' })
-  assertUsageError(none)
-  assert.match(none.json.error, /merge-base no-such-branch HEAD failed/)
-  assert.match(none.json.error, /red record/)
+  const failing = (j) => {
+    assert.equal(j.ok, false)
+    assert.equal(j.failures.length, 1, JSON.stringify(j.failures))
+    assert.equal(j.failures[0].check, 'config-unverified')
+    assert.equal(j.failures[0].new, true)
+    return j.failures[0].message
+  }
+  const none = failing(lint(env, ['--slug', 's']))
+  assert.match(none, /merge-base no-such-branch HEAD failed/)
+  assert.match(none, /red record/)
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: '0123456789abcdef0123456789abcdef01234567', tail: '' }) + '\n')
-  const unknown = env.run('knowledge-lint', { slug: 's' })
-  assertUsageError(unknown)
-  assert.match(unknown.json.error, /merge-base no-such-branch HEAD failed.*red record head 0123456789abcdef.* is not a commit/)
+  assert.match(failing(lint(env, ['--slug', 's'])), /merge-base no-such-branch HEAD failed.*red record head 0123456789abcdef.* is not a commit/)
+  const good = readFileSync(`${env.repo}/.claude/truss.json`, 'utf8')
+  writeFileSync(`${env.repo}/.claude/truss.json`, '{broken')
+  assert.match(failing(lint(env, ['--slug', 's'])), /the target could not be read/)
+  writeFileSync(`${env.repo}/.claude/truss.json`, good)
   putFile(env.dir, 'checks/s-1.json', JSON.stringify({ command: 'true', exit: 1, head: crewHead, tail: '' }) + '\n')
   const fb = lint(env, ['--slug', 's'])
   assert.equal(fb.base, crewHead)
   assert.equal(fb.baseFallback, true)
 })
 
-t('lint 27: with --slug the knowledge config comes from the crew worktree\'s truss.json, and from the main checkout\'s when the worktree has none', () => {
+t('lint 27: with --slug the knowledge config comes from the base commit, never from the crew\'s truss.json or the main checkout\'s', () => {
   const { env } = goodWorld()
   const wt = addCrewWorktree(env.repo, 's')
-  commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n` })
+  commit(wt, { '.claude/truss.json': JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'policy' }), 'policy/x.md': `${fm({ paths: ['gone/**'] })}\n- r\n`, '.claude/rules/y.md': `${fm({ paths: ['also-gone/**'] })}\n- r\n`, 'main-rules/z.md': `${fm({ paths: ['main-gone/**'] })}\n- r\n` })
+  // the main checkout's config differs from the base and must play no part
+  writeFileSync(`${env.repo}/.claude/truss.json`, JSON.stringify({ merge: 'sequential', target: 'main', rulesDir: 'main-rules' }))
   const j = lint(env, ['--slug', 's'])
   // the crew's own truss.json moves rulesDir: that is a loosening, so the lint judges the crew with the base config instead
   assert.equal(j.ok, false)
-  assert.ok(j.failures.some((f) => f.check === 'config-loosened'), JSON.stringify(j.failures))
+  assert.ok(j.failures.some((f) => f.check === 'config-loosened' && /rulesDir changed/.test(f.message)), JSON.stringify(j.failures))
   assert.ok(j.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), 'the base rulesDir is used')
   assert.ok(!j.failures.some((f) => f.path === 'policy/x.md'), 'the crew\'s rulesDir is not used')
+  assert.ok(!j.failures.some((f) => f.path === 'main-rules/z.md'), 'the main checkout\'s rulesDir is not used')
+  assert.ok(!j.failures.some((f) => /policy|main-rules/.test(f.message)), 'a path value is not repeated in a message')
+  // the working tree's copy is not read: removing it changes nothing
   unlinkSync(`${wt}/.claude/truss.json`)
-  const k = lint(env, ['--slug', 's'])
-  assert.ok(k.failures.some((f) => f.check === 'dead-glob' && f.path === '.claude/rules/y.md'), JSON.stringify(k.failures))
-  assert.ok(!k.failures.some((f) => f.path === 'policy/x.md'))
+  assert.deepEqual(lint(env, ['--slug', 's']).failures, j.failures)
 })
 
 t('lint 28: every new warning is listed; only predating warnings are capped at 20, and warningCount is the true total', () => {
@@ -780,6 +791,10 @@ t('args 7: knowledgeBudgets reaches the stage args (all six, defaults filled in,
   const a = startArgs({ merge: 'sequential', target: 'main', knowledgeBudgets: { rule: 0, doc: 99, persona: 'x' } }, {})
   assert.deepEqual(a.knowledgeBudgets, { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 0, featureEntry: 6, doc: 99 })
   assert.ok(!Object.hasOwn(startArgs({ merge: 'sequential', target: 'main' }, {}), 'knowledgeBudgets'))
+})
+
+t('args 8: the real stage args carry the platform', () => {
+  assert.equal(startArgs({ merge: 'sequential', target: 'main' }, {}).platform, process.platform)
 })
 
 t('args 5: plan.js poPrompt names the product-decisions file when plan-args carried it, and no such line without it', async () => {

@@ -19,6 +19,7 @@ const ARGS = (() => {
 })()
 const F = ARGS && ARGS.truss
 if (!F || typeof F !== 'object' || Array.isArray(F)) throw new Error('args.truss is missing: the Workflow gate expands args.trussFile into args.truss; pass args.truss inline when the gate did not run')
+const PLATFORM = typeof F.platform === 'string' ? F.platform : ''
 const ROLE_EFFORTS = ['low', 'medium']
 // ADR-0032: builder, tester and resolver members may run at effort high (via a persona, a task effort or ## Members);
 // every other role keeps ROLE_EFFORTS. A persona is a project agent type (args.truss.personas) that routes the task's member.
@@ -1694,10 +1695,9 @@ function standardsLines(crew) {
 
 // ---------------------------------------------------------------- the knowledge step (ADR-0033)
 
-// `/` separators; the repo prefix is compared folded on win32 and darwin (F.platform, else the host's), and the returned path keeps its case
+// `/` separators; the repo prefix is compared folded on win32 and darwin (PLATFORM), and the returned path keeps its case
 const repoRel = (f) => {
-  const platform = typeof F.platform === 'string' ? F.platform : typeof process !== 'undefined' ? process.platform : ''
-  const fold = platform === 'win32' || platform === 'darwin' ? (s) => s.toLowerCase() : (s) => s
+  const fold = PLATFORM === 'win32' || PLATFORM === 'darwin' ? (s) => s.toLowerCase() : (s) => s
   const root = `${flatPath(F.repo).replace(/\/+$/, '')}/`
   const p = flatPath(f)
   return fold(p).startsWith(fold(root)) ? p.slice(root.length) : p
