@@ -486,8 +486,28 @@ test('start --resume answers: spent counts qc FAILs only (stress test reports ne
   const j = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) }))
   const e = j.truss.crews[0]
   assert.equal(e.spent, 2)
-  assert.deepEqual(e.labelFrom, { qc: 3, stress: 3 })
+  // the stopped run T is not recorded, so its own labels (planner-10 ... writer) count too
+  assert.deepEqual(e.labelFrom, { qc: 3, stress: 3, planner: 11, tester: 2, builder: 3, writer: 2 })
   assert.deepEqual(e.answers, [])
+})
+
+test('start --resume answers: a prior run not yet recorded (no reports, no spawn events) still reserves its labels in labelFrom', () => {
+  const env = world([crew('x', { status: 'running' })], { plan: { approvedAt: iso(Date.now() - 3 * HOUR) } })
+  makeRunning(env, 'x', iso(Date.now() - 5 * MIN))
+  const run = deadRun(env, 'wf_unrecorded', [
+    { label: 'x-runner', result: 'ok' },
+    { label: 'x-runner-2', result: 'ok' },
+    { label: 'x-runner-107', result: 'ok' },
+    { label: 'x-qc-3', result: 'VERDICT: FAIL\n' },
+  ])
+  assert.equal(readEvents(env.dir).filter((e) => e.by === 'workflow:wf_unrecorded').length, 0)
+  const e = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.ok(e.labelFrom.runner >= 108, `runner label must not be reused: ${JSON.stringify(e.labelFrom)}`)
+  assert.equal(e.labelFrom.qc, 4)
+  // once recorded, the report files and the run agree and the number stays
+  record(env, 'wf_unrecorded', run, 'x')
+  const e2 = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).truss.crews[0]
+  assert.equal(e2.labelFrom.runner, 108)
 })
 
 test('start --resume answers: a PASS qc report does not count as spend', () => {
@@ -496,7 +516,7 @@ test('start --resume answers: a PASS qc report does not count as spend', () => {
   writeReport(env.dir, 'x', 'x-qc-2', qcReport({ verdict: 'PASS' }))
   const e = assertOneLine(resume(env, 'x', 'answers', { transcript: run.dir, answers: answersFile([]) })).truss.crews[0]
   assert.equal(e.spent, 1)
-  assert.deepEqual(e.labelFrom, { qc: 3 })
+  assert.deepEqual(e.labelFrom, { qc: 3, planner: 11, tester: 2, builder: 3, writer: 2 })
 })
 
 test('start --resume answers: tasks and done combine every run of the crew next to T; a later re-split drops the older done', () => {

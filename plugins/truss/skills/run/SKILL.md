@@ -334,7 +334,7 @@ Write `## Engine` as `foreman`, with the reason, for a deploy crew (it has a `co
 - `1` with `{ "merged": false, "slug", "why" }`: a gate refused, the crew stays `running` and nothing is written. On `why` `conflict`, start a fresh Sonnet member under the next unused name in the crew's worktree to run `git merge <target>` into the crew branch (never rebase), resolve it and re-run the checks; when `qc` is true and the Head and Patch rules require it, start a fresh QC engineer on the merged head. Then run `land` again. Act on any other `why` the same way, by its text.
 - `2` with `{ "error" }`: `--slug` is missing, the plan has no such crew, or the merge mode is `single`.
 
-`start --slug <slug> --resume ...` refuses a solo or lean crew: it runs direct, so you merge it with `land`. Under merge mode `single` it does not refuse, because that crew takes the foreman path (next paragraph).
+`start --slug <slug> --resume ...` refuses a solo or lean crew: it runs direct, so you merge it with `land`. Under merge mode `single` it does not refuse, because that crew takes the foreman path (next paragraph). A resume's `labelFrom` also counts the agent labels of the runs it reads from `--transcript`, so it never reuses a label of a run `finish` has not yet recorded.
 
 Under merge mode `single`, `land` refuses (exit 2), so `start` does not run a solo or lean crew direct: it takes the foreman path like a full crew, is listed under `foremen`, and merges into the integration branch as any foreman crew does. With `--args-file`, the short output carries `direct` as well, so a direct crew is never missed.
 
