@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: a45b9a912505344dea541c9c556be25b60829d3d
+verified: a419884c5ef1c878c8c94b84153d537fa523b7a6
 ---
 
 # Store, holds and contract-025 stubs
@@ -46,7 +46,7 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 
 `stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-425). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2381-2398). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:1956, 2033).
 
-`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1356, `stageOut`).
+`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1371-1378, `stageOut`).
 
 ## Cost meter (`bin/cost.ts`)
 
@@ -66,6 +66,8 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 The proof guards every read, not only `factory resolve`. `verifiedItems` is the one reading of the inbox, used by `blockingFor`, `budgetRaises`, the `escalate` dedupe, `resolve`, `mark-applied`, `factory inbox` and `longTermItems` in `bin/guard.ts`. A `by: client` row on a client kind counts only when its proof holds against the main transcript of the session it names; the first row that counts wins, and an unverified row is absent, with `reopened` in the listing. On `blocked` and `stall-unrecovered` (`by: any` kinds) a `by: pm` row counts without proof, and a `by: client` row is also run through the transcript proof (`needsProof` is true for every client row) but still counts when unproven; an unproven client note there only sets `noteUnbound`. A note that isn't the typed text is refused at `resolve`. A counted client resolve lists the proven typed text as its `note` in every reader of the fold, never the stored one; `noteUnbound` stays as a flag when the stored note differed. Rows from before 0.26 get the same proof; the ruling is in the ADR-0037 amendment.
 
 Proof reads use `proofTranscriptRoot()` and `readProofFile` in `bin/store.ts`: `.claude/projects` under `os.userInfo().homedir`, never an env var, so a non-default `CLAUDE_CONFIG_DIR` fails closed. `proofMain` in `bin/inbox.ts` walks that root. Tests stub those two seams with `tests/fixtures/inbox/proof-plugin.ts`, because `TRUSS_TRANSCRIPTS_ROOT` no longer reaches the proof. `scanFile` caches one scan per file per process; the cost per process still grows with the transcripts the history names (ADR-0037 amendment). A process running as the same OS user can still write a passing line, and a deleted or rotated transcript makes the item block again. Change proof-check behaviour here and in `docs/features.md` together.
+
+The same proof gates the plan approval (ADR-0045). `approvalProof` in `bin/inbox.ts` passes `factory approve --by client --item <E-id>` only for a verified, client-resolved `approve` of a `client-trigger` item of this truss dir (ref `run` only, not superseded, resolved by the client in this same session). It also refuses a resolve older than the plan: the resolve row's `ts` must be at or after the mtime of `plan.md`, else `plan.json`, so a proof given before a re-plan, or before `plan.json` existed, never approves the later plan. `confirmApproval` passes `approved = true` and skips only that check, since approving rewrote `plan.json`. `resolveItem` calls the approver `factory.ts` registers with `onPlanApprove` after a typed approve of a ref `run` item; a refusal rides in the output as `approveRefused`, and the spent item cannot approve (open a fresh item). The staleness check uses the row's `ts`, not the typed line's time, and `plan.md`'s mtime first; the replay cases are pinned in `tests/approve-029.check.ts`.
 
 A human `/truss:x args` is probed as two lines with the same timestamp: a user line whose string content is `<command-message>x</command-message>\n<command-name>/truss:x</command-name>\n<command-args>ARGS</command-args>`, then an `isMeta: true`, `turnCompanion: true` user line holding the skill body, which ends `ARGUMENTS: ARGS`. The `isMeta` rule is what stops that second copy of the args from counting. Probed from a real session transcript (lines 114-115); the scrubbed sample is `plugins/truss/tests/fixtures/inbox/slash-command.jsonl`, with `__ID__`, `__CODE__` and `__TS__` placeholders.
 
