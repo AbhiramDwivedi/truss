@@ -520,7 +520,7 @@ describe('retro/extract.ts: the files list', () => {
 // ---------- pluginVersion ----------
 
 describe('retro/extract.ts: pluginVersion', () => {
-  const cachePath = (v: string) => `~/.claude/plugins/cache/truss/truss/${v}/agents/foreman.md`
+  const cachePath = (v: string) => `~/.claude/plugins/cache/truss/truss/${v}/agents/project-manager.md`
   test('is the commonest plugin-cache version in the main transcript only, and is written to extract.json', async () => {
     const { extractSession, writeExtract } = await extractMod()
     const s = session(sid => ({

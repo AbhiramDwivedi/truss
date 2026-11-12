@@ -217,7 +217,7 @@ test('qcRuling: verdict from the marker; head and patch only under ## Proof chec
   }
   expect(f(REPORT(`${HEAD_LINE}${H1}  \t`, 'None.')).head).toBe(H1)
   expect(f(REPORT(`  ${HEAD_LINE}${H1}`, 'None.')).head).toBeUndefined()
-  expect(f(REPORT(`${HEAD_LINE}${H1}`, `${UNSCOPED}no other caller (in the foreman's report)\n${UNSCOPED}all call sites updated (proof)`)).unscoped).toBe(2)
+  expect(f(REPORT(`${HEAD_LINE}${H1}`, `${UNSCOPED}no other caller (in the project manager's report)\n${UNSCOPED}all call sites updated (proof)`)).unscoped).toBe(2)
   expect(f(`VERDICT: PASS\n${UNSCOPED}x\n\n## Proof checked\n${UNSCOPED}y\n\n## Findings\nNone.\n`).unscoped).toBe(0)
   // a heading with trailing spaces or tabs still matches
   expect(f(`VERDICT: PASS\n\n## Proof checked \t\n${HEAD_LINE}${H1}\n`).head).toBe(H1)
@@ -324,7 +324,7 @@ test('mainCallVerdict: refuses a main-session truss:* call with no model or a ba
   expect(f(V2, undefined, 'truss:qc-engineer', undefined, undefined)).toEqual(model)
   expect(f(V2, undefined, 'truss:qc-engineer', 'opus', undefined)).toEqual(effort)
   expect(f(V2, undefined, 'truss:qc-engineer', 'opus', 'max')).toEqual(effort)
-  expect(f(V2, undefined, 'truss:foreman', 'sonnet', 'ultra')).toEqual(effort)
+  expect(f(V2, undefined, 'truss:project-manager', 'sonnet', 'ultra')).toEqual(effort)
   for (const e of ['low', 'medium', 'high', 'xhigh']) expect(f(V2, undefined, 'truss:qc-engineer', 'opus', e)).toBeUndefined()
   expect(f(V3, undefined, 'truss:qc-engineer', undefined, 'medium')).toEqual(model)
   expect(f(V3, undefined, 'truss:qc-engineer', 'opus', 'max')).toEqual(effort)

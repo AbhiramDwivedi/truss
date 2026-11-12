@@ -1,0 +1,37 @@
+{
+  "version": 4,
+  "goal": "0.26.0-shaped run",
+  "architecture": "docs/architecture.md",
+  "approval": "auto",
+  "approvedAt": "2026-11-11T09:00:00.000Z",
+  "maxParallelCrews": 4,
+  "reworkAllowance": 2,
+  "crews": [
+    {
+      "slug": "auth",
+      "stage": 1,
+      "verdict": "change",
+      "modules": ["auth"],
+      "owns": ["src/auth/**"],
+      "acceptanceTest": "true",
+      "acceptanceTestProved": true,
+      "estAgents": 3,
+      "workType": "feature",
+      "process": "full",
+      "status": "planned"
+    },
+    {
+      "slug": "billing",
+      "stage": 1,
+      "verdict": "change",
+      "modules": ["billing"],
+      "owns": ["src/billing/**"],
+      "acceptanceTest": "true",
+      "acceptanceTestProved": true,
+      "estAgents": 3,
+      "workType": "feature",
+      "process": "full",
+      "status": "planned"
+    }
+  ]
+}

@@ -157,7 +157,7 @@ describe('contract', () => {
 })
 
 const spawn = (agentId: unknown, over = {}) =>
-  JSON.stringify({ v: 1, ts: TS, event: 'spawn', crew: 'c', agent: 'c', agentId, type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main', ...over })
+  JSON.stringify({ v: 1, ts: TS, event: 'spawn', crew: 'c', agent: 'c', agentId, type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main', ...over })
 
 describe('edges', () => {
   const sess = () => join(repo, '.git', 'truss', 'S1')
