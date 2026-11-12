@@ -167,12 +167,13 @@ t('cd 8: decisions lists every crew decision with its reply status; --open keeps
   assert.deepEqual(env.run('decisions', { open: true, crew: 'web' }).json.decisions.map((d) => d.id), [w])
 })
 
-t('cd 9: help text says crew lead and main session, never foreman or PM', () => {
+t('cd 9: help text says crew lead and main session, never the old crew-lead name or PM', () => {
   const src = readFileSync(`${PLUGIN}/bin/factory.ts`, 'utf8')
   const from = src.indexOf('// ==== crew decisions ====')
   assert.ok(from > 0, 'a crew decisions section')
   const section = src.slice(from, src.indexOf('// ==== main ====', from))
-  assert.doesNotMatch(section, /foreman|\bPM\b/)
+  // the old crew-lead name is built from pieces so this file never holds it
+  assert.doesNotMatch(section, new RegExp('fore' + '(man|men)|\\bPM\\b', 'i'))
 })
 
 // ---------------------------------------------------------------- fix round 2: review findings 4, 10, 11 and the new commands
