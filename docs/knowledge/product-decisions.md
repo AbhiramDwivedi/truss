@@ -3,7 +3,9 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: af304d965400136f9e09a76f854a01b938a7a0d4
+  - .claude/truss.json
+  - plugins/truss/tests/inbox.check.ts
+verified: cf14808934b5323c066b38b897e5cde588059521
 ---
 
 # Product decisions
@@ -33,3 +35,9 @@ verified: af304d965400136f9e09a76f854a01b938a7a0d4
 - Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` returns `usd: null` ('usage sweep busy') while the usage lock stays busy, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
 - Reason: contract-025 section 4 lists only those holds; the first-sweep hold BLOCKED 3 of 4 crews started together (ADR-0038, `plugins/truss/bin/cost.ts` `budgetVerdict`). Known limit: no budget is enforced until the first sweep lands.
 - Decided by: product-owner persona (crew b-cost).
+
+## hygiene: 5.5 prices and the inbox flake
+
+- Pricing: `pricing` in `.claude/truss.json` holds the three 5.5 ids. Cache write is 1.25x input (5m) and 2x input (1h), cache read 0.05x for Opus and Sonnet 5.5 (claude-api skill, `shared/prompt-caching.md`); the skill lists no per-model write price. Haiku 5.5's cache read ($0.01) is derived from the general 0.1x rule. Haiku 5.5 has a prompt tier over 100K tokens that the flat pricing shape cannot express (a known limit; ADR-0038 not edited).
+- Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the `:442` flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
+- Decided by: crew hygiene (hygiene-tester, hygiene-builder items).
