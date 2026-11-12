@@ -23,7 +23,7 @@ import { pathToFileURL } from 'node:url'
 import { ltcCrewGate, ltcPlanGate, ltcTriggers } from '../bin/guard.ts'
 import { sharedDir } from '../bin/store.ts'
 import { proofPlugin } from './fixtures/inbox/proof-plugin.ts'
-import { CHEAP, COSTLY, cli as ltcCli, designerResult, mkWorld, planWrite } from './fixtures/ltc/harness.ts'
+import { CHEAP, COSTLY, cli as ltcCli, clientResolves, designerResult, mkWorld, planWrite } from './fixtures/ltc/harness.ts'
 import { REAL_PLUGIN, flat, head, highSampleFile, mkEnv, mkRepo, mkTrussDir, pluginCopy, putFile, runCli } from './fixtures/workflow-run/harness.ts'
 
 const FIX = `${REAL_PLUGIN}/tests/fixtures/inbox`
@@ -773,13 +773,21 @@ test('trust-026: a failing git diff refuses the merge gate', () => {
   assert.throws(() => ltcTriggers(w.repo, 'refs/heads/no-such-base', 'refs/heads/main'), (e) => /diff/i.test(msgOf(e)))
 })
 
+/** `approve --by client` with a typed client proof (ADR-0045), so a refusal is the ltc-plan.json one: a client-trigger item (ref run) resolved approve. */
+function approveClient(w: any) {
+  const e = ltcCli(w, 'escalate', ['--kind', 'client-trigger', '--title', 'approve the plan', '--ref', 'run'])
+  assert.equal(e.status, 0, say(e))
+  clientResolves(w, e.json.id, 'approve')
+  return ltcCli(w, 'approve', ['--by', 'client', '--item', e.json.id])
+}
+
 test('trust-026: a missing ltc-plan.json refusal names plan-write', () => {
   const w = mkWorld()
   const pw = planWrite(w, 'wf_t26plan1-aaa', designerResult([CHEAP]))
   assert.equal(pw.status, 0, say(pw))
   assert.ok(existsSync(`${w.dir}/ltc-plan.json`), 'plan-write wrote ltc-plan.json')
   rmSync(`${w.dir}/ltc-plan.json`)
-  const r = ltcCli(w, 'approve', ['--by', 'client'])
+  const r = approveClient(w)
   assert.equal(r.status, 1, `a missing ltc-plan.json must not open the gate: ${say(r)}`)
   assert.match(String(r.json?.error), /plan-write/)
   assert.throws(() => ltcPlanGate(w.repo, w.dir), (e) => /plan-write/.test(msgOf(e)))
@@ -791,7 +799,7 @@ test('trust-026: a corrupt ltc-plan.json refuses approve', () => {
     const pw = planWrite(w, 'wf_t26plan2-aaa', designerResult([COSTLY]))
     assert.equal(pw.status, 0, say(pw))
     writeFileSync(`${w.dir}/ltc-plan.json`, text)
-    const r = ltcCli(w, 'approve', ['--by', 'client'])
+    const r = approveClient(w)
     assert.equal(r.status, 1, `${text}: ${say(r)}`)
     assert.match(String(r.json?.error), /ltc-plan\.json|plan-write/, text)
     assert.throws(() => ltcPlanGate(w.repo, w.dir), (e) => /plan-write|ltc-plan/.test(msgOf(e)), text)

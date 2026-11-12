@@ -11,6 +11,7 @@ import { test } from 'node:test'
 import {
   REAL_FACTORY, REAL_PLUGIN, appendEvent, assertOneLine, crew, factorySpawn, mkEnv, mkRun, planObj, pluginCopy, readPlan, runCli, tmp, validate, validateEvent, writeGoal, writePlan,
 } from './fixtures/workflow-run/harness.ts'
+import { cli as ltcCli, clientResolves, mkWorld } from './fixtures/ltc/harness.ts'
 
 const BIN = `${REAL_PLUGIN}/bin`
 const ROOT = `${REAL_PLUGIN}/../..`
@@ -102,7 +103,12 @@ test('wiring 025: approve by auto refuses a plan whose approval is client, and a
   assert.match(r.stdout, /approval is client/)
   assert.equal(readPlan(env.dir).approvedAt, null, 'the plan stays unapproved')
   // control: the client can approve the same plan
-  assert.equal(env.run('approve', { by: 'client' }).status, 0)
+  const w = mkWorld()
+  writePlan(w.dir, planObj([crew('design0', { stage: 0, verdict: 'design' }), crew('alpha', { stage: 1 })], { approvedAt: null, approval: 'client' }))
+  const e = ltcCli(w, 'escalate', ['--kind', 'client-trigger', '--title', 'approve the plan', '--ref', 'run'])
+  assert.equal(e.status, 0, `${e.stdout} ${e.stderr}`)
+  clientResolves(w, e.json.id, 'approve')
+  assert.equal(ltcCli(w, 'approve', ['--by', 'client', '--item', e.json.id]).status, 0)
   // a stage-0 crew alone no longer needs the client
   const auto = mkEnv()
   writePlan(auto.dir, planObj([crew('design0', { stage: 0, verdict: 'design' }), crew('alpha', { stage: 1 })], { approvedAt: null, approval: 'auto' }))
