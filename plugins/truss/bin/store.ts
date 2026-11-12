@@ -393,7 +393,7 @@ export function createExclusive(p: string, obj: unknown, opts: { fs?: FsLike } =
 // A lease is the file <dir>/locks/<name>.lease holding {pid, host, since, refreshed, token}, created with createExclusive. Its holder
 // refreshes `refreshed` every LEASE_REFRESH_MS; a lease not refreshed for LEASE_STALE_MS is stale whoever wrote it, so the refresh
 // interval stays well under the window and a live holder's lease never goes stale. A holder that cannot refresh (it blocks its own event
-// loop) is judged stale after the window, like any lock held past STALE_AGE_MS.
+// loop in spawnSync) keeps a lease of this host while its pid lives; only another host's lease is judged by the window.
 export const LEASE_STALE_MS = 300_000
 export const LEASE_REFRESH_MS = 30_000
 
@@ -459,7 +459,7 @@ function underBreak(p: string, token: string | null, waitMs: number, f: () => vo
 }
 
 // Takes the lease <dir>/locks/<name>.lease and returns {token}, or null while a live lease holds it. A lease is stale when its host is
-// this host and its pid is dead, or when it was not refreshed within LEASE_STALE_MS (a lease of another host is judged by age only: its
+// this host and its pid is dead, or when it is of another host and was not refreshed within LEASE_STALE_MS (judged by age only: its
 // pid means nothing here). A stale lease is removed by one breaker at a time, which re-reads the token under the mutex <name>.lease.break
 // and never renames it aside; the lease is then taken again. A removal that fails (a win32 EPERM or EACCES) leaves the lease and returns
 // null, so a later call recovers it. Never throws on contention.
@@ -477,7 +477,9 @@ export function takeLease(dir: string, name: string, opts: LeaseOpts = {}): { to
     let stale: boolean
     if (o) {
       const seen = typeof o.refreshed === 'number' ? o.refreshed : o.since
-      stale = (o.host === host && pidDead(o.pid)) || typeof seen !== 'number' || now() - seen > LEASE_STALE_MS
+      // on this host a live pid holds its lease whatever its age: the finisher blocks its own event loop in spawnSync while the
+      // acceptance test runs, so it cannot refresh (R-89); another host's lease is judged by age only
+      stale = o.host === host ? pidDead(o.pid) : typeof seen !== 'number' || now() - seen > LEASE_STALE_MS
     } else {
       // createExclusive links a complete file, so an unreadable lease is damaged: judge it by the age of the file
       try {
