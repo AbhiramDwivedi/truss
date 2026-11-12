@@ -20,7 +20,7 @@ const read = (...parts: string[]): string => {
     return ''
   }
 }
-const FOREMAN = read('agents', 'foreman.md')
+const PROJECT_MANAGER = read('agents', 'project-manager.md')
 const CHECKER = read('agents', 'checking-engineer.md')
 const STAGE = read('workflows', 'stage.js')
 
@@ -29,10 +29,10 @@ const gone = (text: string, re: RegExp, what: string) => assert.doesNotMatch(tex
 
 describe('item 1: no-polling rule in every member brief', () => {
   const RULE = /runs? each long command once with run_in_background and waits? for its completion notification/i
-  test('foreman.md member-brief list carries the rule', () => {
-    has(FOREMAN, RULE, 'no-polling rule')
-    has(FOREMAN, /no polling loops, no sleep, no relaunching waiters/i, 'no polling loops, no sleep')
-    has(FOREMAN, /never a shared temp path/i, 'no shared temp path')
+  test('project-manager.md member-brief list carries the rule', () => {
+    has(PROJECT_MANAGER, RULE, 'no-polling rule')
+    has(PROJECT_MANAGER, /no polling loops, no sleep, no relaunching waiters/i, 'no polling loops, no sleep')
+    has(PROJECT_MANAGER, /never a shared temp path/i, 'no shared temp path')
   })
   test('stage.js memberPrompt runs commands in the foreground with a Bash timeout', () => {
     has(STAGE, /Run every command in the foreground, with an explicit Bash timeout up to 600000; no run_in_background, no Monitor/, 'foreground rule (F-1) in stage.js')
