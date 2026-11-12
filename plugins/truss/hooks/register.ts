@@ -3,12 +3,7 @@ import type { AgentInfo, ClassicResult, EngineInterface, Register, Timer, ToolCa
 import { amendPlan, goalLine, goalOf, RUN_GOAL } from './intake.ts'
 
 // the agent type every crew project manager runs as; only a project manager the main thread started heads a crew.
-// Compared only inside isLeadType.
 export const PROJECT_MANAGER_TYPE = 'truss:project-manager'
-// whether an agent type is the crew lead's: the one place the type is compared
-export function isLeadType(type: unknown): boolean {
-  return type === PROJECT_MANAGER_TYPE
-}
 // marks text this mod wrote
 export const MARK = '[truss]'
 // the main session, as SendMessage addresses it
@@ -32,8 +27,6 @@ export const RESET_GRACE_MS = 2 * 60_000
 export const PROJECT_MANAGER_STOP_BLOCKS = 2
 export const STALLED = '[truss] stalled:'
 export const IDLE_PROJECT_MANAGER = '[truss] idle project manager:'
-// the stall kind an idle project manager is logged as
-export const IDLE_LEAD_KIND = 'idle-project-manager'
 export const LIMIT_RESET = '[truss] limit reset:'
 // how a project manager says it cannot go on without help, proposes a change, or stops part-way
 export const BLOCKED = 'BLOCKED:'
@@ -62,19 +55,6 @@ export type Crew = { crew: string; projectManagerId: string; projectManagerName:
 
 export function isProjectManager(agent: Agent): boolean {
   return isLeadType(agent.type) && agent.parentId === undefined
-}
-
-// whether a stopping agent is a project manager the main thread started: a listed one by its type and its parent, one not
-// yet listed by its event's type
-export function stopperIsLead(known: Agent | undefined, type: string | undefined): boolean {
-  return known === undefined ? isLeadType(type) : isProjectManager(known)
-}
-
-// The name of the crew a call starts, or undefined when the call is no project-manager start: only the main thread
-// (no agentId) starting the project manager type with a non-empty text name (ADR-0001 s9, the plan gates)
-export function leadStartName(call: { agentId?: unknown; subagent_type?: unknown; name?: unknown }): string | undefined {
-  if (call.agentId !== undefined || !isLeadType(call.subagent_type)) return undefined
-  return typeof call.name === 'string' && call.name !== '' ? call.name : undefined
 }
 
 // the one name an agent's crew, report file and notes go by: its spawn name, else its id
@@ -2626,3 +2606,24 @@ export const register: Register = on => {
     return { text: text ?? 'truss could not read the crews; see the debug log.' }
   })
 }
+
+// whether an agent type is the crew lead's: the one place the type is compared (PROJECT_MANAGER_TYPE)
+export function isLeadType(type: unknown): boolean {
+  return type === PROJECT_MANAGER_TYPE
+}
+
+// whether a stopping agent is a project manager the main thread started: a listed one by its type and its parent, one not
+// yet listed by its event's type
+export function stopperIsLead(known: Agent | undefined, type: string | undefined): boolean {
+  return known === undefined ? isLeadType(type) : isProjectManager(known)
+}
+
+// The name of the crew a call starts, or undefined when the call is no project-manager start: only the main thread
+// (no agentId) starting the project manager type with a non-empty text name (ADR-0001 s9, the plan gates)
+export function leadStartName(call: { agentId?: unknown; subagent_type?: unknown; name?: unknown }): string | undefined {
+  if (call.agentId !== undefined || !isLeadType(call.subagent_type)) return undefined
+  return typeof call.name === 'string' && call.name !== '' ? call.name : undefined
+}
+
+// the stall kind an idle project manager is logged as
+export const IDLE_LEAD_KIND = 'idle-project-manager'
