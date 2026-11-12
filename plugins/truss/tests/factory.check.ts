@@ -27,6 +27,7 @@ import {
   REAL_FACTORY, REAL_PLUGIN, REAL_REPO, addCrewWorktree, appendEvent, assertOneLine, factorySpawn, assertUsageError, caseFiles, crew, flat, git, gitStatus,
   head, mkEnv, mkRepo, mkRun, planObj, pluginCopy, putFile, readEvents, readPlan, runCli, tmp, validateEvent, writeGoal, writePlan,
 } from './fixtures/workflow-run/harness.ts'
+import { cli as ltcCli, clientResolves, mkWorld } from './fixtures/ltc/harness.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, parsePlan } = reg
 
@@ -421,10 +422,27 @@ function unapprovedEnv(config) {
   return env
 }
 
+// approve --by client needs a client-typed proof: a client-trigger item for the plan (ref run) resolved approve, then --item <id> (ADR-0045)
+function unapprovedWorld(config) {
+  const env = mkWorld(config)
+  writePlan(env.dir, planObj([crew('arch', { stage: 0, verdict: 'design' }), crew('alpha')], { approval: 'client', approvedAt: null }))
+  writeFileSync(`${env.dir}/decisions.md`, '## Run 2026-10-29T19:42:11Z | test goal\n- 15:42 | earlier decision | why | none | followed\n')
+  return env
+}
+
+function clientProof(w) {
+  const e = ltcCli(w, 'escalate', ['--kind', 'client-trigger', '--title', 'approve the plan', '--ref', 'run'])
+  assert.equal(e.status, 0, `${e.stdout} ${e.stderr}`)
+  clientResolves(w, e.json.id, 'approve')
+  return e.json.id
+}
+
+const approveClient = (w, item = clientProof(w)) => ltcCli(w, 'approve', ['--by', 'client', '--item', item])
+
 test('approve: sets approvedAt to an ISO Z time, prints it, appends the decision line', () => {
-  const env = unapprovedEnv({ merge: 'sequential', target: 'main' })
+  const env = unapprovedWorld({ merge: 'sequential', target: 'main' })
   const before = Date.now()
-  const res = env.run('approve', { by: 'client' })
+  const res = approveClient(env)
   assert.equal(res.status, 0, res.stderr)
   const j = assertOneLine(res)
   assert.deepEqual(Object.keys(j), ['approvedAt'])
@@ -454,11 +472,12 @@ test('approve --by auto names auto and the settings source in the decision line'
 })
 
 test('approve refuses a second time: exit 1, plan and decisions unchanged', () => {
-  const env = unapprovedEnv()
-  assert.equal(env.run('approve', { by: 'client' }).status, 0)
+  const env = unapprovedWorld()
+  const item = clientProof(env)
+  assert.equal(approveClient(env, item).status, 0)
   const plan = readFileSync(`${env.dir}/plan.json`, 'utf8')
   const dec = readFileSync(`${env.dir}/decisions.md`, 'utf8')
-  const again = env.run('approve', { by: 'client' })
+  const again = approveClient(env, item)
   assert.equal(again.status, 1)
   assertOneLine(again)
   assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), plan)
