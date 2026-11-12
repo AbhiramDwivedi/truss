@@ -588,6 +588,102 @@ Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared f
 Source: client
 Example: Given two crews in one stage whose owns both list skills/run/SKILL.md, when plan-check runs, then it reports no overlap error; both crews build at the same time in their own worktrees; on the program manager's go-ahead the first merges to the target, and the second, on its go-ahead, merges the latest target into its branch, resolves conflicts, reruns its checks and QC, then merges to the target.
 
+## R-85: An agent cannot approve a plan or goal as the client
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a plan with approval client, when an agent runs `factory approve --by client` without the typed-prompt proof `/truss:inbox` resolve requires (ADR-0037), then the factory refuses and approvedAt stays null; with a genuine typed client prompt it approves; and the run skill tells the program manager never to call a client-only command.
+
+## R-86: A crew decision that needs the program manager reaches the program manager's inbox and waits
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a running crew whose product owner escalates a call that needs the program manager, when the crew posts it, then an item appears in the program manager's inbox and the asking task waits for the reply instead of counting the call as accepted.
+
+## R-87: plan-write writes the full plan on every path
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a plan.js result whose designer hand-back holds a full plan.json and plan.md, when plan-write runs on the path that wrote a stub in wave 3, then plan.json and plan.md on disk hold every crew of the hand-back.
+
+## R-88: A bare-directory owns entry matches the files under it
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a crew whose owns lists `plugins/truss/bin/`, when owns-check or globToRegExp tests `plugins/truss/bin/factory.ts`, then it matches, as `plugins/truss/bin/**` would; and plan-check warns on the bare-directory entry.
+
+## R-89: Only one finisher runs per crew
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a crew whose resumed agent is still finishing, when the program manager runs finish or a resume for the same crew, then the second is refused by a lock or state check and no duplicate finisher starts; once the first ends, a later finish runs.
+
+## R-90: A resume merges the target into the crew branch before the crew restarts
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a crew branch cut from main at A, and another crew merged to main at B, when the program manager resumes the crew, then the crew branch contains B before any resumed member starts, and a conflict goes to a resolver, never a silent drop.
+
+## R-91: Every factory command accepts or refuses a relative --dir the same way
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given any factory command run with a relative `--dir`, when it starts, then it either resolves the path against the cwd or refuses with a message naming --dir, never writing to a wrong directory.
+
+## R-92: Stage green installs ui dependencies when they are missing
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a crew worktree whose ui/node_modules is missing, when the stage green check runs, then it runs `npm --prefix ui ci` first and the ui checks run instead of failing on missing modules.
+
+## R-93: The goal check has a factory command
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a plan with a goalCheck, when the program manager runs the factory goal-check command after the last merge, then it runs the check at the target head, prints the result as JSON and logs a decision line.
+
+## R-94: The run skill says the program manager fast-forwards the main checkout after a crew's PR merge
+Status: open
+Kind: constraint
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+
+## R-95: A second run in one session dir has a supported start
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given a session dir that holds a finished run's plan files, when the program manager starts a new run by the documented way, then the old plan files are kept (archived or per-goal) and the new plan does not overwrite them.
+
+## R-96: The inbox timing test is not flaky
+Status: open
+Kind: nfr
+Measure: inbox.check.ts passes 20 of 20 consecutive runs on a loaded host
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+
+## R-97: Docs cite code by symbol, or the release check tolerates line drift, and the wrong citations on main are fixed
+Status: open
+Kind: constraint
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+
+## R-98: factory cost prices the Claude 5.5 family
+Status: open
+Kind: functional
+Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Source: goal
+Example: Given usage rows for claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-5, when factory cost runs, then each row is priced at the current published per-token rates and none is reported as unpriced.
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
