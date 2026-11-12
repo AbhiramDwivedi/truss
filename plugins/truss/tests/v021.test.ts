@@ -5,15 +5,15 @@ import { HEARTBEAT_MS, LIMIT_RESET, RESET_GRACE_MS, STALL_MS, STALLED, stallText
 import { NOW, ROOT, agent, handBack, measure, quiet, startSession, status, stop, world, test } from './harness'
 
 // truss 0.2.1 (spec C1-C4, C6, C7). Names the spec leaves open, chosen here for the builder to match:
-//   IDLE_FOREMAN = '[truss] idle foreman:'               exported constant
-//   idleForemanText(label, crew, minutes): string        exported; <crew>-<n+1> is the next crew name: auth -> auth-2, auth-3 -> auth-4
+//   IDLE_PROJECT_MANAGER = '[truss] idle project manager:'               exported constant
+//   idleProjectManagerText(label, crew, minutes): string        exported; <crew>-<n+1> is the next crew name: auth -> auth-2, auth-3 -> auth-4
 //   /truss member line, after the crew's reports line:  `  <label> <status> <n>m (<model family>), last activity <ago>`
 // New exports are read through the namespace, so a missing one fails its own test, not the whole file.
 
 const MIN = 60_000
 const api = truss as unknown as Record<string, unknown>
-const IDLE = '[truss] idle foreman:'
-const idleForemen = (prompts: string[]) => prompts.filter(p => p.startsWith(IDLE))
+const IDLE = '[truss] idle project manager:'
+const idleProjectManagers = (prompts: string[]) => prompts.filter(p => p.startsWith(IDLE))
 const stalls = (prompts: string[], label: string) => prompts.filter(p => p.startsWith(STALLED) && p.includes(` ${label} in crew`))
 const setStatus = (w: ReturnType<typeof world>, id: string, s: ReturnType<typeof world>['agents'][number]['status']) => {
   w.agents = w.agents.map(a => (a.id === id ? { ...a, status: s } : a))
@@ -25,7 +25,7 @@ const blockOf = async ($: Parameters<typeof status>[0], id: string, text: string
 
 test('C1: the stall prompt tells the PM to read the transcript tail first', () => {
   expect(stallText('auth-builder', 'auth', 15)).toBe(
-    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.',
+    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth project manager. Read its transcript tail before you stop it; a resumed agent may be compacting.',
   )
 })
 
@@ -92,62 +92,62 @@ test('C1 flow: a resume takes an agent off the stalled list, so a second stall i
 test('C1 flow: agent.spawn counts as activity', async ($, on) => {
   const w = world($, on)
   on('agent.spawn', async () => ({ agentId: 'L9', model: 'claude-opus-4-1' }) as never)
-  w.agents = [...w.agents, agent('L9', truss.FOREMAN_TYPE, 'search')]
+  w.agents = [...w.agents, agent('L9', truss.PROJECT_MANAGER_TYPE, 'search')]
   // no session.start, so no heartbeat: only the spawn can have recorded activity
-  await $.agent.spawn({ subagentType: truss.FOREMAN_TYPE, prompt: 'p', description: 'd', name: 'search' } as never)
+  await $.agent.spawn({ subagentType: truss.PROJECT_MANAGER_TYPE, prompt: 'p', description: 'd', name: 'search' } as never)
   await w.clock.advance(3 * MIN)
   const line = (await status($)).split('\n').find(l => l.startsWith('- search:'))
   expect(line).toContain(', last active 3m ago')
 })
 
-// ---------- C2. idle-foreman check ----------
+// ---------- C2. idle-project-manager check ----------
 
-test('C2: exports IDLE_FOREMAN and idleForemanText with the exact prompt', () => {
-  expect(api.IDLE_FOREMAN).toBe('[truss] idle foreman:')
-  const text = api.idleForemanText as ((label: string, crew: string, minutes: number) => string) | undefined
+test('C2: exports IDLE_PROJECT_MANAGER and idleProjectManagerText with the exact prompt', () => {
+  expect(api.IDLE_PROJECT_MANAGER).toBe('[truss] idle project manager:')
+  const text = api.idleProjectManagerText as ((label: string, crew: string, minutes: number) => string) | undefined
   expect(typeof text).toBe('function')
   expect(text!('auth', 'auth', 17)).toBe(
-    '[truss] idle foreman: auth in crew auth, no report for 17m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.',
+    '[truss] idle project manager: auth in crew auth, no report for 17m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.',
   )
   expect(text!('gateway-3', 'gateway-3', 20)).toBe(
-    '[truss] idle foreman: gateway-3 in crew gateway-3, no report for 20m and no member at work. Read its last message and resume it with SendMessage, or start gateway-4 from its report.',
+    '[truss] idle project manager: gateway-3 in crew gateway-3, no report for 20m and no member at work. Read its last message and resume it with SendMessage, or start gateway-4 from its report.',
   )
 })
 
-test('C2 flow: an idle foreman with no live member and no report is prompted once after 15 minutes', async ($, on) => {
+test('C2 flow: an idle project manager with no live member and no report is prompted once after 15 minutes', async ($, on) => {
   const w = quiet(world($, on))
-  // the module must see the foreman go from running to idle (v021-fix item 1)
+  // the module must see the project manager go from running to idle (v021-fix item 1)
   await startSession($)
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(14 * MIN)
-  expect(idleForemen(w.prompts)).toEqual([])
+  expect(idleProjectManagers(w.prompts)).toEqual([])
   await w.clock.advance(3 * MIN)
-  const got = idleForemen(w.prompts)
+  const got = idleProjectManagers(w.prompts)
   expect(got.length).toBe(1)
-  expect(got[0]!.startsWith('[truss] idle foreman: auth in crew auth, no report for ')).toBe(true)
+  expect(got[0]!.startsWith('[truss] idle project manager: auth in crew auth, no report for ')).toBe(true)
   expect(got[0]).toContain('m and no member at work. Read its last message and resume it with SendMessage, or start auth-2 from its report.')
   // once per idle period, however long it lasts
   await w.clock.advance(3 * 60 * MIN)
-  expect(idleForemen(w.prompts).length).toBe(1)
-  // the running foreman L2 is never an idle foreman
+  expect(idleProjectManagers(w.prompts).length).toBe(1)
+  // the running project manager L2 is never an idle project manager
   expect(w.prompts.some(p => p.startsWith(IDLE) && p.includes('billing'))).toBe(false)
 })
 
-test('C2 flow: resuming the foreman ends the idle period and re-arms the prompt', async ($, on) => {
+test('C2 flow: resuming the project manager ends the idle period and re-arms the prompt', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(17 * MIN)
-  expect(idleForemen(w.prompts).length).toBe(1)
+  expect(idleProjectManagers(w.prompts).length).toBe(1)
   setStatus(w, 'L1', 'running')
   await w.clock.advance(2 * MIN)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(14 * MIN)
-  expect(idleForemen(w.prompts).length).toBe(1)
+  expect(idleProjectManagers(w.prompts).length).toBe(1)
   await w.clock.advance(3 * MIN)
-  expect(idleForemen(w.prompts).length).toBe(2)
+  expect(idleProjectManagers(w.prompts).length).toBe(2)
 })
 
 test('C2 flow: no prompt while a member of the crew is live', async ($, on) => {
@@ -155,22 +155,22 @@ test('C2 flow: no prompt while a member of the crew is live', async ($, on) => {
   setStatus(w, 'L1', 'idle')
   await startSession($)
   await w.clock.advance(2 * 60 * MIN)
-  expect(idleForemen(w.prompts)).toEqual([])
+  expect(idleProjectManagers(w.prompts)).toEqual([])
 })
 
 for (const report of ['Summary: done\n\n## Proof\nran the tests', 'CHECKPOINT: half the slices merged', 'BLOCKED: no staging key']) {
-  test(`C2 flow: no prompt for a foreman whose captured report is final (${report.split('\n')[0]})`, async ($, on) => {
+  test(`C2 flow: no prompt for a project manager whose captured report is final (${report.split('\n')[0]})`, async ($, on) => {
     const w = quiet(world($, on))
     await startSession($)
     await w.clock.advance(2 * MIN)
     expect(await blockOf($, 'L1', report)).toBeUndefined()
     setStatus(w, 'L1', 'idle')
     await w.clock.advance(2 * 60 * MIN)
-    expect(idleForemen(w.prompts)).toEqual([])
+    expect(idleProjectManagers(w.prompts)).toEqual([])
   })
 }
 
-test('C2 flow: a captured report that is not final does not excuse the foreman', async ($, on) => {
+test('C2 flow: a captured report that is not final does not excuse the project manager', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
@@ -180,21 +180,21 @@ test('C2 flow: a captured report that is not final does not excuse the foreman',
   expect(await blockOf($, 'L1', 'chatter', true)).toBeUndefined()
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(20 * MIN)
-  expect(idleForemen(w.prompts).length).toBe(1)
+  expect(idleProjectManagers(w.prompts).length).toBe(1)
 })
 
 for (const tagged of ['QUESTION: keep v1?', 'BLOCKED: no API key', 'PROPOSAL: split the crew']) {
-  test(`C2 flow: no prompt while the foreman holds a waiting tag (${tagged.split(':')[0]})`, async ($, on) => {
+  test(`C2 flow: no prompt while the project manager holds a waiting tag (${tagged.split(':')[0]})`, async ($, on) => {
     const w = quiet(world($, on))
     await startSession($)
     await w.send('L1', 'main', tagged)
     setStatus(w, 'L1', 'idle')
     await w.clock.advance(2 * 60 * MIN)
-    expect(idleForemen(w.prompts)).toEqual([])
+    expect(idleProjectManagers(w.prompts)).toEqual([])
   })
 }
 
-test('C2 flow: only listed foremen are checked: an unlisted foreman, an idle member or an agent outside crews gets no prompt', async ($, on) => {
+test('C2 flow: only listed project managers are checked: an unlisted project manager, an idle member or an agent outside crews gets no prompt', async ($, on) => {
   const w = quiet(world($, on))
   // L1 drops off the list; B1 is an idle member; X is outside every crew
   w.agents = w.agents.filter(a => a.id !== 'L1')
@@ -202,7 +202,7 @@ test('C2 flow: only listed foremen are checked: an unlisted foreman, an idle mem
   setStatus(w, 'X', 'idle')
   await startSession($)
   await w.clock.advance(2 * 60 * MIN)
-  expect(idleForemen(w.prompts)).toEqual([])
+  expect(idleProjectManagers(w.prompts)).toEqual([])
 })
 
 // ---------- C3. interim stops do not overwrite reports ----------
@@ -214,7 +214,7 @@ test('C3 flow: an interim stop writes <label>.interim.md and leaves <label>.md u
   const w = quiet(world($, on))
   expect(await blockOf($, 'L1', 'Summary: done\n\n## Proof\nran it')).toBeUndefined()
   expect(w.files.get(AUTH)).toBe('Summary: done\n\n## Proof\nran it')
-  // a member is resumed, so the foreman's next stop is interim
+  // a member is resumed, so the project manager's next stop is interim
   setStatus(w, 'A1', 'running')
   expect(await blockOf($, 'L1', 'builder-4 is fixing the token test')).toBeUndefined()
   expect(w.files.get(AUTH)).toBe('Summary: done\n\n## Proof\nran it')
