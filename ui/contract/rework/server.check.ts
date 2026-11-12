@@ -395,7 +395,7 @@ const spawnLine = (agent: string, agentId: string, type: string) => ({
   v: 1, ts: '2026-11-04T16:00:00Z', event: 'spawn', crew: 'alpha', agent, agentId, type, model: 'opus', effort: 'high', by: 'main',
 })
 const EVENTS = jsonl([
-  spawnLine('alpha', AGENT_A, 'truss:foreman'),
+  spawnLine('alpha', AGENT_A, 'truss:project-manager'),
   spawnLine('alpha-builder', AGENT_B, 'kit:builder'),
   spawnLine('alpha-qc', AGENT_C, 'truss:qc-engineer'),
 ])
@@ -439,7 +439,7 @@ test('R-42: a member no task message names has task null (the client then falls 
 
 test('R-42: the session keeps the latest task per task_id up to 500 entries; the newest of 600 tasks still matches', async () => {
   const lastId = 'a' + 'f'.repeat(15) + '9'
-  const events = jsonl([spawnLine('alpha', AGENT_A, 'truss:foreman'), spawnLine('alpha-builder', lastId, 'kit:builder')])
+  const events = jsonl([spawnLine('alpha', AGENT_A, 'truss:project-manager'), spawnLine('alpha-builder', lastId, 'kit:builder')])
   const w = await boot({ files: { 'plan.json': PLAN, 'events.jsonl': events } })
   try {
     await w.start()
