@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { commonDir, configOf, flat, listOf, proofTranscriptRoot, readJsonl, readProofFile, readText, refuse, sharedDir, str, usage, need, withLock, writeJsonAtomic } from './store.ts'
+import { CliError, commonDir, configOf, flat, listOf, proofTranscriptRoot, readJsonl, readProofFile, readText, refuse, sharedDir, str, usage, need, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 export type EscalateInput = { kind: string; title: string; detail?: string; crews?: string[]; ref?: string | null; blocking?: boolean }
@@ -449,6 +449,56 @@ function typedProof(repo: string, session: string, open: Obj, decision: string, 
   return { missing: '' }
 }
 
+/**
+ * The typed client proof `approve --by client` needs (ADR-0045): null when `item` is a client-trigger item of this session (`dir`) whose ref is
+ * the run goal or one of `clientGoals`, resolved approve by the client with a typed line that verifiedItems holds, and not superseded by a later
+ * open row of the same kind, session and ref. Else the reason it does not count. Fails closed: a stored row alone proves nothing.
+ */
+export function approvalProof(repo: string, dir: string, item: string | undefined, clientGoals: string[]): string | null {
+  if (item === undefined || item === '') return 'approve --by client needs --item <E-id>: the client-trigger item for this plan, which the client approves by typing /truss:inbox approve <E-id> <code>'
+  const items = verifiedItems(repo)
+  const it = items.get(item)
+  if (it === undefined) return `no such item: ${item}`
+  const session = sessionOf(dir)
+  if (it.open.kind !== 'client-trigger') return `${item} is a ${String(it.open.kind)} item, not the client-trigger item that approves a plan`
+  if (it.open.session !== session) return `${item} was opened for another truss dir, not ${session}`
+  const ref = it.open.ref
+  if (ref !== 'run' && !(typeof ref === 'string' && clientGoals.includes(ref))) return `${item} is for ${JSON.stringify(ref ?? null)}, not the run goal or a client goal of this plan`
+  let later = false
+  for (const [id, o] of items) {
+    if (id === item) later = true
+    else if (later && o.open.kind === it.open.kind && o.open.session === it.open.session && o.open.ref === it.open.ref) return `${item} is superseded by ${id}`
+  }
+  const r = it.resolve
+  if (r === null) return `no prompt typed by the client approves ${item}: the client types /truss:inbox approve ${item} <code>`
+  if (r.by !== 'client' || r.decision !== 'approve') return `${item} was resolved ${String(r.decision)}, not approve`
+  return null
+}
+
+/**
+ * A plan the client's typed approve already approved (see onPlanApprove): the first `approve --by client --item <id>` with the same proof
+ * confirms it, once, by marking the item applied for this session; any later call finds it applied and refuses. True when it confirmed.
+ */
+export function confirmApproval(repo: string, dir: string, item: string | undefined, clientGoals: string[]): boolean {
+  if (approvalProof(repo, dir, item, clientGoals) !== null) return false
+  const session = sessionOf(dir)
+  const S = sharedDir(repo)
+  let confirmed = false
+  withLock(S, 'inbox', () => {
+    const it = verifiedItems(repo).get(String(item))
+    if (it === undefined || it.resolve === null || it.applied.includes(session)) return
+    appendFileSync(`${S}/inbox.jsonl`, JSON.stringify({ v: 1, op: 'applied', id: item, ts: new Date().toISOString(), session }) + '\n')
+    confirmed = true
+  })
+  return confirmed
+}
+
+// factory.ts registers the plan approval here (this module never imports factory.ts): called after a client's typed approve of a `run` item.
+let planApprover: ((repo: string, dir: string, item: string) => Obj) | null = null
+export function onPlanApprove(fn: (repo: string, dir: string, item: string) => Obj): void {
+  planApprover = fn
+}
+
 function resolveItem(f: Flags): Obj {
   const repo = flat(need(f, 'repo'))
   const dir = need(f, 'dir')
@@ -471,11 +521,13 @@ function resolveItem(f: Flags): Obj {
   const file = `${S}/inbox.jsonl`
   let quote: string | null = null
   let firstCrew = 'main'
+  let planItem = false as boolean
   withLock(S, 'inbox', () => {
     const it = verifiedItems(repo).get(id)
     if (it === undefined) throw refuse({ error: `no such item: ${id}` })
     if (it.resolve !== null) throw refuse({ error: `${id} is already resolved` })
     const kind = String(it.open.kind)
+    planItem = kind === 'client-trigger' && it.open.ref === 'run' && it.open.session === session
     firstCrew = it.crews[0] ?? 'main'
     if (by === 'pm' && KINDS[kind]?.by !== 'any') throw refuse({ error: `${kind} is resolved by the client, not by pm` })
     if (raiseUsd !== undefined && kind !== 'budget') throw refuse({ error: '--raise-usd is for the budget kind only' })
@@ -507,7 +559,18 @@ function resolveItem(f: Flags): Obj {
     }
   })
   event(dir, { event: 'resolve', crew: firstCrew, id, decision, by })
-  return { id, state: 'resolved', decision, quote }
+  const out: Obj = { id, state: 'resolved', decision, quote }
+  // ADR-0045: the client's typed approve of this dir's plan-approval item approves the plan itself, outside the inbox lock. A refusal
+  // (open long-term cost, already approved) leaves the resolve standing and rides in the output.
+  if (by === 'client' && decision === 'approve' && planItem && planApprover !== null) {
+    try {
+      out.approved = planApprover(repo, dir, id)
+    } catch (e) {
+      if (!(e instanceof CliError)) throw e
+      out.approveRefused = e.body
+    }
+  }
+  return out
 }
 
 function markApplied(f: Flags): Obj {
