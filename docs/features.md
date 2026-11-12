@@ -94,10 +94,10 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/workflows/stage.js` (`ltcLinesOf`, `qc`); tests `plugins/truss/tests/workflows.check.ts`.
 - Owner: `truss-workflow-scripts`.
 
-## Owns extension and knowledge-owns rule
+## Owns extension
 
-- What: `factory owns-extend --slug S --glob G --reason R` edits `plan.json` under the `plan` lock, refuses a glob overlapping another live crew, and appends a decision line; it replaces hand-editing owns. `plan-check` refuses a stage whose crews' owns overlap a rule file's `paths` when no crew of that stage owns the rule file (skipped silently without git). One exact rule-file glob may be owned by crews of different goals and stages only when one crew's `after` names the other (`orderedByAfter`); both commands apply this, and any other shared glob is an overlap. The knowledge-owns rule matches owns to rule `paths` with `ruleGlobsOverlap` (brace expansion, exact match for a wildcard-free path, last-segment compare for a leading `**`); the crew-vs-crew check keeps the literal-prefix `globsOverlap`. Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically. TODO: `plugins/truss/docs/plan.schema.json` has no crew `after` property, so a plan using it fails the schema (`additionalProperties: false`).
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdOwnsExtend`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
+- What: `factory owns-extend --slug S --glob G --reason R` adds the glob to the crew's `owns` in `plan.json` under the `plan` lock (once; a glob already there is not added twice), whatever other crews own, and appends a decision line; it replaces hand-editing owns. Crews may share files ([ADR-0043](../plugins/truss/docs/adr/0043-crews-share-files.md)): `plan-check` compares no crew's owns with another's and has no rule-file ownership rule; `owns-check` still refuses a crew diff outside the crew's own `owns`. Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically.
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdOwnsExtend`, `cmdOwnsCheck`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers").
 

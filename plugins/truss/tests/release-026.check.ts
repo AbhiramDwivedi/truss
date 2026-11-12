@@ -35,6 +35,13 @@ test('release-026: a 0.26.0 CHANGELOG entry exists', () => {
   assert.equal(log.match(/^## 0\.26\.0\b/gm)?.length, 1, 'exactly one 0.26.0 entry')
 })
 
+test('release: plugin.json version equals the newest CHANGELOG version heading', () => {
+  const version = JSON.parse(plugin('.claude-plugin/plugin.json')).version
+  const newest = plugin('CHANGELOG.md').match(/^## (\d+\.\d+\.\d+)\b/m)?.[1]
+  assert.ok(newest, 'CHANGELOG.md has no "## <x.y.z>" heading')
+  assert.equal(version, newest, `plugin.json is ${version} but the newest CHANGELOG entry is ${newest}`)
+})
+
 test('release-026: the 0.26.0 entry carries the item 13 closures and the heavy-slot starvation bound', () => {
   const entry = changelogEntry('0.26.0')
   assert.ok(entry, 'no 0.26.0 entry')
@@ -140,7 +147,7 @@ const tokensOf = (text) => {
 // A citation whose clause and line name no code symbol is pinned here, path:line -> a token the cited lines hold.
 const ABOUT = {
   'skills/run/SKILL.md:8': 'only one who talks to the client',
-  'bin/factory.ts:3020':'is not a local branch',
+  'bin/factory.ts:3049': 'is not a local branch',
   'ui/server/main.ts:80': "join(uiDir, 'web')",
   'worktypes.ts:1': 'The built-in profiles',
 }

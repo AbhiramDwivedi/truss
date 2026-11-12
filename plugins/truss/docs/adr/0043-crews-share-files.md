@@ -2,7 +2,7 @@
 
 Status: accepted, 2026-11-11
 Decided by: client
-Amends: ADR-0001 (the "no two crews edit the same file" rule of Decision 4), ADR-0009 (plan-check's owns-overlap rule and the "Disjoint file ownership" row), ADR-0010 (the amendment's cross-goal owns check), ADR-0019 (item 8, the cross-goal overlap error)
+Amends: ADR-0001 (the "no two crews edit the same file" rule of Decision 4), ADR-0008 ("disjoint ownership" among the gates that hold), ADR-0009 (plan-check's owns-overlap rule and the "Disjoint file ownership" row), ADR-0010 (the amendment's cross-goal owns check), ADR-0019 (item 8, the cross-goal overlap error)
 
 ## Context
 

@@ -21,7 +21,7 @@ Limits the plan gate holds a size to:
 
 - A `solo` task has `estAgents` 1.
 - A `lean` task has `estAgents` at most 3, and at most 2 without `qc`.
-- A stage-0 design task, one that writes ADRs, the architecture doc or contract tests, is always `full`.
+- A design task, one that writes ADRs, the architecture doc or contract tests, has no fixed size: size it by its work like any other task (ADR-0044).
 
 Give each task a work type too: `feature`, `docs`, `refactor`, `bugfix`, `dependency` or `migration`. A work type sets the least process its task may have, and may also require `red` or a stress test. Don't recommend below the work type's minimum.
 

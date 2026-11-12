@@ -20,7 +20,7 @@ const INIT = read('../skills/init/SKILL.md')
 
 test('run skill: the PM no longer decides in-crew product calls as the product owner', () => {
   assert.doesNotMatch(RUN, /decide for it as its product owner/)
-  assert.match(RUN, /A product question inside a crew is the crew lead's call/)
+  assert.match(RUN, /A product question inside a crew is the project manager's call/)
 })
 
 test('run skill: crew product calls route through the product-owner persona with PO: DECIDE / ESCALATE', () => {

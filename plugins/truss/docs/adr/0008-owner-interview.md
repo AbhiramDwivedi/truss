@@ -2,6 +2,8 @@
 
 Status: proposed, 2026-10-29. Written by the mid-run design slice `interview-design` (stage 1), against `fa0fa9f`. It becomes accepted when the program manager (PM) merges this crew. Not repo ADR-0008.
 
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): the "disjoint ownership" gate named in the gates paragraph no longer holds; two crews may own the same file and merge in turn.
+
 VERDICT: change. The interface that can't take the work is the path from the client's goal to the plan design engineer's brief (`skills/run/SKILL.md` sections 1 to 4, lines 77-127). The PM asks the client one altitude question (line 79), answers four depth-pass questions itself (lines 81-90), and hands the goal and those answers to the design engineer (lines 121-127). Nothing in that path asks the client about requirements, nothing records the answers, and nothing carries a requirement from one run to the next. The design engineer can't fill the gap: it has no `AskUserQuestion` (`agents/design-engineer.md:6`), and in init mode it works only from code (`agents/design-engineer.md:49`), so an empty repo gives it nothing to design from. The change adds a new module (the client brief skill and its ledger code), a new stored data shape (`requirements.md`) and new seams into the run skill and the design engineer.
 
 ## Context

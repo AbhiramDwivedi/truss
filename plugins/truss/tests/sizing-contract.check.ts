@@ -60,13 +60,13 @@ test(P + 'plan-check refuses a lean crew with estAgents above 3, or above 2 with
   assertRefusedFor(planCheck(env, v4([lean('l', { qc: false, red: false, estAgents: 3 })])), 'l', 'estAgents')
 })
 
-test(P + 'plan-check refuses a stage-0 design crew whose process is not full', () => {
+test(P + 'plan-check accepts a stage-0 design crew of any process (ADR-0044)', () => {
   const env = mkEnv({ config: CFG })
-  const design = (over: Record<string, unknown>) => v4([crew('d', { stage: 0, verdict: 'design', ...over })], { approval: 'client', approvedAt: null })
+  const design = (over: Record<string, unknown>) => v4([crew('d', { stage: 0, verdict: 'design', ...over })], { approval: 'auto' })
   assertAccepted(planCheck(env, design({ process: 'full' })))
   assertAccepted(planCheck(env, design({})))
-  assertRefusedFor(planCheck(env, design({ process: 'solo' })), 'd', 'process')
-  assertRefusedFor(planCheck(env, design({ process: 'lean', qc: true, red: true })), 'd', 'process')
+  assertAccepted(planCheck(env, design({ process: 'solo' })))
+  assertAccepted(planCheck(env, design({ process: 'lean', qc: true, red: true })))
 })
 
 test(P + 'start lists solo and lean crews under direct and leaves them out of the Workflow args', () => {

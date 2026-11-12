@@ -327,9 +327,14 @@ function checkPlan(plan, extra = {}) {
 const errorsFor = (json, slug) => (json.errors ?? []).filter((e) => e.startsWith(`${slug}: `))
 
 test('plan-check: a good plan is ok and lists crews with acceptanceTestProved false under unproved', () => {
-  const { res, json } = checkPlan(planObj([crew('alpha'), crew('beta', { acceptanceTestProved: false }), crew('gamma', { stage: 2, acceptanceTestProved: false })]))
+  const { env, res, json } = checkPlan(planObj([crew('alpha'), crew('beta', { acceptanceTestProved: false }), crew('gamma', { stage: 2, acceptanceTestProved: false })]))
   assert.equal(res.status, 0)
-  assert.deepEqual(json, { ok: true, unproved: ['beta', 'gamma'] })
+  assert.deepEqual(json.unproved, ['beta', 'gamma'])
+  assert.equal(json.ok, true)
+  // ADR-0044: stage 2 has no Why line in plan.md, so a warning; with the line, no warnings key
+  assert.equal(json.warnings.length, 1)
+  writeFileSync(`${env.dir}/plan.md`, '# Plan\n\nWhy stage 2: gamma needs alpha\'s merged parser\n')
+  assert.deepEqual(assertOneLine(env.run('plan-check', { repo: null })), { ok: true, unproved: ['beta', 'gamma'] })
 })
 
 test('plan-check: all proved gives an empty unproved list', () => {
@@ -344,13 +349,16 @@ test('plan-check: version must be 2', () => {
   assert.ok(json.errors.length >= 1)
 })
 
-test('plan-check: approval is client exactly when a stage-0 crew exists', () => {
+test('plan-check: approval no longer follows stage 0 (ADR-0044); it must be auto or client', () => {
   const clientNoStage0 = checkPlan(planObj([crew('alpha')], { approval: 'client', approvedAt: null }))
-  assert.equal(clientNoStage0.res.status, 1)
-  assert.equal(clientNoStage0.json.ok, false)
+  assert.equal(clientNoStage0.res.status, 0, clientNoStage0.res.stdout)
+  assert.equal(clientNoStage0.json.ok, true)
   const autoWithStage0 = checkPlan(planObj([crew('arch', { stage: 0, verdict: 'design' })], { approval: 'auto' }))
-  assert.equal(autoWithStage0.res.status, 1)
-  assert.equal(autoWithStage0.json.ok, false)
+  assert.equal(autoWithStage0.res.status, 0, autoWithStage0.res.stdout)
+  assert.equal(autoWithStage0.json.ok, true)
+  const bad = checkPlan(planObj([crew('alpha')], { approval: 'maybe' }))
+  assert.equal(bad.res.status, 1)
+  assert.ok(bad.json.errors.includes('plan: approval must be auto or client'), JSON.stringify(bad.json.errors))
   const clientWithStage0 = checkPlan(planObj([crew('arch', { stage: 0, verdict: 'design' }), crew('alpha')], { approval: 'client', approvedAt: null }))
   assert.equal(clientWithStage0.res.status, 0)
   assert.equal(clientWithStage0.json.ok, true)
@@ -436,7 +444,8 @@ test('approve: sets approvedAt to an ISO Z time, prints it, appends the decision
 
 test('approve --by auto names auto and the settings source in the decision line', () => {
   const env = mkEnv()
-  writePlan(env.dir, planObj([crew('alpha')], { approval: 'client', approvedAt: null }))
+  // an auto plan: since ADR-0044 approve --by auto refuses a plan whose approval is client
+  writePlan(env.dir, planObj([crew('alpha')], { approval: 'auto', approvedAt: null }))
   writeFileSync(`${env.dir}/decisions.md`, '## Run 2026-10-29T19:42:11Z | test goal\n- 15:42 | earlier decision | why | none | followed\n')
   const res = env.run('approve', { by: 'auto' })
   assert.equal(res.status, 0, res.stderr)

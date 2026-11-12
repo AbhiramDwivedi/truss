@@ -88,13 +88,14 @@ test('rename-027: ADR-0042 is accepted, decided by the client, and names the new
   assert.match(sec, /0042-project-manager-rename\.md/, 'the Role names section does not link ADR-0042')
 })
 
-test('rename-027: plugin.json is at 0.27.0', () => {
-  assert.equal(JSON.parse(plugin('.claude-plugin/plugin.json')).version, '0.27.0')
+// 0.28.0 shipped after the rename: these pin that the rename's release stays in place, not that it is the newest
+test('rename-027: plugin.json is at 0.27.0 or later', () => {
+  const [maj, min] = JSON.parse(plugin('.claude-plugin/plugin.json')).version.split('.').map(Number)
+  assert.ok(maj > 0 || min >= 27, 'plugin.json is below 0.27.0')
 })
 
-test('rename-027: the first CHANGELOG entry is 0.27.0', () => {
+test('rename-027: the CHANGELOG has exactly one 0.27.0 entry', () => {
   const log = plugin('CHANGELOG.md')
-  assert.match(log.split('\n').find((l) => /^## /.test(l)), /^## 0\.27\.0\b/)
   assert.equal(log.match(/^## 0\.27\.0\b/gm)?.length, 1, 'exactly one 0.27.0 entry')
 })
 

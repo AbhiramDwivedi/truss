@@ -28,7 +28,7 @@ The `docs/requirements.md` non-goals (lines 389-390) also bind this ADR. There i
 
 Two facts constrain the shape:
 
-- ADR-0008 (`docs/adr/0008-owner-interview.md:60-66`) sizes the goal's brief as `small`, `standard` or `large`. It says "nothing else here reads it", and that "whether process size ... follows the same size is ADR-0009's call".
+- ADR-0008 (`docs/adr/0008-owner-interview.md:62-68`) sizes the goal's brief as `small`, `standard` or `large`. It says "nothing else here reads it", and that "whether process size ... follows the same size is ADR-0009's call".
 - The hooks already let a sized crew through. `gateOf` checks approval, goal, stage and the parallel cap, and never reads a crew's process (`hooks/register.ts:433-466`). `mainEditVerdict` is inactive with no plan, or with no crew that isn't merged or dropped (`hooks/register.ts:1070-1074`).
 
 ## Decision Drivers

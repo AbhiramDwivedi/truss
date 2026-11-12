@@ -115,7 +115,7 @@ test('autonomy prose: the run skill has the next section as the contract writes 
     /Cloud Routines/,
   ]) assert.match(s, re, `the --next section lacks ${re}`)
   // the eligibility list, the five questions the checking engineer answers
-  for (const re of [/outcome that can be checked/, /fits one workType/, /no stage-0 crew/, /no external service and no stored data shape/, /no production system/]) {
+  for (const re of [/outcome that can be checked/, /fits one workType/, /no design crew/, /no external service and no stored data shape/, /no production system/]) {
     assert.match(s, re, `the --next section's eligibility list lacks ${re}`)
   }
   assert.match(s, /always writes a plan/i)

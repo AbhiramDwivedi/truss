@@ -97,7 +97,7 @@ export function crew(slug: string, over: Record<string, unknown> = {}): Record<s
   return { slug, stage: 1, verdict: 'change', modules: [slug], owns: [`src/${slug}/**`], acceptanceTest: 'true', acceptanceTestProved: true, estAgents: 1, status: 'planned', ...over }
 }
 
-/** A plan object (version 2, approval auto, approvedAt now, maxParallelCrews 4, reworkAllowance 2) with `over` laid on top. For an unapproved plan pass `approvedAt: null, approval: 'client'` and include a stage-0 `verdict: 'design'` crew. */
+/** A plan object (version 2, approval auto, approvedAt now, maxParallelCrews 4, reworkAllowance 2) with `over` laid on top. For an unapproved plan pass `approvedAt: null`, with `approval: 'client'` (waiting on the client) or `approval: 'auto'` (waiting on `approve --by auto`); either is valid with any crews, and no stage-0 or design crew is needed (ADR-0044). */
 export function planObj(crews: unknown[], over: Record<string, unknown> = {}): Record<string, unknown> {
   return { version: 2, goal: 'test goal', architecture: 'docs/architecture.md', approval: 'auto', approvedAt: new Date().toISOString(), maxParallelCrews: 4, reworkAllowance: 2, crews, ...over }
 }

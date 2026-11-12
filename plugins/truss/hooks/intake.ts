@@ -59,15 +59,19 @@ export function amendPlan(existing: unknown, amend: unknown, now: string): { pla
     if (entry.approvedAt !== null && entry.approvedAt !== undefined) return refuse(`goal ${id} is approved`)
     if (old.some(o => mine(o) && isRecord(o) && o.status !== 'planned')) return refuse(`goal ${id} has started crews`)
   }
+  if (goal.goalCheck !== undefined && (typeof goal.goalCheck !== 'string' || goal.goalCheck.trim() === '')) return refuse('goal.goalCheck is not a non-empty string')
+  // ADR-0044: the goal's optional goal-wide check, run by the program manager after the goal's last merge
+  const check = typeof goal.goalCheck === 'string' ? { goalCheck: goal.goalCheck } : {}
   const fresh = crews.map(c => ({ ...(c as Record<string, unknown>), goal: id, status: 'planned' }))
   let nextGoals: unknown[]
   let nextCrews: unknown[]
   if (entry === undefined) {
-    nextGoals = [...goals, { id, goal: goal.goal, addedAt: now, approval, approvedAt: null }]
+    nextGoals = [...goals, { id, goal: goal.goal, addedAt: now, approval, approvedAt: null, ...check }]
     nextCrews = [...old, ...fresh]
   } else {
     // replace: the goal keeps its addedAt and its place in the queue; its new crews go where its first old crew was
-    nextGoals = goals.map((g, i) => (i === at ? { ...entry, goal: goal.goal, approval } : g))
+    const { goalCheck: _old, ...rest } = entry
+    nextGoals = goals.map((g, i) => (i === at ? { ...rest, goal: goal.goal, approval, ...check } : g))
     const first = old.findIndex(mine)
     const kept = old.filter(o => !mine(o))
     const index = first < 0 ? kept.length : first

@@ -4,6 +4,8 @@ Status: accepted (stage 0 of foundry 0.3.0). Date: 2026-10-26. Decided by: Ram (
 
 Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): two crews may edit the same file; they build in parallel and merge in turn.
 
+Amended by [ADR-0044](0044-split-by-need.md) (2026-11-11, client ruling): stages and crews come from the work's complexity only. Section 5's "stage 0 holds the `change` work" no longer holds: a design crew exists only for an open design question, a `change` crew writes an ADR the client or an accepted ADR already decided, and a later stage needs a `Why stage <n>:` line. Sections 6 and 8 no longer tie `approval` to stage 0: it is `client` when a client trigger applies, a long-term cost is open, or the brief says so.
+
 ## Context
 
 The intel run on 2026-10-26 took about six hours for three crews. Two of them merged with 10 and 12 agent reports. The third, gateway, needed 32: 8 builders, 9 testers, 7 writers, 4 QC engineers and 4 stress tests. Its decision log shows the cause. There was no gateway design, so the design happened inside the build:
