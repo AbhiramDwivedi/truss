@@ -2,13 +2,18 @@ import type { AgentInfo, ClassicResult, EngineInterface, Register, Timer, ToolCa
 
 import { amendPlan, goalLine, goalOf, RUN_GOAL } from './intake.ts'
 
-// the agent type every crew foreman runs as; only a foreman the main thread started heads a crew
-export const FOREMAN_TYPE = 'truss:foreman'
+// the agent type every crew project manager runs as; only a project manager the main thread started heads a crew.
+// Compared only inside isLeadType.
+export const PROJECT_MANAGER_TYPE = 'truss:project-manager'
+// whether an agent type is the crew lead's: the one place the type is compared
+export function isLeadType(type: unknown): boolean {
+  return type === PROJECT_MANAGER_TYPE
+}
 // marks text this mod wrote
 export const MARK = '[truss]'
 // the main session, as SendMessage addresses it
 export const MAIN = 'main'
-// how a foreman's question to the person begins
+// how a project manager's question to the person begins
 export const QUESTION = 'QUESTION:'
 // past this size the message log is rolled to messages.<n>.jsonl, well under what one $.fs.read takes
 export const ROLL_BYTES = 3 * 1024 * 1024
@@ -23,12 +28,14 @@ export const STALL_MS = 15 * 60_000
 export const HEARTBEAT_MS = 60_000
 // wake this long after a usage window's resetsAt
 export const RESET_GRACE_MS = 2 * 60_000
-// most blocks per foreman per stop streak
-export const FOREMAN_STOP_BLOCKS = 2
+// most blocks per project manager per stop streak
+export const PROJECT_MANAGER_STOP_BLOCKS = 2
 export const STALLED = '[truss] stalled:'
-export const IDLE_FOREMAN = '[truss] idle foreman:'
+export const IDLE_PROJECT_MANAGER = '[truss] idle project manager:'
+// the stall kind an idle project manager is logged as
+export const IDLE_LEAD_KIND = 'idle-project-manager'
 export const LIMIT_RESET = '[truss] limit reset:'
-// how a foreman says it cannot go on without help, proposes a change, or stops part-way
+// how a project manager says it cannot go on without help, proposes a change, or stops part-way
 export const BLOCKED = 'BLOCKED:'
 export const PROPOSAL = 'PROPOSAL:'
 export const CHECKPOINT = 'CHECKPOINT:'
@@ -50,11 +57,24 @@ export type Agent = Pick<AgentInfo, 'id' | 'type' | 'status' | 'description'> & 
   seq?: number
 }
 
-// the crew an agent works in: the foreman at its top, the crew's name, and whether the agent is that foreman
-export type Crew = { crew: string; foremanId: string; foremanName: string; isForeman: boolean }
+// the crew an agent works in: the project manager at its top, the crew's name, and whether the agent is that project manager
+export type Crew = { crew: string; projectManagerId: string; projectManagerName: string; isProjectManager: boolean }
 
-export function isForeman(agent: Agent): boolean {
-  return agent.type === FOREMAN_TYPE && agent.parentId === undefined
+export function isProjectManager(agent: Agent): boolean {
+  return isLeadType(agent.type) && agent.parentId === undefined
+}
+
+// whether a stopping agent is a project manager the main thread started: a listed one by its type and its parent, one not
+// yet listed by its event's type
+export function stopperIsLead(known: Agent | undefined, type: string | undefined): boolean {
+  return known === undefined ? isLeadType(type) : isProjectManager(known)
+}
+
+// The name of the crew a call starts, or undefined when the call is no project-manager start: only the main thread
+// (no agentId) starting the project manager type with a non-empty text name (ADR-0001 s9, the plan gates)
+export function leadStartName(call: { agentId?: unknown; subagent_type?: unknown; name?: unknown }): string | undefined {
+  if (call.agentId !== undefined || !isLeadType(call.subagent_type)) return undefined
+  return typeof call.name === 'string' && call.name !== '' ? call.name : undefined
 }
 
 // the one name an agent's crew, report file and notes go by: its spawn name, else its id
@@ -63,17 +83,17 @@ export function labelOf(agent: Agent): string {
   return agent.name !== undefined && agent.name !== '' ? agent.name : agent.id
 }
 
-// the crew's name is its foreman's label
-export function crewName(foreman: Agent): string {
-  return labelOf(foreman)
+// the crew's name is its project manager's label
+export function crewName(projectManager: Agent): string {
+  return labelOf(projectManager)
 }
 
 function isLive(agent: Agent): boolean {
   return agent.live ?? LIVE.has(agent.status)
 }
 
-// The crew `id` works in: it is a foreman the main thread started, or one of its ancestors is. Undefined for every
-// other agent, including the main thread and agents of a foreman some other agent started.
+// The crew `id` works in: it is a project manager the main thread started, or one of its ancestors is. Undefined for every
+// other agent, including the main thread and agents of a project manager some other agent started.
 export function crewOf(id: string | undefined, agents: readonly Agent[]): Crew | undefined {
   if (id === undefined) return undefined
   const byId = new Map(agents.map(a => [a.id, a]))
@@ -82,8 +102,8 @@ export function crewOf(id: string | undefined, agents: readonly Agent[]): Crew |
   while (at !== undefined && !seen.has(at.id)) {
     seen.add(at.id)
     if (at.parentId === undefined) {
-      if (!isForeman(at)) return undefined
-      return { crew: crewName(at), foremanId: at.id, foremanName: crewName(at), isForeman: at.id === id }
+      if (!isProjectManager(at)) return undefined
+      return { crew: crewName(at), projectManagerId: at.id, projectManagerName: crewName(at), isProjectManager: at.id === id }
     }
     at = byId.get(at.parentId)
   }
@@ -105,7 +125,7 @@ export function descendantsOf(id: string, agents: readonly Agent[]): Agent[] {
   })
 }
 
-// A foreman's stop is interim while it still has work out: a live descendant, or a running or pending background task
+// A project manager's stop is interim while it still has work out: a live descendant, or a running or pending background task
 // whose id is one of its descendants'. The session-wide task list also holds other crews' tasks; those are ignored.
 export function isInterimStop(descendants: readonly Agent[], tasks: readonly { id: string; status: string }[] | undefined): boolean {
   if (descendants.some(isLive)) return true
@@ -168,7 +188,7 @@ export function rolledEventsPath(dir: string, n: number): string {
 // report text (P8).
 export type TrussEvent =
   | { event: 'spawn'; crew: string; agent: string; agentId: string | null; type: string; model: string | null; effort: string | null; by: string }
-  | { event: 'stall'; crew: string; agent: string; kind: 'agent' | 'idle-foreman'; minutes: number }
+  | { event: 'stall'; crew: string; agent: string; kind: 'agent' | 'idle-project-manager'; minutes: number }
   | { event: 'tag'; crew: string; agent: string; tag: 'QUESTION' | 'BLOCKED' | 'PROPOSAL' }
   | { event: 'report'; crew: string; agent: string; marker: ReportMarker | null }
   | { event: typeof ALLOWANCE_SPENT_EVENT; crew: string; agent: string }
@@ -335,32 +355,32 @@ export type MessageVerdict =
   | { kind: 'allow'; crossCrew: true; fromCrew: string; toCrew: string }
   | { kind: 'deny'; reason: string }
 
-const MEMBER_RULE = 'crew members message only their own foreman and the other members of their crew'
+const MEMBER_RULE = 'crew members message only their own project manager and the other members of their crew'
 
-// Who a crew agent may message. A member: its own foreman and its crew's other members. A foreman: "main", its own
-// members, and the other foremen. Anything else from inside a crew is refused, including an address no agent of this
+// Who a crew agent may message. A member: its own project manager and its crew's other members. A project manager: "main", its own
+// members, and the other project managers. Anything else from inside a crew is refused, including an address no agent of this
 // session has had; agents outside every crew are not this mod's business.
 export function messageVerdict(senderId: string | undefined, to: unknown, agents: readonly Agent[]): MessageVerdict {
   const sender = crewOf(senderId, agents)
   if (sender === undefined) return { kind: 'pass' }
   const address = typeof to === 'string' ? to.trim() : ''
   if (address === MAIN || address.startsWith(`${MAIN} [`)) {
-    if (sender.isForeman) return { kind: 'allow', crossCrew: false }
-    return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. Put your question in a message to your foreman, ${sender.foremanName}, which asks "main" for you.` }
+    if (sender.isProjectManager) return { kind: 'allow', crossCrew: false }
+    return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. Put your question in a message to your project manager, ${sender.projectManagerName}, which asks "main" for you.` }
   }
   const targets = address === '' ? [] : recipientsOf(address, agents)
   const crews = targets.map(t => crewOf(t.id, agents))
-  if (new Set(crews.map(c => c?.foremanId)).size > 1) {
+  if (new Set(crews.map(c => c?.projectManagerId)).size > 1) {
     return { kind: 'deny', reason: `${MARK} Refused: more than one live agent is named "${address}", in different crews. Address it by its agent id.` }
   }
   const target = crews[0]
-  if (target !== undefined && target.foremanId === sender.foremanId) return { kind: 'allow', crossCrew: false }
-  if (sender.isForeman && target?.isForeman) return { kind: 'allow', crossCrew: true, fromCrew: sender.crew, toCrew: target.crew }
-  if (sender.isForeman) {
-    const via = target === undefined ? 'Message "main", your own members, or another crew\'s foreman.' : `Send it to that crew's foreman, ${target.foremanName}, instead.`
-    return { kind: 'deny', reason: `${MARK} Refused: a foreman reaches another crew only through its foreman. ${via}` }
+  if (target !== undefined && target.projectManagerId === sender.projectManagerId) return { kind: 'allow', crossCrew: false }
+  if (sender.isProjectManager && target?.isProjectManager) return { kind: 'allow', crossCrew: true, fromCrew: sender.crew, toCrew: target.crew }
+  if (sender.isProjectManager) {
+    const via = target === undefined ? 'Message "main", your own members, or another crew\'s project manager.' : `Send it to that crew's project manager, ${target.projectManagerName}, instead.`
+    return { kind: 'deny', reason: `${MARK} Refused: a project manager reaches another crew only through its project manager. ${via}` }
   }
-  return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. To reach anyone else, tell your foreman, ${sender.foremanName}.` }
+  return { kind: 'deny', reason: `${MARK} Refused: ${MEMBER_RULE}. To reach anyone else, tell your project manager, ${sender.projectManagerName}.` }
 }
 
 export const MODEL_REFUSAL = `${MARK} Refused: inside a crew, every Agent call sets \`model\`: "opus" for judgment-heavy work (design, debugging, review, tricky code), "sonnet" for mechanical or well-specified work. Call Agent again with model set.`
@@ -409,7 +429,7 @@ export function parsePlan(text: string): Plan | undefined {
   return { approval: value.approval, approvedAt: value.approvedAt, maxParallelCrews: value.maxParallelCrews, crews: value.crews, version: value.version, reworkAllowance: value.reworkAllowance, goal: value.goal, goals: value.goals }
 }
 
-// The plan entry a foreman's name is gated as. A name that is a plan slug is that crew. Otherwise the successor rule: a
+// The plan entry a project manager's name is gated as. A name that is a plan slug is that crew. Otherwise the successor rule: a
 // name `<base>-<n>`, n an integer >= 2, whose base is a plan slug, is gated as that base crew, so restarting a crew
 // under a fresh name can't slip past its gates. That holds for the name successorCrew suggests; plain nextCrew can
 // slip (phase-1 -> phase-2 is another crew's slug), so the idle prompt uses successorCrew. One suffix only is
@@ -424,7 +444,7 @@ export function planCrewFor(plan: Plan, name: string): { slug: string; crew: Pla
   return base === undefined ? undefined : { slug: m[1], crew: base }
 }
 
-// Why the plan refuses starting the foreman `name`, and what /truss says that crew waits for, or undefined when it may
+// Why the plan refuses starting the project manager `name`, and what /truss says that crew waits for, or undefined when it may
 // start. The gates, first match wins (ADR-0010 s3): run approval, a reserved goal id, a crew goal the plan doesn't
 // have, goal approval, crew approval, the stage gate within the crew's goal, the parallel cap across goals. The crew
 // being started is every entry with the target's slug (the schema allows duplicate slugs; stage and clientApproval come
@@ -513,7 +533,7 @@ export function reportNote(who: string, path: string): string {
   return `${MARK} If ${who}'s report does not reach you, read ${path} once it stops.`
 }
 
-// The tags a foreman's message to main, or its report, can start with, and what /truss shows for each.
+// The tags a project manager's message to main, or its report, can start with, and what /truss shows for each.
 export type Tag = { kind: 'waiting on you' | 'blocked' | 'proposal'; text: string }
 
 const TAGS: readonly [string, Tag['kind']][] = [
@@ -536,14 +556,14 @@ export function tagOf(text: string): Tag | undefined {
   return undefined
 }
 
-// A foreman's final text that may end its run: a checkpoint, a blocker, a question or a proposal, or a report with a
+// A project manager's final text that may end its run: a checkpoint, a blocker, a question or a proposal, or a report with a
 // Proof section.
-export function foremanStopPasses(text: string): boolean {
+export function projectManagerStopPasses(text: string): boolean {
   const trimmed = text.trimStart()
   return [CHECKPOINT, BLOCKED, QUESTION, PROPOSAL].some(p => trimmed.startsWith(p)) || /^##\s+Proof\b/m.test(text)
 }
 
-export const FOREMAN_STOP_REASON = `${MARK} Not done yet: finish with your report, in the sections Summary, Branch, Changes, Proof, Checks run and Open questions (each a "## " heading), or, if you cannot finish, start your final message with CHECKPOINT:, BLOCKED:, QUESTION: or PROPOSAL:.`
+export const PROJECT_MANAGER_STOP_REASON = `${MARK} Not done yet: finish with your report, in the sections Summary, Branch, Changes, Proof, Checks run and Open questions (each a "## " heading), or, if you cannot finish, start your final message with CHECKPOINT:, BLOCKED:, QUESTION: or PROPOSAL:.`
 
 // ADR-0004: scope-bounded claims, the bounded repair loop, the patch-bound head guard and the main-session effort
 // rule. Every rule asks planAtLeastV2 first; anything else is 0.4.3 behaviour. The literals are written once, in the
@@ -718,15 +738,15 @@ export function mainCallVerdict(plan: Plan | undefined, callerId: string | undef
 }
 
 // ADR-0009 Decision 6. The role table a truss Workflow script is given (Decision 2): opus or sonnet, low or medium
-// effort, no foreman, commissioning or integrator, keys that match ^[a-z]+$. Undefined means the table is allowed.
+// effort, no project manager, commissioning or integrator, keys that match ^[a-z]+$. Undefined means the table is allowed.
 export function workflowRoleVerdict(roles: unknown): { deny: string } | undefined {
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
   if (!isRecord(roles)) return refuse('the Workflow needs a roles table in args.truss.roles')
   for (const [key, role] of Object.entries(roles)) {
     if (!/^[a-z]+$/.test(key)) return refuse(`Workflow role "${key}" is not a lowercase name`)
-    if (key === 'foreman' || key === 'commissioning' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
+    if (key === 'commissioning' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
     if (!isRecord(role)) return refuse(`Workflow role ${key} is not an object`)
-    if (role.agentType === 'truss:foreman' || role.agentType === 'truss:commissioning-engineer' || role.agentType === 'truss:integrator') return refuse(`Workflow role ${key} never runs as ${role.agentType}`)
+    if (isLeadType(role.agentType) || role.agentType === 'truss:commissioning-engineer' || role.agentType === 'truss:integrator') return refuse(`Workflow role ${key} never runs as ${role.agentType}`)
     if (role.model !== 'opus' && role.model !== 'sonnet') return refuse(`Workflow role ${key} needs model opus or sonnet`)
     if (role.effort !== 'low' && role.effort !== 'medium') return refuse(`Workflow role ${key} needs effort low or medium`)
   }
@@ -876,7 +896,7 @@ function normalPath(path: string): string {
 }
 
 export function stallText(label: string, crew: string, minutes: number): string {
-  return `${STALLED} ${label} in crew ${crew}, no activity for ${minutes}m. Check /truss and message the ${crew} foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.`
+  return `${STALLED} ${label} in crew ${crew}, no activity for ${minutes}m. Check /truss and message the ${crew} project manager. Read its transcript tail before you stop it; a resumed agent may be compacting.`
 }
 
 // the name a successor crew takes: auth -> auth-2, gateway-3 -> gateway-4
@@ -899,11 +919,11 @@ export function successorCrew(plan: Plan | undefined, crew: string): string {
   return `${target.slug}-${k}`
 }
 
-export function idleForemanText(label: string, crew: string, minutes: number, next: string = nextCrew(crew)): string {
-  return `${IDLE_FOREMAN} ${label} in crew ${crew}, no report for ${minutes}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`
+export function idleProjectManagerText(label: string, crew: string, minutes: number, next: string = nextCrew(crew)): string {
+  return `${IDLE_PROJECT_MANAGER} ${label} in crew ${crew}, no report for ${minutes}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`
 }
 
-// A foreman's captured report that ends its work: one with a Proof section, a checkpoint or a blocker. A question or a
+// A project manager's captured report that ends its work: one with a Proof section, a checkpoint or a blocker. A question or a
 // proposal waits on the PM instead, and shows as a waiting tag.
 export function isFinalReport(text: string): boolean {
   const trimmed = text.trimStart()
@@ -959,7 +979,7 @@ export function isDecisionLog(path: string, sessionId: string): boolean {
 }
 
 export function limitResetText(resetsAt: string): string {
-  return `${LIMIT_RESET} the five-hour usage window reset at ${resetsAt}. Check /truss and message each foreman whose crew isn't done to resume.`
+  return `${LIMIT_RESET} the five-hour usage window reset at ${resetsAt}. Check /truss and message each project manager whose crew isn't done to resume.`
 }
 
 // a crew's QC report files: <crew>-qc.md and <crew>-qc-<n>.md
@@ -981,18 +1001,18 @@ export type CrewStatus = {
   status: string
   live: Record<string, number>
   lastReportMs?: number
-  // a foreman's open question to the person; `tag` wins when both are set
+  // a project manager's open question to the person; `tag` wins when both are set
   question?: string
   tag?: Tag
-  // the foreman ended its turn (or its run) while its members still work
+  // the project manager ended its turn (or its run) while its members still work
   waitingOnMembers?: boolean
-  // when the foreman last did anything, as far as this mod saw
+  // when the project manager last did anything, as far as this mod saw
   lastActiveMs?: number
   // the crew's agents flagged as stalled, and for how many whole minutes
   stalled?: { label: string; minutes: number }[]
   qc?: string
   dir?: string
-  // the crew's live members, foreman left out: what a waiting foreman waits on
+  // the crew's live members, project manager left out: what a waiting project manager waits on
   members?: { label: string; status: string; runningMs: number; model: string; lastActiveMs?: number }[]
 }
 
@@ -1023,7 +1043,7 @@ export function statusText(crews: readonly CrewStatus[], now: number, messages?:
       lines.push(`  ${m.label} ${m.status} ${Math.floor(m.runningMs / 60_000)}m (${m.model}), ${last}`)
     }
   }
-  if (messages !== undefined) lines.push(`Messages between foremen: ${messages}`)
+  if (messages !== undefined) lines.push(`Messages between project managers: ${messages}`)
   lines.push(...dirLine)
   return lines.join('\n')
 }
@@ -1221,7 +1241,7 @@ function withNote(result: ToolCallResult, note: string): ToolCallResult {
 
 // what the mod keeps for the session; a reload or /clear starts it over (the armed limit reset lives in $.state)
 type State = {
-  // every agent seen this session, so a member whose foreman has ended still resolves to its crew
+  // every agent seen this session, so a member whose project manager has ended still resolves to its crew
   known: Map<string, Agent>
   // the order agents were first seen in
   seq: number
@@ -1234,33 +1254,33 @@ type State = {
   planDesigners: Map<string, 'plan' | 'amend'>
   planRoute: Promise<unknown>
   pendingPlanCalls: Map<string, 'plan' | 'amend'>
-  // each pending hand-back's message, by agent: what a foreman's stop is judged on
+  // each pending hand-back's message, by agent: what a project manager's stop is judged on
   handBacks: Map<string, string>
-  // foremen whose pending hand-back was held back from the report file by the Examined check (ADR-0004 s6); the stop
+  // project managers whose pending hand-back was held back from the report file by the Examined check (ADR-0004 s6); the stop
   // that goes through writes it
   withheld: Set<string>
-  // the tag (question, blocker, proposal) each foreman shows in /truss until answered or replaced, by foreman id
+  // the tag (question, blocker, proposal) each project manager shows in /truss until answered or replaced, by project manager id
   waiting: Map<string, Tag>
   // when each agent last made a tool call or a model request, by id
   activity: Map<string, number>
   // agents already reported as stalled; new activity takes them off
   stalled: Set<string>
-  // how many stops of each foreman's current stop streak were blocked
+  // how many stops of each project manager's current stop streak were blocked
   streaks: Map<string, number>
   // when each agent was spawned, else when the mod first saw it: how long /truss says it has been running
   started: Map<string, number>
   // each listed agent's status at the last heartbeat pass; undefined before the first, so no agent counts as resumed
   lastPass?: Map<string, string>
-  // when each foreman's current idle period began: the first pass that saw it not running with nothing at work
+  // when each project manager's current idle period began: the first pass that saw it not running with nothing at work
   idleSince: Map<string, number>
-  // foremen already prompted for in their current idle period
+  // project managers already prompted for in their current idle period
   idlePrompted: Set<string>
-  // when each foreman's latest final report was captured
+  // when each project manager's latest final report was captured
   finals: Map<string, number>
   // when each agent's current stint began: the pass that saw it running again after one that didn't. None for an
   // agent first seen running, whose stint began before the mod could tell
   stints: Map<string, number>
-  // foremen a pass saw go from running to stopped since they last ran: the only foremen the idle check prompts for
+  // project managers a pass saw go from running to stopped since they last ran: the only project managers the idle check prompts for
   stopped: Set<string>
   // when the main session last made a tool call or a model request
   mainActive?: number
@@ -1512,13 +1532,13 @@ function noteMainActivity($: $, state: State) {
   }
 }
 
-// what the stop gate needs of a stopping agent: whether it is a foreman the main thread started, and its descendants
+// what the stop gate needs of a stopping agent: whether it is a project manager the main thread started, and its descendants
 // as last listed. One not yet listed is taken at its event's type.
-async function stopperOf($: $, state: State, id: string, type: string | undefined): Promise<{ foreman: boolean; descendants: Agent[] }> {
+async function stopperOf($: $, state: State, id: string, type: string | undefined): Promise<{ projectManager: boolean; descendants: Agent[] }> {
   const all = (await agentsOf($, state)).all
   const known = all.find(a => a.id === id)
-  const foreman = known === undefined ? type === FOREMAN_TYPE : isForeman(known)
-  return { foreman, descendants: foreman ? descendantsOf(id, all) : [] }
+  const projectManager = stopperIsLead(known, type)
+  return { projectManager, descendants: projectManager ? descendantsOf(id, all) : [] }
 }
 
 const RULINGS: ReadonlySet<string> = new Set(['VERDICT: PASS', 'VERDICT: FAIL', 'STRESSTEST'])
@@ -1544,12 +1564,12 @@ async function writeReport($: $, state: State, crew: Crew, id: string, text: str
   if (tags) await logEvent($, state, { event: 'report', crew: crew.crew, agent: label, marker: markerOf(text) })
   // a QC's FAIL that spends the crew's rework allowance is recorded once more, as its own event (ADR-0004 s5)
   if (tags && markerOf(text) === 'VERDICT: FAIL' && isQcName(crew.crew.toLowerCase(), label.toLowerCase())) await safely($, 'rework allowance record', () => allowanceRecord($, state, crew.crew, label))
-  if (!crew.isForeman || !tags) return
-  // a foreman's captured text tells whether it stopped on a question, a blocker or a proposal
+  if (!crew.isProjectManager || !tags) return
+  // a project manager's captured text tells whether it stopped on a question, a blocker or a proposal
   const tag = tagOf(text)
   if (tag === undefined) state.waiting.delete(id)
   else state.waiting.set(id, tag)
-  // a captured report ends the foreman's idle period; a final one excuses it until the foreman runs again
+  // a captured report ends the project manager's idle period; a final one excuses it until the project manager runs again
   state.idleSince.delete(id)
   state.idlePrompted.delete(id)
   if (isFinalReport(text)) state.finals.set(id, await $.clock.now())
@@ -1749,7 +1769,7 @@ async function patchOf($: $, cwd: string | undefined, base: string, branch: stri
   }
 }
 
-// ADR-0004 s4 and s6, on a foreman's text that would pass by its Proof section: on a v>=2 plan, the Examined headings,
+// ADR-0004 s4 and s6, on a project manager's text that would pass by its Proof section: on a v>=2 plan, the Examined headings,
 // then, for an untagged report, the head guard. Undefined: the stop goes through.
 // A plan read or QC-folder read that overruns its bound lets the stop through.
 async function finalReportVerdict($: $, state: State, id: string, text: string): Promise<{ block: string; rule: string } | undefined> {
@@ -1782,23 +1802,23 @@ async function finalReportVerdict($: $, state: State, id: string, text: string):
 
 async function statusOf($: $, state: State): Promise<string> {
   const { all, listed } = await agentsOf($, state)
-  // a listed foreman shows its own status, completed or killed included; one the list dropped shows as ended
+  // a listed project manager shows its own status, completed or killed included; one the list dropped shows as ended
   const listedIds = new Set(listed.map(a => a.id))
   const dir = await rootOf($, state)
   const now = await $.clock.now()
   const crews: CrewStatus[] = []
   const plan = await safely($, 'plan lines', () => planOf($, state))
   const since = runStart(plan) ?? 0
-  for (const foreman of all.filter(isForeman)) {
-    const crew = crewName(foreman)
+  for (const projectManager of all.filter(isProjectManager)) {
+    const crew = crewName(projectManager)
     const counts: Record<string, number> = {}
     const stalled: { label: string; minutes: number }[] = []
     const members: NonNullable<CrewStatus['members']> = []
     for (const a of listed) {
-      if (crewOf(a.id, all)?.foremanId !== foreman.id) continue
+      if (crewOf(a.id, all)?.projectManagerId !== projectManager.id) continue
       const last = state.activity.get(a.id)
       if (state.stalled.has(a.id) && a.status === 'running' && last !== undefined) stalled.push({ label: labelOf(a), minutes: Math.floor((now - last) / 60_000) })
-      if (a.id === foreman.id || !LIVE.has(a.status)) continue
+      if (a.id === projectManager.id || !LIVE.has(a.status)) continue
       const m = family(state.models.get(a.id))
       counts[m] = (counts[m] ?? 0) + 1
       // an agent the mod never saw spawn counts from the first time it was seen
@@ -1814,12 +1834,12 @@ async function statusOf($: $, state: State): Promise<string> {
     })
     crews.push({
       crew,
-      status: listedIds.has(foreman.id) ? foreman.status : 'ended',
+      status: listedIds.has(projectManager.id) ? projectManager.status : 'ended',
       live: counts,
       lastReportMs,
-      tag: state.waiting.get(foreman.id),
-      waitingOnMembers: !(listedIds.has(foreman.id) && foreman.status === 'running') && descendantsOf(foreman.id, all).some(isLive),
-      lastActiveMs: state.activity.get(foreman.id),
+      tag: state.waiting.get(projectManager.id),
+      waitingOnMembers: !(listedIds.has(projectManager.id) && projectManager.status === 'running') && descendantsOf(projectManager.id, all).some(isLive),
+      lastActiveMs: state.activity.get(projectManager.id),
       stalled,
       qc,
       dir: reports,
@@ -1832,16 +1852,16 @@ async function statusOf($: $, state: State): Promise<string> {
   return plan === undefined ? text : [...planLines(plan), text].join('\n')
 }
 
-// Whether the foreman's report on disk, written in its current stint, is final or tagged. It is what a reloaded mod has
-// in place of `finals` and `waiting`. A report it cannot read excuses the foreman: a missed prompt beats a wrong one,
+// Whether the project manager's report on disk, written in its current stint, is final or tagged. It is what a reloaded mod has
+// in place of `finals` and `waiting`. A report it cannot read excuses the project manager: a missed prompt beats a wrong one,
 // and the next pass reads again.
-async function excusedOnDisk($: $, state: State, foreman: Agent, crew: Crew): Promise<boolean> {
-  const excused = await safely($, 'idle foreman report', async () => {
+async function excusedOnDisk($: $, state: State, projectManager: Agent, crew: Crew): Promise<boolean> {
+  const excused = await safely($, 'idle project manager report', async () => {
     const dir = await rootOf($, state)
     if (dir === undefined) return false
-    const path = reportPath(dir, crew.crew, state.labels.get(foreman.id) ?? labelOf(foreman))
+    const path = reportPath(dir, crew.crew, state.labels.get(projectManager.id) ?? labelOf(projectManager))
     if (!(await $.fs.exists(path))) return false
-    const stint = state.stints.get(foreman.id)
+    const stint = state.stints.get(projectManager.id)
     if (stint !== undefined && (await $.fs.stat(path)).mtimeMs < stint) return false
     const text = String(await $.fs.read(path))
     return isFinalReport(text) || tagOf(text) !== undefined
@@ -1849,31 +1869,31 @@ async function excusedOnDisk($: $, state: State, foreman: Agent, crew: Crew): Pr
   return excused !== false
 }
 
-// A foreman a pass saw go from running to stopped, now `idle` (a normal end of turn: never waiting, killed, failed or
+// A project manager a pass saw go from running to stopped, now `idle` (a normal end of turn: never waiting, killed, failed or
 // completed), with nothing of its crew at work, no waiting tag and no final report in its current stint, is prompted
 // for once per idle period, STALL_MS into it. Activity alone doesn't start a stint, so a sign-off after a final
 // hand-back doesn't undo it; a resume does. The heartbeat has no task list, so a member's background work counts
 // through the member's own entry in the agent list.
-async function idleForemanCheck($: $, state: State, foreman: Agent, crew: Crew, all: readonly Agent[], now: number) {
-  const final = state.finals.get(foreman.id)
-  const stint = state.stints.get(foreman.id)
+async function idleProjectManagerCheck($: $, state: State, projectManager: Agent, crew: Crew, all: readonly Agent[], now: number) {
+  const final = state.finals.get(projectManager.id)
+  const stint = state.stints.get(projectManager.id)
   const excused =
-    !state.stopped.has(foreman.id) ||
-    foreman.status !== 'idle' ||
-    state.waiting.has(foreman.id) ||
+    !state.stopped.has(projectManager.id) ||
+    projectManager.status !== 'idle' ||
+    state.waiting.has(projectManager.id) ||
     (final !== undefined && (stint === undefined || final >= stint)) ||
-    isInterimStop(descendantsOf(foreman.id, all), undefined) ||
-    (await excusedOnDisk($, state, foreman, crew))
+    isInterimStop(descendantsOf(projectManager.id, all), undefined) ||
+    (await excusedOnDisk($, state, projectManager, crew))
   if (excused) {
-    state.idleSince.delete(foreman.id)
-    state.idlePrompted.delete(foreman.id)
+    state.idleSince.delete(projectManager.id)
+    state.idlePrompted.delete(projectManager.id)
     return
   }
-  const since = state.idleSince.get(foreman.id) ?? now
-  state.idleSince.set(foreman.id, since)
-  if (state.idlePrompted.has(foreman.id) || now - since < STALL_MS) return
+  const since = state.idleSince.get(projectManager.id) ?? now
+  state.idleSince.set(projectManager.id, since)
+  if (state.idlePrompted.has(projectManager.id) || now - since < STALL_MS) return
   // flagged before any await, so an overlapping check never prompts twice
-  state.idlePrompted.add(foreman.id)
+  state.idlePrompted.add(projectManager.id)
   let next = nextCrew(crew.crew)
   try {
     next = successorCrew(await planWithin($, state, PLAN_READ_MS), crew.crew)
@@ -1881,14 +1901,14 @@ async function idleForemanCheck($: $, state: State, foreman: Agent, crew: Crew, 
     // fails open: any error reading the plan gives the 0.2.1 name
   }
   const minutes = Math.floor((now - since) / 60_000)
-  const text = idleForemanText(labelOf(foreman), crew.crew, minutes, next)
+  const text = idleProjectManagerText(labelOf(projectManager), crew.crew, minutes, next)
   // queued, not awaited: the wake never waits on the event log
-  void logEvent($, state, { event: 'stall', crew: crew.crew, agent: labelOf(foreman), kind: 'idle-foreman', minutes })
-  await safely($, 'idle foreman wake', () => $.prompt.submit({ text }))
+  void logEvent($, state, { event: 'stall', crew: crew.crew, agent: labelOf(projectManager), kind: IDLE_LEAD_KIND, minutes })
+  await safely($, 'idle project manager wake', () => $.prompt.submit({ text }))
 }
 
 // One pass of the heartbeat: every running crew agent idle STALL_MS or more is reported once, with a toast and a
-// prompt to the main session, and every idle foreman goes through idleForemanCheck. An agent with nothing on record
+// prompt to the main session, and every idle project manager goes through idleProjectManagerCheck. An agent with nothing on record
 // counts as active from now, and so does one that is running again after a pass that saw it stopped or unlisted.
 async function stallCheck($: $, state: State) {
   const now = await $.clock.now()
@@ -1899,15 +1919,15 @@ async function stallCheck($: $, state: State) {
     if (!state.started.has(a.id)) state.started.set(a.id, now)
     const crew = crewOf(a.id, all)
     if (crew === undefined) continue
-    // a listed agent that is idle, waiting or done is never stalled; a foreman may be idle with its report lost
+    // a listed agent that is idle, waiting or done is never stalled; a project manager may be idle with its report lost
     if (a.status !== 'running') {
-      if (crew.isForeman) {
+      if (crew.isProjectManager) {
         if (before?.get(a.id) === 'running') state.stopped.add(a.id)
-        await idleForemanCheck($, state, a, crew, all, now)
+        await idleProjectManagerCheck($, state, a, crew, all, now)
       }
       continue
     }
-    // running: any idle period of a foreman is over
+    // running: any idle period of a project manager is over
     state.idleSince.delete(a.id)
     state.idlePrompted.delete(a.id)
     state.stopped.delete(a.id)
@@ -2014,8 +2034,8 @@ async function scheduleReset($: $, state: State, wakes: Wakes, resetsAt: string)
 // a five-hour window at its limit while a crew is live: wake the PM once it resets, once per resetsAt
 async function armReset($: $, state: State, wakes: Wakes, resetsAt: string) {
   if (Number.isNaN(Date.parse(resetsAt))) return
-  // a foreman still at work, not one that is listed but completed, failed or killed
-  if (!(await agentsOf($, state)).listed.some(a => isForeman(a) && isLive(a))) return
+  // a project manager still at work, not one that is listed but completed, failed or killed
+  if (!(await agentsOf($, state)).listed.some(a => isProjectManager(a) && isLive(a))) return
   const held = await $.state.get(LIMIT_RESET_REF)
   if (held.value?.resetsAt === resetsAt) {
     // fired already, or a timer is running; one a reload took is armed again by session.start
@@ -2158,7 +2178,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const resumed = await safely($, 'designer resume check', async () => designerResumeVerdict(input.to, (await agentsOf($, state)).all, state.planDesigners))
       if (resumed !== undefined) return refuse($, state, refusalsLogged, e, resumed)
-      // the PM answering a foreman: that foreman is no longer waiting on the person
+      // the PM answering a project manager: that project manager is no longer waiting on the person
       const result = await next(e)
       if (result.deny === undefined && typeof input.to === 'string' && state.waiting.size > 0) {
         const to = input.to
@@ -2174,14 +2194,14 @@ export const register: Register = on => {
     const result = await next(e)
     if (decided?.kind !== 'allow' || result.deny !== undefined) return result
     if (input.to === MAIN && typeof input.message === 'string') {
-      // a tagged message to main sets what /truss shows for the foreman; an untagged one replaces it with nothing
+      // a tagged message to main sets what /truss shows for the project manager; an untagged one replaces it with nothing
       const tag = tagOf(input.message)
       if (tag !== undefined) state.waiting.set(sender, tag)
       else state.waiting.delete(sender)
-      // only a foreman may message main from inside a crew; its crew is as the verdict above just listed it, and a
-      // foreman goes by its crew's name
-      const foreman = tag === undefined ? undefined : crewOf(sender, [...state.known.values()])
-      if (tag !== undefined && foreman?.isForeman === true) await logEvent($, state, { event: 'tag', crew: foreman.crew, agent: foreman.foremanName, tag: tagName(tag) })
+      // only a project manager may message main from inside a crew; its crew is as the verdict above just listed it, and a
+      // project manager goes by its crew's name
+      const projectManager = tag === undefined ? undefined : crewOf(sender, [...state.known.values()])
+      if (tag !== undefined && projectManager?.isProjectManager === true) await logEvent($, state, { event: 'tag', crew: projectManager.crew, agent: projectManager.projectManagerName, tag: tagName(tag) })
     }
     if (decided.crossCrew) {
       const entry = { from: decided.fromCrew, to: decided.toCrew, summary: typeof input.summary === 'string' ? input.summary : '' }
@@ -2227,9 +2247,9 @@ export const register: Register = on => {
       const spent = await safely($, 'rework allowance gate', () => allowanceGate($, state, callerCrew, e.name))
       if (spent !== undefined) return refuse($, state, refusalsLogged, e, spent)
     }
-    const startsForeman = e.agentId === undefined && e.subagent_type === FOREMAN_TYPE
-    // the plan gates (ADR-0001 s9): only the main thread starting a named foreman; any failure lets the call through
-    const gated = !startsForeman || typeof e.name !== 'string' || e.name === '' ? undefined : e.name
+    const startsProjectManager = e.agentId === undefined && isLeadType(e.subagent_type)
+    // the plan gates (ADR-0001 s9): only the main thread starting a named project manager; any failure lets the call through
+    const gated = leadStartName(e)
     if (gated !== undefined) {
       const refused = await safely($, 'plan gate', async () => {
         const plan = await planOf($, state)
@@ -2256,7 +2276,7 @@ export const register: Register = on => {
     const raw = (result.result as { agentId?: unknown } | undefined)?.agentId
     const id = typeof raw === 'string' ? raw : undefined
     if (planCall !== undefined && id !== undefined) state.planDesigners.set(id, planCall)
-    if (caller?.crew === undefined && !startsForeman) return result
+    if (caller?.crew === undefined && !startsProjectManager) return result
     // the name agent.spawn recorded, which the report file will carry
     const name = (id === undefined ? undefined : state.labels.get(id)) ?? (typeof e.name === 'string' && e.name !== '' ? e.name : id)
     const note = await safely($, 'report note', async () => {
@@ -2404,14 +2424,14 @@ export const register: Register = on => {
         const all = (await agentsOf($, state)).all
         const crew = crewOf(id, all)
         if (crew === undefined) return
-        // a foreman's report the stop gate will send back is not its report: the stop that goes through writes it
-        if (crew.isForeman && !foremanStopPasses(message)) return
+        // a project manager's report the stop gate will send back is not its report: the stop that goes through writes it
+        if (crew.isProjectManager && !projectManagerStopPasses(message)) return
         // on a v>=2 plan, one the Examined check will send back is not its report either (ADR-0004 s6); no git here
-        if (crew.isForeman && !isTagged(message)) {
+        if (crew.isProjectManager && !isTagged(message)) {
           const held = await safely($, 'examined check', async () => examinedVerdict(await planWithin($, state, PLAN_READ_MS), message))
           if (held !== undefined) {
             state.withheld.add(id)
-            await logRule($, `examined check held back the hand-back of the foreman of crew ${crew.crew}: headings missing`)
+            await logRule($, `examined check held back the hand-back of the project manager of crew ${crew.crew}: headings missing`)
             return
           }
         }
@@ -2506,37 +2526,37 @@ export const register: Register = on => {
   on('classic.SubagentStop', async ($, e, next) => {
     const result = await next(e)
     const id = e.agent_id
-    // A foreman may stop only on a finished report or a tagged hand-off, at most FOREMAN_STOP_BLOCKS times a streak. A stop
+    // A project manager may stop only on a finished report or a tagged hand-off, at most PROJECT_MANAGER_STOP_BLOCKS times a streak. A stop
     // while its members still work is interim: it goes through and leaves the streak and the tag alone.
-    const gate = await safely($, 'foreman stop gate', async () => {
+    const gate = await safely($, 'project manager stop gate', async () => {
       const stopper = await stopperOf($, state, id, e.agent_type)
-      if (!stopper.foreman) return { foreman: false, interim: false }
-      if (isInterimStop(stopper.descendants, e.background_tasks)) return { foreman: true, interim: true }
+      if (!stopper.projectManager) return { projectManager: false, interim: false }
+      if (isInterimStop(stopper.descendants, e.background_tasks)) return { projectManager: true, interim: true }
       const count = e.stop_hook_active ? (state.streaks.get(id) ?? 0) : 0
       const text = state.handBacks.get(id) ?? e.last_assistant_message ?? ''
-      if (count >= FOREMAN_STOP_BLOCKS) {
+      if (count >= PROJECT_MANAGER_STOP_BLOCKS) {
         state.streaks.delete(id)
-        return { foreman: true, interim: false }
+        return { projectManager: true, interim: false }
       }
-      if (foremanStopPasses(text)) {
+      if (projectManagerStopPasses(text)) {
         // ADR-0004 s4 and s6 on a v>=2 plan; these send-backs share the streak, and an unanswered tag doesn't excuse them
         const sent = await safely($, 'final report gate', () => finalReportVerdict($, state, id, text))
         if (sent === undefined) {
           state.streaks.delete(id)
-          return { foreman: true, interim: false }
+          return { projectManager: true, interim: false }
         }
         state.streaks.set(id, count + 1)
-        await logRule($, `foreman stop gate sent back the foreman of crew ${crewOf(id, [...state.known.values()])?.crew ?? id}: ${sent.rule}`)
-        return { foreman: true, interim: false, block: sent.block }
+        await logRule($, `project manager stop gate sent back the project manager of crew ${crewOf(id, [...state.known.values()])?.crew ?? id}: ${sent.rule}`)
+        return { projectManager: true, interim: false, block: sent.block }
       }
-      // a foreman whose tagged message to main is unanswered has asked through that one channel: its stop goes through
+      // a project manager whose tagged message to main is unanswered has asked through that one channel: its stop goes through
       // as interim, so it neither needs a tagged hand-back too nor loses the tag /truss shows
       if (state.waiting.has(id)) {
         state.streaks.delete(id)
-        return { foreman: true, interim: true }
+        return { projectManager: true, interim: true }
       }
       state.streaks.set(id, count + 1)
-      return { foreman: true, interim: false, block: FOREMAN_STOP_REASON }
+      return { projectManager: true, interim: false, block: PROJECT_MANAGER_STOP_REASON }
     })
     const handBack = state.handBacks.get(id)
     state.handBacks.delete(id)
@@ -2549,9 +2569,9 @@ export const register: Register = on => {
     const tags = gate?.interim !== true
     // the hand-back already holds this stop's report; the agent's next stop is captured again
     if (state.handedBack.delete(id)) {
-      // a foreman's hand-back the gate could have sent back was held; this stop went through, so it is the report. One
+      // a project manager's hand-back the gate could have sent back was held; this stop went through, so it is the report. One
       // the Examined check held is written even when the gate step failed (P5), by the agents last seen if the list fails
-      if (handBack !== undefined && (withheld || (gate?.foreman === true && !foremanStopPasses(handBack)))) {
+      if (handBack !== undefined && (withheld || (gate?.projectManager === true && !projectManagerStopPasses(handBack)))) {
         await safely($, 'report capture', async () => {
           const all = (await safely($, 'agent list', async () => (await agentsOf($, state)).all)) ?? [...state.known.values()]
           const crew = crewOf(id, all)
