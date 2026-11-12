@@ -1,9 +1,9 @@
 import { expect } from 'claude-code/testing'
 
-import { FOREMAN_TYPE } from '../hooks/register'
+import { PROJECT_MANAGER_TYPE } from '../hooks/register'
 import { ROOT, quiet, startSession, status, world, test } from './harness'
 
-// truss 0.3.0: the plan gates on starting a foreman, and the plan lines on /truss (ADR-0001 s8-9, hooks-spec)
+// truss 0.3.0: the plan gates on starting a project manager, and the plan lines on /truss (ADR-0001 s8-9, hooks-spec)
 
 type W = ReturnType<typeof world>
 type Crew = Record<string, unknown>
@@ -17,8 +17,8 @@ const planText = (crews: Crew[], top: Record<string, unknown> = {}) =>
   JSON.stringify({ version: 1, goal: 'g', approval: 'auto', approvedAt: null, maxParallelCrews: 4, crews, ...top })
 const setPlan = (w: W, crews: Crew[], top: Record<string, unknown> = {}) => w.files.set(PLAN, planText(crews, top))
 
-// the main thread starting a foreman, as /truss:run does
-const start = (w: W, name?: string) => w.agentCall(undefined, { subagent_type: FOREMAN_TYPE, name, model: 'opus' })
+// the main thread starting a project manager, as /truss:run does
+const start = (w: W, name?: string) => w.agentCall(undefined, { subagent_type: PROJECT_MANAGER_TYPE, name, model: 'opus' })
 const started = (w: W) => w.ran.filter(c => c.tool === 'Agent').map(c => c.name)
 const noteFor = (name: string) => `${ROOT}/reports/${name}/${name}.md`
 
@@ -234,7 +234,7 @@ test('v03 fail open: a name that is not in the plan', async ($, on) => {
   await failOpen(w, 'other')
 })
 
-test('v03 fail open: a foreman started with no name, or an empty one', async ($, on) => {
+test('v03 fail open: a project manager started with no name, or an empty one', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('a', 0)], { approval: 'client', approvedAt: null })
   expect((await start(w, undefined)).deny).toBeUndefined()
@@ -242,7 +242,7 @@ test('v03 fail open: a foreman started with no name, or an empty one', async ($,
   expect(w.ran.length).toBe(2)
 })
 
-test('v03 fail open: an Agent call that is not a truss:foreman is never plan-gated', async ($, on) => {
+test('v03 fail open: an Agent call that is not a truss:project-manager is never plan-gated', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('a', 0)], { approval: 'client', approvedAt: null })
   expect((await w.agentCall(undefined, { subagent_type: 'Explore', name: 'a', model: 'opus' })).deny).toBeUndefined()
@@ -251,11 +251,11 @@ test('v03 fail open: an Agent call that is not a truss:foreman is never plan-gat
   expect(w.ran.length).toBe(3)
 })
 
-test('v03 fail open: a truss:foreman started by another agent, inside a crew or not, is not plan-gated', async ($, on) => {
+test('v03 fail open: a truss:project-manager started by another agent, inside a crew or not, is not plan-gated', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('a', 0)], { approval: 'client', approvedAt: null })
-  expect((await w.agentCall('X', { subagent_type: FOREMAN_TYPE, name: 'a', model: 'opus' })).deny).toBeUndefined()
-  expect((await w.agentCall('L1', { subagent_type: FOREMAN_TYPE, name: 'a', model: 'sonnet', effort: 'medium' })).deny).toBeUndefined()
+  expect((await w.agentCall('X', { subagent_type: PROJECT_MANAGER_TYPE, name: 'a', model: 'opus' })).deny).toBeUndefined()
+  expect((await w.agentCall('L1', { subagent_type: PROJECT_MANAGER_TYPE, name: 'a', model: 'sonnet', effort: 'medium' })).deny).toBeUndefined()
   expect(w.ran.length).toBe(2)
 })
 
@@ -482,31 +482,31 @@ test('v03 amendment 1 control: a different running crew still fills the cap', as
   await expectRefused(w, 'a', '1 crews running, the cap is 1; start a when one merges')
 })
 
-// ---- Amendment 2: the idle-foreman prompt names a successor the plan gate maps to the same crew ----
+// ---- Amendment 2: the idle-project-manager prompt names a successor the plan gate maps to the same crew ----
 
-const IDLE = '[truss] idle foreman:'
+const IDLE = '[truss] idle project manager:'
 const MIN = 60_000
 
-// drives the real flow of the v021 C2 tests: foreman L1, renamed to `foreman`, goes running -> idle with no live
+// drives the real flow of the v021 C2 tests: project manager L1, renamed to `project manager`, goes running -> idle with no live
 // member and no report; returns the one idle prompt it gets after the 15-minute threshold
-const idlePrompt = async ($: Parameters<typeof status>[0], w: W, foreman: string) => {
-  w.agents = w.agents.map(a => (a.id === 'L1' ? { ...a, name: foreman } : a))
+const idlePrompt = async ($: Parameters<typeof status>[0], w: W, projectManager: string) => {
+  w.agents = w.agents.map(a => (a.id === 'L1' ? { ...a, name: projectManager } : a))
   quiet(w)
   await startSession($)
   await w.clock.advance(2 * MIN)
   w.agents = w.agents.map(a => (a.id === 'L1' ? { ...a, status: 'idle' } : a))
   await w.clock.advance(17 * MIN)
-  const got = w.prompts.filter(p => p.startsWith(IDLE) && p.includes(` ${foreman} in crew`))
+  const got = w.prompts.filter(p => p.startsWith(IDLE) && p.includes(` ${projectManager} in crew`))
   expect(got.length).toBe(1)
   return got[0]!
 }
 
 // the exact 0.2.1 prompt shape, with the minutes taken from the prompt itself
-const expectIdle = (prompt: string, foreman: string, next: string) => {
+const expectIdle = (prompt: string, projectManager: string, next: string) => {
   const m = /no report for (\d+)m /.exec(prompt)
   expect(m).not.toBeNull()
   expect(prompt).toBe(
-    `[truss] idle foreman: ${foreman} in crew ${foreman}, no report for ${m![1]}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`,
+    `[truss] idle project manager: ${projectManager} in crew ${projectManager}, no report for ${m![1]}m and no member at work. Read its last message and resume it with SendMessage, or start ${next} from its report.`,
   )
 }
 
@@ -515,31 +515,31 @@ const suggested = (prompt: string) => /, or start (\S+) from its report\.$/.exec
 
 const PHASES = [crew('phase-1', 0, 'running'), crew('phase-2', 1, 'planned')]
 
-test('v03 amendment 2: an idle plan foreman phase-1 is told to start phase-1-2, not phase-2', async ($, on) => {
+test('v03 amendment 2: an idle plan project manager phase-1 is told to start phase-1-2, not phase-2', async ($, on) => {
   const w = world($, on)
   setPlan(w, PHASES)
   expectIdle(await idlePrompt($, w, 'phase-1'), 'phase-1', 'phase-1-2')
 })
 
-test('v03 amendment 2: an idle plan foreman gateway-3 is told to start gateway-3-2, not gateway-4', async ($, on) => {
+test('v03 amendment 2: an idle plan project manager gateway-3 is told to start gateway-3-2, not gateway-4', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('gateway-3', 0, 'running')])
   expectIdle(await idlePrompt($, w, 'gateway-3'), 'gateway-3', 'gateway-3-2')
 })
 
-test('v03 amendment 2: an idle plan foreman auth is told to start auth-2', async ($, on) => {
+test('v03 amendment 2: an idle plan project manager auth is told to start auth-2', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('auth', 0, 'running')])
   expectIdle(await idlePrompt($, w, 'auth'), 'auth', 'auth-2')
 })
 
-test('v03 amendment 2: an idle successor foreman auth-2 (not a slug) is told to start auth-3', async ($, on) => {
+test('v03 amendment 2: an idle successor project manager auth-2 (not a slug) is told to start auth-3', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('auth', 0, 'running')])
   expectIdle(await idlePrompt($, w, 'auth-2'), 'auth-2', 'auth-3')
 })
 
-test('v03 amendment 2: with no plan.json an idle foreman phase-1 gets the 0.2.1 name phase-2', async ($, on) => {
+test('v03 amendment 2: with no plan.json an idle project manager phase-1 gets the 0.2.1 name phase-2', async ($, on) => {
   const w = world($, on)
   expectIdle(await idlePrompt($, w, 'phase-1'), 'phase-1', 'phase-2')
 })
@@ -550,13 +550,13 @@ test('v03 amendment 2: an unreadable plan.json is the same as no plan', async ($
   expectIdle(await idlePrompt($, w, 'phase-1'), 'phase-1', 'phase-2')
 })
 
-test('v03 amendment 2: a foreman not in the plan gets the 0.2.1 name', async ($, on) => {
+test('v03 amendment 2: a project manager not in the plan gets the 0.2.1 name', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('auth', 0, 'running')])
   expectIdle(await idlePrompt($, w, 'other-1'), 'other-1', 'other-2')
 })
 
-// cross-check: starting the suggested name as a truss:foreman is gated as the idle foreman's own plan crew
+// cross-check: starting the suggested name as a truss:project-manager is gated as the idle project manager's own plan crew
 
 test('v03 amendment 2 cross-check: phase-1-2 is allowed where phase-2 is held by the stage gate', async ($, on) => {
   const w = world($, on)
@@ -613,9 +613,9 @@ test('v03 amendment 3: plan [api, api-3]: an idle successor api-2 is told api-4,
 test('v03 amendment 3: a huge n is incremented exactly: auth-1000000000000000000000 -> auth-1000000000000000000001, gated as auth', async ($, on) => {
   const w = world($, on)
   setPlan(w, [crew('auth', 0, 'running', { clientApproval: 'pending' })])
-  const foreman = 'auth-1000000000000000000000'
-  const prompt = await idlePrompt($, w, foreman)
-  expectIdle(prompt, foreman, 'auth-1000000000000000000001')
+  const projectManager = 'auth-1000000000000000000000'
+  const prompt = await idlePrompt($, w, projectManager)
+  expectIdle(prompt, projectManager, 'auth-1000000000000000000001')
   await expectRefused(w, suggested(prompt), `auth waits for the client's approval`)
 })
 

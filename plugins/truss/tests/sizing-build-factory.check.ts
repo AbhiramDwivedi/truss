@@ -98,7 +98,7 @@ test(P + 'start appends the decision line for a direct crew', () => {
   assert.match(text, /worktree truss-sa from main/, text)
 })
 
-test(P + 'start under merge single lists a lean crew under foremen, not direct', () => {
+test(P + 'start under merge single lists a lean crew under projectManagers, not direct', () => {
   const env = mkEnv({ config: { merge: 'single', target: 'main' } })
   const crews = [crew('le', { process: 'lean', qc: false, red: true, estAgents: 2 })]
   writePlan(env.dir, v(4, crews))
@@ -106,8 +106,8 @@ test(P + 'start under merge single lists a lean crew under foremen, not direct',
   const r = env.run('start', { stage: 1 })
   assert.equal(r.status, 0, say(r))
   assert.deepEqual((r.json?.direct ?? []).map((x: any) => x.slug), [], say(r))
-  const foremen = (r.json?.foremen ?? []).map((x: any) => (typeof x === 'string' ? x : x.slug))
-  assert.deepEqual(foremen, ['le'], say(r))
+  const projectManagers = (r.json?.projectManagers ?? []).map((x: any) => (typeof x === 'string' ? x : x.slug))
+  assert.deepEqual(projectManagers, ['le'], say(r))
 })
 
 test(P + 'start --slug S --resume refuses a solo or lean crew with exit 1 and a why that names the merge command',() => {

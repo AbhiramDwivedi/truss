@@ -102,7 +102,7 @@ test('parseSnippets: ADR-0007 yields at least the five listed lines, in order, w
   const first5 = lines.slice(0, 5)
   assert.deepEqual(first5.map((l) => [l.file, l.opening, l.form]), [
     ['agents/qc-engineer.md', 'git diff --no-color', 'fenced'],
-    ['agents/foreman.md', 'git diff --no-color', 'fenced'],
+    ['agents/project-manager.md', 'git diff --no-color', 'fenced'],
     ['skills/run/SKILL.md', 'git diff --no-color', 'inline'],
     ['agents/stress-engineer.md', 'git rev-parse --path-format=absolute --git-dir', 'inline'],
     ['agents/stress-engineer.md', 'git rev-parse --path-format=absolute --git-common-dir', 'inline'],
