@@ -115,7 +115,7 @@ test('runTimeMs: empty transcript starts at the first decisions[].run heading an
   assert.equal(runTimeMs(s, NOW + 600 * MIN), LAST_TS - RUN_START, 'ignores now when not hosted')
 })
 
-test('runTimeMs: the latest ts counts members as well as foremen', async () => {
+test('runTimeMs: the latest ts counts members as well as project managers', async () => {
   const { runTimeMs } = await fmt()
   const s = realData()
   s.run.crews[1].members[0].ts = '2026-11-02T11:59:30.000Z'

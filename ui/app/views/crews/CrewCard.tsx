@@ -27,16 +27,16 @@ export interface CrewCardProps {
   checkRunsOpen?: boolean
 }
 
-/** The run's goals, so a foreman card can show its crew's goal text instead of the goal id. */
+/** The run's goals, so a project manager card can show its crew's goal text instead of the goal id. */
 export const GoalsContext = React.createContext<readonly { id: string; goal: string | null }[]>([])
 
 /** Agent cards shown before "Show n more agents". */
 export const FOLD = 6
 
 const ASKS: Record<string, string> = {
-  QUESTION: 'The foreman asked a question.',
-  BLOCKED: 'The foreman is blocked.',
-  PROPOSAL: 'The foreman proposed a change.',
+  QUESTION: 'The project manager asked a question.',
+  BLOCKED: 'The project manager is blocked.',
+  PROPOSAL: 'The project manager proposed a change.',
 }
 
 /** True while the hand-off is within the lit window of `now`, read on every render. */
@@ -81,7 +81,7 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
   const agents: Member[] = []
   if (crew.foreman) agents.push(crew.foreman)
   for (const m of crew.members) if (!crew.foreman || m.name !== crew.foreman.name) agents.push(m)
-  // Foreman, then the named truss roles, then the rest; the runner and general-purpose check runs fold into one row.
+  // Project manager, then the named truss roles, then the rest; the runner and general-purpose check runs fold into one row.
   const checkRuns = agents.filter(isCheckRun)
   const named = orderAgents(agents.filter((m) => !isCheckRun(m)), crew.foreman)
   const [runsOpen, setRunsOpen] = React.useState(checkRunsOpen)
