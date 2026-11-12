@@ -575,14 +575,14 @@ Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared f
 Source: client
 
 ## R-83: A design crew only for an open design question, and goal-wide checks after the last merge
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared files
 Source: client
 Example: Given a goal "rename X to Y with no alias, record it in an ADR" whose acceptance is a whole-tree zero-match test, when plan mode runs, then the plan has no stage-0 design crew and no release stage, the build crew writes the ADR, the zero-match test is the plan's goal check that the program manager runs after the last merge, and approval is auto unless a client trigger applies.
 
 ## R-84: Crews may edit the same files and work in parallel; they merge one at a time on the program manager's go-ahead
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared files
 Source: client
