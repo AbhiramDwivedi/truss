@@ -1,6 +1,6 @@
 import { expect } from 'claude-code/testing'
 
-import { qcRuling, FOREMAN_TYPE } from '../hooks/register'
+import { qcRuling, PROJECT_MANAGER_TYPE } from '../hooks/register'
 import { agent, ROOT, startSession, test, world } from './harness'
 
 // /truss status must show the verdict the merge gate would read: the newest qc file at or after the plan's
@@ -23,7 +23,7 @@ const put = (w: W, crew: string, file: string, text: string, mtimeMs: number) =>
 // the qc lines status prints, one per crew that has one
 const qcLines = (text: string) => text.split('\n').filter(l => /^\s*qc:/.test(l))
 const onlyAuth = (w: W) => {
-  w.agents = [agent('L1', FOREMAN_TYPE, 'auth')]
+  w.agents = [agent('L1', PROJECT_MANAGER_TYPE, 'auth')]
 }
 
 test('status shows the newest qc file by mtime, not the highest -qc-<k>', async ($, on) => {
@@ -68,11 +68,11 @@ test('status rules a no-space VERDICT:PASS first line the way qcRuling does', as
   expect(qcLines(await status($))).toEqual([])
 })
 
-test('a successor foreman reads its own reports and picks its own newest file the same way', async ($, on) => {
+test('a successor project manager reads its own reports and picks its own newest file the same way', async ($, on) => {
   const w = world($, on)
   setPlan(w)
-  w.agents = [agent('L1', FOREMAN_TYPE, 'auth'), agent('L3', FOREMAN_TYPE, 'auth-2')]
-  put(w, 'auth', 'auth-qc.md', 'VERDICT: FAIL\nfirst foreman', SINCE + HOUR)
+  w.agents = [agent('L1', PROJECT_MANAGER_TYPE, 'auth'), agent('L3', PROJECT_MANAGER_TYPE, 'auth-2')]
+  put(w, 'auth', 'auth-qc.md', 'VERDICT: FAIL\nfirst project manager', SINCE + HOUR)
   put(w, 'auth-2', 'auth-2-qc-2.md', 'VERDICT: FAIL\nround two', SINCE + HOUR)
   put(w, 'auth-2', 'auth-2-qc.md', 'VERDICT: PASS\nre-ruled later', SINCE + 2 * HOUR)
   await startSession($)

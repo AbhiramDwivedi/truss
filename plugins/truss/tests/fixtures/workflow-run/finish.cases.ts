@@ -377,7 +377,7 @@ test('session audit: "audit waived: <run id>" in decisions.md lifts it', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // merge step gates
 
-test('gate: no factory spawn line (foreman path) leaves the crew untouched', () => {
+test('gate: no factory spawn line (project manager path) leaves the crew untouched', () => {
   const w = scenario([{ slug: 's', spawn: false }])
   assertHeld(w, assertOneLine(w.finish()))
 })
@@ -648,7 +648,7 @@ test('step 5: merged status, a decision line, the crew worktree and merged membe
   assert.ok(existsSync(open), 'unmerged member worktree kept')
 })
 
-test('never touched: foreman-path crews, later stages, merged and dropped crews; no remote is contacted', () => {
+test('never touched: project-manager-path crews, later stages, merged and dropped crews; no remote is contacted', () => {
   const w = scenario([{ slug: 's' }, { slug: 'l', spawn: false }, { slug: 'm', status: 'merged' }, { slug: 'd', status: 'dropped' }, { slug: 'w2', stage: 2, status: 'planned' }], { skip: ['l'] })
   git(w.env.repo, ['remote', 'add', 'origin', 'C:/nonexistent/nowhere/repo.git'])
   const lwt = w.c.l.wt

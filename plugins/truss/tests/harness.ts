@@ -2,7 +2,7 @@ import type { AgentInfo, On, ToolCallResult } from 'claude-code'
 import type { Engine, MockClock, TestBody, TestOptions } from 'claude-code/testing'
 import { mock, test as kitTest } from 'claude-code/testing'
 
-import { FOREMAN_TYPE } from '../hooks/register'
+import { PROJECT_MANAGER_TYPE } from '../hooks/register'
 
 // Per-test time bound for every suite. The kit's 5000 ms default trips when the
 // runner executes all seven suite files in parallel: a test that takes well
@@ -77,8 +77,8 @@ export function world($: Engine, on: On, options: Options = {}): World {
   const clock = mock.clock(on, { now: NOW })
   const w: World = {
     agents: [
-      agent('L1', FOREMAN_TYPE, 'auth'),
-      agent('L2', FOREMAN_TYPE, 'billing'),
+      agent('L1', PROJECT_MANAGER_TYPE, 'auth'),
+      agent('L2', PROJECT_MANAGER_TYPE, 'billing'),
       agent('A1', 'kit:builder', 'auth-builder', 'L1'),
       agent('A2', 'Explore', 'auth-scout', 'A1'),
       agent('B1', 'general-purpose', 'billing-builder', 'L2'),
@@ -197,9 +197,9 @@ export function world($: Engine, on: On, options: Options = {}): World {
 
 export type Task = { id: string; type: string; status: string; description: string }
 
-// a world whose crews have no live descendants: every non-foreman agent has finished
+// a world whose crews have no live descendants: every non-project manager agent has finished
 export const quiet = (w: World): World => {
-  w.agents = w.agents.map(a => (a.type === FOREMAN_TYPE || a.id === 'X' || a.id === 'C1' ? a : { ...a, status: 'completed' }))
+  w.agents = w.agents.map(a => (a.type === PROJECT_MANAGER_TYPE || a.id === 'X' || a.id === 'C1' ? a : { ...a, status: 'completed' }))
   return w
 }
 

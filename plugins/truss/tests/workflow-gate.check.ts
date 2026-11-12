@@ -70,8 +70,8 @@ test('roles: a missing effort is refused', () => {
   const { effort: _e, ...rest } = ROLES.checker
   isDeny(workflowRoleVerdict(withRole('checker', rest)))
 })
-test('roles: a foreman role is refused even on opus/medium', () => {
-  isDeny(workflowRoleVerdict(withRole('foreman', { agentType: 'truss:foreman', model: 'opus', effort: 'medium', isolation: 'worktree' })))
+test('roles: a project-manager role is refused even on opus/medium', () => {
+  isDeny(workflowRoleVerdict(withRole('project-manager', { agentType: 'truss:project-manager', model: 'opus', effort: 'medium', isolation: 'worktree' })))
 })
 test('roles: a commissioning role is refused even on sonnet/low', () => {
   isDeny(workflowRoleVerdict(withRole('commissioning', { agentType: 'truss:commissioning-engineer', model: 'sonnet', effort: 'low', isolation: 'none' })))
@@ -83,7 +83,7 @@ test('roles: an integrator role is refused even on sonnet/low', () => {
   refused(workflowRoleVerdict(withRole('integrator', { agentType: 'general-purpose', model: 'sonnet', effort: 'low', isolation: 'none' })))
 })
 for (const key of ['builder', 'qc']) {
-  for (const agentType of ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']) {
+  for (const agentType of ['truss:project-manager', 'truss:commissioning-engineer', 'truss:integrator']) {
     test(`roles: key ${key} with agentType ${agentType} is refused even with an allowed model and effort`, () => {
       refused(workflowRoleVerdict(withRole(key, { ...ROLES[key], agentType, model: 'sonnet', effort: 'low' })))
     })
@@ -120,7 +120,7 @@ const call = (over: Record<string, unknown> = {}) => ({
   pluginScriptTexts: TEXTS,
   ...over,
 })
-const FOREIGN = 'export default async function () { await agent({ type: "truss:foreman" }) }\n'
+const FOREIGN = 'export default async function () { await agent({ type: "truss:project-manager" }) }\n'
 const NOT_TRUSS = 'export default async function () { await agent({ type: "general-purpose" }) }\n'
 const ONLY_FROM = "truss agents run in a Workflow only from the plugin's plan.js and stage.js"
 const stageArgs = (crews: unknown[] = []) => ({ truss: { kind: 'stage', roles: ROLES, crews } })
@@ -208,8 +208,8 @@ test('call: script alone (scriptPath undefined) with a foreign truss: text is st
   refused(workflowCallVerdict(plan(), call({ script: FOREIGN, scriptPath: undefined, scriptText: FOREIGN })))
 })
 
-test('call: a plugin plan.js call whose roles hold builder as truss:foreman is refused', () => {
-  const roles = withRole('builder', { ...ROLES.builder, agentType: 'truss:foreman' })
+test('call: a plugin plan.js call whose roles hold builder as truss:project-manager is refused', () => {
+  const roles = withRole('builder', { ...ROLES.builder, agentType: 'truss:project-manager' })
   refused(workflowCallVerdict(plan(), call({ args: { truss: { kind: 'plan', roles } } })))
 })
 
@@ -228,8 +228,8 @@ test('call: args.truss null is refused', () => {
 test('call: a role on fable is refused', () => {
   refused(workflowCallVerdict(plan(), call({ args: { truss: { kind: 'plan', roles: withRole('qc', { ...ROLES.qc, model: 'fable' }) } } })))
 })
-test('call: a foreman role is refused', () => {
-  refused(workflowCallVerdict(plan(), call({ args: { truss: { kind: 'plan', roles: withRole('foreman', ROLES.qc) } } })))
+test('call: a project-manager role is refused', () => {
+  refused(workflowCallVerdict(plan(), call({ args: { truss: { kind: 'plan', roles: withRole('project-manager', ROLES.qc) } } })))
 })
 test('call: missing roles is refused', () => {
   refused(workflowCallVerdict(plan(), call({ args: { truss: { kind: 'plan' } } })))

@@ -63,27 +63,27 @@ test('stage.js: qcPrompt holds the new QC step word for word, right after the re
   assert.ok(i < body.indexOf("Check the goal file's Non-goals"), 'before the Non-goals step')
 })
 
-test('foreman.md holds both sentences word for word', () => {
-  const t = read('agents', 'foreman.md')
+test('project-manager.md holds both sentences word for word', () => {
+  const t = read('agents', 'project-manager.md')
   assert.ok(t.includes(DIFF), 'DIFF')
   assert.ok(t.includes(DEBUG), 'DEBUG')
 })
 test('drift is reverted and dropped, never proposed', () => {
-  const t = read('agents', 'foreman.md')
+  const t = read('agents', 'project-manager.md')
   const run = read('skills', 'run', 'SKILL.md')
   const qc = read('agents', 'qc-engineer.md')
-  assert.ok(t.includes('is reverted and dropped, never reported as a proposal'), 'foreman drop-drift rule')
-  assert.ok(t.includes('A meaningful change is never dropped'), 'foreman surface rule')
+  assert.ok(t.includes('is reverted and dropped, never reported as a proposal'), 'project manager drop-drift rule')
+  assert.ok(t.includes('A meaningful change is never dropped'), 'project manager surface rule')
   assert.ok(!t.includes('or goes to main as a `PROPOSAL:`'), 'QC findings line')
   assert.ok(!t.includes('You send it to main as a `PROPOSAL:` or drop it'), 'member rule')
   assert.ok(stage.includes('never goes into the diff and is never reported as a proposal'), 'stage.js drop-drift rule')
   assert.ok(stage.includes('is never left out: surface it in your report'), 'stage.js surface rule')
   assert.ok(!stage.includes('An idea beyond it goes back in your report'), 'stage.js old line')
-  assert.ok(t.includes('A meaningful change beyond approved scope, never drift'), 'foreman proposal wording')
+  assert.ok(t.includes('A meaningful change beyond approved scope, never drift'), 'project manager proposal wording')
   assert.ok(run.includes('A meaningful change beyond approved scope, never drift'), 'run skill proposal wording')
   const stale = 'Name every architecture section, ADR, feature-map entry or rule file this change makes stale'
   assert.ok(stage.includes(stale) && qc.includes(stale), 'stale-design sentence in knowledgePrompt and QC')
-  for (const [n, s] of [['foreman', t], ['run', run], ['stage', stage], ['adr', read('docs', 'adr', '0036-diff-hygiene-and-dependencies.md')]]) {
+  for (const [n, s] of [['project manager', t], ['run', run], ['stage', stage], ['adr', read('docs', 'adr', '0036-diff-hygiene-and-dependencies.md')]]) {
     assert.ok(!/good idea[^.\n]*(lost|dropped)/i.test(s), `${n}: no line says a good idea is dropped`)
   }
 })

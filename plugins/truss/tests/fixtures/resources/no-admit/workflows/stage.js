@@ -3,12 +3,12 @@ export const meta = {
   description: 'Runs every crew of a truss stage at once: red check, split, members, green, stress test, scope check and QC, as ADR-0009 Decision 4. Returns one result per crew; never merges, pushes or asks the client.',
 }
 
-// stage.js plays the foreman's orchestration role as code. Every agent call goes through spawn(), which takes the
+// stage.js plays the project manager's orchestration role as code. Every agent call goes through spawn(), which takes the
 // agent type, model, effort and isolation from the roles table and throws before the call when the table is bad.
 
 const F = args.truss
 const ROLE_EFFORTS = ['low', 'medium']
-const BANNED_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
+const BANNED_TYPES = ['truss:project-manager', 'truss:commissioning-engineer', 'truss:integrator']
 const TRAILER_ROLE = { tester: 'test-writer', builder: 'builder', writer: 'writer', resolver: 'resolver' }
 
 const BRAVE = "Be brave: take the hard path, keep going when it gets difficult, don't ask permission for anything in scope. Never be brave with the truth: proof or it didn't happen."
