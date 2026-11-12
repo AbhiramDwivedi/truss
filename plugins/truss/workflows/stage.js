@@ -1065,8 +1065,11 @@ async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
 async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
   const note = oneLine(row.note, 800)
   if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
+  // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
+  if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
   const by = row.by === 'client' ? 'client' : 'program-manager'
-  return recordCall(crew, role, makePrompt, opts, at, { question: oneLine(row.title), answer: row.decision === 'answer' ? note : `${row.decision}: ${note}`, reason: '', by, source: `${by === 'client' ? 'client' : 'program manager'}, crew product call ${row.id}`, branch, log })
+  // the item id is in the logged question: it is how a resumed run knows this item is already logged (pendingCall)
+  return recordCall(crew, role, makePrompt, opts, at, { question: `${oneLine(row.title)} (inbox item ${row.id})`, answer: row.decision === 'answer' ? note : `${row.decision}: ${note}`, reason: '', by, source: `${by === 'client' ? 'client' : 'program manager'}, crew product call ${row.id}`, branch, log })
 }
 
 // On a resume: the stage's inbox items for the crew's calls, by task (an open one wins over a resolved one, a later over an earlier).
@@ -1095,12 +1098,11 @@ async function pendingCall(crew, role, makePrompt, opts, at) {
   const row = crew.calls[at]
   if (!row) return null
   if (row.state !== 'resolved') throw holdStop(row, oneLine(row.title), '', at)
+  // used once: a later member at the same step asked nothing, so the item must not answer it again
+  delete crew.calls[at]
   // logged once per item, not per task: a task can ask twice, and the second item's answer is a new decision. An earlier run's
-  // decision stands for this item when it has the item's question or answer (factory crew-decision stores both with | as /)
-  const flat = (s) => oneLine(s).replace(/\|/g, '/')
-  const q = flat(row.title)
-  const a = flat(row.decision === 'answer' ? oneLine(row.note, 800) : `${row.decision}: ${oneLine(row.note, 800)}`)
-  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => d.item && d.item.task === at && (flat(d.question) === q || flat(d.answer) === a)))
+  // decision stands for this item when its logged question names the item id (takeCall puts it there)
+  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => String(d.question).includes(`(inbox item ${row.id})`)))
   if (got.resume) return got.resume
   throw new Stop('QUESTION', `${oneLine(row.title)}\n\n${got.escalate}`, at)
 }
