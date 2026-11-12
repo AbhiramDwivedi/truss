@@ -1382,7 +1382,10 @@ async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
   const at = crew.step
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
+  const make = (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev)
+  const opts = { title: `Fix ${what}`, ...(persona ? { persona } : {}) }
+  const first = await pendingCall(crew, role, make, opts, at)
+  const report = await runMember(crew, role, make, opts, at, first)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -1939,7 +1942,10 @@ async function knowledge(crew) {
   if ((!crew.learned.length && !crew.sourceChanges.length) || !hasCodeTasks(crew)) return false
   crew.step = 'knowledge'
   const before = crew.head
-  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
+  const wmake = (resume) => knowledgePrompt(crew, resume)
+  const wopts = { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }
+  const first = await pendingCall(crew, 'writer', wmake, wopts, 'knowledge')
+  const report = await runMember(crew, 'writer', wmake, wopts, 'knowledge', first)
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
   crew.proofs.push(`knowledge: ${report.proof}`)
   const head = await integrate(crew, report.branch, 'knowledge')
