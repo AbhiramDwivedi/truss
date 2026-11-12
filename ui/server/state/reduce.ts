@@ -187,6 +187,7 @@ export function createReducer(): Reducer {
     }
     if (kind === null || !EVENTS.has(kind) || slug === null || slug === '' || agent === null || agent === '' || ts === null) return undefined
     if (slug === 'main') return undefined // crew main is never a crew
+    if (kind === 'stall' && obj.kind !== 'agent' && obj.kind !== 'idle-project-manager') return undefined // an unknown stall kind is ignored
     const acc = crewOf(slug)
     if (!agentCrew.has(agent)) agentCrew.set(agent, slug)
     let text: string
@@ -260,7 +261,7 @@ export function createReducer(): Reducer {
     if (by !== null && by !== agent && by !== 'main' && by !== 'factory' && !by.startsWith('workflow:') && (by === slug || acc.members.has(by))) {
       if (newerOrEqual(act, acc.lastOf.get(by) ?? null)) acc.lastOf.set(by, act)
     }
-    if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-foreman') && timeOf(ts) !== -Infinity) {
+    if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-project-manager') && timeOf(ts) !== -Infinity) {
       const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-foreman', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
       if (acc.stall === null || newerOrEqual(act, acc.stall.act)) acc.stall = s
     }

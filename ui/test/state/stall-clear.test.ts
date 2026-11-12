@@ -34,7 +34,7 @@ const plan = (slugs: string[]) =>
     })),
   })
 const spawn = (ts: string, crew: string, agent: string, by: string) => ({
-  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:foreman' : 'kit:builder',
+  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:project-manager' : 'kit:builder',
   model: 'opus', effort: 'high', by: by,
 })
 const stall = (ts: string, crew: string, agent: string, kind: string, minutes: number) => ({ v: 1, ts, event: 'stall', crew, agent, kind, minutes })
@@ -43,7 +43,7 @@ const stall = (ts: string, crew: string, agent: string, kind: string, minutes: n
 function idleForeman(rest: unknown[], extraCrews: string[] = []) {
   return storeFor({
     'plan.json': plan(['a', ...extraCrews]),
-    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12), ...rest]),
+    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-project-manager', 12), ...rest]),
   })
 }
 
@@ -100,7 +100,7 @@ test('a later spawn by an agent of a different crew leaves the stall stuck', () 
     'plan.json': plan(['a', 'b']),
     'events.jsonl': jsonl([
       spawn(T(0), 'a', 'a', 'main'), spawn(T(0), 'b', 'b', 'main'),
-      stall(T(20), 'a', 'a', 'idle-foreman', 12),
+      stall(T(20), 'a', 'a', 'idle-project-manager', 12),
       spawn(T(25), 'a', 'a-builder', 'b'),
     ]),
   })
