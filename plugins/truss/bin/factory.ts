@@ -557,31 +557,6 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
 
 const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'refactor']
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
-const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
-const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
-// Rule-file `paths` globs use `{a,b}` alternation and a leading `**`, which the literal-prefix compare above cannot read: expand the braces,
-// match a wildcard-free owns exactly, and compare only the last segment when either side starts with `**`.
-const braceExpand = (g: string): string[] => {
-  const m = /\{([^{}]*)\}/.exec(g)
-  return m === null ? [g] : m[1].split(',').flatMap((alt) => braceExpand(g.slice(0, m.index) + alt + g.slice(m.index + m[0].length)))
-}
-const globRe = (g: string): RegExp => new RegExp('^' + g.replace(/[.+^$()|\\{}[\]]/g, '\\$&').replace(/\*\*\/|\*\*|\*|\?/g, (t) => (t === '**/' ? '(?:.*/)?' : t === '**' ? '.*' : t === '*' ? '[^/]*' : '[^/]')) + '$')
-const ruleGlobsOverlap = (a: string, b: string): boolean =>
-  braceExpand(a).some((x) =>
-    braceExpand(b).some((y) => {
-      const wild = (s: string): boolean => /[*?[]/.test(s)
-      if (!wild(x)) return globRe(y).test(x)
-      if (!wild(y)) return globRe(x).test(y)
-      if (x.startsWith('**') || y.startsWith('**')) {
-        const tx = x.slice(x.lastIndexOf('/') + 1)
-        const ty = y.slice(y.lastIndexOf('/') + 1)
-        return !wild(tx) ? globRe(ty).test(tx) : !wild(ty) ? globRe(tx).test(ty) : true
-      }
-      return globsOverlap(x, y)
-    }),
-  )
-// one crew's `after` names the other's slug: the two never run together
-const orderedByAfter = (a: Obj, b: Obj): boolean => (Array.isArray(a.after) && a.after.includes(b.slug)) || (Array.isArray(b.after) && b.after.includes(a.slug))
 
 function cmdPlanCheck(f: Flags): Obj {
   const plan = loadPlan(dirOf(f))
@@ -681,46 +656,8 @@ function cmdPlanCheck(f: Flags): Obj {
     }
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
-  let rules: { path: string; paths: string[] }[] = []
-  if (repoDir !== undefined) {
-    try {
-      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
-    } catch {
-      // not a git repo or git failed: no rule check
-    }
-  }
-  for (let i = 0; i < crews.length; i++) {
-    for (let j = i + 1; j < crews.length; j++) {
-      const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
-      if (sameGoal && crews[i].stage !== crews[j].stage) continue
-      // The knowledge-owns rule makes one crew of each stage own a rule file, so two goals' crews in different stages each own the
-      // same rule file by design: that one exact glob is not an overlap between them, provided one crew's after names the other
-      // (they never run together); without after it is the same overlap error as any other glob.
-      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage && orderedByAfter(crews[i], crews[j])
-      // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
-      if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
-      for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
-        for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
-          if (crossStage && ga === gb && rules.some((r) => r.path === ga)) continue
-          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
-        }
-      }
-    }
-  }
-  // knowledge-owns rule: per stage, when the live crews' owns overlap a rule file's paths, one crew of the stage must own that rule file.
-  // A repo with no rule files, or one git cannot list, adds no error here (the same fallback knowledgeArgsOf takes).
-  if (repoDir !== undefined) {
-    const live = crews.filter((c) => c.status !== 'merged' && c.status !== 'dropped')
-    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((g: unknown): g is string => typeof g === 'string') : [])
-    for (const rule of rules) {
-      for (const stage of [...new Set(live.map((c) => c.stage))]) {
-        const inStage = live.filter((c) => c.stage === stage)
-        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => ruleGlobsOverlap(g, p))))
-        if (hit.length === 0 || inStage.some((c) => ownsOf(c).some((g) => globsOverlap(g, rule.path)))) continue
-        errors.push(`${rule.path}: rule file matched by crew ${hit.map(name).join(', ')} of stage ${String(stage)} and owned by no crew of that stage; add ${rule.path} to the owns of one crew of stage ${String(stage)}`)
-      }
-    }
-  }
+  // ADR-0043: crews may share files. Two crews' owns may overlap, in one stage or across goals, and no crew of a stage has to own a
+  // rule file: each crew builds in its own worktree and they merge one at a time on the program manager's go-ahead.
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name) }
@@ -1095,36 +1032,17 @@ function cmdMarkMerged(f: Flags): Obj {
   appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
   return { ok: true, slug, status: 'merged' }
 }
-// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
-// another live crew the way plan-check does (same goal and stage, or another goal; a rule file another goal's crew of another stage
-// owns is exempt, as in plan-check, only when one crew's after names the other); logs a decision line.
+// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan, and logs a decision line.
+// Another crew may own the same files (ADR-0043): the crews merge in turn.
 function cmdOwnsExtend(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
   const glob = need(f, 'glob')
   const reason = need(f, 'reason').replace(/\s+/g, ' ').trim()
-  let rules: { path: string; paths: string[] }[] = []
-  try {
-    const repoDir = repoOf(f)
-    rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
-  } catch {
-    // no repo or git failed: no rule file is exempt, as plan-check
-  }
   const done = withLock(dir, 'plan', (): Obj => {
     const plan = loadPlan(dir)
     const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
     if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-    const overlaps: { slug: string; glob: string }[] = []
-    for (const o of plan.crews) {
-      if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
-      if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
-      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage && orderedByAfter(o, crew)
-      for (const g of Array.isArray(o.owns) ? o.owns : []) {
-        if (crossStage && g === glob && rules.some((r) => r.path === g)) continue
-        if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
-      }
-    }
-    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage, and to one crew of another goal` })
     const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
     if (!owns.includes(glob)) owns.push(glob)
     crew.owns = owns

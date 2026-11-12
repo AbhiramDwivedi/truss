@@ -2,6 +2,8 @@
 
 Status: proposed, 2026-11-02. Written by the design crew `fixes2-design` (stage 0 of goal `factory-fixes2`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto` (plan-check ok, unproved none), and its plan is revision 2 (`plan-factory-fixes2.md` in the truss dir), which applied 8 PO rulings. The client's words: "Don't just log a plugin bug, fix it."
 
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): item 8 is reversed; plan-check reports no owns overlap between crews of different goals.
+
 Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 48 adds to item 12's answer routing. An answer whose `at` names a done task re-runs that task with the answer, and a tester task commits with `Truss-Role: test-writer`.
 
 VERDICT: change. Two modules change: the **factory CLI** (`bin/factory.ts`) and the **stage workflow** (`workflows/stage.js`). Three extend: the **plugin docs** (this ADR, plus wording in ADR-0020 and ADR-0021), the **plugin manifest and catalog**, and the **planning engineer prompt** with the **repo docs and root checks**.

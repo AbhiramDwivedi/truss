@@ -2,6 +2,8 @@
 
 Status: proposed, 2026-10-29. Written by the mid-run design slice `speed-design` (stage 1) of Truss session dd6ebfbb, for the Truss release after 0.10.0. It becomes accepted when the program manager (PM) merges `speed-design` under the client-approved scope. Not repo ADR-0009.
 
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): `plan-check` no longer refuses overlapping `owns`, and the "Disjoint file ownership" row no longer holds; crews merge in turn.
+
 Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): every factory command but `start` and `start --resume` refuses a relative `--dir` with exit 2, and the new `factory.ts decide` command is the PM's only route for writing `decisions.md`.
 
 Amended 2026-11-07 (truss 0.19.0, retro F-9): the hook that stamped `decisions.md` no longer rewrites an Edit or Write of it. It refuses the call and names `factory.ts decide`, which stamps and appends each line.

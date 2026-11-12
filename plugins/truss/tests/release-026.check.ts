@@ -140,7 +140,7 @@ const tokensOf = (text) => {
 // A citation whose clause and line name no code symbol is pinned here, path:line -> a token the cited lines hold.
 const ABOUT = {
   'skills/run/SKILL.md:8': 'only one who talks to the client',
-  'bin/factory.ts:3102': 'is not a local branch',
+  'bin/factory.ts:3020':'is not a local branch',
   'ui/server/main.ts:80': "join(uiDir, 'web')",
   'worktypes.ts:1': 'The built-in profiles',
 }
