@@ -452,49 +452,49 @@ Added: 2026-11-10T04:32:43Z | truss 0.25.0 wave 2 (contract-025)
 Source: goal
 
 ## R-65: Only verified client proof can lift an inbox block
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given a blocking inbox item, when a process appends a `resolve` row to inbox.jsonl without verified client proof, then the guard and inbox folds keep the item open and the crew stays held; a `--note` that differs from the typed answer, a `local-command-stdout` line, a task-notification line with no origin, and a transcript root taken from the caller's environment are each refused.
 
 ## R-66: The long-term cost guard fails closed and sees its missed triggers
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given a crew whose `git diff` fails or exceeds 1 MB, or a plan with no ltc-plan.json, when the guard runs, then the merge or plan gate blocks with a clear message; a devDependencies to dependencies move and a git-quoted odd file name each raise a trigger.
 
 ## R-67: A crash cannot lose an escalation code or strand a queue item
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given an escalate that dies after its append, when the client next reads the inbox, then the item's code is recoverable; given a `--next` session that crashed, when a later session claims work, then the stale `running` item is released by the stale-running rule.
 
 ## R-68: Cost readings and budget keys tell the truth
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given a torn usage.jsonl row or a slow first sweep, when `factory cost` runs, then it skips the torn row or reports busy rather than failing; `sessionUsd` is either enforced in attended runs or documented as not enforced; intake and planning spend counts against it; `inbox --unapplied` can filter by session.
 
 ## R-69: The wave-2 plugin and process gaps are closed
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given a crew that needs one more owned file, when the program manager runs the new factory command, then owns grows without a hand edit of plan.json; a suite run on main reads nothing under .claude/worktrees.
 
 ## R-70: The wave-2 doc leftovers are corrected
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 Example: Given ADR-0039 and the version-pin test, when they are read after this release, then the two wrong ADR sentences are gone and the test takes the version from plugin.json.
 
 ## R-71: Every 0.26.0 fix carries a regression test and works on Linux, macOS and Windows
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
@@ -521,13 +521,13 @@ Source: goal
 Example: Given a Workflow transcript or crew report from 0.26.0 whose labels or event fields name the old crew lead, when finish, the retro or the cost meter reads it, then it parses and counts it as it did before the rename.
 
 ## R-75: Docs, skills, agent prompts and tests use the new role names, and the rename is recorded in an ADR
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
 
 ## R-76: Prose names the project manager and the program manager in full; a file that keeps PM defines it
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
@@ -540,28 +540,28 @@ Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
 
 ## R-78: The crew lead is the project manager agent, and the old crew-lead agent type is gone
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: client
 Example: Given a run after the rename, when the program manager starts a crew lead, then it starts `truss:project-manager`, the hooks gate it as a crew lead, and no agent file or type under the old name exists, so a start under the old type is not treated as a crew lead.
 
 ## R-79: Role and config keys that named the old crew lead are renamed, with no alias
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: client
 Example: Given a .claude/truss.json whose `promptOverrides` sets `project-manager`, when it is validated against the config schema, then it passes; and the old key is no longer a property, so a config that still sets it fails validation.
 
 ## R-80: Stored and printed names that carried the old crew-lead name are renamed, with no dual reader
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: client
 Example: Given a run after the rename, when the hooks record an idle crew lead, then the stall event kind is `idle-project-manager` and the retro counts it under `stalls.idleProjectManager`; labels and slugs that never held the old name keep parsing as before.
 
 ## R-81: No file in the plugin, docs or checks names the old crew lead
-Status: open
+Status: met
 Kind: nfr
 Measure: 0 lines naming the old crew lead (any case) in every file `git ls-files plugins/truss docs checks` lists, historical ADRs, CHANGELOG, fixtures and eval inputs included, with the plugin suite and root checks at exit 0
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
