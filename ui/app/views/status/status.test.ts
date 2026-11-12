@@ -57,7 +57,7 @@ const crewOf = (state: any, slug: string) => state.run.crews.find((c: any) => c.
 
 const member = (over: Record<string, unknown> = {}) => ({ name: 'a-builder', type: 'general-purpose', model: 'sonnet', effort: null, state: 'spawned', detail: null, ts: '2026-11-02T12:00:00.000Z', ...over })
 const crew = (over: Record<string, unknown> = {}) => ({
-  slug: 'c', stage: 1, verdict: null, status: 'running', goal: null, owns: [], foreman: member({ name: 'c-foreman', type: 'truss:foreman' }),
+  slug: 'c', stage: 1, verdict: null, status: 'running', goal: null, owns: [], projectManager: member({ name: 'c-project-manager', type: 'truss:project-manager' }),
   members: [member()], latest: null, qc: null, ...over,
 })
 
@@ -86,30 +86,30 @@ test('crewStatus: stuck non-null is stuck', async () => {
   assert.equal(crewStatus(crew({ stuck })), 'stuck')
 })
 for (const marker of ['QUESTION', 'BLOCKED', 'PROPOSAL']) {
-  test(`crewStatus: running with a foreman detail starting ${marker} is waiting`, async () => {
+  test(`crewStatus: running with a project manager detail starting ${marker} is waiting`, async () => {
     const { crewStatus } = await status()
-    assert.equal(crewStatus(crew({ foreman: member({ type: 'truss:foreman', detail: `${marker}: need a decision` }) })), 'waiting')
+    assert.equal(crewStatus(crew({ projectManager: member({ type: 'truss:project-manager', detail: `${marker}: need a decision` }) })), 'waiting')
   })
 }
-test('crewStatus: running with another foreman detail is active', async () => {
+test('crewStatus: running with another project manager detail is active', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ foreman: member({ detail: 'Splitting the goal' }) })), 'active')
+  assert.equal(crewStatus(crew({ projectManager: member({ detail: 'Splitting the goal' }) })), 'active')
 })
-test('crewStatus: running with a null foreman detail is active', async () => {
+test('crewStatus: running with a null project manager detail is active', async () => {
   const { crewStatus } = await status()
   assert.equal(crewStatus(crew()), 'active')
 })
-test('crewStatus: running with no foreman at all is active', async () => {
+test('crewStatus: running with no project manager at all is active', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ foreman: null })), 'active')
+  assert.equal(crewStatus(crew({ projectManager: null })), 'active')
 })
 test('crewStatus: planned is planned', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ status: 'planned', foreman: null, members: [] })), 'planned')
+  assert.equal(crewStatus(crew({ status: 'planned', projectManager: null, members: [] })), 'planned')
 })
 test('crewStatus: a null status with no members is planned', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ status: null, foreman: null, members: [] })), 'planned')
+  assert.equal(crewStatus(crew({ status: null, projectManager: null, members: [] })), 'planned')
 })
 test('crewStatus: a null status with members is not planned', async () => {
   const { crewStatus } = await status()
@@ -117,18 +117,18 @@ test('crewStatus: a null status with members is not planned', async () => {
 })
 
 // ---- crewStatus: ordering traps --------------------------------------------------------------------------
-test('crewStatus: merged with a BLOCKED foreman detail is done, not waiting', async () => {
+test('crewStatus: merged with a BLOCKED project manager detail is done, not waiting', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ status: 'merged', foreman: member({ detail: 'BLOCKED: x' }) })), 'done')
+  assert.equal(crewStatus(crew({ status: 'merged', projectManager: member({ detail: 'BLOCKED: x' }) })), 'done')
 })
-test('crewStatus: dropped with a QUESTION foreman detail is done, not waiting', async () => {
+test('crewStatus: dropped with a QUESTION project manager detail is done, not waiting', async () => {
   const { crewStatus } = await status()
-  assert.equal(crewStatus(crew({ status: 'dropped', foreman: member({ detail: 'QUESTION: x' }) })), 'done')
+  assert.equal(crewStatus(crew({ status: 'dropped', projectManager: member({ detail: 'QUESTION: x' }) })), 'done')
 })
-test('crewStatus: stuck beats a QUESTION foreman detail', async () => {
+test('crewStatus: stuck beats a QUESTION project manager detail', async () => {
   const { crewStatus } = await status()
-  const stuck = { kind: 'idle-foreman', since: '2026-11-02T11:46:00.000Z', minutes: 14, detail: 'x' }
-  assert.equal(crewStatus(crew({ stuck, foreman: member({ detail: 'QUESTION: x' }) })), 'stuck')
+  const stuck = { kind: 'idle-project-manager', since: '2026-11-02T11:46:00.000Z', minutes: 14, detail: 'x' }
+  assert.equal(crewStatus(crew({ stuck, projectManager: member({ detail: 'QUESTION: x' }) })), 'stuck')
 })
 test('crewStatus: a null stuck on a running crew does not make it stuck', async () => {
   const { crewStatus } = await status()
@@ -178,7 +178,7 @@ for (const crewState of ['merged', 'dropped']) {
     assert.equal(agentStatus(member({ state: 'reported' }), C), 'done')
   })
 }
-test('agentStatus: a running crew with a BLOCKED foreman detail is waiting, not done', async () => {
+test('agentStatus: a running crew with a BLOCKED project manager detail is waiting, not done', async () => {
   const { agentStatus } = await status()
   assert.equal(agentStatus(member({ type: 'workflow-crew', state: 'tagged', detail: 'BLOCKED' }), RUN), 'waiting')
 })

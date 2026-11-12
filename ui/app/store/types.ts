@@ -206,7 +206,7 @@ export interface Crew {
   status: CrewStatus
   goal: string | null
   owns: string[]
-  foreman: Member | null
+  projectManager: Member | null
   members: Member[]
   latest: Activity | null
   qc: CrewQc | null
@@ -219,7 +219,7 @@ export interface Crew {
 }
 
 export interface CrewStuck {
-  kind: 'stalled' | 'idle-foreman'
+  kind: 'stalled' | 'idle-project-manager'
   since: string
   minutes: number
   detail: string

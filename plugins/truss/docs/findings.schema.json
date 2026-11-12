@@ -55,7 +55,7 @@
         "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
         "cost": { "description": "What it cost the run, from the transcripts: time, retries, agents, client turns.", "type": "string", "minLength": 1 },
         "fix": { "description": "The change that stops it, in one or two sentences.", "type": "string", "minLength": 1 },
-        "target": { "description": "Repo-relative path of the file the fix belongs in, such as agents/foreman.md, .claude/settings.json or CLAUDE.md.", "type": "string", "minLength": 1 },
+        "target": { "description": "Repo-relative path of the file the fix belongs in, such as agents/project-manager.md, .claude/settings.json or CLAUDE.md.", "type": "string", "minLength": 1 },
         "signature": {
           "description": "JavaScript regular expressions (no flags) that match the evidence lines and would match the problem when it comes back. They become a catalog entry's patterns when the fix merges.",
           "type": "array",

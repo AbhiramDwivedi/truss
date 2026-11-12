@@ -170,7 +170,7 @@ function checkSpawns(calls, roles) {
     if (m[2] === 'builder') assert.ok(['low', 'medium', 'high'].includes(o.effort), `${o.label} effort ${o.effort}`)
     else assert.equal(o.effort, r.effort, `${o.label} effort`)
     assert.equal(o.agentType, r.agentType, `${o.label} agentType`)
-    assert.notEqual(o.agentType, 'truss:foreman')
+    assert.notEqual(o.agentType, 'truss:project-manager')
     if (r.isolation === 'worktree') assert.equal(o.isolation, 'worktree', `${o.label} isolation`)
     else assert.ok(!Object.hasOwn(o, 'isolation'), `${o.label} must have no isolation key`)
   }
@@ -426,7 +426,7 @@ t('plan: an designer that returns null makes the script throw', async () => {
   const r = await runPlan({ allowError: true, labels: { 'truss-designer': null } })
   assert.ok(r.error, 'expected a throw')
 })
-for (const [name, mut] of [['model haiku', { model: 'haiku' }], ['effort high', { effort: 'high' }], ['missing model', { model: undefined }], ['missing effort', { effort: undefined }], ['agentType truss:foreman', { agentType: 'truss:foreman' }]]) {
+for (const [name, mut] of [['model haiku', { model: 'haiku' }], ['effort high', { effort: 'high' }], ['missing model', { model: undefined }], ['missing effort', { effort: undefined }], ['agentType truss:project-manager', { agentType: 'truss:project-manager' }]]) {
   t(`plan spawn: designer role with ${name} is never passed to agent() and the script throws`, async () => {
     const r = await runPlan({ allowError: true, roles: { ...ROLES, designer: { ...ROLES.designer, ...mut } }, labels: { 'truss-designer': ARCH() } })
     assert.ok(r.error, 'expected a throw')
@@ -503,7 +503,7 @@ t('stage red: a null runner result is not met (BLOCKED at red)', async () => {
 
 // ---------------------------------------------------------------- stage.js: bad roles
 
-for (const [name, mut] of [['model haiku', { model: 'haiku' }], ['effort high', { effort: 'high' }], ['missing model', { model: undefined }], ['missing effort', { effort: undefined }], ['agentType truss:foreman', { agentType: 'truss:foreman' }]]) {
+for (const [name, mut] of [['model haiku', { model: 'haiku' }], ['effort high', { effort: 'high' }], ['missing model', { model: undefined }], ['missing effort', { effort: undefined }], ['agentType truss:project-manager', { agentType: 'truss:project-manager' }]]) {
   t(`stage spawn: planner role with ${name} is never passed to agent(); the crew stops BLOCKED at split`, async () => {
     const roles = { ...ROLES, planner: { ...ROLES.planner, ...mut } }
     const r = await runStage([entry('a')], { roles, labels: base() })

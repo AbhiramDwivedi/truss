@@ -1,13 +1,13 @@
 {
   "name": "truss",
-  "version": "0.26.0",
+  "version": "0.28.0",
   "types": "./types/index.d.ts",
   "dependencies": [
     { "name": "kit", "marketplace": "claude-ops", "version": "^0.4.0" },
     { "name": "worktrees", "marketplace": "claude-ops", "version": ">=0.8.4 <0.11.0" },
     { "name": "subagent-limits", "marketplace": "claude-ops", "version": "^0.3.2" }
   ],
-  "description": "Intelligence, engineered together. Runs several crews of agents in parallel from the main session: each crew's foreman delegates to your project's agents in its own worktree, and the crews' branches merge one at a time or into one integration branch",
+  "description": "Intelligence, engineered together. Runs several crews of agents in parallel from the main session, the program manager: each crew's project manager delegates to your project's agents in its own worktree, and the crews' branches merge one at a time or into one integration branch",
   "author": {
     "name": "Abhiram Dwivedi",
     "url": "https://github.com/AbhiramDwivedi"

@@ -18,7 +18,7 @@ Where the truth lives:
 
 1. The UI is read-only over truss: no write to `plugins/`, to a truss dir, or to a run's state.
 2. When the plugin renames a value the UI reads (an agent type, an event kind, a field), follow the ADR that records the rename. Under ADR-0042 (no alias) the UI reads the new value only, and its tests assert the old value is no longer read. Keep a reader for an old value only when the rename's ADR says so.
-3. Fixtures under `ui/contract/` are recorded data. Never rewrite them to follow a plugin rename; add a new fixture instead.
+3. Recorded SDK streams and raw recordings under `ui/contract/` are never rewritten, not even to follow a plugin rename. Generated state fixtures (state.json files) follow state.schema.json when the schema changes.
 4. Dependencies are exact versions in `ui/package.json` (no `^` or `~`), with `ui/package-lock.json` committed in the same change. Install with `npm --prefix ui ci`, never `npm install`.
 5. Use the built-ins before a package: `fetch`, `crypto.randomUUID`, `structuredClone`, `node:test` with `node:assert/strict`.
 6. A helper with only type imports (such as `ui/app/views/crews/format.ts`) gets a `.test.ts` beside it that runs with plain `node --test <file>`, no install and no build; it is still picked up by the `app/**/*.test.ts` glob of the `test` script.

@@ -30,7 +30,7 @@ The interface that couldn't take it: the decision above names each role's model 
 
 ### Decision
 
-- **Default.** Judges, red teams, reviewers and writers run at Opus `medium` (a writer may also run on Sonnet, see below). `high` and `xhigh` are escalation routes, never defaults, and for these four roles they are taken only on the owner's explicit call: the owner says so in their own message, and the goal file or the foreman's brief cites it. A lead never raises one of these roles on its own judgment, including to judge an Opus-high builder; the `lead.md:101` and `run/SKILL.md:141` clause that allows that goes.
+- **Default.** Judges, red teams, reviewers and writers run at Opus `medium` (a writer may also run on Sonnet, see below). `high` and `xhigh` are escalation routes, never defaults, and for these four roles they are taken only on the owner's explicit call: the owner says so in their own message, and the goal file or the program manager's brief cites it. A lead never raises one of these roles on its own judgment, including to judge an Opus-high builder; the `lead.md:101` and `run/SKILL.md:141` clause that allows that goes.
 - **Judge.** The floor is Opus `medium`. A re-judge after a FAIL is a fresh `foundry:judge`, also at `medium`.
 - **Spent repair budget.** When a crew's repair budget (foundry ADR-0004) is spent, the crew goes `BLOCKED`. Nothing moves up an effort level to buy another round: no higher judge, no higher builder.
 - **Builders.** The builder ladder in `lead.md` section 7 (Sonnet, then Opus `medium`, `high`, `xhigh`, on two failed fixes of the same check) is unchanged. It applies to builders fixing a failing check, not to judges, red teams, reviewers or writers.

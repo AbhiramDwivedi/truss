@@ -2,10 +2,10 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect } from 'claude-code/testing'
 
-import { FOREMAN_TYPE } from '../hooks/register'
+import { PROJECT_MANAGER_TYPE } from '../hooks/register'
 import { handBack, startSession, status, test, world } from './harness'
 
-// ADR-0010 mid-run intake, "What the contract tests pin" items 1-10, with the foreman's amendments: no `after`, approval not
+// ADR-0010 mid-run intake, "What the contract tests pin" items 1-10, with the project manager's amendments: no `after`, approval not
 // tied to stage 0, the reserved goal id `run` (gate R), and a crew's goal must name a plan goal (gate 2). Written from the
 // ADR and the crew spec alone; everything goes through the Agent tool.call entry, the designer hand-back and /truss.
 
@@ -45,10 +45,10 @@ const planOf = (crews: Obj[], goals?: Obj[], top: Obj = {}): Obj => ({
   ...top,
 })
 
-// ---- gates, through the Agent tool.call entry (a truss:foreman start from the main session) ----
+// ---- gates, through the Agent tool.call entry (a truss:project-manager start from the main session) ----
 
 const setGate = (w: W, plan: Obj) => w.files.set('C:/r/.git/truss/s1/plan.json', JSON.stringify(plan))
-const start = (w: W, name: string) => w.agentCall(undefined, { subagent_type: FOREMAN_TYPE, name, model: 'opus', effort: 'medium' })
+const start = (w: W, name: string) => w.agentCall(undefined, { subagent_type: PROJECT_MANAGER_TYPE, name, model: 'opus', effort: 'medium' })
 const expectRefused = async (w: W, name: string, reason: string) => {
   const before = w.ran.length
   expect(await start(w, name)).toEqual({ deny: `${REFUSED}${reason}` })

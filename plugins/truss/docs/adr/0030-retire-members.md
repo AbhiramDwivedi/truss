@@ -8,7 +8,7 @@ Amends: ADR-0021 Decision 7
 
 After many runs, 38 worktrees sat in `.claude/worktrees/` on `worktree-wf_<run>-<n>` branches. Each crew member (builder, tester, each fix round) gets its own worktree, and only the crew's final result lands on the target, often as a new commit. So the earlier members' branches hold stale file versions that never become ancestors of the target, and the 0.19.0 sweep kept them as `unmerged` forever. Dropped crews, crews whose rework allowance was spent, and crews redone by a later run, resume or fix goal left their members too. Worktrees also looked dirty only because the worktrees plugin links `ui/node_modules` into the main checkout as an untracked symlink.
 
-Processes outlived their work as well: a UI dev server ran 9 hours with its cwd inside a member worktree, and finished subagents stayed open until the PM stopped them by hand.
+Processes outlived their work as well: a UI dev server ran 9 hours with its cwd inside a member worktree, and finished subagents stayed open until the program manager (PM) stopped them by hand.
 
 ## Decision Drivers
 

@@ -60,7 +60,7 @@ test(P + 'plan-check refuses a lean crew with estAgents above 3, or above 2 with
   assertRefusedFor(planCheck(env, v4([lean('l', { qc: false, red: false, estAgents: 3 })])), 'l', 'estAgents')
 })
 
-test(P + 'plan-check accepts a stage-0 design crew of any process (ADR-0042)', () => {
+test(P + 'plan-check accepts a stage-0 design crew of any process (ADR-0044)', () => {
   const env = mkEnv({ config: CFG })
   const design = (over: Record<string, unknown>) => v4([crew('d', { stage: 0, verdict: 'design', ...over })], { approval: 'auto' })
   assertAccepted(planCheck(env, design({ process: 'full' })))
@@ -88,7 +88,7 @@ test(P + 'start lists solo and lean crews under direct and leaves them out of th
     assert.ok(existsSync(join(env.repo, '.claude', 'worktrees', `truss-${s}`)), `worktree for ${s}`)
   }
   assert.deepEqual((j.truss?.crews ?? []).map((c: any) => c.slug), ['fu'], 'only the full crew goes to the Workflow args')
-  for (const key of ['foremen', 'held', 'refused']) {
+  for (const key of ['projectManagers', 'held', 'refused']) {
     const list = (j[key] ?? []).map((x: any) => (typeof x === 'string' ? x : x.slug))
     assert.ok(!list.includes('sa') && !list.includes('le'), `${key} holds a direct crew: ${JSON.stringify(j[key])}`)
   }

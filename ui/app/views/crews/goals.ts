@@ -45,7 +45,7 @@ export function goalStartMs(g: GoalGroup): number | null {
 export function goalLastMs(g: GoalGroup): number | null {
   let last: number | null = null
   for (const c of g.crews) {
-    for (const m of c.foreman ? [c.foreman, ...c.members] : c.members) {
+    for (const m of c.projectManager ? [c.projectManager, ...c.members] : c.members) {
       const t = ms(m.ts)
       if (t !== null && (last === null || t > last)) last = t
     }

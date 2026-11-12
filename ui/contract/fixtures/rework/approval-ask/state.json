@@ -71,7 +71,7 @@
         "owns": [
           "rework-server/**"
         ],
-        "foreman": null,
+        "projectManager": null,
         "members": [],
         "latest": null,
         "estAgents": 3,
@@ -87,7 +87,7 @@
         "owns": [
           "rework-network/**"
         ],
-        "foreman": null,
+        "projectManager": null,
         "members": [],
         "latest": null,
         "estAgents": 3,
@@ -103,7 +103,7 @@
         "owns": [
           "rework-docs/**"
         ],
-        "foreman": null,
+        "projectManager": null,
         "members": [],
         "latest": null,
         "estAgents": 3,

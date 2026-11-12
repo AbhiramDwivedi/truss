@@ -1,6 +1,6 @@
 // @ts-nocheck
 // truss ADR-0007 Seam 7 (section 7): evals/run-model.ts, run as a child with CLAUDE pointing at a stub.
-// Written before run-model.ts exists, from the ADR and the foreman's decisions. Red by design until evals-build builds it.
+// Written before run-model.ts exists, from the ADR and the project manager's decisions. Red by design until evals-build builds it.
 //
 // Run with: node --test tests/evals-run-model.check.ts
 // Spawn rule pinned here: when CLAUDE ends in .js, .mjs or .cjs, run-model spawns process.execPath with the script as
@@ -26,7 +26,7 @@ const rm = (p: string) => rmSync(p, { recursive: true, force: true, maxRetries: 
 const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 
 // Every `--` flag run-model may pass, plus `-p`. Mirrors ADR-0007 section 7, with `--tools` and `--disallowedTools`
-// added on the foreman's word. Anything else on the command line (a permission mode) fails the argv test.
+// added on the project manager's word. Anything else on the command line (a permission mode) fails the argv test.
 const ALLOWED_FLAGS = ['--system-prompt', '--model', '--effort', '--no-session-persistence', '--output-format', '--allowedTools',
   '--tools', '--disallowedTools']
 const ONE_VALUE = ['--system-prompt', '--model', '--effort', '--output-format']

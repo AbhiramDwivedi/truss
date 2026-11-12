@@ -3,10 +3,10 @@ import { expect } from 'claude-code/testing'
 import * as R from '../hooks/register.ts'
 import { agent, handBack, quiet, ROOT, startSession, stop, test, world } from './harness'
 
-// Handler-level tests for truss ADR-0004 sections 3-7 (foreman stop gate, bounded repair loop, head guard,
+// Handler-level tests for truss ADR-0004 sections 3-7 (project manager stop gate, bounded repair loop, head guard,
 // main-session rule), written from the ADR before the producer exists. The pure functions of section 9 are
 // covered by contract-gates.test.ts; this file drives the real hook entry points (Agent tool calls,
-// SubagentHandback, foreman stops). It imports the hooks as a namespace and checks `typeof` inside each test, so on
+// SubagentHandback, project manager stops). It imports the hooks as a namespace and checks `typeof` inside each test, so on
 // old code a test fails on a missing export or missing behaviour, never on an import error.
 //
 // The harness registers `process.run` once, and a second registration is an error. To script the head guard's
@@ -150,7 +150,7 @@ const setQc = (w: W, name: string, text: string, mtimeMs?: number) => {
   if (mtimeMs !== undefined) w.mtimes.set(qcPath(name), mtimeMs)
 }
 
-const foreman = async ($: never, text: string, active = false): Promise<string | undefined> => {
+const projectManager = async ($: never, text: string, active = false): Promise<string | undefined> => {
   const r = (await ($ as unknown as { classic: { SubagentStop: (e: never) => Promise<unknown> } }).classic.SubagentStop(stop('L1', text, active))) as { block?: string }
   return r.block
 }
@@ -178,22 +178,22 @@ async function cleanWorld($: never, on: never, o: Opts = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 1. foreman stop gate, section 4
+// 1. project manager stop gate, section 4
 // ---------------------------------------------------------------------------------------------
 
 test('s4: v2 plan, untagged report with the six sections but neither heading, or only one, is sent back with EXAMINED_REASON', async ($, on) => {
   const { w } = await cleanWorld($ as never, on as never)
   const reason = str('EXAMINED_REASON')
-  expect(await foreman($ as never, withoutHeadings())).toBe(reason)
-  expect(await foreman($ as never, report({ extra: ['## Examined', '- x: y'] }))).toBe(reason)
-  expect(await foreman($ as never, report({ extra: ['## Not examined', 'None.'] }))).toBe(reason)
+  expect(await projectManager($ as never, withoutHeadings())).toBe(reason)
+  expect(await projectManager($ as never, report({ extra: ['## Examined', '- x: y'] }))).toBe(reason)
+  expect(await projectManager($ as never, report({ extra: ['## Not examined', 'None.'] }))).toBe(reason)
   expect(w.files.size).toBeGreaterThan(0)
 })
 
 test('s4: v2 plan, both headings and a clean head guard go through', async ($, on) => {
   await cleanWorld($ as never, on as never)
   str('EXAMINED_REASON')
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('s4: a heading counts only at line start, full line (trailing spaces and tabs allowed)', async ($, on) => {
@@ -208,12 +208,12 @@ test('s4: a heading counts only at line start, full line (trailing spaces and ta
     ['## Examined', 'and ## Not examined'],
     ['### Examined', '### Not examined'],
   ]
-  for (const extra of bad) expect([extra, await foreman($ as never, report({ extra }))]).toEqual([extra, reason])
+  for (const extra of bad) expect([extra, await projectManager($ as never, report({ extra }))]).toEqual([extra, reason])
   const good: string[][] = [
     ['## Examined   ', '- x: y', '## Not examined\t', 'None.'],
     ['## Examined\t \t', '## Not examined  '],
   ]
-  for (const extra of good) expect([extra, await foreman($ as never, report({ extra }))]).toEqual([extra, undefined])
+  for (const extra of good) expect([extra, await projectManager($ as never, report({ extra }))]).toEqual([extra, undefined])
 })
 
 test('s4: tagged stops (CHECKPOINT:, BLOCKED:, QUESTION:, PROPOSAL:) are exempt on a v2 plan, with or without a Proof section', async ($, on) => {
@@ -221,8 +221,8 @@ test('s4: tagged stops (CHECKPOINT:, BLOCKED:, QUESTION:, PROPOSAL:) are exempt 
   str('EXAMINED_REASON')
   w.files.delete(qcPath('auth-qc'))
   for (const tag of ['CHECKPOINT:', 'BLOCKED:', 'QUESTION:', 'PROPOSAL:']) {
-    expect([tag, await foreman($ as never, `${tag} half done\n${withoutHeadings()}`)]).toEqual([tag, undefined])
-    expect([tag, await foreman($ as never, `${tag} half done`)]).toEqual([tag, undefined])
+    expect([tag, await projectManager($ as never, `${tag} half done\n${withoutHeadings()}`)]).toEqual([tag, undefined])
+    expect([tag, await projectManager($ as never, `${tag} half done`)]).toEqual([tag, undefined])
   }
   expect(gitCalls).toEqual([])
 })
@@ -235,7 +235,7 @@ test('s4: a v1 plan, no plan and an unparseable plan.json let the same report th
     if (setup === 'v1') setPlan(w, 1, undefined)
     if (setup === 'garbage') w.files.set(PLAN, '{not json at all')
     if (setup === 'noversion') w.files.set(PLAN, JSON.stringify({ goal: 'g', approval: 'auto', approvedAt: APPROVED, maxParallelCrews: 4, crews: [] }))
-    expect([setup, await foreman($ as never, withoutHeadings())]).toEqual([setup, undefined])
+    expect([setup, await projectManager($ as never, withoutHeadings())]).toEqual([setup, undefined])
     expect([setup, gitCalls]).toEqual([setup, []])
   }
 })
@@ -244,11 +244,11 @@ test('s4: a v3 plan gets the v2 rules', async ($, on) => {
   const { w } = build($ as never, on as never)
   setPlan(w, 3, 2)
   await startSession($ as never)
-  expect(await foreman($ as never, withoutHeadings())).toBe(str('EXAMINED_REASON'))
+  expect(await projectManager($ as never, withoutHeadings())).toBe(str('EXAMINED_REASON'))
 })
 
 // ---------------------------------------------------------------------------------------------
-// 2. head guard, section 6 table, end to end through a foreman stop
+// 2. head guard, section 6 table, end to end through a project manager stop
 // ---------------------------------------------------------------------------------------------
 
 test('s6: no qc file, a FAIL, or a PASS with an UNSCOPED finding is sent back with NO_PASS_REASON', async ($, on) => {
@@ -259,11 +259,11 @@ test('s6: no qc file, a FAIL, or a PASS with an UNSCOPED finding is sent back wi
   for (const [label, text] of [
     ['no file', undefined],
     ['FAIL', qcText('FAIL')],
-    ['PASS with UNSCOPED', qcText('PASS', { findings: '- UNSCOPED: no other caller, in the foreman report' })],
+    ['PASS with UNSCOPED', qcText('PASS', { findings: '- UNSCOPED: no other caller, in the project manager report' })],
   ] as const) {
     reset(b)
     if (text !== undefined) setQc(b.w, 'auth-qc', text, SINCE + 1000)
-    expect([label, await foreman($ as never, report())]).toEqual([label, reason])
+    expect([label, await projectManager($ as never, report())]).toEqual([label, reason])
   }
 })
 
@@ -282,7 +282,7 @@ test('s6: a PASS with no head or no patch line is sent back with NO_HEAD_REASON'
   ] as const) {
     reset(b)
     setQc(b.w, 'auth-qc', text, SINCE + 1000)
-    expect([label, await foreman($ as never, report())]).toEqual([label, reason])
+    expect([label, await projectManager($ as never, report())]).toEqual([label, reason])
   }
 })
 
@@ -298,21 +298,21 @@ test('s6: git rev-parse failing (non-zero, throwing, garbage stdout) lets the st
   for (const [label, git] of cases) {
     ctl.git = git as never
     gitCalls.length = 0
-    expect([label, await foreman($ as never, report())]).toEqual([label, undefined])
+    expect([label, await projectManager($ as never, report())]).toEqual([label, undefined])
     expect([label, gitCalls.filter(c => c.argv[1] === 'diff' || c.argv[1] === 'patch-id')]).toEqual([label, []])
   }
 })
 
 test('s6: head equal to the qcd head goes through and runs only rev-parse', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H1, P2) })
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
   expect(gitCalls.length).toBeGreaterThan(0)
   expect(gitCalls.every(c => c.argv[1] === 'rev-parse')).toBe(true)
 })
 
 test('s6: head moved with the same patch id goes through (the PASS survives the rebase)', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P1) })
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
   expect(gitCalls.map(c => c.argv[1])).toEqual(['rev-parse', 'diff', 'patch-id'])
 })
 
@@ -320,7 +320,7 @@ test('s6: head moved with a different patch id is sent back with headMovedReason
   await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
   const moved = fn('headMovedReason')(H1, H2)
   expect(typeof moved).toBe('string')
-  expect(await foreman($ as never, report())).toBe(moved)
+  expect(await projectManager($ as never, report())).toBe(moved)
   expect(moved).toContain(H1)
   expect(moved).toContain(H2)
 })
@@ -338,13 +338,13 @@ test('s6: head moved and the patch-id call failing (non-zero, throwing, garbage,
   const { ctl } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
   for (const [label, git] of cases) {
     ctl.git = git as never
-    expect([label, await foreman($ as never, report())]).toEqual([label, undefined])
+    expect([label, await projectManager($ as never, report())]).toEqual([label, undefined])
   }
 })
 
 test('s6: the git calls have the exact argv, cwd and timeout the ADR fixes, and the diff output is the patch-id stdin', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P1) })
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
   expect(gitCalls.map(c => c.argv)).toEqual([
     ['git', 'rev-parse', '--verify', '--quiet', 'auth-branch^{commit}'],
     ['git', 'diff', '--no-color', '--no-ext-diff', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/', 'def5678...auth-branch'],
@@ -356,7 +356,7 @@ test('s6: the git calls have the exact argv, cwd and timeout the ADR fixes, and 
 
 test('s6: a Branch line wrapped in single backticks reads the same branch and base', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P1) })
-  expect(await foreman($ as never, report({ branch: '`auth-branch` at `abc1234`, based on `def5678`.' }))).toBeUndefined()
+  expect(await projectManager($ as never, report({ branch: '`auth-branch` at `abc1234`, based on `def5678`.' }))).toBeUndefined()
   expect(gitCalls[0]?.argv).toEqual(['git', 'rev-parse', '--verify', '--quiet', 'auth-branch^{commit}'])
   expect(gitCalls[1]?.argv.at(-1)).toBe('def5678...auth-branch')
 })
@@ -366,14 +366,14 @@ test('s6: a Branch line whose branch or base starts with "-" runs no git at all 
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
   for (const branch of ['-evil at abc1234, based on def5678.', 'auth-branch at abc1234, based on -x.', '`--upload-pack=x` at abc1234, based on def5678.']) {
     gitCalls.length = 0
-    expect([branch, await foreman($ as never, report({ branch }))]).toEqual([branch, undefined])
+    expect([branch, await projectManager($ as never, report({ branch }))]).toEqual([branch, undefined])
     expect([branch, gitCalls]).toEqual([branch, []])
   }
 })
 
 test('s6: no readable Branch line means head unknown: the stop goes through, no git run', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
-  expect(await foreman($ as never, report({ branch: 'it is on some branch' }))).toBeUndefined()
+  expect(await projectManager($ as never, report({ branch: 'it is on some branch' }))).toBeUndefined()
   expect(gitCalls).toEqual([])
 })
 
@@ -383,13 +383,13 @@ test('s6: stale qc files (mtime before approvedAt) are ignored: a stale PASS is 
   setPlan(w, 2, 2)
   setQc(w, 'auth-qc', qcText('PASS'), SINCE - 86_400_000)
   await startSession($ as never)
-  expect(await foreman($ as never, report())).toBe(reason)
+  expect(await projectManager($ as never, report())).toBe(reason)
   // a stale PASS under a fresh FAIL is still no PASS; a fresh PASS next to a stale FAIL is a PASS
   setQc(w, 'auth-qc-2', qcText('FAIL'), SINCE + 1000)
-  expect(await foreman($ as never, report())).toBe(reason)
+  expect(await projectManager($ as never, report())).toBe(reason)
   setQc(w, 'auth-qc', qcText('FAIL'), SINCE - 86_400_000)
   setQc(w, 'auth-qc-2', qcText('PASS'), SINCE + 1000)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('s6: the latest this-run qc file rules: a newer FAIL over an older PASS is no PASS, a newer PASS over an older FAIL is one', async ($, on) => {
@@ -399,22 +399,22 @@ test('s6: the latest this-run qc file rules: a newer FAIL over an older PASS is 
   setQc(w, 'auth-qc', qcText('PASS'), SINCE + 1000)
   setQc(w, 'auth-qc-2', qcText('FAIL'), SINCE + 2000)
   await startSession($ as never)
-  expect(await foreman($ as never, report())).toBe(reason)
+  expect(await projectManager($ as never, report())).toBe(reason)
   setQc(w, 'auth-qc', qcText('FAIL'), SINCE + 1000)
   setQc(w, 'auth-qc-2', qcText('PASS'), SINCE + 2000)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('s6: a stress test file is not the latest qc file', async ($, on) => {
   const { w } = await cleanWorld($ as never, on as never)
   w.files.set(`${REPORTS}/auth-stress.md`, 'STRESSTEST: x\nVERDICT: FAIL\n')
   w.mtimes.set(`${REPORTS}/auth-stress.md`, SINCE + 9000)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('s6: the head guard runs only after the examined check: a missing heading is sent back with EXAMINED_REASON and no git runs', async ($, on) => {
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
-  expect(await foreman($ as never, withoutHeadings())).toBe(str('EXAMINED_REASON'))
+  expect(await projectManager($ as never, withoutHeadings())).toBe(str('EXAMINED_REASON'))
   expect(gitCalls).toEqual([])
 })
 
@@ -422,15 +422,15 @@ test('s6: the head guard runs only after the examined check: a missing heading i
 // 3. streak
 // ---------------------------------------------------------------------------------------------
 
-test('streak: examined send-backs share the streak: FOREMAN_STOP_BLOCKS in a row, then the next stop goes through', async ($, on) => {
+test('streak: examined send-backs share the streak: PROJECT_MANAGER_STOP_BLOCKS in a row, then the next stop goes through', async ($, on) => {
   const { w } = await cleanWorld($ as never, on as never)
-  expect(R.FOREMAN_STOP_BLOCKS).toBe(2)
+  expect(R.PROJECT_MANAGER_STOP_BLOCKS).toBe(2)
   const reason = str('EXAMINED_REASON')
-  expect(await foreman($ as never, withoutHeadings(), false)).toBe(reason)
-  expect(await foreman($ as never, withoutHeadings(), true)).toBe(reason)
-  expect(await foreman($ as never, withoutHeadings(), true)).toBeUndefined()
+  expect(await projectManager($ as never, withoutHeadings(), false)).toBe(reason)
+  expect(await projectManager($ as never, withoutHeadings(), true)).toBe(reason)
+  expect(await projectManager($ as never, withoutHeadings(), true)).toBeUndefined()
   // a fresh streak (stop_hook_active false) blocks again
-  expect(await foreman($ as never, withoutHeadings(), false)).toBe(reason)
+  expect(await projectManager($ as never, withoutHeadings(), false)).toBe(reason)
   expect(w.files.size).toBeGreaterThan(0)
 })
 
@@ -439,24 +439,24 @@ test('streak: no-PASS send-backs count the same way', async ($, on) => {
   const a = build($ as never, on as never, { git: gitAt(H1, P1) })
   setPlan(a.w, 2, 2)
   await startSession($ as never)
-  expect(await foreman($ as never, report(), false)).toBe(noPass)
-  expect(await foreman($ as never, report(), true)).toBe(noPass)
-  expect(await foreman($ as never, report(), true)).toBeUndefined()
+  expect(await projectManager($ as never, report(), false)).toBe(noPass)
+  expect(await projectManager($ as never, report(), true)).toBe(noPass)
+  expect(await projectManager($ as never, report(), true)).toBeUndefined()
 })
 
 test('streak: a moved-head send-back counts the same way', async ($, on) => {
   await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
   const moved = fn('headMovedReason')(H1, H2)
-  expect(await foreman($ as never, report(), false)).toBe(moved)
-  expect(await foreman($ as never, report(), true)).toBe(moved)
-  expect(await foreman($ as never, report(), true)).toBeUndefined()
+  expect(await projectManager($ as never, report(), false)).toBe(moved)
+  expect(await projectManager($ as never, report(), true)).toBe(moved)
+  expect(await projectManager($ as never, report(), true)).toBeUndefined()
 })
 
-test('streak: FOREMAN_STOP_REASON and the new send-backs share one count', async ($, on) => {
+test('streak: PROJECT_MANAGER_STOP_REASON and the new send-backs share one count', async ($, on) => {
   await cleanWorld($ as never, on as never)
-  expect(await foreman($ as never, 'chatter', false)).toBe(R.FOREMAN_STOP_REASON)
-  expect(await foreman($ as never, withoutHeadings(), true)).toBe(str('EXAMINED_REASON'))
-  expect(await foreman($ as never, withoutHeadings(), true)).toBeUndefined()
+  expect(await projectManager($ as never, 'chatter', false)).toBe(R.PROJECT_MANAGER_STOP_REASON)
+  expect(await projectManager($ as never, withoutHeadings(), true)).toBe(str('EXAMINED_REASON'))
+  expect(await projectManager($ as never, withoutHeadings(), true)).toBeUndefined()
 })
 
 // ---------------------------------------------------------------------------------------------
@@ -470,7 +470,7 @@ test('fail open: listing the qc folder throws -> the stop goes through', async (
   // a non-qc file makes the folder exist, so the list call is made and throws
   w.files.set(`${REPORTS}/notes.txt`, 'x')
   await startSession($ as never)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('s6: a v2 plan with no reports/<crew> folder at all has no qc file: NO_PASS_REASON', async ($, on) => {
@@ -478,7 +478,7 @@ test('s6: a v2 plan with no reports/<crew> folder at all has no qc file: NO_PASS
   setPlan(w, 2, 2)
   await startSession($ as never)
   expect([...w.files.keys()].some(k => k.includes('/reports/auth/'))).toBe(false)
-  expect(await foreman($ as never, report())).toBe(str('NO_PASS_REASON'))
+  expect(await projectManager($ as never, report())).toBe(str('NO_PASS_REASON'))
 })
 
 test('fail open: reading the qc file throws -> the stop goes through', async ($, on) => {
@@ -487,14 +487,14 @@ test('fail open: reading the qc file throws -> the stop goes through', async ($,
   setPlan(w, 2, 2)
   setQc(w, 'auth-qc', qcText('FAIL'), SINCE + 1000)
   await startSession($ as never)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })
 
 test('fail open: an unreadable plan.json means the 0.4.3 gate: the report without headings goes through', async ($, on) => {
   const { w, gitCalls } = build($ as never, on as never, { readThrowsFor: '/plan.json' })
   setPlan(w, 2, 2)
   await startSession($ as never)
-  expect(await foreman($ as never, withoutHeadings())).toBeUndefined()
+  expect(await projectManager($ as never, withoutHeadings())).toBeUndefined()
   expect(gitCalls).toEqual([])
 })
 
@@ -503,7 +503,7 @@ test('fail open: a v1 plan never runs the head guard git calls, even with a move
   setPlan(w, 1, undefined)
   setQc(w, 'auth-qc', qcText('PASS'), SINCE + 1000)
   await startSession($ as never)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
   expect(gitCalls.some(c => c.argv.includes('--verify'))).toBe(false)
   expect(gitCalls).toEqual([])
 })
@@ -514,7 +514,7 @@ test('fail open: a v1 plan never runs the head guard git calls, even with a move
 
 const savedWith = (w: W, marker: string) => [...w.files.entries()].some(([k, v]) => k.includes('/reports/') && v.includes(marker))
 
-test('hand-back: a foreman hand-back without the headings on a v2 plan is not saved as the report; with them it is; git is not run', async ($, on) => {
+test('hand-back: a project manager hand-back without the headings on a v2 plan is not saved as the report; with them it is; git is not run', async ($, on) => {
   const { w, gitCalls } = build($ as never, on as never, { git: gitAt(H2, P2) })
   setPlan(w, 2, 2)
   await startSession($ as never)
@@ -529,7 +529,7 @@ test('hand-back: a foreman hand-back without the headings on a v2 plan is not sa
   expect(gitCalls).toEqual([])
 })
 
-test('hand-back: a tagged foreman hand-back is saved on a v2 plan', async ($, on) => {
+test('hand-back: a tagged project manager hand-back is saved on a v2 plan', async ($, on) => {
   const a = build($ as never, on as never)
   setPlan(a.w, 2, 2)
   await startSession($ as never)
@@ -619,12 +619,12 @@ test('s5: a PASS saved beside stress test FAIL files is no spend', async ($, on)
   expect(allowanceLines(w)).toEqual([])
 })
 
-test('s5: a successor foreman <crew>-2 has its own folder and its own count', async ($, on) => {
+test('s5: a successor project manager <crew>-2 has its own folder and its own count', async ($, on) => {
   const { w } = build($ as never, on as never)
   setPlan(w, 2, 1, [
     { slug: 'auth', stage: 0, verdict: 'change', status: 'running' },
   ])
-  w.agents.push(agent('L3', R.FOREMAN_TYPE, 'auth-2'), agent('A3', 'kit:builder', 'auth-2-builder', 'L3'))
+  w.agents.push(agent('L3', R.PROJECT_MANAGER_TYPE, 'auth-2'), agent('A3', 'kit:builder', 'auth-2-builder', 'L3'))
   qcAgent(w, 'J3', 'auth-2-qc', 'L3')
   // crew auth has spent its allowance of 1 (two FAILs)
   setQc(w, 'auth-qc', 'VERDICT: FAIL\nx', SINCE + 1)
@@ -740,7 +740,7 @@ test('s7: with an unparseable plan.json a truss:* main call with no model goes t
   expect((await mainCall(c.w, {})).deny).toBeUndefined()
 })
 
-test('s7: the main rule runs before the plan gates: a truss:foreman call with no model whose stage gate would also refuse gets MAIN_MODEL_REFUSAL', async ($, on) => {
+test('s7: the main rule runs before the plan gates: a truss:project-manager call with no model whose stage gate would also refuse gets MAIN_MODEL_REFUSAL', async ($, on) => {
   const { w } = build($ as never, on as never)
   setPlan(w, 2, 2, [
     { slug: 'billing-x', stage: 0, verdict: 'change', status: 'running' },
@@ -748,10 +748,10 @@ test('s7: the main rule runs before the plan gates: a truss:foreman call with no
   ])
   await startSession($ as never)
   const model = str('MAIN_MODEL_REFUSAL')
-  const foreman1 = (extra: Record<string, unknown>) => w.agentCall(undefined, { subagent_type: R.FOREMAN_TYPE, name: 'ship', ...extra })
-  expect((await foreman1({})).deny).toBe(model)
+  const projectManager1 = (extra: Record<string, unknown>) => w.agentCall(undefined, { subagent_type: R.PROJECT_MANAGER_TYPE, name: 'ship', ...extra })
+  expect((await projectManager1({})).deny).toBe(model)
   // control: with model and effort set, the stage gate is what refuses
-  expect(String((await foreman1({ model: 'opus', effort: 'medium' })).deny)).toContain("stage 0 isn't merged yet")
+  expect(String((await projectManager1({ model: 'opus', effort: 'medium' })).deny)).toContain("stage 0 isn't merged yet")
 })
 
 // ---------------------------------------------------------------------------------------------
@@ -769,16 +769,16 @@ test('logs: each refusal and send-back adds a [truss]/truss: line naming the rul
   str('EXAMINED_REASON')
 
   let before = w.logs.length
-  await foreman($ as never, withoutHeadings())
+  await projectManager($ as never, withoutHeadings())
   expect(named(newLogs(w, before), /examin/i)).toBe(true)
 
   before = w.logs.length
-  await foreman($ as never, report())
+  await projectManager($ as never, report())
   expect(named(newLogs(w, before), /qc|pass/i)).toBe(true)
 
   setQc(w, 'auth-qc', qcText('PASS'), SINCE + 1000)
   before = w.logs.length
-  await foreman($ as never, report())
+  await projectManager($ as never, report())
   expect(named(newLogs(w, before), /head/i)).toBe(true)
 
   // allowance 0 and a PASS on disk: not spent; spend it, then refuse
@@ -794,7 +794,7 @@ test('logs: each refusal and send-back adds a [truss]/truss: line naming the rul
   expect((await mainCall(w, { model: 'opus' })).deny).toBe(str('MAIN_EFFORT_REFUSAL'))
   expect(named(newLogs(w, before), /effort|main/i)).toBe(true)
 
-  // a foreman hand-back that is sent back, and a qc FAIL report that spends the allowance
+  // a project manager hand-back that is sent back, and a qc FAIL report that spends the allowance
   await handBack($ as never, 'L1', report({ extra: [] }))
   await handBack($ as never, 'J9', FAIL_BODY)
   await settle()
@@ -813,7 +813,7 @@ test('regression A: a held-back v2 hand-back is saved when the stop goes through
   await settle()
   expect(savedWith(w, 'HB-HELD')).toBe(false)
   wopts.listFails = true
-  expect(await foreman($ as never, 'sign-off, no report here')).toBeUndefined()
+  expect(await projectManager($ as never, 'sign-off, no report here')).toBeUndefined()
   await settle()
   expect(savedWith(w, 'HB-HELD')).toBe(true)
 })
@@ -828,7 +828,7 @@ test('regression B: a Branch name git would read as a revision expression runs n
   const bad: string[] = []
   for (const branch of lines) {
     gitCalls.length = 0
-    const block = await foreman($ as never, report({ branch }))
+    const block = await projectManager($ as never, report({ branch }))
     if (block !== undefined || gitCalls.length > 0) bad.push(branch)
   }
   // every offending Branch line is listed, not just the first
@@ -838,18 +838,18 @@ test('regression B: a Branch name git would read as a revision expression runs n
 test('regression B control: a normal branch whose name contains "head" still runs git and gets HEAD_MOVED when the patch differs', async ($, on) => {
   str('NO_HEAD_REASON')
   const { gitCalls } = await cleanWorld($ as never, on as never, { git: gitAt(H2, P2) })
-  const block = await foreman($ as never, report({ branch: 'feature/head-guard at abc1234, based on def5678.' }))
+  const block = await projectManager($ as never, report({ branch: 'feature/head-guard at abc1234, based on def5678.' }))
   expect(block).toBe(fn('headMovedReason')(H1, H2))
   expect(gitCalls[0]?.argv).toEqual(['git', 'rev-parse', '--verify', '--quiet', 'feature/head-guard^{commit}'])
 })
 
-test('regression C: a hung read of the qc file does not hold a foreman stop past the 2000 ms bound', async ($, on) => {
+test('regression C: a hung read of the qc file does not hold a project manager stop past the 2000 ms bound', async ($, on) => {
   str('NO_PASS_REASON')
   const { w } = await cleanWorld($ as never, on as never)
   w.holds.set(qcPath('auth-qc'), new Promise(() => {}))
   let done = false
   let block: string | undefined = 'pending'
-  void foreman($ as never, report()).then(b => {
+  void projectManager($ as never, report()).then(b => {
     block = b
     done = true
   })
@@ -915,9 +915,9 @@ test('regression D: a qc file saved as AUTH-QC.md is read by the head guard (cas
   await startSession($ as never)
   // a FAIL under the upper-case name: sent back
   setQc(b.w, 'AUTH-QC', qcText('FAIL'), SINCE + 1000)
-  expect(await foreman($ as never, report())).toBe(reason)
+  expect(await projectManager($ as never, report())).toBe(reason)
   // control: a clean PASS under the same name, head equal to git's head: through
   reset(b)
   setQc(b.w, 'AUTH-QC', qcText('PASS'), SINCE + 1000)
-  expect(await foreman($ as never, report())).toBeUndefined()
+  expect(await projectManager($ as never, report())).toBeUndefined()
 })

@@ -1,6 +1,6 @@
 # ADR-0011: local web UI for Truss runs
 
-Status: proposed, 2026-10-30. Written by the design crew `ui-design` (stage 0 of the UI run). It becomes accepted when the PM merges this crew.
+Status: proposed, 2026-10-30. Written by the design crew `ui-design` (stage 0 of the UI run). It becomes accepted when the program manager (PM) merges this crew.
 
 Superseded in part by [ADR-0018](0018-ui-redesign.md) (proposed 2026-11-02): its web-client parts only, that is Decision 1's ui-web row (no bundler, no build step) and Decision 7's no-bundler import of `marked`. The client source moves to `ui/app/`, and `ui/web/` becomes the untracked output of `npm --prefix ui run build`. The server contract in Decisions 5 and 6 is unchanged.
 
@@ -26,7 +26,7 @@ The spike is `ui/spike/run.ts`. It ran one real SDK session in a fresh temp git 
 
 ### 1. Does the session load Truss, and can the UI find the Truss dir?
 
-**Truss loads.** Every `system`/`init` message (lines 3, 51, 60, 80) lists the plugin `{"name":"truss","source":"truss@inline","version":"0.12.0"}` with the repo path. It lists the skills `truss:truss-plan`, `truss:truss-stage`, `truss:brief`, `truss:init`, `truss:principles`, `truss:retro` and `truss:run`, and the agents `truss:checking-engineer`, `truss:commissioning-engineer`, `truss:design-engineer`, `truss:foreman`, `truss:planning-engineer`, `truss:qc-engineer` and `truss:writer`. `slash_commands` ends with `truss`. That is the `/truss` command the hooks module registers in `session.start` (`hooks/register.ts:2122-2125`), so the hooks module loaded too. That last step is inferred from the command's name, not seen directly.
+**Truss loads.** Every `system`/`init` message (lines 3, 51, 60, 80) lists the plugin `{"name":"truss","source":"truss@inline","version":"0.12.0"}` with the repo path. It lists the skills `truss:truss-plan`, `truss:truss-stage`, `truss:brief`, `truss:init`, `truss:principles`, `truss:retro` and `truss:run`, and the agents `truss:checking-engineer`, `truss:commissioning-engineer`, `truss:design-engineer`, `truss:project-manager`, `truss:planning-engineer`, `truss:qc-engineer` and `truss:writer`. `slash_commands` ends with `truss`. That is the `/truss` command the hooks module registers in `session.start` (`hooks/register.ts:2122-2125`), so the hooks module loaded too. That last step is inferred from the command's name, not seen directly.
 
 **The `[truss] dir:` note does not appear in the stream.** No line contains `[truss] dir:` or `additionalContext`. That is expected: the note is context added to the model's prompt, not an SDK message. Whether the note reached the model's context under the SDK host is **not confirmed** either way. It matters, because the PM is told not to work out the Truss dir itself (`skills/run/SKILL.md:24`). `ui/contract/live.check.ts` and the client's R-21 run must show that a run under the UI finds its dir.
 
@@ -52,7 +52,7 @@ Not tried in the spike, taken from the SDK docs (fetched, see below): a `multiSe
 
 **`canUseTool` for a subagent: not confirmed.** The subagent's one tool call (`ls -la /tmp/truss-spike-pkZDEP`, line 72) needed no prompt, so no `canUseTool` call came from it. The SDK docs say `AskUserQuestion` isn't available in subagents.
 
-**Workflow-engine crews and `truss:foreman` agents: not tried.** No Workflow run and no foreman ran in the spike.
+**Workflow-engine crews and `truss:project-manager` agents: not tried.** No Workflow run and no project manager ran in the spike.
 
 **What the design does with that.** Crew status comes from the files only: `plan.json`, the event and message logs, `reports/`, `decisions.md` (Decision 4). The UI uses no hook for status. The session keeps one `PreToolUse` hook that does nothing (Decision 2), and shows the `background_tasks_changed` list in the header.
 
@@ -179,7 +179,7 @@ Every prompt the client answers is a **request**: an id (`crypto.randomUUID()`),
 **Reduce.**
 
 - **Crews.** The `plan.json` crews, then crews named only in event lines, in order of first appearance. Crew `main` is never a crew.
-- **Foreman and members.** The foreman is the agent whose name equals the crew slug. Members are the other agents the crew's event lines name. Each member line shows type, model and effort from its latest spawn, and a state from its latest event: `spawned`, `stalled`, `tagged`, `reported`, `allowance-spent` or `fetched`.
+- **Project manager and members.** The project manager is the agent whose name equals the crew slug. Members are the other agents the crew's event lines name. Each member line shows type, model and effort from its latest spawn, and a state from its latest event: `spawned`, `stalled`, `tagged`, `reported`, `allowance-spent` or `fetched`.
 - **Latest activity.** One line per crew, from the newest event or message by `ts`, in the words the schema's `activity.text` gives (for example `auth-builder stalled 15 min`). A message line belongs to the crew of its `from` agent, else of its `to` agent.
 - **QC verdict.** The crew's newest QC file under `reports/<crew>/`, by the hooks' own rule. Only `<crew>-qc.md` and `<crew>-qc-<k>.md` count (`isQcFile`, `hooks/register.ts:772-777`). That leaves out `auth-qc-2.interim.md`. The newest by mtime wins, and on a tie the higher k (`latestQc`, `:513-520`), without the run filter. The verdict is `PASS` or `FAIL` from a first non-empty line `VERDICT: <v>`.
 - **Decisions, ADRs and design.** As `decisions`, `adrs` and `design` in the schema.
@@ -238,7 +238,7 @@ A POST body must be `application/json` (else `415`), at most 1 MiB (else `413`),
 - On each crew branch `truss-<slug>` that exists: `git diff --diff-filter=A --name-only <target>...truss-<slug>`.
 - Only `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` and `.svg` count.
 
-`truss-<slug>` is the branch name on the Workflow path (`bin/factory.ts:541`). TODO: the branch name of a foreman-path crew isn't fixed in the code; until it is, those crews' images show only once merged into the target.
+`truss-<slug>` is the branch name on the Workflow path (`bin/factory.ts:541`). TODO: the branch name of a project-manager-path crew isn't fixed in the code; until it is, those crews' images show only once merged into the target.
 
 ### 8. `ui/server/main.ts`
 
@@ -335,10 +335,10 @@ ui-server takes `state` and `session` as interfaces. So `http.check.ts` passes i
 ## Not confirmed
 
 - That the `[truss] dir:` note reaches the PM's context when the SDK hosts the session (Spike, question 1). The run skill depends on it.
-- That `canUseTool` fires for a subagent's tool call that needs a prompt, and that hooks fire inside Workflow-engine crews and `truss:foreman` agents (Spike, question 3). The design reads status from files, so neither blocks it.
+- That `canUseTool` fires for a subagent's tool call that needs a prompt, and that hooks fire inside Workflow-engine crews and `truss:project-manager` agents (Spike, question 3). The design reads status from files, so neither blocks it.
 - `multiSelect`, free-text and deny answers to `AskUserQuestion`. They come from the SDK docs; the spike tried single-select allow only.
 - Sending a message while a turn runs. The design queues it instead.
-- TODO: the branch name of a foreman-path crew, for its images (Decision 7).
+- TODO: the branch name of a project-manager-path crew, for its images (Decision 7).
 
 ## Fetched
 

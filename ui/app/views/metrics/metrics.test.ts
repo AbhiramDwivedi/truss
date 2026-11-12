@@ -106,7 +106,7 @@ const LAST_TS = Date.parse('2026-11-02T11:59:00.000Z')
 const realData = () => fx('real-data')
 const hosted = (s: any, status = 'running') => ({ ...s, session: { ...s.session, sessionId: 'sess-1', status } })
 
-test('runTimeMs: empty transcript starts at the first decisions[].run heading and ends at the latest foreman or member ts when no session is hosted', async () => {
+test('runTimeMs: empty transcript starts at the first decisions[].run heading and ends at the latest project manager or member ts when no session is hosted', async () => {
   const { runTimeMs } = await fmt()
   const s = realData()
   assert.equal(s.session.sessionId, null)
@@ -115,7 +115,7 @@ test('runTimeMs: empty transcript starts at the first decisions[].run heading an
   assert.equal(runTimeMs(s, NOW + 600 * MIN), LAST_TS - RUN_START, 'ignores now when not hosted')
 })
 
-test('runTimeMs: the latest ts counts members as well as foremen', async () => {
+test('runTimeMs: the latest ts counts members as well as project managers', async () => {
   const { runTimeMs } = await fmt()
   const s = realData()
   s.run.crews[1].members[0].ts = '2026-11-02T11:59:30.000Z'
@@ -141,7 +141,7 @@ test('runTimeMs: a malformed run heading gives null, never NaN', async () => {
 test('runTimeMs: no parseable ts anywhere ends at the start (0m)', async () => {
   const { runTimeMs } = await fmt()
   const s = realData()
-  for (const c of s.run.crews) { c.foreman.ts = 'nope'; for (const m of c.members) m.ts = null }
+  for (const c of s.run.crews) { c.projectManager.ts = 'nope'; for (const m of c.members) m.ts = null }
   assert.equal(runTimeMs(s, NOW), 0)
 })
 
@@ -400,7 +400,7 @@ test('TokensTable: no models says "No tokens used yet."', async () => {
 const twoGoals = () => {
   const s = fx('live')
   const first = s.run.crews.map((c: any) => ({ ...c, goal: null }))
-  const mk = (slug: string, ts: string) => ({ ...s.run.crews[0], slug, goal: 'g2', status: 'merged', stage: 0, foreman: { ...s.run.crews[0].foreman, ts }, members: [{ ...s.run.crews[0].foreman, name: slug + '-m', ts, state: 'reported' }], latest: { ts, agent: slug, event: 'report', text: 'done' } })
+  const mk = (slug: string, ts: string) => ({ ...s.run.crews[0], slug, goal: 'g2', status: 'merged', stage: 0, projectManager: { ...s.run.crews[0].projectManager, ts }, members: [{ ...s.run.crews[0].projectManager, name: slug + '-m', ts, state: 'reported' }], latest: { ts, agent: slug, event: 'report', text: 'done' } })
   s.run.crews = [...first, mk('g2-a', '2026-11-02T11:40:00.000Z'), mk('g2-b', '2026-11-02T11:50:00.000Z')]
   s.run.goals = [
     { id: 'run', goal: 'First', approval: 'auto', approvedAt: '2026-10-30T10:00:00.000Z' },

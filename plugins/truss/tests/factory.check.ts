@@ -331,7 +331,7 @@ test('plan-check: a good plan is ok and lists crews with acceptanceTestProved fa
   assert.equal(res.status, 0)
   assert.deepEqual(json.unproved, ['beta', 'gamma'])
   assert.equal(json.ok, true)
-  // ADR-0042: stage 2 has no Why line in plan.md, so a warning; with the line, no warnings key
+  // ADR-0044: stage 2 has no Why line in plan.md, so a warning; with the line, no warnings key
   assert.equal(json.warnings.length, 1)
   writeFileSync(`${env.dir}/plan.md`, '# Plan\n\nWhy stage 2: gamma needs alpha\'s merged parser\n')
   assert.deepEqual(assertOneLine(env.run('plan-check', { repo: null })), { ok: true, unproved: ['beta', 'gamma'] })
@@ -349,7 +349,7 @@ test('plan-check: version must be 2', () => {
   assert.ok(json.errors.length >= 1)
 })
 
-test('plan-check: approval no longer follows stage 0 (ADR-0042); it must be auto or client', () => {
+test('plan-check: approval no longer follows stage 0 (ADR-0044); it must be auto or client', () => {
   const clientNoStage0 = checkPlan(planObj([crew('alpha')], { approval: 'client', approvedAt: null }))
   assert.equal(clientNoStage0.res.status, 0, clientNoStage0.res.stdout)
   assert.equal(clientNoStage0.json.ok, true)
@@ -386,24 +386,13 @@ test('plan-check: on an unapproved plan every crew status must be planned', () =
   assert.equal(approved.res.status, 0)
 })
 
-test('plan-check: two crews of one stage owning a common path are refused (equal globs, prefix of the literal part)', () => {
-  const equal = checkPlan(planObj([crew('alpha', { owns: ['src/x/**'] }), crew('beta', { owns: ['src/x/**'] })]))
-  assert.equal(equal.res.status, 1)
-  assert.ok(equal.json.errors.some((e) => /^(alpha|beta): /.test(e)))
-
-  const prefix = checkPlan(planObj([crew('alpha', { owns: ['src/x/**'] }), crew('beta', { owns: ['src/x/y/z.ts'] })]))
-  assert.equal(prefix.res.status, 1)
-  assert.ok(prefix.json.errors.length >= 1)
-
-  // the literal part before the first * is a prefix of the other's: "src/a" is a prefix of "src/ab/"
-  const star = checkPlan(planObj([crew('alpha', { owns: ['src/a*'] }), crew('beta', { owns: ['src/ab/**'] })]))
-  assert.equal(star.res.status, 1)
-
-  const qmark = checkPlan(planObj([crew('alpha', { owns: ['src/a?/**'] }), crew('beta', { owns: ['src/ab/c.ts'] })]))
-  assert.equal(qmark.res.status, 1)
-
-  const bracket = checkPlan(planObj([crew('alpha', { owns: ['src/[ab]/**'] }), crew('beta', { owns: ['src/'] })]))
-  assert.equal(bracket.res.status, 1)
+// ADR-0043: crews may share files, so two crews of one stage owning a common path pass (equal globs, prefix of the literal part).
+test('plan-check: two crews of one stage owning a common path pass (equal globs, prefix of the literal part)', () => {
+  for (const [a, b] of [['src/x/**', 'src/x/**'], ['src/x/**', 'src/x/y/z.ts'], ['src/a*', 'src/ab/**'], ['src/a?/**', 'src/ab/c.ts'], ['src/[ab]/**', 'src/']]) {
+    const r = checkPlan(planObj([crew('alpha', { owns: [a] }), crew('beta', { owns: [b] })]))
+    assert.equal(r.res.status, 0, `${a} and ${b}: ${r.res.stdout}`)
+    assert.equal(r.json.ok, true)
+  }
 })
 
 test('plan-check: disjoint globs in one stage, and equal globs in different stages, pass', () => {
@@ -455,7 +444,7 @@ test('approve: sets approvedAt to an ISO Z time, prints it, appends the decision
 
 test('approve --by auto names auto and the settings source in the decision line', () => {
   const env = mkEnv()
-  // an auto plan: since ADR-0042 approve --by auto refuses a plan whose approval is client
+  // an auto plan: since ADR-0044 approve --by auto refuses a plan whose approval is client
   writePlan(env.dir, planObj([crew('alpha')], { approval: 'auto', approvedAt: null }))
   writeFileSync(`${env.dir}/decisions.md`, '## Run 2026-10-29T19:42:11Z | test goal\n- 15:42 | earlier decision | why | none | followed\n')
   const res = env.run('approve', { by: 'auto' })
@@ -840,7 +829,7 @@ test('roles.json: passes the real workflowRoleVerdict', () => {
   assert.equal(workflowRoleVerdict(rolesJson()), undefined)
 })
 
-test('roles.json: matches the Decision 2 table exactly, no foreman, commissioning or integrator', () => {
+test('roles.json: matches the Decision 2 table exactly, no project manager, commissioning or integrator', () => {
   const roles = rolesJson()
   assert.deepEqual(Object.keys(roles).sort(), Object.keys(TABLE).sort())
   for (const [key, [agentType, model, effort, isolation]] of Object.entries(TABLE)) {
@@ -850,11 +839,11 @@ test('roles.json: matches the Decision 2 table exactly, no foreman, commissionin
     assert.equal(r.effort, effort, `${key}.effort`)
     assert.equal(r.isolation, isolation, `${key}.isolation`)
   }
-  for (const banned of ['foreman', 'commissioning', 'integrator']) assert.ok(!(banned in roles))
-  for (const r of Object.values(roles)) assert.ok(!['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator'].includes(r.agentType))
+  for (const banned of ['project-manager', 'commissioning', 'integrator']) assert.ok(!(banned in roles))
+  for (const r of Object.values(roles)) assert.ok(!['truss:project-manager', 'truss:commissioning-engineer', 'truss:integrator'].includes(r.agentType))
 })
 
-test('roles.json: the foreman\'s shape - typeFromProject on tester and builder, "builder" on resolver, nowhere else', () => {
+test('roles.json: the project manager\'s shape - typeFromProject on tester and builder, "builder" on resolver, nowhere else', () => {
   const roles = rolesJson()
   assert.equal(roles.tester.typeFromProject, true)
   assert.equal(roles.builder.typeFromProject, true)
@@ -1003,7 +992,7 @@ test('schema: the existing event kinds still validate', () => {
     { v: 1, ts: TS, event: 'allowance-spent', crew: 's', agent: 's-qc-3' },
     { v: 1, ts: TS, event: 'fetch', crew: 's', agent: 's-x', tool: 'WebFetch', url: 'https://example.com/a' },
     { v: 1, ts: TS, event: 'fetch', crew: 'main', agent: 'main', tool: 'WebSearch', query: 'truss' },
-    { v: 1, ts: TS, event: 'spawn', crew: 's', agent: 's', agentId: 'a1', type: 'truss:foreman', model: 'opus', effort: 'medium', by: 'main' },
+    { v: 1, ts: TS, event: 'spawn', crew: 's', agent: 's', agentId: 'a1', type: 'truss:project-manager', model: 'opus', effort: 'medium', by: 'main' },
   ]
   for (const l of lines) assert.deepEqual(validateEvent(l), [], JSON.stringify(l))
 })
@@ -1034,7 +1023,7 @@ test('schema: every line start appends validates (the factory spawn line)', () =
 // ---------------------------------------------------------------------------------------------------------------
 // finish in single merge mode
 
-test('finish: merge single exits 2 with exactly {"error":"single merge mode runs on the foreman path"}', () => {
+test('finish: merge single exits 2 with exactly {"error":"single merge mode runs on the project manager path"}', () => {
   const env = mkEnv({ config: { merge: 'single' } })
   writePlan(env.dir, planObj([crew('s', { status: 'running' })]))
   const { dir: t } = mkRun(env.transcripts, 'wf_one', [])
@@ -1043,7 +1032,7 @@ test('finish: merge single exits 2 with exactly {"error":"single merge mode runs
   for (const extra of [{ result }, {}]) {
     const res = env.run('finish', { transcript: t, ...extra })
     assert.equal(res.status, 2)
-    assert.equal(res.stdout, '{"error":"single merge mode runs on the foreman path"}\n')
+    assert.equal(res.stdout, '{"error":"single merge mode runs on the project manager path"}\n')
   }
 })
 
@@ -1114,15 +1103,14 @@ test('plan-check: v3 owns overlap is checked per goal, not across goals sharing 
   assert.equal(r.json.ok, true, JSON.stringify(r.json.errors))
 })
 
-test('plan-check: v3 owns overlap between two crews of the same goal and stage is still refused', () => {
+test('plan-check: v3 owns overlap between two crews of the same goal and stage passes (ADR-0043)', () => {
   const plan = planObj(
     [crew('a', { goal: 'gtwo', owns: ['bin/x.ts'] }), crew('fix', { goal: 'gtwo', owns: ['bin/x.ts'] })],
     { version: 3, goals: [goalsEntry('gtwo')] },
   )
   const r = checkPlan(plan)
-  assert.equal(r.res.status, 1)
-  assert.equal(r.json.ok, false)
-  assert.ok(r.json.errors.some((e) => /overlaps/.test(e)), JSON.stringify(r.json.errors))
+  assert.equal(r.res.status, 0, r.res.stdout + r.res.stderr)
+  assert.equal(r.json.ok, true, JSON.stringify(r.json.errors))
 })
 
 test('start --stage next: a client goal\'s crew is not started before approval and is started after; the run crew starts meanwhile', () => {

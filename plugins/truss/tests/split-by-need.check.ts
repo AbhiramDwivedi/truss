@@ -1,5 +1,5 @@
 // @ts-nocheck
-// ADR-0042 (split by need), R-82 and R-83: plan-check no longer ties approval or a full process to stage 0, accepts and checks the
+// ADR-0044 (split by need), R-82 and R-83: plan-check no longer ties approval or a full process to stage 0, accepts and checks the
 // optional goalCheck, and warns (never refuses) on a later stage with no `Why stage <n>:` line. Real factory CLI on temp truss dirs.
 
 import assert from 'node:assert/strict'
@@ -66,16 +66,15 @@ test(P + 'plan-check checks goalCheck: a non-empty string when present, top-leve
 })
 
 test(P + 'plan-check warns, never refuses, on a later stage with no Why stage line', () => {
-  // stage 2 owns nothing of stage 1 and has no after: the warning says to merge it into stage 1
+  // stage 2 has no Why line: the warning asks for one or says to merge it into stage 1
   const loose = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n')
   accepted(loose)
   assert.equal(loose.json.warnings.length, 1, say(loose))
-  assert.match(loose.json.warnings[0], /^stage 2: no "Why stage 2:" line in plan\.md, and no crew of it owns a path of an earlier stage or has an after; merge it into stage 1/)
-  // a stage linked by owns overlap still needs its Why line, with the other hint
-  const linked = planCheck(planObj([crew('alpha', { stage: 1, owns: ['src/x/**'] }), crew('gamma', { stage: 2, owns: ['src/x/y.ts'] })]))
-  accepted(linked)
-  assert.equal(linked.json.warnings.length, 1, say(linked))
-  assert.match(linked.json.warnings[0], /^stage 2: no "Why stage 2:" line in plan\.md; say which crew needs/)
+  assert.match(loose.json.warnings[0], /^stage 2: no "Why stage 2:" line in plan\.md; say which crew needs which earlier crew's merged work, or merge it into stage 1$/)
+  // no plan.md at all: the same warning, still not a refusal
+  const none = planCheck(planObj([crew('alpha', { stage: 1, owns: ['src/x/**'] }), crew('gamma', { stage: 2, owns: ['src/x/y.ts'] })]))
+  accepted(none)
+  assert.equal(none.json.warnings.length, 1, say(none))
   // the Why line clears it
   const why = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n- Why stage 2: gamma needs alpha\'s merged parser\n')
   accepted(why)

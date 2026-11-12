@@ -60,13 +60,15 @@ test('f12 2b: start records the workflow-crew spawn with a model and an effort',
   assert.equal(typeof ev.effort, 'string')
 })
 
-test('f12 3: plan-check ignores overlap with a merged or dropped crew of the same goal and stage', () => {
+// ADR-0043: crews may share files, so an overlap with a live crew of the same goal and stage passes too.
+test('f12 3: plan-check passes overlap with a merged crew or a live crew of the same goal and stage (ADR-0043)', () => {
   const env = mkEnv({ config: CFG })
   writePlan(env.dir, planObj([crew('old', { owns: ['bin/x.ts'], status: 'merged' }), crew('new', { owns: ['bin/x.ts'] })]))
   const r = runEnv(env, 'plan-check', { repo: null })
   assert.equal(r.status, 0, say(r))
   writePlan(env.dir, planObj([crew('old', { owns: ['bin/x.ts'] }), crew('new', { owns: ['bin/x.ts'] })]))
-  assert.equal(runEnv(env, 'plan-check', { repo: null }).status, 1)
+  const live = runEnv(env, 'plan-check', { repo: null })
+  assert.equal(live.status, 0, say(live))
 })
 
 test('f12 4: start --slug on a running crew is a no-op that says so, exit 0', () => {

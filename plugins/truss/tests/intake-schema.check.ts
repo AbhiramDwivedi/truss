@@ -91,7 +91,7 @@ test('top-level goals: array, minItems 1, closed items with the five required fi
   assert.equal(props.goals.minItems, 1)
   assert.equal(goalItem.additionalProperties, false)
   assert.deepEqual([...(goalItem.required ?? [])].sort(), ['addedAt', 'approval', 'approvedAt', 'goal', 'id'])
-  // goalCheck is optional (ADR-0042), so it is a property but not required
+  // goalCheck is optional (ADR-0044), so it is a property but not required
   assert.deepEqual(Object.keys(goalProps).sort(), ['addedAt', 'approval', 'approvedAt', 'goal', 'goalCheck', 'id'])
 })
 

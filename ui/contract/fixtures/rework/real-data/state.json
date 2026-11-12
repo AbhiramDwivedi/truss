@@ -34,7 +34,7 @@
         "owns": [
           "docs/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "docs-crew",
           "type": "workflow-crew",
           "model": null,
@@ -91,7 +91,7 @@
         "owns": [
           "src/widget/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "build-crew",
           "type": "workflow-crew",
           "model": null,

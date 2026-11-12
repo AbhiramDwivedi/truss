@@ -29,16 +29,16 @@
       "minLength": 1
     },
     "approval": {
-      "description": "Set once, at plan time, by the design engineer's draft, and checked by the PM: \"client\" when a client trigger applies (ADR-0001 section 4), when the plan carries a long-term cost, or when the brief says so; otherwise \"auto\". A stage-0 crew or a design crew alone does not make it \"client\" (adr/0042-split-by-need.md). Mid-run design slices never change it.",
+      "description": "Set once, at plan time, by the design engineer's draft, and checked by the PM: \"client\" when a client trigger applies (ADR-0001 section 4), when the plan carries a long-term cost, or when the brief says so; otherwise \"auto\". A stage-0 crew or a design crew alone does not make it \"client\" (adr/0044-split-by-need.md). Mid-run design slices never change it.",
       "enum": ["auto", "client"]
     },
     "goalCheck": {
-      "description": "Optional, any version. A command that checks the run's first goal as a whole (a whole-tree test, a zero-match search). The program manager runs it after the goal's last merge: in single mode on the integration branch before the integration QC, in sequential mode on the target before any push. A failure starts a fix crew. Absent means the goal has no goal-wide check. See adr/0042-split-by-need.md.",
+      "description": "Optional, any version. A command that checks the run's first goal as a whole (a whole-tree test, a zero-match search). The program manager runs it after the goal's last merge: in single mode on the integration branch before the integration QC, in sequential mode on the target before any push. A failure starts a fix crew. Absent means the goal has no goal-wide check. See adr/0044-split-by-need.md.",
       "type": "string",
       "minLength": 1
     },
     "approvedAt": {
-      "description": "An RFC 3339 date-time with a time-zone offset (JSON Schema format date-time), for example 2026-10-26T14:03:00+01:00 or 2026-10-26T13:03:00Z. A date-time with no offset is invalid. The design engineer's draft sets it: an \"auto\" draft carries the time the design engineer wrote the plan, which the PM overwrites with the time it logged the plan; an \"client\" draft carries null, which the PM replaces with the time the client approved. The allOf rule requires a string when approval is \"auto\". Null only while a run waits for the client; while approval is \"client\" and this is null, the run-level approval gate refuses every foreman in the plan.",
+      "description": "An RFC 3339 date-time with a time-zone offset (JSON Schema format date-time), for example 2026-10-26T14:03:00+01:00 or 2026-10-26T13:03:00Z. A date-time with no offset is invalid. The design engineer's draft sets it: an \"auto\" draft carries the time the design engineer wrote the plan, which the PM overwrites with the time it logged the plan; an \"client\" draft carries null, which the PM replaces with the time the client approved. The allOf rule requires a string when approval is \"auto\". Null only while a run waits for the client; while approval is \"client\" and this is null, the run-level approval gate refuses every project manager in the plan.",
       "type": ["string", "null"],
       "format": "date-time"
     },
@@ -88,7 +88,7 @@
             "format": "date-time"
           },
           "goalCheck": {
-            "description": "Optional. The goal's goal-wide check, as the top-level goalCheck is for the run's first goal (adr/0042-split-by-need.md).",
+            "description": "Optional. The goal's goal-wide check, as the top-level goalCheck is for the run's first goal (adr/0044-split-by-need.md).",
             "type": "string",
             "minLength": 1
           }
@@ -200,7 +200,7 @@
       ],
       "properties": {
         "slug": {
-          "description": "The crew's name, and the name of its truss:foreman: lowercase letters and digits in words joined by single hyphens, never ending in -<digits>. The -<digits> ending is reserved because a successor foreman is named <slug>-<n> and the hooks gate a successor as its base slug. safeName in hooks/register.ts leaves such a name of up to 100 characters unchanged, so report folders match the slug.",
+          "description": "The crew's name, and the name of its truss:project-manager: lowercase letters and digits in words joined by single hyphens, never ending in -<digits>. The -<digits> ending is reserved because a successor project manager is named <slug>-<n> and the hooks gate a successor as its base slug. safeName in hooks/register.ts leaves such a name of up to 100 characters unchanged, so report folders match the slug.",
           "type": "string",
           "maxLength": 100,
           "pattern": "^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -211,12 +211,12 @@
           "pattern": "^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
         "stage": {
-          "description": "The stage the crew runs in. Stages are numbered per goal: an added goal's first stage is its stage 0. A goal's first stage may hold any crew, and each stage merges before the next starts. A later stage exists only when one of its crews needs an earlier crew's merged work, which plan.md states in a `Why stage <n>:` line; plan-check warns on a later stage without one (adr/0042-split-by-need.md). A mid-run design slice goes to the earliest stage that hasn't started yet, and the crews that depend on it move one stage later.",
+          "description": "The stage the crew runs in. Stages are numbered per goal: an added goal's first stage is its stage 0. A goal's first stage may hold any crew, and each stage merges before the next starts. A later stage exists only when one of its crews needs an earlier crew's merged work, which plan.md states in a `Why stage <n>:` line; plan-check warns on a later stage without one (adr/0044-split-by-need.md). A mid-run design slice goes to the earliest stage that hasn't started yet, and the crews that depend on it move one stage later.",
           "type": "integer",
           "minimum": 0
         },
         "verdict": {
-          "description": "What kind of crew this is. \"design\": settles an open design question, writing its ADRs and contract tests, before the crews that build on it (adr/0042-split-by-need.md). \"change\": a build crew whose module's design changes; when the client or an accepted ADR already decided that design, the change crew writes the ADR itself and needs no design crew. \"extend\": a build crew working inside the existing design.",
+          "description": "What kind of crew this is. \"design\": settles an open design question, writing its ADRs and contract tests, before the crews that build on it (adr/0044-split-by-need.md). \"change\": a build crew whose module's design changes; when the client or an accepted ADR already decided that design, the change crew writes the ADR itself and needs no design crew. \"extend\": a build crew working inside the existing design.",
           "enum": ["extend", "change", "design"]
         },
         "modules": {
@@ -227,7 +227,7 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "owns": {
-          "description": "Path globs the crew owns. No two crews may own the same file.",
+          "description": "Path globs the crew may edit: its own edit scope. Two crews may own the same file; they merge one at a time (ADR-0043).",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
@@ -248,7 +248,7 @@
           "minimum": 1
         },
         "clientApproval": {
-          "description": "Optional; mid-run design slices only. The PM sets \"pending\" when the slice must wait for the client (one of the client triggers in ADR-0001 section 4 applies), and \"approved\" when the client answers. While it is \"pending\", the crew-level approval gate refuses this crew's foreman. Absent on every other crew.",
+          "description": "Optional; mid-run design slices only. The PM sets \"pending\" when the slice must wait for the client (one of the client triggers in ADR-0001 section 4 applies), and \"approved\" when the client answers. While it is \"pending\", the crew-level approval gate refuses this crew's project manager. Absent on every other crew.",
           "enum": ["pending", "approved"]
         },
         "status": {

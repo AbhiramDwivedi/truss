@@ -66,9 +66,9 @@
         "owns": [
           "rework-the-network-view-with-agent-cards-and-wires-for-every/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "rework-the-network-view-with-agent-cards-and-wires-for-every",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "spawned",

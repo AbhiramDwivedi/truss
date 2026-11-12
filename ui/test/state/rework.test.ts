@@ -52,7 +52,7 @@ function pluginDir(descriptions: Record<string, string>): string {
 }
 
 const DESCRIPTIONS = {
-  foreman: 'Leads one crew of agents. It splits the goal into tasks and reports at the end.',
+  'project-manager': 'Leads one crew of agents. It splits the goal into tasks and reports at the end.',
   builder: 'Builds the change the brief names. It works in its own worktree.',
   'qc-engineer': 'Rules on one crew’s work against its proof.',
 };
@@ -78,7 +78,7 @@ function boot(pluginPath: string | undefined, rows: unknown[] = SPAWNS) {
     const crew = () => (store.snapshot().state as any).run?.crews?.find((c: any) => c.slug === 'alpha');
     const member = (name: string) => {
       const c = crew();
-      return c?.foreman?.name === name ? c.foreman : c?.members?.find((m: any) => m.name === name);
+      return c?.projectManager?.name === name ? c.projectManager : c?.members?.find((m: any) => m.name === name);
     };
     await until(() => member('alpha-noid') !== undefined && member('alpha') !== undefined, 'the crew members in the snapshot');
     return { store, member, close: () => store.close() };
@@ -105,7 +105,7 @@ test('R-42: Member.purpose is the first sentence of the description line of agen
   } finally { w.close(); }
 });
 
-test('R-42: type workflow-crew and the crew foreman map to the foreman agent file', async () => {
+test('R-42: type workflow-crew and the crew project manager map to the project manager agent file', async () => {
   const w = await boot(pluginDir(DESCRIPTIONS));
   try {
     const norm = (s: unknown) => String(s).replace(/\.$/, '');
@@ -114,8 +114,8 @@ test('R-42: type workflow-crew and the crew foreman map to the foreman agent fil
   } finally { w.close(); }
 });
 
-test('R-42: a foreman spawned with type truss:foreman also gets the foreman purpose', async () => {
-  const w = await boot(pluginDir(DESCRIPTIONS), [spawn('alpha', 'truss:foreman', 'a9999999999999999'), spawn('alpha-noid', 'truss:builder')]);
+test('R-42: a project manager spawned with type truss:project-manager also gets the project manager purpose', async () => {
+  const w = await boot(pluginDir(DESCRIPTIONS), [spawn('alpha', 'truss:project-manager', 'a9999999999999999'), spawn('alpha-noid', 'truss:builder')]);
   try {
     assert.equal(String(w.member('alpha').purpose).replace(/\.$/, ''), 'Leads one crew of agents');
   } finally { w.close(); }

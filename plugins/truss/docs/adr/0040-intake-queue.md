@@ -1,7 +1,7 @@
 # ADR-0040: take work from an intake queue of item snapshots
 
 Status: accepted, 2026-11-10
-Decided by: client, through the wave 2 goal (contract-025 revision 2, section 6); the PM, acting as product owner for the absent client, accepted the plan's client triggers for it on 2026-11-10
+Decided by: client, through the wave 2 goal (contract-025 revision 2, section 6); the program manager (PM), acting as product owner for the absent client, accepted the plan's client triggers for it on 2026-11-10
 
 ## Context
 

@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { expect, mock } from 'claude-code/testing'
 import { test } from './harness'
 
-import { FOREMAN_TYPE, MODEL_REFUSAL, ROLL_BYTES } from '../hooks/register'
+import { PROJECT_MANAGER_TYPE, MODEL_REFUSAL, ROLL_BYTES } from '../hooks/register'
 
 const agent = (id: string, type: string, name?: string, parentId?: string): AgentInfo => ({ id, type, name, parentId, status: 'running', description: id })
 
@@ -33,8 +33,8 @@ function world($: Engine, on: On, options: { inRepo?: boolean; listFails?: boole
   mock.clock(on, { now: NOW })
   const w: World = {
     agents: [
-      agent('L1', FOREMAN_TYPE, 'auth'),
-      agent('L2', FOREMAN_TYPE, 'billing'),
+      agent('L1', PROJECT_MANAGER_TYPE, 'auth'),
+      agent('L2', PROJECT_MANAGER_TYPE, 'billing'),
       agent('A1', 'kit:builder', 'auth-builder', 'L1'),
       agent('A2', 'Explore', 'auth-scout', 'A1'),
       agent('B1', 'general-purpose', 'billing-builder', 'L2'),
@@ -151,9 +151,9 @@ test('passes allowed messages through and refuses the rest from crew agents', as
   expect((await w.send('L1', 'main')).deny).toBeUndefined()
   expect((await w.send('A2', 'auth')).deny).toBeUndefined()
   expect((await w.send('L1', 'billing')).deny).toBeUndefined()
-  expect((await w.send('A1', 'main')).deny).toContain('your foreman, auth')
-  expect((await w.send('A1', 'billing')).deny).toContain('tell your foreman, auth')
-  expect((await w.send('L1', 'billing-builder')).deny).toContain("that crew's foreman, billing")
+  expect((await w.send('A1', 'main')).deny).toContain('your project manager, auth')
+  expect((await w.send('A1', 'billing')).deny).toContain('tell your project manager, auth')
+  expect((await w.send('L1', 'billing-builder')).deny).toContain("that crew's project manager, billing")
   expect((await w.send('L1', 'auth-ghost')).deny).toBeDefined()
   // not truss's business
   expect((await w.send(undefined, 'billing-builder')).deny).toBeUndefined()
@@ -161,9 +161,9 @@ test('passes allowed messages through and refuses the rest from crew agents', as
   expect(w.ran.length).toBe(5)
 })
 
-test('reaches a restarted foreman, not the ended one of the same name', async ($, on) => {
+test('reaches a restarted project manager, not the ended one of the same name', async ($, on) => {
   const w = world($, on)
-  // auth-worker of the first auth foreman ends; billing's live worker shares the name
+  // auth-worker of the first auth project manager ends; billing's live worker shares the name
   w.agents.push(agent('W1', 'x', 'worker', 'L1'), agent('W2', 'x', 'worker', 'L2'))
   expect((await w.send('A1', 'worker')).deny).toContain('more than one live agent')
   w.agents = w.agents.filter(a => a.id !== 'W1')
@@ -171,7 +171,7 @@ test('reaches a restarted foreman, not the ended one of the same name', async ($
   expect((await w.send('B1', 'worker')).deny).toBeUndefined()
 })
 
-test('logs only foreman-to-foreman messages', async ($, on) => {
+test('logs only project manager-to-project-manager messages', async ($, on) => {
   const w = world($, on)
   await w.send('L1', 'billing')
   await w.send('L2', 'auth')
@@ -203,12 +203,12 @@ test('refuses an Agent call without a model only from inside a crew', async ($, 
   expect(w.ran.length).toBe(3)
 })
 
-test('tells a foreman, and the main thread starting one, where a report will land', async ($, on) => {
+test('tells a project manager, and the main thread starting one, where a report will land', async ($, on) => {
   const w = world($, on)
   const member = await w.agentCall('L1', { model: 'sonnet', effort: 'medium', name: 'auth-tester' })
   expect(member.context).toEqual([`[truss] If auth-tester's report does not reach you, read ${ROOT}/reports/auth/auth-tester.md once it stops.`])
-  const foreman = await w.agentCall(undefined, { subagent_type: FOREMAN_TYPE, name: 'search', model: 'opus' })
-  expect(foreman.context?.[0]).toContain(`${ROOT}/reports/search/search.md`)
+  const projectManager = await w.agentCall(undefined, { subagent_type: PROJECT_MANAGER_TYPE, name: 'search', model: 'opus' })
+  expect(projectManager.context?.[0]).toContain(`${ROOT}/reports/search/search.md`)
   expect((await w.agentCall(undefined, { subagent_type: 'Explore' })).context).toBeUndefined()
 })
 
@@ -227,7 +227,7 @@ test('/truss shows each crew, its live members by model and its last report', as
   expect(text).toContain('- billing: running, 2 live members (sonnet 1, unknown 1), no report yet')
 })
 
-test('/truss shows a foreman waiting on the person until the pm answers', async ($, on) => {
+test('/truss shows a project manager waiting on the person until the pm answers', async ($, on) => {
   const w = world($, on)
   await w.send('L1', 'main', 'QUESTION: Keep the v1 endpoint?\nOptions: keep or drop.')
   expect(await status($)).toContain('- auth: running, 2 live members (unknown 2), waiting on you: Keep the v1 endpoint?')

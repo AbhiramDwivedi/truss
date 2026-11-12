@@ -1,6 +1,8 @@
 # ADR-0008: the client brief and the requirements ledger
 
-Status: proposed, 2026-10-29. Written by the mid-run design slice `interview-design` (stage 1), against `fa0fa9f`. It becomes accepted when the PM (project manager) merges this crew. Not repo ADR-0008.
+Status: proposed, 2026-10-29. Written by the mid-run design slice `interview-design` (stage 1), against `fa0fa9f`. It becomes accepted when the program manager (PM) merges this crew. Not repo ADR-0008.
+
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): the "disjoint ownership" gate named in the gates paragraph no longer holds; two crews may own the same file and merge in turn.
 
 VERDICT: change. The interface that can't take the work is the path from the client's goal to the plan design engineer's brief (`skills/run/SKILL.md` sections 1 to 4, lines 77-127). The PM asks the client one altitude question (line 79), answers four depth-pass questions itself (lines 81-90), and hands the goal and those answers to the design engineer (lines 121-127). Nothing in that path asks the client about requirements, nothing records the answers, and nothing carries a requirement from one run to the next. The design engineer can't fill the gap: it has no `AskUserQuestion` (`agents/design-engineer.md:6`), and in init mode it works only from code (`agents/design-engineer.md:49`), so an empty repo gives it nothing to design from. The change adds a new module (the client brief skill and its ledger code), a new stored data shape (`requirements.md`) and new seams into the run skill and the design engineer.
 
@@ -169,7 +171,7 @@ New requirements take ids from the highest in the file plus one. The ids this ru
 
 - **Plan.** Section 4's design engineer brief gets one more bullet: the requirements path and this run's R-ids. In `agents/design-engineer.md` plan mode, the inputs name both, and `plan.md`'s crew table (`design-engineer.md:101`) gains a `Requirements` column: the R-ids the crew serves, comma-separated, or `none`. Every run R-id is served by at least one crew. One that no crew can serve goes under an `Unserved:` line in `plan.md` with a reason. `plan.json` and `plan.schema.json` don't change.
 - **Plan check.** The PM sends a plan back (section 4's list) when a run R-id is neither served nor under `Unserved:`. Section 5 lists each `Unserved:` id and each `Source: default` requirement under the plan table; dropping an unserved id is the client's ruling, recorded by `Status: dropped`. The client-approval table gets a `Requirements` column.
-- **Goal files.** Section 6's goal file gets a `## Requirements` section, one line per R-id the crew serves, `- R-<n>: <title>` with the title copied exactly. Before the first foreman starts, the PM runs `node <plugin>/brief/cli.ts trace <requirements path> <truss dir>/brief.json <truss dir>/goals` and fixes the goal files until it prints `OK:`.
+- **Goal files.** Section 6's goal file gets a `## Requirements` section, one line per R-id the crew serves, `- R-<n>: <title>` with the title copied exactly. Before the first project manager starts, the PM runs `node <plugin>/brief/cli.ts trace <requirements path> <truss dir>/brief.json <truss dir>/goals` and fixes the goal files until it prints `OK:`.
 - **QC engineers.** No change to `qc-engineer.md`. The goal file is already approved scope (`qc-engineer.md:18`), so the QC engineer checks the diff against the quoted R-n lines, and work outside them is the usual `QUESTION: outside approved scope`.
 
 ```mermaid
@@ -195,7 +197,7 @@ sequenceDiagram
   F->>C: trace ... goals
 ```
 
-Caption: one run from goal to the first foreman with the client brief in place. Traces to `skills/run/SKILL.md:77-127` and `:206-208`; the client brief steps are new.
+Caption: one run from goal to the first project manager with the client brief in place. Traces to `skills/run/SKILL.md:77-127` and `:206-208`; the client brief steps are new.
 
 ### 9. The greenfield path
 
@@ -245,7 +247,7 @@ Edited:
 - docs/architecture.md: the client brief module, its seams, `requirements.md` and `brief.json` under "On disk", with this ADR's diagrams
 - docs/architecture.md: Truss's entry links this ADR and names `requirements.md`
 
-Not touched: `hooks/register.ts`, `docs/plan.schema.json`, `agents/qc-engineer.md`, `agents/foreman.md`, `skills/principles/*`, `skills/retro/SKILL.md`, `.claude-plugin/plugin.json`. No existing test pins behaviour this design removes: it removes none. `grep -n "altitude\|depth pass" tests/*.ts` finds no test on sections 1 and 2; `deferred-sweep.check.ts:56-64` pins strings in section 10 that the `met` step adds to, not replaces.
+Not touched: `hooks/register.ts`, `docs/plan.schema.json`, `agents/qc-engineer.md`, `agents/project-manager.md`, `skills/principles/*`, `skills/retro/SKILL.md`, `.claude-plugin/plugin.json`. No existing test pins behaviour this design removes: it removes none. `grep -n "altitude\|depth pass" tests/*.ts` finds no test on sections 1 and 2; `deferred-sweep.check.ts:56-64` pins strings in section 10 that the `met` step adds to, not replaces.
 
 ## Build crews
 

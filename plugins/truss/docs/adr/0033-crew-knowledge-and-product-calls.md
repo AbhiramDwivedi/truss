@@ -4,7 +4,7 @@ Amended by ADR-0035 (path-scoped knowledge): crew product calls go to `docs/know
 
 Status: accepted, 2026-11-09
 Decided by: client ruling, 2026-11-09 (learning is captured automatically and kept in the repo; product calls are made at crew level; the plan is reviewed before any work starts)
-Amends: ADR-0032 Decision 9 (the product-owner judge advises the crew lead, not only the PM); the run skill's "Adopt what the run learned" pass
+Amends: ADR-0032 Decision 9 (the product-owner judge advises the crew lead, not only the program manager (PM)); the run skill's "Adopt what the run learned" pass
 
 ## Context
 
@@ -14,7 +14,7 @@ In the client's reference project each agent knows which path to take because it
 
 Truss's capture has these gaps:
 
-- `## Learned` in a foreman's final report is optional. Only full crews' foremen have it; a solo or lean crew's members report no such items.
+- `## Learned` in a project manager's final report is optional. Only full crews' project managers have it; a solo or lean crew's members report no such items.
 - Items are adopted only at run end. If the run stops early, what the crews that finished learned is lost. It is also too late for later crews of the same run, who start without it. (A crew that did no work has nothing to capture.)
 - Adoption feeds only the architecture doc. A persona's stale path, a domain truth or the location of a capability has no place to go.
 - The PM answers product questions for every crew. It sits outside the crews, so it is a bottleneck, and its answers are not in a file later crews read.
@@ -63,7 +63,7 @@ The step edits only markdown. A learned item whose `target` is not a `.md` file 
 
 The QC engineer's brief carries a `Knowledge:` block. QC fails a diff that adds or moves user-facing functionality without a feature-map entry, and a crew product call missing from `product-owner.md`. It never fails for missing optional learning.
 
-This applies to every process size, described the same way: a full crew's foreman runs the step (`stage.js` on the workflow path); a solo or lean crew's members report items and the main session runs the knowledge writer in that crew's branch when there are items. Solo and lean crews run the project's predefined persona agents like any crew.
+This applies to every process size, described the same way: a full crew's project manager runs the step (`stage.js` on the workflow path); a solo or lean crew's members report items and the main session runs the knowledge writer in that crew's branch when there are items. Solo and lean crews run the project's predefined persona agents like any crew.
 
 The feature map is the routing table. Crews and the planner read it before scanning code. `truss:init` has the design engineer create it from the code on day 0.
 
@@ -71,7 +71,7 @@ The run-end pass shrinks to **reconciling** conflicting amendments across crews,
 
 ### B. Product calls at crew level
 
-A product question inside a crew is decided by the crew's lead. On the workflow path `stage.js` runs the `product-owner` persona with a brief whose first line is `Product call: crew <slug>`; it replies `PO: DECIDE` (answer and reason) or `PO: ESCALATE` (why). On the foreman path the foreman does the same and rules: it follows the reply by default and logs why when it doesn't. Each decision is logged as `PO crew <slug>: <question> | <answer> | product-owner | decided` and lands in `product-owner.md` through the knowledge step, so later crews follow it.
+A product question inside a crew is decided by the crew's lead. On the workflow path `stage.js` runs the `product-owner` persona with a brief whose first line is `Product call: crew <slug>`; it replies `PO: DECIDE` (answer and reason) or `PO: ESCALATE` (why). On the project manager path the project manager does the same and rules: it follows the reply by default and logs why when it doesn't. Each decision is logged as `PO crew <slug>: <question> | <answer> | product-owner | decided` and lands in `product-owner.md` through the knowledge step, so later crews follow it.
 
 The `Product call:` brief carries every crew decision of the run so far (`factory decisions`), not only the asking crew's. The product owner follows an earlier call that settles the question and escalates when its answer would contradict another crew's call. This is how parallel crews stay consistent; the checking engineer's contradiction check at merge is the backstop.
 
@@ -88,7 +88,7 @@ The crew lead tells the main session each call as it makes it, and never waits:
 - a reply to a crew past its checkpoint is still written, and `decision-reply` returns `crewPastCheckpoint: true`. Past the checkpoint means `checkpoint.json` exists, or the crew is finished, merged or dropped. A stopped crew can be resumed and still reach its checkpoint, so it counts as past only when `checkpoint.json` exists; one that already passed stays past it on resume (`factory decisions --crew <slug>` reports `checkpoint: true`, and the resumed crew applies no reply). The crew result lists such a reply as `late`, and the main session turns it into a fix at merge;
 - each reply is acked right after it is applied, so a Stop on a later change leaves the earlier one acked and a resume does not apply it twice;
 - a direct crew (solo or lean) has no lead: the PM runs `decision-checkpoint` and `knowledge-commit` itself;
-- on the foreman path the main session may also `SendMessage` the foreman directly.
+- on the project manager path the main session may also `SendMessage` the project manager directly.
 
 The learned items a crew has gathered are stored with `factory crew-learned`, and its decisions are rebuilt from `factory decisions --crew <slug>`, so a resume keeps both.
 
@@ -120,6 +120,6 @@ The PM's Claude Code auto-memory holds only how this client works: preferences a
 **Neutral**
 
 - The mechanics are in `workflows/stage.js` (`MEMBER_SCHEMA` `learned`, the knowledge step, the QC `Knowledge:` block, crew product calls), `workflows/plan.js` (the plan review and persona drafts on disk) and `bin/factory.ts` (`crew-decision`, `decisions`, `decision-reply`, `decision-replies`, `decision-ack`, `decision-checkpoint`, `knowledge-commit`, `crew-learned`), built by separate crews from this prose. Persona `loaded` uses a cross-platform session start. Read-only judges never run with write tools.
-- Naming: the client wants the per-crew lead called "project manager" and the main session "program manager". A full rename (agent file, type, config keys, every doc) is a separate goal after this one merges. New text here says "crew lead".
+- Naming: the client wants the per-crew lead called "project manager" and the main session "program manager". A full rename (agent file, type, config keys, every doc) is a separate goal after this one merges. New text here says "crew lead". The rename landed in 0.27.0 ([ADR-0042](0042-project-manager-rename.md)).
 
-**Reversing it** touches: the knowledge step and product-call prose in the run skill, the foreman, writer, QC, checking-engineer, design-engineer and planning-engineer prompts and the init skill; the knowledge step, product-call and plan-review code in `stage.js` and `plan.js`; the decision commands in `factory.ts`; and `tests/crew-knowledge-prose.check.ts`. Feature maps and `product-owner.md` entries already written stay in the repo as ordinary docs.
+**Reversing it** touches: the knowledge step and product-call prose in the run skill, the project manager, writer, QC, checking-engineer, design-engineer and planning-engineer prompts and the init skill; the knowledge step, product-call and plan-review code in `stage.js` and `plan.js`; the decision commands in `factory.ts`; and `tests/crew-knowledge-prose.check.ts`. Feature maps and `product-owner.md` entries already written stay in the repo as ordinary docs.

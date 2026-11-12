@@ -554,14 +554,14 @@ const refusedOf = (m) => {
   return { env, r, j, refused: j.refused ?? [] }
 }
 
-t('i23 high-refused 1: effort high or xhigh refuses the crew with the ADR reason naming ## Engine foreman; the crew stays planned and gets no worktree', () => {
+t('i23 high-refused 1: effort high or xhigh refuses the crew with the ADR reason naming ## Engine project-manager; the crew stays planned and gets no worktree', () => {
   for (const effort of ['high', 'xhigh']) {
     const { env, j, refused } = refusedOf(`- 1 builder on opus at effort ${effort}`)
     assert.equal(refused.length, 1, `effort ${effort} must refuse the crew: ${JSON.stringify(j).slice(0, 400)}`)
     assert.equal(refused[0].slug, 'x')
     const reason = refused[0].reason
-    assert.ok(reason.startsWith(`## Members asks for 1 builder at effort ${effort}; a workflow crew runs members at effort low or medium only (ADR-0009), and factory start never lowers an effort silently. Set ## Engine to foreman in `), reason)
-    assert.ok(reason.endsWith('goals/x.md to run this crew on the foreman path.'), reason)
+    assert.ok(reason.startsWith(`## Members asks for 1 builder at effort ${effort}; a workflow crew runs members at effort low or medium only (ADR-0009), and factory start never lowers an effort silently. Set ## Engine to project-manager in `), reason)
+    assert.ok(reason.endsWith('goals/x.md to run this crew on the project manager path.'), reason)
     assert.deepEqual(j.truss.crews, [])
     assert.equal(readPlan(env.dir).crews[0].status, 'planned')
     assert.ok(!existsSync(`${env.repo}/.claude/worktrees/truss-x`), 'the refusal comes before ensureWorktree')
@@ -581,10 +581,10 @@ t('i23 high-refused 2: an unknown model, an unknown effort, or two lines for one
   assert.ok(clash.refused[0].reason.includes('builder'))
 })
 
-t('control members-foreman 1: ## Engine foreman reads first, so the same high line sends the crew to the foreman path instead of refusing it', () => {
-  const { j } = membersStart('- 1 builder on opus at effort high', { engine: 'foreman' })
-  assert.deepEqual(j.refused ?? [], [], 'a foreman crew never reaches the Members parse')
-  assert.equal((j.foremen ?? []).length, 1)
+t('control members-project-manager 1: ## Engine project-manager reads first, so the same high line sends the crew to the project manager path instead of refusing it', () => {
+  const { j } = membersStart('- 1 builder on opus at effort high', { engine: 'project-manager' })
+  assert.deepEqual(j.refused ?? [], [], 'a project manager crew never reaches the Members parse')
+  assert.equal((j.projectManagers ?? []).length, 1)
 })
 
 // ---------------------------------------------------------------- r4: the ux audit

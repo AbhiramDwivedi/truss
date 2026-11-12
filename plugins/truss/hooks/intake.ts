@@ -60,7 +60,7 @@ export function amendPlan(existing: unknown, amend: unknown, now: string): { pla
     if (old.some(o => mine(o) && isRecord(o) && o.status !== 'planned')) return refuse(`goal ${id} has started crews`)
   }
   if (goal.goalCheck !== undefined && (typeof goal.goalCheck !== 'string' || goal.goalCheck.trim() === '')) return refuse('goal.goalCheck is not a non-empty string')
-  // ADR-0042: the goal's optional goal-wide check, run by the program manager after the goal's last merge
+  // ADR-0044: the goal's optional goal-wide check, run by the program manager after the goal's last merge
   const check = typeof goal.goalCheck === 'string' ? { goalCheck: goal.goalCheck } : {}
   const fresh = crews.map(c => ({ ...(c as Record<string, unknown>), goal: id, status: 'planned' }))
   let nextGoals: unknown[]

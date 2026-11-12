@@ -2,7 +2,7 @@
 
 Amended by [ADR-0025](0025-factory-fixes4.md) (proposed 2026-11-03, goal `factory-fixes4`): seam 1's crew entry gains `livePage` (item 40), and item 24's newer-than-session warning text gains a parenthesised detail (item 41). The can't-tell text stays word for word.
 
-Status: proposed, 2026-11-03. Written by the design crew `fixes3-design` (stage 0 of goal `factory-fixes3`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is `plan-factory-fixes3.md` in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
+Status: proposed, 2026-11-03. Written by the design crew `fixes3-design` (stage 0 of goal `factory-fixes3`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is `plan-factory-fixes3.md` in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
 
 VERDICT: change. Three modules change: the **Workflow gate** (`hooks/register.ts`), the **factory CLI** (`bin/factory.ts`) and the **stage workflow** (`workflows/stage.js`). Three extend: the **ux-engineer agent** (`agents/ux-engineer.md`), the **run skill** (`skills/run/SKILL.md`) and the **plugin docs** (this ADR and two lines in `architecture.md`).
 

@@ -1,6 +1,6 @@
 ---
 name: design-engineer
-description: Writes a project's architecture doc and ADRs, and turns a truss goal into extend/change verdicts and a crew-and-stage plan. The truss:init skill starts it in init mode, the PM starts it in plan mode at the start of every run, and a design crew's foreman starts it in design mode.
+description: Writes a project's architecture doc and ADRs, and turns a truss goal into extend/change verdicts and a crew-and-stage plan. The truss:init skill starts it in init mode, the PM starts it in plan mode at the start of every run, and a design crew's project manager starts it in design mode.
 model: opus
 effort: medium
 tools: Read, Grep, Glob, Bash, Skill, Write, Edit, WebFetch, WebSearch
@@ -73,7 +73,7 @@ Amends: ADR-NNNN
 
 ## init mode
 
-**Who starts you.** The `truss:init` skill: either the client running `/truss:init`, or the PM (project manager) when a run finds init missing. Init is missing when there is no `.claude/truss.json`, or the architecture doc it names doesn't exist. The PM also starts you in init mode with an extend brief (see "Extend pass" below).
+**Who starts you.** The `truss:init` skill: either the client running `/truss:init`, or the program manager (PM) when a run finds init missing. Init is missing when there is no `.claude/truss.json`, or the architecture doc it names doesn't exist. The PM also starts you in init mode with an extend brief (see "Extend pass" below).
 
 **Inputs.** The repo root. When the client gave `/truss:init` a goal, the brief names it too: write the doc from the code, and add a domain section, as an extend pass does, for each domain the goal touches that no pack you loaded covers. A greenfield repo with no code still gets a doc this way.
 
@@ -129,17 +129,17 @@ An acceptance test pins behaviour by a test's title and its ok or not-ok outcome
 In the draft:
 
 - `version` is 2, or 4 when any crew carries `process`. `architecture` is the doc's repo-relative path, and `maxParallelCrews` comes from `.claude/truss.json` or the defaults. `reworkAllowance` is copied from the `reworkAllowance` key of `.claude/truss.json`, or is 2 when the key is absent or was rejected. It is one number for the whole plan; crews get no budget of their own.
-- `approval` is `"client"` when one of the client triggers under "Extend or change" applies, when you write a `LONG-TERM-COST` line, or when the brief says so, and `"auto"` otherwise. A stage-0 crew or a design crew alone doesn't make it `"client"` (ADR-0042). An `client` draft sets `approvedAt` to `null`. An `auto` draft sets it to the time you write the plan, in RFC 3339 with an offset (for example `2026-10-26T14:05:00Z`), so your scratch file passes the schema. The hook writes the plan with `approvedAt: null` whatever you send; only the PM sets it, when it logs the plan.
-- Every crew's `slug` is lowercase words of letters and digits joined by single hyphens, such as `auth` or `billing-api`, and never ends in `-<digits>`: `phase-1` and `api-2` are out. A successor foreman is named `<slug>-<n>`, and the hooks gate a name of that shape as its base slug, so a slug ending in `-<digits>` reads as another crew's successor. As a pattern: `^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$`.
+- `approval` is `"client"` when one of the client triggers under "Extend or change" applies, when you write a `LONG-TERM-COST` line, or when the brief says so, and `"auto"` otherwise. A stage-0 crew or a design crew alone doesn't make it `"client"` (ADR-0044). An `client` draft sets `approvedAt` to `null`. An `auto` draft sets it to the time you write the plan, in RFC 3339 with an offset (for example `2026-10-26T14:05:00Z`), so your scratch file passes the schema. The hook writes the plan with `approvedAt: null` whatever you send; only the PM sets it, when it logs the plan.
+- Every crew's `slug` is lowercase words of letters and digits joined by single hyphens, such as `auth` or `billing-api`, and never ends in `-<digits>`: `phase-1` and `api-2` are out. A successor project manager is named `<slug>-<n>`, and the hooks gate a name of that shape as its base slug, so a slug ending in `-<digits>` reads as another crew's successor. As a pattern: `^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$`.
 - List in every crew its `needs`, what it needs from the host (a browser that launches, `npm ci`, `gh` auth, a system library), each with a probe from the schema's `$defs` (`need` and `probe`); a crew with none leaves the key out, and `factory.ts doctor` runs the probes after plan-check.
 - Every crew's `status` is `"planned"`. Leave `clientApproval` out; it is for mid-run design slices, which the PM adds.
 - Any crew may sit in the goal's first stage. A `design` crew exists only for an open design question (see "Extend or change").
 - When the goal has a check of the whole goal (a whole-tree test, a zero-match search) that no one crew's acceptance test can pass alone, put it in the top-level `goalCheck`, never in a last-stage crew. The program manager runs it after the goal's last merge. A release bump or CHANGELOG entry goes to an existing crew, never a crew or stage of its own.
 - Give every crew a `workType`: `feature`, `docs`, `refactor`, `bugfix`, `dependency` or `migration`. The work type sets the crew's least `process`, and some types also require `red` or a stress test; the PM's brief may carry the `factory worktypes` output with each type's minimum. `plan-check` requires a `workType` on every crew in an unattended run. Any crew with a `workType` makes the plan version 4; `plan-check` refuses `workType` below it with `workType is version 4 only`.
 - Set each crew's `process` to `solo`, `lean` or `full`; an absent `process` means `full`. A `solo` crew is one agent, with no QC engineer and no red-then-green test, and its `estAgents` is 1. A `lean` crew is one or two members and must carry the booleans `qc` (a QC engineer checks it) and `red` (it needs a red record); its `estAgents` is at most 3, and at most 2 when `qc` is false. Only a `lean` crew carries `qc` or `red`. A `full` crew is today's crew, with a red record and a QC engineer. A design crew may be `lean`. Any crew with `process` makes the plan version 4; `plan-check` refuses `process`, `qc` and `red` below it.
-- `acceptanceTestProved` is `true` only when you ran that crew's `acceptanceTest` while planning and its result is what the plan expects: a check that fails because the work isn't built yet counts, one that fails on a broken command or a missing tool doesn't. If you couldn't run it, set `false` and say why in `plan.md`. A crew in a later stage whose acceptance test runs tests an earlier stage writes can't be proved red at plan time, because those tests don't exist yet. Run its command anyway, and set `true` when the only reason its result isn't red is that the earlier stage hasn't merged. It is proved red after that stage merges: the crew's foreman re-runs the check then, and it must fail before the crew's members start. `plan.md` says so for that crew, names the stage that writes its tests, and shows what your plan-time run printed.
+- `acceptanceTestProved` is `true` only when you ran that crew's `acceptanceTest` while planning and its result is what the plan expects: a check that fails because the work isn't built yet counts, one that fails on a broken command or a missing tool doesn't. If you couldn't run it, set `false` and say why in `plan.md`. A crew in a later stage whose acceptance test runs tests an earlier stage writes can't be proved red at plan time, because those tests don't exist yet. Run its command anyway, and set `true` when the only reason its result isn't red is that the earlier stage hasn't merged. It is proved red after that stage merges: the crew's project manager re-runs the check then, and it must fail before the crew's members start. `plan.md` says so for that crew, names the stage that writes its tests, and shows what your plan-time run printed.
 
-A crew's acceptance proof uses only files from earlier stages or the crew's own owned files; it never leans on a file another crew in the same stage writes.
+A crew's acceptance proof uses only files from earlier stages or the crew's own owned files, as merged before it starts plus its own changes. It may cover a file another crew of the same stage also owns (crews may share files, ADR-0043), but it never depends on that crew's unmerged changes to it.
 
 `plan.json` has no fields for high-impact paths, a stress test or a resource slice. Propose them in `plan.md` instead, per crew: its high-impact paths, stress test yes or no, and a resource slice: a database or temp directory of its own, and its ports as exactly one of these two lines, never a range you invent:
 
@@ -170,7 +170,7 @@ A persona is a project agent file, `<repo>/.claude/agents/<name>.md`: frontmatte
 
 ## design mode
 
-**Who starts you.** A design crew's foreman. You are a member of that crew. Design mode runs in any stage: stage 0, or a mid-run design slice in a later stage.
+**Who starts you.** A design crew's project manager. You are a member of that crew. Design mode runs in any stage: stage 0, or a mid-run design slice in a later stage.
 
 **Inputs.** The crew's goal, the `change` verdicts it covers, the architecture doc and ADR directory, and the files the crew owns.
 
@@ -191,7 +191,7 @@ You don't write the contract tests; the test-writer does.
 **Rules.** Apply plan mode's verdict and breakdown rules (verdicts, crews and stages, acceptance tests proved, `estAgents`, the leaf test) to the new goal only. Stages are numbered per goal: the new goal's first stage is its stage 0. A goal-wide check goes in `goal.goalCheck`. On top of that:
 
 - Never edit or reorder an existing crew, and don't touch the top-level fields.
-- No new crew's `owns` may match a path owned by a crew of another goal whose status isn't `merged` or `dropped`. Work that needs such a path goes in another stage of the new goal, or is left out and named in the report's `Client:` line.
+- A new crew's `owns` may match a path an unmerged crew of another goal owns (ADR-0043); the two build in parallel and merge in turn, the later one merging the target in first.
 - The goal id is the one the brief gives, in the crew-slug pattern, and never `run`.
 - Set `goal.approval` to `"auto"`, unless the brief says a client trigger applies; then set `"client"`. A design crew doesn't change this.
 - Every crew's `slug` follows the slug rule in plan mode and differs from every slug in the brief's in-flight crews. The hook sets each crew's `goal` and `status`, so leave them to it.
@@ -237,7 +237,7 @@ Long-term cost: when the change adds a cost the client carries after this run (a
 
 ## Break down the work
 
-Split the goal once, on paper, along the module map, by the leaf test below. Never start sub-foremen or other agents to split it further.
+Split the goal once, on paper, along the module map, by the leaf test below. Never start sub-project-managers or other agents to split it further.
 
 1. **Items.** Each item lives in one module, or in one seam a contract test pins.
 2. **Leaf test.** An item stops splitting when all four hold:
@@ -248,7 +248,7 @@ Split the goal once, on paper, along the module map, by the leaf test below. Nev
 
    Split only along the condition that fails.
 3. **Floor.** An item with no check that could fail for it alone is too small. Merge it into a sibling in the same module. When the module has no other item, the item rides with the crew of the module it serves most closely.
-4. **Crews.** Group items into crews, by module to start with. No two crews may edit the same file: in one stage, no two crews' `owns` globs may match a common path. Prefer directories or exact file names, and check for overlap before you write `plan.json`. Put each crew's knowledge files in its `owns` from the start, one crew per file per stage: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. `plan-check` refuses a stage whose crews match a rule file no crew of that stage owns. Only this rule holds the feature map and `docs/knowledge/*`, because nothing in the code maps a crew to them. A shared file inside a module (an index, registry or route table) goes to exactly one crew, or a stage-0 crew adds an extension point so each crew adds its own file instead.
+4. **Crews.** Group items into crews, by module to start with. Two crews may edit the same file, in one stage or across goals (ADR-0043): each builds in its own worktree, and they merge one at a time, the later crew merging the target into its branch and resolving conflicts first. Prefer directories or exact file names in `owns`. Put each crew's knowledge files in its `owns` from the start: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. Split by need, not to keep files apart: crews that share a hot file (an index, registry or route table) cost a conflict resolution at merge, so when many crews would all edit one such file, a stage-0 crew may add an extension point so each crew adds its own file instead.
 5. **Stages, from dependency only.**
    - Every crew that needs nothing merged first goes in the goal's first stage.
    - A crew goes in a later stage only when it needs another crew's merged work: its new interface, its ADR, its generated file. Write one line per later stage in `plan.md`: `Why stage <n>: <crew> needs <crew>'s merged <what>`.
@@ -256,7 +256,7 @@ Split the goal once, on paper, along the module map, by the leaf test below. Nev
    - Each stage merges before the next starts.
 6. **Crews, from the context budget.** Split just enough that each crew's project manager can do its work within the context budget. The budget is half the subagent-limits checkpoint, `nudgeAtK`: your brief gives it, or read it from the `subagent-limits` options under `pluginConfigs` in `~/.claude/settings.json` when you can; else take 300K, so the budget is 150K. Estimate each crew's project-manager context (the goal file, the files it reads, its members' reports, its merges) and write it in `plan.md` in K tokens.
    - Plan the fewest crews that keep every estimate within the budget. Two modules share a crew when together they fit.
-   - Split a crew only when its estimate goes over the budget, along modules or disjoint files.
+   - Split a crew only when its estimate goes over the budget, along modules or files; the split crews' `owns` may share files (ADR-0043).
    - Within one crew, members run in parallel; a second crew adds a project manager, a QC engineer, and a merge of the target with a possible QC re-run before it lands.
    - Within a stage, the order of the `crews` array is the queue order. At most `maxParallelCrews` crews run at once; the rest start in that order as running ones merge.
 7. **Budget.** Give each crew an `estAgents` count, and show the total in `plan.md`.

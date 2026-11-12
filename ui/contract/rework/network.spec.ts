@@ -172,14 +172,14 @@ test.describe('network', () => {
       await expect(network(o.page)).toBeVisible(LOAD)
       const card = crewCard(o.page, 'rework-network')
       const crew = (o.planted.fixture.run.crews as any[]).find((c) => c.slug === 'rework-network')
-      for (const m of [crew.foreman, ...crew.members]) await expect(card.getByText(m.name, { exact: true }).first(), m.name).toBeVisible(T)
+      for (const m of [crew.projectManager, ...crew.members]) await expect(card.getByText(m.name, { exact: true }).first(), m.name).toBeVisible(T)
       // roles come from the agent type
-      await expect(card.getByText('Foreman', { exact: true }).first()).toBeVisible(T)
+      await expect(card.getByText('Project manager', { exact: true }).first()).toBeVisible(T)
       await expect(card.getByText(/^(Builder|General purpose)$/i).first()).toBeVisible(T)
       await expect(card.getByText('QC engineer', { exact: true }).first()).toBeVisible(T)
       // one-line purposes from agents/*.md
       await expect(card.getByText('Leads one truss crew.')).toBeVisible(T)
-      await expect(card.getByText('Builds the code a foreman task names, in the crew worktree.')).toBeVisible(T)
+      await expect(card.getByText('Builds the code a project manager task names, in the crew worktree.')).toBeVisible(T)
       await expect(card.getByText(/^Rules on one truss crew's work/)).toBeVisible(T)
       // the task, or the fallback
       await expect(card.getByText('Splitting the network goal into builder tasks.')).toBeVisible(T)

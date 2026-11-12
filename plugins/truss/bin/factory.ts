@@ -557,31 +557,6 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
 
 const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'refactor']
 const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
-const literalOf = (g: string): string => g.slice(0, g.search(/[*?[]/) === -1 ? g.length : g.search(/[*?[]/))
-const globsOverlap = (a: string, b: string): boolean => a === b || literalOf(a).startsWith(literalOf(b)) || literalOf(b).startsWith(literalOf(a))
-// Rule-file `paths` globs use `{a,b}` alternation and a leading `**`, which the literal-prefix compare above cannot read: expand the braces,
-// match a wildcard-free owns exactly, and compare only the last segment when either side starts with `**`.
-const braceExpand = (g: string): string[] => {
-  const m = /\{([^{}]*)\}/.exec(g)
-  return m === null ? [g] : m[1].split(',').flatMap((alt) => braceExpand(g.slice(0, m.index) + alt + g.slice(m.index + m[0].length)))
-}
-const globRe = (g: string): RegExp => new RegExp('^' + g.replace(/[.+^$()|\\{}[\]]/g, '\\$&').replace(/\*\*\/|\*\*|\*|\?/g, (t) => (t === '**/' ? '(?:.*/)?' : t === '**' ? '.*' : t === '*' ? '[^/]*' : '[^/]')) + '$')
-const ruleGlobsOverlap = (a: string, b: string): boolean =>
-  braceExpand(a).some((x) =>
-    braceExpand(b).some((y) => {
-      const wild = (s: string): boolean => /[*?[]/.test(s)
-      if (!wild(x)) return globRe(y).test(x)
-      if (!wild(y)) return globRe(x).test(y)
-      if (x.startsWith('**') || y.startsWith('**')) {
-        const tx = x.slice(x.lastIndexOf('/') + 1)
-        const ty = y.slice(y.lastIndexOf('/') + 1)
-        return !wild(tx) ? globRe(ty).test(tx) : !wild(ty) ? globRe(tx).test(ty) : true
-      }
-      return globsOverlap(x, y)
-    }),
-  )
-// one crew's `after` names the other's slug: the two never run together
-const orderedByAfter = (a: Obj, b: Obj): boolean => (Array.isArray(a.after) && a.after.includes(b.slug)) || (Array.isArray(b.after) && b.after.includes(a.slug))
 
 function cmdPlanCheck(f: Flags): Obj {
   const plan = loadPlan(dirOf(f))
@@ -628,9 +603,9 @@ function cmdPlanCheck(f: Flags): Obj {
       }
     }
   }
-  // ADR-0042: approval no longer follows stage 0; it is client when a client trigger, a long-term cost or the brief says so
+  // ADR-0044: approval no longer follows stage 0; it is client when a client trigger, a long-term cost or the brief says so
   if (plan.approval !== 'auto' && plan.approval !== 'client') errors.push('plan: approval must be auto or client')
-  // ADR-0042: the goal-wide check the program manager runs after the goal's last merge; optional at every version
+  // ADR-0044: the goal-wide check the program manager runs after the goal's last merge; optional at every version
   if (Object.hasOwn(plan, 'goalCheck') && (typeof plan.goalCheck !== 'string' || plan.goalCheck.trim() === '')) errors.push('plan: goalCheck must be a non-empty string')
   for (const c of crews) {
     const s = name(c)
@@ -683,53 +658,15 @@ function cmdPlanCheck(f: Flags): Obj {
     }
     if (plan.approvedAt === null && c.status !== 'planned') errors.push(`${s}: status must be planned on an unapproved plan, not ${JSON.stringify(c.status)}`)
   }
-  let rules: { path: string; paths: string[] }[] = []
-  if (repoDir !== undefined) {
-    try {
-      rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
-    } catch {
-      // not a git repo or git failed: no rule check
-    }
-  }
-  for (let i = 0; i < crews.length; i++) {
-    for (let j = i + 1; j < crews.length; j++) {
-      const sameGoal = goalOf(crews[i]) === goalOf(crews[j])
-      if (sameGoal && crews[i].stage !== crews[j].stage) continue
-      // The knowledge-owns rule makes one crew of each stage own a rule file, so two goals' crews in different stages each own the
-      // same rule file by design: that one exact glob is not an overlap between them, provided one crew's after names the other
-      // (they never run together); without after it is the same overlap error as any other glob.
-      const crossStage = !sameGoal && crews[i].stage !== crews[j].stage && orderedByAfter(crews[i], crews[j])
-      // A merged or dropped crew no longer works its files, so it overlaps nothing, in any goal or stage.
-      if ([crews[i], crews[j]].some((x) => x.status === 'merged' || x.status === 'dropped')) continue
-      for (const ga of Array.isArray(crews[i].owns) ? crews[i].owns : []) {
-        for (const gb of Array.isArray(crews[j].owns) ? crews[j].owns : []) {
-          if (crossStage && ga === gb && rules.some((r) => r.path === ga)) continue
-          if (typeof ga === 'string' && typeof gb === 'string' && globsOverlap(ga, gb)) errors.push(sameGoal ? `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb} in stage ${crews[i].stage}` : `${name(crews[i])}: owns ${ga} overlaps ${name(crews[j])}'s ${gb}, a crew of another goal (stage ${crews[i].stage} and ${crews[j].stage})`)
-        }
-      }
-    }
-  }
-  // knowledge-owns rule: per stage, when the live crews' owns overlap a rule file's paths, one crew of the stage must own that rule file.
-  // A repo with no rule files, or one git cannot list, adds no error here (the same fallback knowledgeArgsOf takes).
-  if (repoDir !== undefined) {
-    const live = crews.filter((c) => c.status !== 'merged' && c.status !== 'dropped')
-    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((g: unknown): g is string => typeof g === 'string') : [])
-    for (const rule of rules) {
-      for (const stage of [...new Set(live.map((c) => c.stage))]) {
-        const inStage = live.filter((c) => c.stage === stage)
-        const hit = inStage.filter((c) => ownsOf(c).some((g) => rule.paths.some((p) => ruleGlobsOverlap(g, p))))
-        if (hit.length === 0 || inStage.some((c) => ownsOf(c).some((g) => globsOverlap(g, rule.path)))) continue
-        errors.push(`${rule.path}: rule file matched by crew ${hit.map(name).join(', ')} of stage ${String(stage)} and owned by no crew of that stage; add ${rule.path} to the owns of one crew of stage ${String(stage)}`)
-      }
-    }
-  }
+  // ADR-0043: crews may share files. Two crews' owns may overlap, in one stage or across goals, and no crew of a stage has to own a
+  // rule file: each crew builds in its own worktree and they merge one at a time on the program manager's go-ahead.
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   const warnings = stageWarnings(dirOf(f), crews)
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
-// ADR-0042 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's
+// ADR-0044 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's
 // plan.md (plan-<id>.md for an added goal). A missing line is a warning, never an error: the plan still passes.
 function stageWarnings(dir: string, crews: Obj[]): string[] {
   const out: string[] = []
@@ -745,19 +682,11 @@ function stageWarnings(dir: string, crews: Obj[]): string[] {
     } catch {
       // no plan.md: every later stage lacks its Why line
     }
-    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((x: unknown): x is string => typeof x === 'string') : [])
     for (let k = 1; k < stages.length; k++) {
       const n = stages[k]
       if (new RegExp(`^\\s*(?:[-*]\\s+)?Why stage ${n}:`, 'm').test(md)) continue
-      const here = mine.filter((c) => c.stage === n)
-      const earlier = mine.filter((c) => (c.stage as number) < n)
-      const linked = here.some((c) => (Array.isArray(c.after) && c.after.length > 0) || earlier.some((e) => ownsOf(c).some((a) => ownsOf(e).some((b) => globsOverlap(a, b)))))
       const tag = g === RUN_GOAL ? '' : ` of goal ${g}`
-      out.push(
-        linked
-          ? `stage ${n}${tag}: no "Why stage ${n}:" line in ${file}; say which crew needs which earlier crew's merged work, or merge it into stage ${stages[k - 1]}`
-          : `stage ${n}${tag}: no "Why stage ${n}:" line in ${file}, and no crew of it owns a path of an earlier stage or has an after; merge it into stage ${stages[k - 1]} or add the Why line`,
-      )
+      out.push(`stage ${n}${tag}: no "Why stage ${n}:" line in ${file}; say which crew needs which earlier crew's merged work, or merge it into stage ${stages[k - 1]}`)
     }
   }
   return out
@@ -770,7 +699,7 @@ function cmdApprove(f: Flags): Obj {
   const repo = repoOf(f)
   const plan = loadPlan(dir)
   if (plan.approvedAt !== null && plan.approvedAt !== undefined) throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
-  // contract-025 section 3 (finding #17): auto never approves a goal that needs the client. ADR-0042: a stage-0 crew alone no longer
+  // contract-025 section 3 (finding #17): auto never approves a goal that needs the client. ADR-0044: a stage-0 crew alone no longer
   // needs the client; a plan whose own approval is client does.
   if (by === 'auto') {
     if (plan.approval === 'client') throw refuse({ error: "approve --by auto: the plan's approval is client, so it needs the client's approval", goals: [RUN_GOAL] })
@@ -1132,36 +1061,17 @@ function cmdMarkMerged(f: Flags): Obj {
   appendDecision(dir, `${slug} marked merged | truss-${slug} is an ancestor of ${target}`)
   return { ok: true, slug, status: 'merged' }
 }
-// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan. Refuses a glob that overlaps
-// another live crew the way plan-check does (same goal and stage, or another goal; a rule file another goal's crew of another stage
-// owns is exempt, as in plan-check, only when one crew's after names the other); logs a decision line.
+// Adds one glob to a crew's owns in plan.json under the plan lock, so the PM never hand-edits the plan, and logs a decision line.
+// Another crew may own the same files (ADR-0043): the crews merge in turn.
 function cmdOwnsExtend(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
   const glob = need(f, 'glob')
   const reason = need(f, 'reason').replace(/\s+/g, ' ').trim()
-  let rules: { path: string; paths: string[] }[] = []
-  try {
-    const repoDir = repoOf(f)
-    rules = knowledgeRulesIndex(repoDir, knowledgeCfgOf(repoDir)).rules
-  } catch {
-    // no repo or git failed: no rule file is exempt, as plan-check
-  }
   const done = withLock(dir, 'plan', (): Obj => {
     const plan = loadPlan(dir)
     const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
     if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-    const overlaps: { slug: string; glob: string }[] = []
-    for (const o of plan.crews) {
-      if (!isObj(o) || o === crew || o.status === 'merged' || o.status === 'dropped') continue
-      if (goalOf(o) === goalOf(crew) && o.stage !== crew.stage) continue
-      const crossStage = goalOf(o) !== goalOf(crew) && o.stage !== crew.stage && orderedByAfter(o, crew)
-      for (const g of Array.isArray(o.owns) ? o.owns : []) {
-        if (crossStage && g === glob && rules.some((r) => r.path === g)) continue
-        if (typeof g === 'string' && globsOverlap(glob, g)) overlaps.push({ slug: String(o.slug), glob: g })
-      }
-    }
-    if (overlaps.length > 0) throw refuse({ ok: false, slug, glob, overlaps, why: `${glob} overlaps ${overlaps.map((x) => `${x.slug}'s ${x.glob}`).join(', ')}; a glob may belong to one crew of a stage, and to one crew of another goal` })
     const owns: string[] = Array.isArray(crew.owns) ? crew.owns.filter((g: unknown) => typeof g === 'string') : []
     if (!owns.includes(glob)) owns.push(glob)
     crew.owns = owns
@@ -1328,15 +1238,15 @@ function goalSections(text: string): Record<string, string> {
   out[key] = buf.join('\n').trim()
   return out
 }
-// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else foreman with the reason.
-function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'foreman'; reason: string } {
-  if (merge === 'single') return { engine: 'foreman', reason: 'merge mode single runs on the foreman path' }
-  if (noWorkflow) return { engine: 'foreman', reason: 'no Workflow tool in this session' }
+// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else project manager with the reason.
+function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'project-manager'; reason: string } {
+  if (merge === 'single') return { engine: 'project-manager', reason: 'merge mode single runs on the project manager path' }
+  if (noWorkflow) return { engine: 'project-manager', reason: 'no Workflow tool in this session' }
   const text = sections.Engine
-  if (text === undefined || text === '') return { engine: 'foreman', reason: 'the goal file has no ## Engine section' }
+  if (text === undefined || text === '') return { engine: 'project-manager', reason: 'the goal file has no ## Engine section' }
   const m = /^(\w+)[\s:,.\-]*([\s\S]*)$/.exec(text)
   if (m?.[1].toLowerCase() === 'workflow') return { engine: 'workflow', reason: '' }
-  return { engine: 'foreman', reason: (m?.[2] ?? '').trim() || 'the goal file says foreman' }
+  return { engine: 'project-manager', reason: (m?.[2] ?? '').trim() || 'the goal file says project-manager' }
 }
 
 // ADR-0022 U6 (item 23): each `<n> <role> on <model> at effort <effort>` phrase in the goal file's `## Members` (a line, a bullet
@@ -1346,7 +1256,7 @@ function engineOf(sections: Record<string, string>, merge: string, noWorkflow: b
 type Members = Partial<Record<'builder' | 'tester', { model: string; effort: string }>>
 export function membersOf(section: string | undefined, goalFile: string): { members: Members; refuse?: string } {
   const members: Members = {}
-  const tail = `factory start never lowers an effort silently. Set ## Engine to foreman in ${goalFile} to run this crew on the foreman path.`
+  const tail = `factory start never lowers an effort silently. Set ## Engine to project-manager in ${goalFile} to run this crew on the project manager path.`
   // A goal file writes ## Members as sentences ("1 tester on Sonnet at effort medium writes the tests. Then 2 builders on Opus at
   // effort medium, split by file: ..."), so the phrase counts wherever it stands, not only as a whole line: a phrase the parser
   // skipped would run a high-effort ask at the default effort, the silent lowering R2 forbids.
@@ -1443,14 +1353,14 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
-function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
+function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const found = buildPersonas(c.repo)
-  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
+  const warnings = [...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
-    held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
+    held, projectManagers, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
 
@@ -2213,7 +2123,7 @@ function cmdStart(f: Flags): Obj {
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   let slots = cap - crews.filter((c) => c.status === 'running').length
   const wasRunning = crews.filter((c) => c.status === 'running')
-  const foremen: Obj[] = []
+  const projectManagers: Obj[] = []
   const refused: Obj[] = []
   const entries: Obj[] = []
   const held: Obj[] = []
@@ -2228,7 +2138,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length))
+    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + projectManagers.length + direct.length))
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -2237,7 +2147,7 @@ function cmdStart(f: Flags): Obj {
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
     // ADR-0031 item 6: a planned solo or lean crew runs direct; same planVerdict, no engine split, no ## Members check
-    // Under merge single `land` refuses, so a solo or lean crew takes the foreman path like a full crew
+    // Under merge single `land` refuses, so a solo or lean crew takes the project manager path like a full crew
     if (isDirect(crew) && settings.merge !== 'single') {
       const directVerdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
       if (directVerdict !== undefined) {
@@ -2253,13 +2163,13 @@ function cmdStart(f: Flags): Obj {
       continue
     }
     const { engine, reason } = engineOf(sections, settings.merge, noWorkflow)
-    if (engine === 'foreman') {
-      const foremanVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
-      if (foremanVerdict !== undefined) {
-        refused.push({ slug, reason: foremanVerdict.deny })
+    if (engine === 'project-manager') {
+      const projectManagerVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
+      if (projectManagerVerdict !== undefined) {
+        refused.push({ slug, reason: projectManagerVerdict.deny })
         continue
       }
-      foremen.push({ slug, reason })
+      projectManagers.push({ slug, reason })
       slots--
       continue
     }
@@ -2293,7 +2203,7 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held, direct)
+  return stageOut(ctx, entries, projectManagers, refused, stale, unfinished, held, direct)
 }
 
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
@@ -2357,7 +2267,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
   const trussDir = real(path.resolve(startDirOf(f)))
   const inside = `${real(path.dirname(p))}/${path.basename(p)}`.startsWith(`${trussDir}/`)
   const short: Obj = {
-    argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
+    argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, projectManagers: out.projectManagers, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
     warnings: inside ? out.warnings : [...out.warnings, `--args-file ${flat(p)} is outside the truss dir ${trussDir}, so the Workflow gate can't read it as args.trussFile; pass the file's object as args.truss inline`],
   }
   if (out.direct !== undefined) short.direct = out.direct
@@ -2757,7 +2667,7 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
   }
 }
 
-// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
+// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the project manager path, so retro
 // counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
 // QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
 // file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
@@ -3262,7 +3172,7 @@ function cmdLand(f: Flags): Obj {
   const repo = repoOf(f)
   const slug = need(f, 'slug')
   const settings = settingsOf(repo)
-  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const plan = loadPlan(dir)
   const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
@@ -3294,7 +3204,7 @@ function cmdFinish(f: Flags): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
   const settings = settingsOf(repo)
-  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const tdir = flat(need(f, 'transcript')).replace(/\/+$/, '')
   const resultPath = str(f, 'result')
@@ -3572,7 +3482,7 @@ function readReply(dir: string, id: string): DecisionReply | undefined {
   return existsSync(p) ? (readJson(p) as DecisionReply) : undefined
 }
 
-// factory crew-decision --crew <slug> --task <id> --question <q> --answer <a> --by <who>: the crew lead (or a member) records a
+// factory crew-decision --crew <slug> --task <id> --question <q> --answer <a> --by <who>: the project manager (or a member) records a
 // product call it made and went on. Appends the decide line, writes a crew-decision event, prints {id}.
 function cmdCrewDecision(f: Flags): Obj {
   const dir = dirOf(f)

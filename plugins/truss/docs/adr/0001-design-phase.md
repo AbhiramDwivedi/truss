@@ -1,8 +1,10 @@
 # ADR-0001: a design phase, principle packs and planned work breakdown
 
-Status: accepted (stage 0 of foundry 0.3.0). Date: 2026-10-26. Decided by: Ram (client), with the PM (project manager).
+Status: accepted (stage 0 of foundry 0.3.0). Date: 2026-10-26. Decided by: Ram (client), with the program manager (PM).
 
-Amended by [ADR-0042](0042-split-by-need.md) (2026-11-11, client ruling): stages and crews come from the work's complexity only. Section 5's "stage 0 holds the `change` work" no longer holds: a design crew exists only for an open design question, a `change` crew writes an ADR the client or an accepted ADR already decided, and a later stage needs a `Why stage <n>:` line. Sections 6 and 8 no longer tie `approval` to stage 0: it is `client` when a client trigger applies, a long-term cost is open, or the brief says so.
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): two crews may edit the same file; they build in parallel and merge in turn.
+
+Amended by [ADR-0044](0044-split-by-need.md) (2026-11-11, client ruling): stages and crews come from the work's complexity only. Section 5's "stage 0 holds the `change` work" no longer holds: a design crew exists only for an open design question, a `change` crew writes an ADR the client or an accepted ADR already decided, and a later stage needs a `Why stage <n>:` line. Sections 6 and 8 no longer tie `approval` to stage 0: it is `client` when a client trigger applies, a long-term cost is open, or the brief says so.
 
 ## Context
 
@@ -12,7 +14,7 @@ The intel run on 2026-10-26 took about six hours for three crews. Two of them me
 - acceptance tests couldn't be run with the crew's own access;
 - a design question (the model byline) surfaced after building started and caused another build-and-qc cycle.
 
-Foundry 0.2.1 splits work at two fixed levels: the PM splits into crews by file ownership, and foremen split into member tasks of "one sitting". Neither level has a rule for when a piece is small enough or too small. No artifact holds the design, so each brief carries its own paraphrase of it.
+Foundry 0.2.1 splits work at two fixed levels: the PM splits into crews by file ownership, and project managers split into member tasks of "one sitting". Neither level has a rule for when a piece is small enough or too small. No artifact holds the design, so each brief carries its own paraphrase of it.
 
 ## Decision
 
@@ -73,7 +75,7 @@ It never edits source or tests. It runs in three modes.
   - The draft sets `approval`: `client` when the plan has a stage-0 crew, `auto` otherwise.
   - The PM owns both files after that: it checks `approval`, sets `approvedAt`, and updates `status`.
 - **design:**
-  - A member of a design crew, started by that crew's foreman. A design crew sits in stage 0 or, as a mid-run design slice (section 7), in a later stage.
+  - A member of a design crew, started by that crew's project manager. A design crew sits in stage 0 or, as a mid-run design slice (section 7), in a later stage.
   - It writes the ADR and the architecture-doc change for each `change` verdict, and names the seams the crew's test-writer must pin with contract tests.
 
 ### 4. Extend or change, decided by Opus
@@ -98,7 +100,7 @@ The checking engineer reviews the verdicts on its own. If the two disagree, the 
 
 ### 5. Work breakdown on paper, by the leaf test
 
-The design engineer splits the goal once, on paper, along the module map. Agents never start sub-foremen to split further.
+The design engineer splits the goal once, on paper, along the module map. Agents never start nested project managers to split further.
 
 1. **Items.** Each item lives in one module, or in one seam the contract tests pin.
 2. **Leaf test.** An item stops splitting when all four hold:
@@ -119,13 +121,13 @@ The design engineer splits the goal once, on paper, along the module map. Agents
    - Two modules share a crew only when one of them has too little work to clear the floor.
    - The hard rule is files, not modules: no two crews edit the same file. A large module can be split across crews when its parts own disjoint files. That's the design engineer's call, made when one crew couldn't hold the whole module's work.
    - A shared file inside a module (an index, registry or route table) goes to exactly one crew. Alternatively, stage 0 adds an extension point so each crew adds its own file instead.
-   - When the parts are small enough for one foreman to coordinate, keep one crew and run its members in parallel instead. A second crew adds a foreman, a QC engineer and a rebase-and-re-qc at merge.
+   - When the parts are small enough for one project manager to coordinate, keep one crew and run its members in parallel instead. A second crew adds a project manager, a QC engineer and a rebase-and-re-qc at merge.
    - When a stage has more crews ready to run than `maxParallelCrews` allows (default 4, set in `.claude/truss.json`), the extra crews queue within the stage and start as running ones merge.
    - The plan shows the queue order.
 7. **Allowance.** The plan gives an estimated agent count per crew and a total. A plan over the cap (default 40 agents, set in `.claude/truss.json` as `agentCap`) is re-planned with fewer, larger crews or more stages before anyone sees it.
 
    *Note, 2026-10-28:* the cap is retired in foundry 0.7.0. It had no real basis, `maxParallelCrews` already limits load, and in run 4 it was raised twice and never caught the one overrun (an unbounded stress-test loop). The plan still gives `estAgents` per crew and a total, as information for the PM. `agentCap` is deprecated and ignored; the schemas still accept it. The `agentCap` lines in the plan examples in sections 1 and 8 are history.
-8. **Foremen split members by the same leaf test** and never re-split the design. Work that doesn't fit goes to the PM as `PROPOSAL:`.
+8. **Project managers split members by the same leaf test** and never re-split the design. Work that doesn't fit goes to the PM as `PROPOSAL:`.
 
 ### 6. Approval only when the design changes
 
@@ -194,9 +196,9 @@ The design engineer splits the goal once, on paper, along the module map. Agents
 
 ### 9. Hooks
 
-- **Stage gate:** an Agent call starting a `truss:foreman` whose slug is in `plan.json` is refused while any crew in an earlier stage isn't `merged` or `dropped`. Reason: `stage <n> isn't merged yet: <slugs>`.
-- **Parallel cap:** starting a foreman is also refused while `maxParallelCrews` crews are already `running`. Reason: `<running> crews running, the cap is <cap>; start <slug> when one merges`.
-- **Approval gate, run level:** when `approval` is `client` and `approvedAt` is null, starting any foreman in the plan is refused. Reason: `this run changes the design; get the client's approval first`.
+- **Stage gate:** an Agent call starting a `truss:project-manager` whose slug is in `plan.json` is refused while any crew in an earlier stage isn't `merged` or `dropped`. Reason: `stage <n> isn't merged yet: <slugs>`.
+- **Parallel cap:** starting a project manager is also refused while `maxParallelCrews` crews are already `running`. Reason: `<running> crews running, the cap is <cap>; start <slug> when one merges`.
+- **Approval gate, run level:** when `approval` is `client` and `approvedAt` is null, starting any project manager in the plan is refused. Reason: `this run changes the design; get the client's approval first`.
 - **Approval gate, crew level:** a crew whose `clientApproval` is `pending` is refused on its own. Reason: `<slug> waits for the client's approval`.
 - **No plan file, or a slug not in it:** no gate. 0.2.1 runs keep working.
 - **`/truss`** shows each crew's stage, verdict and status from `plan.json`, then the 0.2.1 member lines.

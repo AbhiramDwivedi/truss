@@ -94,7 +94,7 @@ test('wiring 025: approve by auto refuses a client goal', () => {
   assert.equal(ok.run('approve', { by: 'auto' }).status, 0)
 })
 
-test('wiring 025: approve by auto refuses a plan whose approval is client, and approves an auto plan with a stage-0 crew (ADR-0042)', () => {
+test('wiring 025: approve by auto refuses a plan whose approval is client, and approves an auto plan with a stage-0 crew (ADR-0044)', () => {
   const env = mkEnv()
   writePlan(env.dir, planObj([crew('design0', { stage: 0, verdict: 'design' }), crew('alpha', { stage: 1 })], { approvedAt: null, approval: 'client' }))
   const r = env.run('approve', { by: 'auto' })

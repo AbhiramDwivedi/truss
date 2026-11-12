@@ -1,6 +1,6 @@
 # ADR-0027: retro-fixes2: fail-closed admission, green fix routing, the QC foreground rule, `factory.ts decide`, the scrub gate on push and merge, and two catalog narrowings
 
-Status: proposed, 2026-11-03. Written by the design crew `retro-fixes2-design` (stage 0 of goal `retro-fixes2`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is `plan-retro-fixes2.md` (revision 3) in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
+Status: proposed, 2026-11-03. Written by the design crew `retro-fixes2-design` (stage 0 of goal `retro-fixes2`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is `plan-retro-fixes2.md` (revision 3) in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
 
 VERDICT: change. The **stage workflow** changes: `admit` fails closed, reversing a seam ADR-0015 documents. The **factory CLI** changes: every command but `start` refuses a relative `--dir`, and `decide` writes `decisions.md`. The run skill, the hooks, `agents/qc-engineer.md` and the retro catalog extend. ADR-0009, ADR-0012 and ADR-0015 each gain only an "Amended by" line. The four stage-1 crews build this.
 

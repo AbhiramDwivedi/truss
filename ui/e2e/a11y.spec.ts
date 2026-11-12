@@ -97,7 +97,7 @@ test('a11y: a live run with crew cards and their agent cards', async ({ page }) 
   const member = `quotas-builder-${run}`
   real = await startReal({
     plan: (p) => { p.crews.find((c: { slug: string }) => c.slug === 'quotas').status = 'running' },
-    events: [spawnEvent('quotas', 'quotas', { type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' }), spawnEvent('quotas', member)],
+    events: [spawnEvent('quotas', 'quotas', { type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' }), spawnEvent('quotas', member)],
     trussFiles: { 'reports/quotas/quotas-qc.md': 'VERDICT: PASS\n\nChecked.\n', 'reports/gateway/gateway-qc.md': 'VERDICT: FAIL\n\nChecked.\n' },
   })
   await page.goto(real.url)

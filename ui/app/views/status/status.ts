@@ -25,11 +25,11 @@ const ASKS = /^\s*(QUESTION|BLOCKED|PROPOSAL)\b/
 /** True when a detail line opens with a marker that needs the client's answer. */
 const asks = (detail: string | null | undefined): boolean => detail != null && ASKS.test(detail)
 
-/** Merged and dropped first, then stuck, then a foreman ask, then running; planned last. */
+/** Merged and dropped first, then stuck, then a project manager ask, then running; planned last. */
 export function crewStatus(crew: Crew): Status {
   if (crew.status === 'merged' || crew.status === 'dropped') return 'done'
   if (crew.stuck) return 'stuck'
-  if (crew.status === 'running') return asks(crew.foreman?.detail) ? 'waiting' : 'active'
+  if (crew.status === 'running') return asks(crew.projectManager?.detail) ? 'waiting' : 'active'
   if (crew.status === 'planned') return 'planned'
   if (crew.status === null && crew.members.length === 0) return 'planned'
   return 'active'
