@@ -239,3 +239,119 @@ test('start --resume merges the target into the crew branch before it returns', 
 
 // ---------------------------------------------------------------------------------------------------------------
 // task tests-stage appends the stage.js cases below this line
+
+// R-90 in stage.js: a resumed run syncs with the target before any member. A minimal stubbed-agent harness, modelled on
+// workflows.check.ts exec(): stage.js is loaded as text and run as an AsyncFunction; every agent() call is recorded.
+const STAGE_JS = path.join(HERE, '..', 'workflows', 'stage.js')
+const SHEAD = 'a1'.repeat(20)
+const SBASE = 'd4'.repeat(20)
+const SPATCH = 'e5'.repeat(20)
+const SPASS = `VERDICT: PASS\n\n## Proof checked\nHead: ${SHEAD}\nPatch: ${SPATCH}\n`
+const SROLES = {
+  tester: { agentType: 'proj:tester', model: 'sonnet', effort: 'medium', isolation: 'worktree' },
+  builder: { agentType: 'proj:builder', model: 'sonnet', effort: 'low', isolation: 'worktree' },
+  resolver: { agentType: 'proj:resolver', model: 'sonnet', effort: 'medium', isolation: 'none' },
+  writer: { agentType: 'truss:writer', model: 'opus', effort: 'medium', isolation: 'worktree' },
+  rca: { agentType: 'general-purpose', model: 'opus', effort: 'medium', isolation: 'none' },
+  stress: { agentType: 'truss:qc-engineer', model: 'opus', effort: 'medium', isolation: 'worktree' },
+  qc: { agentType: 'truss:qc-engineer', model: 'opus', effort: 'medium', isolation: 'none' },
+  planner: { agentType: 'truss:planning-engineer', model: 'opus', effort: 'medium', isolation: 'none' },
+  runner: { agentType: 'general-purpose', model: 'sonnet', effort: 'low', isolation: 'none' },
+}
+const sT1 = { name: 'write-tests', role: 'tester', effort: 'medium', files: ['tests/a.check.ts'], reads: ['src/a.ts'], brief: 'BRIEF-T1', after: [] }
+const sB1 = { name: 'build-it', role: 'builder', effort: 'medium', files: ['src/a.ts'], reads: ['tests/a.check.ts'], brief: 'BRIEF-B1', after: ['write-tests'] }
+const sDone = (branch: string) => ({ task: 'whatever', marker: 'DONE', branch, commit: 'c0'.repeat(20), proof: 'PROOF-' + branch, text: 'finished ' + branch })
+const sEntry = (o: any = {}) => ({
+  slug: 'a', stage: 1, goalFile: '/proj/.truss/goals/a.md', goal: 'GOAL-TEXT', owns: ['src/**', 'tests/*.ts'], acceptanceTest: 'node --test tests/a.check.ts',
+  highImpact: ['src/core/**'], stressTest: false, scope: 'SCOPE', worktree: '/wt/a', branch: 'truss/a', base: SBASE, architecture: '/proj/docs/ARCH.md',
+  adrs: [], resume: null, tasks: [], done: [], answers: [], spent: 0, labelFrom: {}, ...o,
+})
+const rjson = (obj: any) => ({ exit: 0, stdout: JSON.stringify(obj) })
+const tickS = () => new Promise((r) => setImmediate(r))
+
+/** Runs stage.js for one crew entry. `syncs` answers the n-th `sync` runner call (default merged). Returns the ordered timeline of
+ *  runner commands (`runner:<cmd>[:<expect>]`) and agent labels, plus the calls with their prompts. */
+async function runStageCrew(e: any, syncs: any[] = []) {
+  const body = readFileSync(STAGE_JS, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
+  const calls: any[] = []
+  const timeline: string[] = []
+  let syncN = 0
+  const agent = async (prompt: string, opts: any = {}) => {
+    calls.push({ prompt, opts, label: opts.label })
+    await tickS()
+    if (/-runner(-\d+)?$/.test(String(opts.label))) {
+      const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
+      const src = mh ? (mh[1].includes(' -- ') ? mh[1].slice(mh[1].indexOf(' -- ') + 4) : '') : prompt
+      const m = src.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions)\b([^\n`]*)/)
+      if (!m) throw new Error(`unparsable runner prompt for label ${opts.label}`)
+      const cmd = m[1]
+      const expect = (m[2].match(/--expect\s+([^\s`]+)/) || [])[1]
+      if (cmd !== 'admit' && cmd !== 'reap') timeline.push(`runner:${cmd}${cmd === 'check' ? ':' + expect : ''}`)
+      if (cmd === 'sync') {
+        const s = syncs[syncN++]
+        if (s !== undefined) return rjson(s)
+        return rjson({ merged: true })
+      }
+      if (cmd === 'admit') return rjson({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 })
+      if (cmd === 'reap') return rjson({ reaped: [], skipped: [] })
+      if (cmd === 'check') return rjson(expect === 'red' ? { ok: true } : { ok: true, head: SHEAD })
+      if (cmd === 'owns-check') return rjson({ ok: true, outside: [] })
+      if (cmd === 'tests-check') return rjson({ ok: true, tests: [] })
+      return rjson({ merged: true })
+    }
+    const labels: any = { 'a-tester': sDone('feat/t'), 'a-builder': sDone('feat/b'), 'a-resolver': sDone('feat/r'), 'a-qc': SPASS }
+    if (!Object.hasOwn(labels, opts.label)) throw new Error(`unscripted label: ${opts.label}`)
+    timeline.push(`agent:${opts.label}`)
+    return structuredClone(labels[opts.label])
+  }
+  const parallel = async (thunks: any[]) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
+  const pipeline = async (items: any[], ...stages: any[]) =>
+    Promise.all(items.map(async (item, i) => { try { let p = item; for (const st of stages) p = await st(p, item, i); return p } catch { return null } }))
+  const args = { truss: { kind: 'stage', dir: '/proj/.truss', repo: '/proj', plugin: path.join(HERE, '..'), target: 'main', reworkAllowance: 2, roles: SROLES, scriptPath: STAGE_JS, crews: [e] } }
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const result = await new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'allowance', body)(agent, parallel, pipeline, () => {}, () => {}, structuredClone(args), {})
+  return { result, calls, timeline }
+}
+const firstIdx = (tl: string[], pred: (s: string) => boolean): number => tl.findIndex(pred)
+const isMember = (s: string): boolean => s === 'agent:a-tester' || s === 'agent:a-builder'
+
+test('a resumed stage run syncs with the target before any member starts', async () => {
+  for (const e of [sEntry({ resume: 'answers', tasks: [sT1, sB1] }), sEntry({ resume: 'stale', tasks: [sT1, sB1] })]) {
+    const r = await runStageCrew(e)
+    const sync = r.timeline.indexOf('runner:sync')
+    const syncCall = r.calls.find((c) => /factory\.ts\s+sync\b/.test(c.prompt))
+    assert.ok(sync >= 0, `${e.resume}: sync is run on a resumed run; timeline ${r.timeline.join(' > ')}`)
+    assert.ok(syncCall.prompt.includes('sync --slug a'), `${e.resume}: sync --slug a`)
+    const members = firstIdx(r.timeline, isMember)
+    assert.ok(members >= 0, `${e.resume}: a member ran`)
+    assert.ok(sync < members, `${e.resume}: sync before the first member; timeline ${r.timeline.join(' > ')}`)
+    const factoryCalls = r.timeline.filter((s) => s.startsWith('runner:') && s !== 'runner:decisions')
+    assert.equal(factoryCalls[0], 'runner:sync', `${e.resume}: sync is the first factory call after the decisions restore; ${factoryCalls.join(' > ')}`)
+    for (const k of ['runner:check:red']) {
+      const i = r.timeline.indexOf(k)
+      assert.ok(i < 0 || sync < i, `${e.resume}: sync before ${k}`)
+    }
+  }
+})
+
+test('a target merge conflict on resume goes to the resolver and starts no member', async () => {
+  const e = sEntry({ resume: 'answers', tasks: [sT1, sB1] })
+  const r = await runStageCrew(e, [{ merged: false, conflicts: ['SYNC-CONFLICT.ts'] }, { merged: true }])
+  const syncs = r.timeline.map((s, i) => (s === 'runner:sync' ? i : -1)).filter((i) => i >= 0)
+  assert.equal(syncs.length >= 2, true, `sync runs twice (conflict, then again); timeline ${r.timeline.join(' > ')}`)
+  const resolver = r.timeline.indexOf('agent:a-resolver')
+  assert.ok(resolver > syncs[0] && resolver < syncs[1], `the resolver runs between the two syncs; timeline ${r.timeline.join(' > ')}`)
+  const p = r.calls.find((c) => c.label === 'a-resolver').prompt
+  assert.ok(p.includes('/wt/a'), 'the resolver works in the crew worktree')
+  assert.ok(p.includes('SYNC-CONFLICT.ts'), 'the resolver is told the conflicting file')
+  const members = firstIdx(r.timeline, isMember)
+  assert.ok(members < 0 || syncs[1] < members, 'no member before the second sync')
+
+  // still not merged after the resolver: BLOCKED at R1, no member spawned
+  const r2 = await runStageCrew(e, [{ merged: false, conflicts: ['SYNC-CONFLICT.ts'] }, { merged: false }, { merged: false }])
+  assert.equal(r2.result[0].state, 'stopped', JSON.stringify(r2.result[0]))
+  assert.equal(r2.result[0].tag, 'BLOCKED')
+  assert.equal(r2.result[0].at, 'R1')
+  assert.ok(r2.timeline.includes('agent:a-resolver'), 'the resolver ran')
+  assert.equal(firstIdx(r2.timeline, isMember), -1, 'no member was spawned')
+})
