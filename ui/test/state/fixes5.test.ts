@@ -36,7 +36,7 @@ const plan = (slugs: string[]) =>
     })),
   })
 const spawn = (ts: string, crew: string, agent: string, by: string) => ({
-  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:foreman' : 'kit:builder',
+  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:project-manager' : 'kit:builder',
   model: 'opus', effort: 'high', by,
 })
 const stall = (ts: string, crew: string, agent: string, kind: string, minutes: number) => ({ v: 1, ts, event: 'stall', crew, agent, kind, minutes })
@@ -45,7 +45,7 @@ const tag = (ts: string, crew: string, agent: string) => ({ v: 1, ts, event: 'ta
 test('i54 2: a later line of successor foreman a-2 clears the idle-foreman stall of crew a; a kind agent stall still needs the stalled agent', () => {
   const w = storeFor({
     'plan.json': plan(['a']),
-    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12), tag(T(25), 'a', 'a-2')]),
+    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-project-manager', 12), tag(T(25), 'a', 'a-2')]),
   })
   const x = storeFor({
     'plan.json': plan(['a']),
@@ -63,7 +63,7 @@ test('i54 2: a later line of successor foreman a-2 clears the idle-foreman stall
 })
 
 test('i54 3: spawns by successor a-2, logged under crew a-2 (hook shape) or under crew a, clear the idle-foreman stall of crew a', () => {
-  const run = (rows: unknown[]) => storeFor({ 'plan.json': plan(['a']), 'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12), ...rows]) })
+  const run = (rows: unknown[]) => storeFor({ 'plan.json': plan(['a']), 'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-project-manager', 12), ...rows]) })
   const h = run([spawn(T(25), 'a-2', 'k', 'a-2')])
   const u = run([spawn(T(25), 'a', 'k', 'a-2')])
   const c = run([spawn(T(25), 'a-2', 'k', 'other')])
@@ -114,7 +114,7 @@ test('control 3: i54 in a crew slugged factory a spawn by factory does not clear
   const w = storeFor({
     'plan.json': plan(['factory']),
     'events.jsonl': jsonl([
-      spawn(T(0), 'factory', 'factory', 'main'), stall(T(20), 'factory', 'factory', 'idle-foreman', 12),
+      spawn(T(0), 'factory', 'factory', 'main'), stall(T(20), 'factory', 'factory', 'idle-project-manager', 12),
       spawn(T(25), 'factory', 'factory-b', 'factory'),
     ]),
   })
@@ -128,7 +128,7 @@ test('control 3: i54 in a crew slugged factory a spawn by factory does not clear
 test('control 4: i54 a stall in events.1.jsonl then the stalled agent line in events.jsonl clears it (events.1.jsonl)', () => {
   const w = storeFor({
     'plan.json': plan(['a']),
-    'events.1.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12)]),
+    'events.1.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-project-manager', 12)]),
     'events.jsonl': jsonl([tag(T(35), 'a', 'a')]),
   })
   try {
