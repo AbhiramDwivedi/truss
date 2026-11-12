@@ -276,7 +276,8 @@ test('BuildNetwork: no stock palette classes in the network', async () => {
 
 // ---- BuildNetwork: agent cards in the network ------------------------------------------------------------
 test('BuildNetwork: rework-network lists the foreman first, then the builder, then the QC engineer, each a list item', async () => {
-  const art = articleOf(region(await network(rx('live'))), 'rework-network')
+  // the recorded lead has the retired type; ADR-0042 reads the new type only, so set it first
+  const art = articleOf(region(await network(mutate(rx('live'), 'rework-network', (c) => { c.foreman.type = 'truss:project-manager' }))), 'rework-network')
   const cards = agentCards(art)
   assert.equal(cards.length, 3)
   const t = cards.map((c) => tidy(text(c)))
