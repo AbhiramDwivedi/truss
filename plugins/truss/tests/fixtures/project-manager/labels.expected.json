@@ -1,0 +1,11 @@
+{
+  "labels": {
+    "fixture-qc-1": null,
+    "fixture-tester-1": null,
+    "tester-fixture": {
+      "slug": "tester",
+      "role": "fixture",
+      "n": 1
+    }
+  }
+}
