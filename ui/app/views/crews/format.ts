@@ -112,6 +112,7 @@ export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
   const type = m.type ?? ''
   if (type === 'truss:project-manager' || type === 'workflow-crew') return 'Foreman'
   if (type === 'truss:qc-engineer') return 'QC engineer'
+  if (type === 'truss:foreman') return 'General purpose' // ADR-0042: the retired type is no longer read as a crew lead
   if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
   const typed = typeRole(m.type)
   if (typed !== null) return sentence(typed)
