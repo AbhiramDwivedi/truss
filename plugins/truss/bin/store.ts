@@ -391,9 +391,10 @@ export function createExclusive(p: string, obj: unknown, opts: { fs?: FsLike } =
 // ==== leases ====
 
 // A lease is the file <dir>/locks/<name>.lease holding {pid, host, since, refreshed, token}, created with createExclusive. Its holder
-// refreshes `refreshed` every LEASE_REFRESH_MS; a lease not refreshed for LEASE_STALE_MS is stale whoever wrote it, so the refresh
-// interval stays well under the window and a live holder's lease never goes stale. A holder that cannot refresh (it blocks its own event
-// loop in spawnSync) keeps a lease of this host while its pid lives; only another host's lease is judged by the window.
+// refreshes `refreshed` between its steps (LEASE_REFRESH_MS is the interval it aims for; it never sleeps on it). A lease of another host
+// not refreshed for LEASE_STALE_MS is stale, so the refresh interval stays well under the window. A lease of THIS host is judged by its
+// pid alone, never by age: the holder blocks its own event loop in spawnSync and cannot refresh, and no process start time is recorded,
+// so a lease whose pid was reused by another live process is not recovered and stays until that process exits or the file is deleted.
 export const LEASE_STALE_MS = 300_000
 export const LEASE_REFRESH_MS = 30_000
 
