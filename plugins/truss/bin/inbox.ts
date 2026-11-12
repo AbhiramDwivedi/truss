@@ -472,6 +472,10 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
   const r = it.resolve
   if (r === null) return `no prompt typed by the client approves ${item}: the client types /truss:inbox approve ${item} <code>`
   if (r.by !== 'client' || r.decision !== 'approve') return `${item} was resolved ${String(r.decision)}, not approve`
+  // the client's approve must come after the plan was written: a resolve older than plan-write approved a plan the client never saw (replayed proof)
+  const wrote = [`${dir}/plan.md`, `${dir}/plan.json`].map((p) => { try { return statSync(p).mtimeMs } catch { return null } }).find((m) => m !== null)
+  const at = Date.parse(String(r.ts))
+  if (wrote === undefined || wrote === null || !(at >= Math.floor(wrote))) return `${item} was resolved before the current plan was written, so the client never approved this plan: open a new client-trigger item for it`
   return null
 }
 
