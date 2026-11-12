@@ -16,6 +16,7 @@ export type EscalateOut = { id: string; kind: string; deduped: boolean; code: st
 const KINDS: Record<string, { by: 'client' | 'any'; blocking: boolean }> = {
   'client-question': { by: 'client', blocking: false },
   'scope-change': { by: 'client', blocking: true },
+  'pm-question': { by: 'any', blocking: true },
   'client-trigger': { by: 'client', blocking: true },
   'long-term-cost': { by: 'client', blocking: true },
   budget: { by: 'client', blocking: true },
