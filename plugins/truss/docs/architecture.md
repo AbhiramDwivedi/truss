@@ -1443,6 +1443,8 @@ The install flow is proven against a local smart-HTTP copy of the repo, not agai
 
 The ADR-0013 amendment lists the other files the move changes: 13 ui files that take the plugin to be ui/'s parent, and 6 plugin files that break under a pure move.
 
+Doc line citations are checked by `citationFailures` in `plugins/truss/tests/release-026.check.ts:156`. A `path:line` citation passes when a symbol it names (a backtick identifier in its clause or line, or an `ABOUT` pin) is in the cited lines or anywhere in the cited file. It fails only when every named symbol is absent from the file, the file is missing, or the line is past its end. A bare `:N` after another citation is not checked. So line drift never fails the check; to find drift, confirm the cited lines themselves hold the symbol. Cite as `symbol` (`path:line`) in one clause.
+
 ## Plugin dependencies
 
 truss uses kit, worktrees and subagent-limits where they live, in the claude-ops marketplace, and copies none of them. [ADR-0021](adr/0021-plugin-dependencies.md) records the decisions; this section is the map.
