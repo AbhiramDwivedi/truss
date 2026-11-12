@@ -358,7 +358,18 @@ test('agents/project-manager.md has name: project-manager, and no file in agents
 
 test('the run skill crew-lead start block names subagent_type truss:project-manager', () => {
   const text = readFileSync(`${PLUGIN}/skills/run/SKILL.md`, 'utf8')
-  const blocks = [...text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((m) => m[1])
+  // fenced blocks, by lines: a line that starts with three backticks opens or closes one
+  const blocks: string[] = []
+  let open: string[] | undefined
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*```/.test(line)) {
+      if (open === undefined) open = []
+      else {
+        blocks.push(open.join('\n'))
+        open = undefined
+      }
+    } else if (open !== undefined) open.push(line)
+  }
   const starts = blocks.filter((b) => b.includes('isolation: "worktree"') && b.includes('run_in_background: true'))
   assert.equal(starts.length, 1, 'one fenced block has isolation: "worktree" and run_in_background: true')
   assert.match(starts[0], /subagent_type:\s*"truss:project-manager"/)
