@@ -40,6 +40,7 @@ With arguments, read them as `<decision> <E-id> <code> [raise <usd>] [note…]`.
    Leave out `--note-file` and its path when there is no note, and `--raise-usd <usd>` when the human typed no `raise <usd>`. `resolve` refuses an amount that differs from the typed one.
 3. Read the one JSON line it prints.
    - Exit 0 prints `{id, state: "resolved", decision, quote}`. Tell the human the item is resolved, with the decision and the quote it stored.
+   - Approving a plan's approval item (a `client-trigger` item with ref `run`, opened for this truss dir) also approves the plan (ADR-0045). The output then carries `approved: {approvedAt}`: tell the human the plan is approved. When it carries `approveRefused` instead (an open long-term cost, or a plan already approved), the resolve stands but the plan is not approved: show its `error` as it is. Never run `approve --by client` yourself.
    - Exit 1 whose `error` says no prompt typed by the client was found means the check found no line the human typed that holds the id, the decision word and the code. Ask the human to type the line again as a plain prompt, not a slash command: `<decision> <E-id> <code> [raise <usd>] [note]`. When they have, run the same command once more.
    - Any other refusal (a wrong code, an item already resolved): show its `error` to the human as it is, and stop. Don't retry with other values.
 
