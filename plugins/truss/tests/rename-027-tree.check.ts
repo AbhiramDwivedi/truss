@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Truss 0.27.0: the old crew-lead name is gone from the code and docs, with no alias and no exemption.
-// Walks every tracked file under plugins/truss, docs, checks and ui (ui/contract/fixtures excepted: recorded truss
-// events and ui state files stay as recorded) and lists every line that still holds the old name.
+// Walks every tracked file in the repo, except the recorded or recording-derived files in EXCLUDED, and lists every
+// line that still holds the old name.
 // The pattern is built from two pieces so that this file never holds the old name itself and passes its own walk.
 // No CHANGELOG exemption is needed: the changelog rewrote its older entries in 0.27.0.
 //
@@ -16,6 +16,10 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const OLD_NAME = new RegExp('fore' + '(man|men)', 'i')
+const FX = 'ui/contract/fixtures/'
+const EXCLUDED = [FX + 'sdk-stream.jsonl', FX + 'rework/sdk-flow.jsonl', FX + 'rework/real-12/state.json', FX + 'rework/real-data/state.json']
+const EXCLUDED_DIRS = [FX + 'real-data/truss/']
+const excluded = (f) => EXCLUDED.includes(f) || EXCLUDED_DIRS.some((d) => f.startsWith(d))
 const BINARY = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|otf|pdf|zip|gz|mp4|mov)$/i
 
 function tracked(...specs) {
@@ -24,8 +28,8 @@ function tracked(...specs) {
   return r.stdout.split('\0').filter(Boolean)
 }
 
-test('rename-027-tree: no tracked file under plugins/truss, docs, checks or ui names the old crew lead', () => {
-  const files = [...new Set([...tracked('plugins/truss', 'docs', 'checks'), ...tracked('ui').filter((f) => !f.startsWith('ui/contract/fixtures/'))])]
+test('rename-027-tree: no tracked file outside the recorded fixtures names the old crew lead', () => {
+  const files = tracked('.').filter((f) => !excluded(f))
   assert.ok(files.length > 100, `only ${files.length} files walked`)
   const hits = []
   for (const f of files) {

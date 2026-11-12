@@ -10,7 +10,7 @@ Amended 2026-10-28 by repo [ADR-0015](claude-ops/0015-agent-worktree-cleanup.md)
 Run 3's goal items 2, 3 and 7 (`plan.json` `goal`) need four things foundry 0.4.3 can't express:
 
 - **Scope.** A project manager's report says what was checked, but nothing says what wasn't. A claim like "no other caller" or "every call site updated" passes the QC engineer with no record of where anyone looked.
-- **A bounded repair loop.** After a QC engineer FAIL the project manager starts `<crew>-qc-2`, `-3` and so on with no limit (`agents/project-manager.md:133-137`). Nothing stops a crew from looping, and nothing records that it ran out of tries.
+- **A bounded repair loop.** After a QC engineer FAIL the project manager starts `<crew>-qc-2`, `-3` and so on with no limit (the 0.x project-manager prompt). Nothing stops a crew from looping, and nothing records that it ran out of tries.
 - **The head a PASS belongs to.** The QC engineer states the SHA it ruled on somewhere in free text under `## Proof checked` (`agents/qc-engineer.md:72`, `agents/project-manager.md:135`). No hook can read it. The program manager (PM) compares it by eye (`skills/run/SKILL.md:281`, `:288`). After a rebase the head always moves, so every rebase needs a fresh QC engineer (`agents/project-manager.md:162`), even when the crew's change is byte-for-byte the same.
 - **Calls with no model or effort from the main session.** `agentVerdict` and `effortVerdict` (`hooks/register.ts:232`, `:243`) return early outside a crew, so the design engineer, checking engineer, project manager and integration QC engineer the PM starts get their frontmatter's effort unless the call sets one.
 

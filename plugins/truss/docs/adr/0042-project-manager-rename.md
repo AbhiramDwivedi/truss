@@ -66,7 +66,7 @@ TODO: whether Claude Code refuses an Agent call whose `subagent_type` names no k
 
 - A 0.26.0 config that sets the old `promptOverrides` key fails schema validation. The client renames the key by hand.
 - A 0.26.0 plan or goal file that starts the old agent type no longer starts a gated crew lead (Decision 4).
-- Old run logs' idle-stall events, under the old kind, are not in the event enum: retro does not count them, and ui does not show them.
+- Old run logs' idle-stall events, under the old kind, are not in the event enum: retro does not count them, and an old-kind stall line shows in ui as a plain stall.
 - ui does not show a run written by a plugin before 0.27.0 with its crew lead ranked first or with its idle-lead stuck state. That includes runs made by a program manager on an installed 0.25.0 or 0.26.0 plugin.
 - ADR-0001 to ADR-0041, the claude-ops ADRs and past CHANGELOG entries are reworded to the new names. Their Decisions and Statuses keep their meaning. Where a foundry-era text used the old word for the main session, it now says "program manager".
 - Reversing this decision means renaming every value in Decision 2 back, in the plugin, ui, docs and tests, with the same lack of a migration path.

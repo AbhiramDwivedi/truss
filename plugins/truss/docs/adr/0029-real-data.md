@@ -20,7 +20,7 @@ The plan maps them to requirements: defect 1 to `R-44` and `R-42` (the status an
 
 Three facts of the real dir cause them:
 
-- `workflow-crew` project managers `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts:210-215`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts:38-43`).
+- `workflow-crew` project managers `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts:224-226`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts:38-43`).
 - Members started inside a Workflow crew carry an `agentId` but no session task, because their task descriptions never reach the PM's stream. ADR-0028 section 6 left this as a `TODO:`. Claude Code writes each such agent's transcript to `~/.claude/projects/<projectKey>/<session id>/subagents/workflows/<wf id>/agent-<agentId>.jsonl`, next to a `.meta.json`.
 - A truss dir watched with no hosted session has no transcript and no usage. Run time reads the transcript (`ui/app/views/metrics/RunMetrics.tsx:25-26`), and Cost reads `usage.costUsd` and otherwise says "No usage yet" (`RunMetrics.tsx:48-49`).
 

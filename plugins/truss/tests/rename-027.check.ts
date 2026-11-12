@@ -101,7 +101,7 @@ test('rename-027: the first CHANGELOG entry is 0.27.0', () => {
 test('rename-027: the 0.27.0 entry says no alias and names the old promptOverrides key and idle-stall events as no longer read', () => {
   const entry = section(plugin('CHANGELOG.md'), /^## 0\.27\.0\b/)
   assert.ok(entry, 'no 0.27.0 entry')
-  assert.match(entry, /alias/i, 'the entry does not mention alias')
+  assert.match(entry, /no alias/i, 'the entry does not say no alias')
   assert.match(entry, /promptOverrides/, 'the entry does not name promptOverrides')
   assert.match(entry, /idle[- ]stall/i, 'the entry does not name the idle-stall events')
   assert.match(entry, /no longer read|not read|never read/i, 'the entry does not say the old names are no longer read')

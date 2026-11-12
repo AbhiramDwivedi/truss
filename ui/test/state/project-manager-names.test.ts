@@ -160,7 +160,7 @@ function validate(s: any, v: any, at: string, errs: string[]): void {
 test('stress: 500 event lines mixing both kinds and both types validate, with stuck and crew leads from new values only', () => {
   const newCrews = ['n1', 'n2', 'n3']
   const oldCrews = ['o1', 'o2', 'o3']
-  const mixed = 'm1' // a new-kind stall, then a later old-kind stall: only the new one is read
+  const mixed = 'm1' // a new-kind stall, then a later old-kind stall line: that line is a plain stall and a later event of the agent, so it clears the stuck state
   const slugs = [...newCrews, ...oldCrews, mixed]
   const rows: unknown[] = []
   let t = 0
@@ -195,8 +195,7 @@ test('stress: 500 event lines mixing both kinds and both types validate, with st
       assert.equal(s.minutes, 20)
     }
     const m = crewBy(run, mixed).stuck
-    assert.ok(m, 'mixed crew stuck')
-    assert.equal(m.minutes, 11, 'only the new-kind stall is read')
+    assert.equal(m, null, 'the later old-kind stall line is a later event of the stalled agent')
     for (const slug of oldCrews) assert.equal(crewBy(run, slug).stuck, null, `${slug} has no stuck state`)
     // crew leads only of the new type
     for (const c of run.crews) {

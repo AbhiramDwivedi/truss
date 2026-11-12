@@ -16,7 +16,7 @@ The client rejected today's page against the reference `truss_factory.tsx` and l
 
 The Agent SDK runs a skill when the user message starts with `/<name>`, and the `system/init` message lists the commands the session can run (Agent SDK docs, "Slash commands"). The recorded stream's `init` lists `truss:run` in `slash_commands` (`ui/contract/fixtures/sdk-stream.jsonl:3`). `live.check.ts` does not send `/truss:run` today, so the live case below is new.
 
-ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan(): boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts:163`, `reduce.ts:333`).
+ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan(): boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts:163`, `reduce.ts:349`).
 
 | Intent | Condition | Session input |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ purpose?: string | null  // see below
 task?: string | null     // see below
 ```
 
-- `agentId`: ui-state keeps it from the spawn line (`reduce.ts:192-197`).
+- `agentId`: ui-state keeps it from the spawn line (`reduce.ts:211-212`).
 - `task`: ui-session keeps the latest `description` per `task_id` from `task_started` and `task_progress`, at most 500 entries. ui-server sets `Member.task` when it builds the snapshot, where `task_id === agentId`. It is null when nothing matches. TODO: no recording shows whether the tasks of members started inside a Workflow crew reach the PM's stream; rework-server's `R-42:` case must record one, or this falls back.
 - Fallback, in the client: the crew's `goal` for the project manager; otherwise the member's latest activity (its `detail`, for example the report marker); otherwise "No activity yet".
 - `purpose`: the first sentence of the `description:` line in `<pluginPath>/agents/<name>.md`. The name is the member's `type` with `truss:` stripped. Type `workflow-crew`, and the crew's project manager, map to `project-manager`. Unknown types, and `general-purpose` (1,566 of the real dir's spawns), get null, and the card shows the type only. ui-state reads the files once at start; it writes nothing (R-9).

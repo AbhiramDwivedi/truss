@@ -187,7 +187,6 @@ export function createReducer(): Reducer {
     }
     if (kind === null || !EVENTS.has(kind) || slug === null || slug === '' || agent === null || agent === '' || ts === null) return undefined
     if (slug === 'main') return undefined // crew main is never a crew
-    if (kind === 'stall' && obj.kind !== 'agent' && obj.kind !== 'idle-project-manager') return undefined // an unknown stall kind is ignored
     const acc = crewOf(slug)
     if (!agentCrew.has(agent)) agentCrew.set(agent, slug)
     let text: string
