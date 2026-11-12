@@ -567,6 +567,27 @@ Measure: 0 lines naming the old crew lead (any case) in every file `git ls-files
 Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: client
 
+## R-82: The plan splits only as much as the work needs
+Status: open
+Kind: nfr
+Measure: given the 0.27.0 rename goal with no crew or stage count in the brief, plan mode returns 1 stage and at most 3 crews; every crew's estimated project-manager context in plan.md is at most 150K tokens (half of the 300K checkpoint); plan-check warns on any stage after the first that has no `Why stage` line
+Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared files
+Source: client
+
+## R-83: A design crew only for an open design question, and goal-wide checks after the last merge
+Status: open
+Kind: functional
+Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared files
+Source: client
+Example: Given a goal "rename X to Y with no alias, record it in an ADR" whose acceptance is a whole-tree zero-match test, when plan mode runs, then the plan has no stage-0 design crew and no release stage, the build crew writes the ADR, the zero-match test is the plan's goal check that the program manager runs after the last merge, and approval is auto unless a client trigger applies.
+
+## R-84: Crews may edit the same files and work in parallel; they merge one at a time on the program manager's go-ahead
+Status: open
+Kind: functional
+Added: 2026-11-11T22:05:00Z | split by complexity, crews in parallel on shared files
+Source: client
+Example: Given two crews in one stage whose owns both list skills/run/SKILL.md, when plan-check runs, then it reports no overlap error; both crews build at the same time in their own worktrees; on the program manager's go-ahead the first merges to the target, and the second, on its go-ahead, merges the latest target into its branch, resolves conflicts, reruns its checks and QC, then merges to the target.
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).

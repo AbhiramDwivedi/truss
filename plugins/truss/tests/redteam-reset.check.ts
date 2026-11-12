@@ -23,7 +23,7 @@ const read = (...parts: string[]): string => {
 }
 const QC = read('agents', 'qc-engineer.md')
 const STRESS = read('agents', 'stress-engineer.md')
-const FOREMAN = read('agents', 'foreman.md')
+const PROJECT_MANAGER = read('agents', 'project-manager.md')
 
 const RED_START = 'Stress test:'
 const RESET = 'git reset --hard <sha>'
@@ -91,13 +91,13 @@ test('stress-engineer.md times with "%s%N" and never "/usr/bin/time"', () => {
   assert.ok(STRESS.length > 0, 'producer missing: stress-engineer.md not readable')
 })
 
-const foremanBullet = (): string => FOREMAN.split('\n').find((l: string) => l.startsWith('- **Stress test, when the brief says yes.**')) ?? ''
+const projectManagerBullet = (): string => PROJECT_MANAGER.split('\n').find((l: string) => l.startsWith('- **Stress test, when the brief says yes.**')) ?? ''
 
-test('foreman.md stress test bullet does not say "checks out"', () => {
-  assert.ok(foremanBullet().length > 0, 'producer missing: foreman.md has no stress test bullet')
-  assert.ok(!foremanBullet().includes('checks out'), 'producer missing: foreman.md stress test bullet still says "checks out"')
+test('project-manager.md stress test bullet does not say "checks out"', () => {
+  assert.ok(projectManagerBullet().length > 0, 'producer missing: project-manager.md has no stress test bullet')
+  assert.ok(!projectManagerBullet().includes('checks out'), 'producer missing: project-manager.md stress test bullet still says "checks out"')
 })
 
-test('foreman.md stress test bullet carries "git reset --hard <sha>"', () => {
-  assert.ok(foremanBullet().includes(RESET), `producer missing: foreman.md stress test bullet does not carry ${JSON.stringify(RESET)}`)
+test('project-manager.md stress test bullet carries "git reset --hard <sha>"', () => {
+  assert.ok(projectManagerBullet().includes(RESET), `producer missing: project-manager.md stress test bullet does not carry ${JSON.stringify(RESET)}`)
 })
