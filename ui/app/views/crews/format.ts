@@ -139,9 +139,9 @@ const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writ
  * The member list order: project manager first, then the named truss roles (builder, tester, ux, qc, stress, planning,
  * writer, resolver), then the rest; check runs last, split off by the caller.
  */
-export function orderAgents(agents: readonly Member[], foreman: Member | null): Member[] {
+export function orderAgents(agents: readonly Member[], projectManager: Member | null): Member[] {
   const rank = (m: Member): number => {
-    if (foreman ? m === foreman || m.name === foreman.name : false) return 0
+    if (projectManager ? m === projectManager || m.name === projectManager.name : false) return 0
     if (m.type === 'truss:project-manager' || m.type === 'workflow-crew') return 0
     const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (typeRole(m.type) ?? nameRole(m.name) ?? '')
     const i = ROLE_ORDER.indexOf(key)
