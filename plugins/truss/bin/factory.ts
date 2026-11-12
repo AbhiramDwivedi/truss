@@ -1291,15 +1291,15 @@ function goalSections(text: string): Record<string, string> {
   out[key] = buf.join('\n').trim()
   return out
 }
-// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else foreman with the reason.
-function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'foreman'; reason: string } {
-  if (merge === 'single') return { engine: 'foreman', reason: 'merge mode single runs on the foreman path' }
-  if (noWorkflow) return { engine: 'foreman', reason: 'no Workflow tool in this session' }
+// The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else project manager with the reason.
+function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'project-manager'; reason: string } {
+  if (merge === 'single') return { engine: 'project-manager', reason: 'merge mode single runs on the project manager path' }
+  if (noWorkflow) return { engine: 'project-manager', reason: 'no Workflow tool in this session' }
   const text = sections.Engine
-  if (text === undefined || text === '') return { engine: 'foreman', reason: 'the goal file has no ## Engine section' }
+  if (text === undefined || text === '') return { engine: 'project-manager', reason: 'the goal file has no ## Engine section' }
   const m = /^(\w+)[\s:,.\-]*([\s\S]*)$/.exec(text)
   if (m?.[1].toLowerCase() === 'workflow') return { engine: 'workflow', reason: '' }
-  return { engine: 'foreman', reason: (m?.[2] ?? '').trim() || 'the goal file says foreman' }
+  return { engine: 'project-manager', reason: (m?.[2] ?? '').trim() || 'the goal file says project-manager' }
 }
 
 // ADR-0022 U6 (item 23): each `<n> <role> on <model> at effort <effort>` phrase in the goal file's `## Members` (a line, a bullet
@@ -1309,7 +1309,7 @@ function engineOf(sections: Record<string, string>, merge: string, noWorkflow: b
 type Members = Partial<Record<'builder' | 'tester', { model: string; effort: string }>>
 export function membersOf(section: string | undefined, goalFile: string): { members: Members; refuse?: string } {
   const members: Members = {}
-  const tail = `factory start never lowers an effort silently. Set ## Engine to foreman in ${goalFile} to run this crew on the foreman path.`
+  const tail = `factory start never lowers an effort silently. Set ## Engine to project-manager in ${goalFile} to run this crew on the project manager path.`
   // A goal file writes ## Members as sentences ("1 tester on Sonnet at effort medium writes the tests. Then 2 builders on Opus at
   // effort medium, split by file: ..."), so the phrase counts wherever it stands, not only as a whole line: a phrase the parser
   // skipped would run a high-effort ask at the default effort, the silent lowering R2 forbids.
@@ -1406,14 +1406,14 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
-function stageOut(c: StartCtx, entries: Obj[], foremen: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
+function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const found = buildPersonas(c.repo)
-  const warnings = [...stressWarnings(c, [...entries, ...foremen].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
+  const warnings = [...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
-    held, foremen, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
+    held, projectManagers, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
 
@@ -2176,7 +2176,7 @@ function cmdStart(f: Flags): Obj {
   const cap = intOr(plan.maxParallelCrews, 4, 1)
   let slots = cap - crews.filter((c) => c.status === 'running').length
   const wasRunning = crews.filter((c) => c.status === 'running')
-  const foremen: Obj[] = []
+  const projectManagers: Obj[] = []
   const refused: Obj[] = []
   const entries: Obj[] = []
   const held: Obj[] = []
@@ -2191,7 +2191,7 @@ function cmdStart(f: Flags): Obj {
       refused.push({ slug: String(crew.slug), reason: `the goal file ${missingGoal} is missing` })
       continue
     }
-    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + foremen.length + direct.length))
+    const adm = heldOnBusy(() => admission(dir, repo, plan, crew, 'start', wasRunning.length + entries.length + projectManagers.length + direct.length))
     if (!adm.admitted) {
       held.push({ slug: String(crew.slug), why: adm.why })
       continue
@@ -2200,7 +2200,7 @@ function cmdStart(f: Flags): Obj {
     const goalFile = `${dir}/goals/${slug}.md`
     const sections = goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '')
     // ADR-0031 item 6: a planned solo or lean crew runs direct; same planVerdict, no engine split, no ## Members check
-    // Under merge single `land` refuses, so a solo or lean crew takes the foreman path like a full crew
+    // Under merge single `land` refuses, so a solo or lean crew takes the project manager path like a full crew
     if (isDirect(crew) && settings.merge !== 'single') {
       const directVerdict = planVerdict(parsePlan(JSON.stringify(plan)) as any, slug)
       if (directVerdict !== undefined) {
@@ -2216,13 +2216,13 @@ function cmdStart(f: Flags): Obj {
       continue
     }
     const { engine, reason } = engineOf(sections, settings.merge, noWorkflow)
-    if (engine === 'foreman') {
-      const foremanVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
-      if (foremanVerdict !== undefined) {
-        refused.push({ slug, reason: foremanVerdict.deny })
+    if (engine === 'project-manager') {
+      const projectManagerVerdict = hasGoals ? planVerdict(parsePlan(JSON.stringify(plan)) as any, slug) : undefined
+      if (projectManagerVerdict !== undefined) {
+        refused.push({ slug, reason: projectManagerVerdict.deny })
         continue
       }
-      foremen.push({ slug, reason })
+      projectManagers.push({ slug, reason })
       slots--
       continue
     }
@@ -2256,7 +2256,7 @@ function cmdStart(f: Flags): Obj {
     if (st.kind === 'stale') stale.push({ slug: crew.slug, since: st.since })
     else if (st.kind === 'unfinished') unfinished.push({ slug: crew.slug, run: st.run })
   }
-  return stageOut(ctx, entries, foremen, refused, stale, unfinished, held, direct)
+  return stageOut(ctx, entries, projectManagers, refused, stale, unfinished, held, direct)
 }
 
 // --args-file P (absolute): start writes its whole output to P, the same one line, and prints a short pointer instead,
@@ -2320,7 +2320,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
   const trussDir = real(path.resolve(startDirOf(f)))
   const inside = `${real(path.dirname(p))}/${path.basename(p)}`.startsWith(`${trussDir}/`)
   const short: Obj = {
-    argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, foremen: out.foremen, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
+    argsFile: flat(p), scriptPath: out.truss.scriptPath, crews: out.truss.crews.map((e: Obj) => e.slug), held: out.held, projectManagers: out.projectManagers, refused: out.refused, stale: out.stale, unfinished: out.unfinished,
     warnings: inside ? out.warnings : [...out.warnings, `--args-file ${flat(p)} is outside the truss dir ${trussDir}, so the Workflow gate can't read it as args.trussFile; pass the file's object as args.truss inline`],
   }
   if (out.direct !== undefined) short.direct = out.direct
@@ -2720,7 +2720,7 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
   }
 }
 
-// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the foreman path, so retro
+// Record step, escalations (ADR-0009 "finish, escalation lines"): the event lines the hooks write on the project manager path, so retro
 // counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
 // QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
 // file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
@@ -3225,7 +3225,7 @@ function cmdLand(f: Flags): Obj {
   const repo = repoOf(f)
   const slug = need(f, 'slug')
   const settings = settingsOf(repo)
-  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const plan = loadPlan(dir)
   const crew = plan.crews.find((c: Obj) => isObj(c) && c.slug === slug)
@@ -3257,7 +3257,7 @@ function cmdFinish(f: Flags): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
   const settings = settingsOf(repo)
-  if (settings.merge === 'single') throw usage('single merge mode runs on the foreman path')
+  if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const tdir = flat(need(f, 'transcript')).replace(/\/+$/, '')
   const resultPath = str(f, 'result')
