@@ -109,6 +109,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "One heavy slot").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
 
+## Finisher lease (resume guard)
+
+- What: `finish` and `start --resume` hold a lease `finisher-<slug>` (`store.ts` `takeLease`/`refreshLease`/`releaseLease`) so two finishers never run one crew; a held live lease refuses the second. `finish` takes it per crew before writing, refreshes it before each merge and releases it in a `finally`. `start --resume` takes it before `ensureWorktree`, merges the target via `mergeIn`, and on a conflict runs `git merge --abort` and records `syncConflicts: [paths]` on the crew entry instead of refusing.
+- Entry points: `plugins/truss/bin/store.ts` (`takeLease`), `plugins/truss/bin/factory.ts` (`cmdStartResume`, `cmdFinish`, `finishRun`, `mergeIn`), `plugins/truss/tests/resume-029.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0047](../plugins/truss/docs/adr/0047-resume-guard.md), [store notes](knowledge/store.md).
+
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.

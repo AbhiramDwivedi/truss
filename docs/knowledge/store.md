@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: a419884c5ef1c878c8c94b84153d537fa523b7a6
+verified: a8f9d12408ea16150cfff466f4c082bf20e0b85d
 ---
 
 # Store, holds and contract-025 stubs
@@ -28,6 +28,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 - A lock is stale when: the owner is a dead pid on the same host, or `since` is over `STALE_AGE_MS` (120 s) old, or there is no `owner.json` and the dir is over `OWNERLESS_MS` (3 s, inside `withLock`'s default 5 s wait) old (store.ts:155-158, 260).
 - Busy past `waitMs` (default 5000) throws `StoreBusy`: `CliError` code 2, body `{error: 'store busy: <name>'}` (store.ts:149-153, 254).
 - Takeover never renames a lock aside: that would open a window where the path is free while a live owner is still running. One breaker at a time holds the mutex `<lock>.break`, re-reads `owner.json`, and removes the lock only if the token is still the one judged stale. An ownerless lock's age is re-checked under the mutex. A mutex over `OWNERLESS_MS` (3 s) old is cleared after an ino+mtime re-check (store.ts:195-205). This deviates from contract-025 section 2 line 83.
+- Lease (store.ts:391-515): `takeLease(dir, name, opts)` creates `<dir>/locks/<name>.lease` with `createExclusive` (`{pid, host, since, refreshed, token}`) and returns `{token}`, or `null` while a live lease holds. `refreshLease(dir, name, token, opts)` returns a boolean; `releaseLease` removes only its own lease. Stale: same-host dead pid, or older than `LEASE_STALE_MS` (300000); another host's lease is judged by age alone. A stale lease is removed under the `<name>.lease.break` mutex after a token re-check. On win32 a failed removal (EPERM, EACCES) returns `null`, and a later call recovers. `LEASE_REFRESH_MS` (30000) has no timer caller: `finish` refreshes only before each crew's merge. Used as `finisher-<slug>` (ADR-0047).
 - `opts.fs` is `Partial<typeof node:fs>`; an omitted function falls back to the real one (store.ts:135-137). `appendJsonl` takes the lock named by its second argument under the dir it is given; its file argument is relative to that dir.
 - Orphan tmp files: `writeJsonAtomic`, `createExclusive` and `withLock` call `sweepTmp`, which removes `<name>.<pid>-<uuid>.tmp` files older than 120 s whose pid is dead, or older than 24 h whatever the pid. It runs at most once a minute per dir per process; a live writer's fresh tmp is never removed (store.ts:295-323).
 - The test title "a lock older than 200 s is taken over" stays as pinned by contract-025; the code threshold is 120 s. See `product-decisions.md`.
