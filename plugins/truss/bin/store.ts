@@ -388,6 +388,132 @@ export function createExclusive(p: string, obj: unknown, opts: { fs?: FsLike } =
   }
 }
 
+// ==== leases ====
+
+// A lease is the file <dir>/locks/<name>.lease holding {pid, host, since, refreshed, token}, created with createExclusive. Its holder
+// refreshes `refreshed` every LEASE_REFRESH_MS; a lease not refreshed for LEASE_STALE_MS is stale whoever wrote it, so the refresh
+// interval stays well under the window and a live holder's lease never goes stale. A holder that cannot refresh (it blocks its own event
+// loop) is judged stale after the window, like any lock held past STALE_AGE_MS.
+export const LEASE_STALE_MS = 300_000
+export const LEASE_REFRESH_MS = 30_000
+
+export type LeaseOpts = { platform?: NodeJS.Platform; fs?: FsLike; host?: string; now?: () => number; pid?: number }
+
+// Takes the break mutex <lease>.break (the pattern of takeOver: an abandoned one, over OWNERLESS_MS old, is cleared). False when another
+// process holds it; the caller then tries again later and never removes or rewrites the lease without it.
+function holdBreak(brk: string, fs?: FsLike): boolean {
+  try {
+    fn(fs, 'mkdirSync')(brk)
+    return true
+  } catch (e: any) {
+    if (e.code === 'EEXIST') {
+      try {
+        const st = fn(fs, 'statSync')(brk) as any
+        if (Date.now() - st.mtimeMs > OWNERLESS_MS) {
+          const again = fn(fs, 'statSync')(brk) as any
+          if (again.ino === st.ino && again.mtimeMs === st.mtimeMs) fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+        }
+      } catch {
+        // gone already
+      }
+    }
+    return false
+  }
+}
+function dropBreak(brk: string, fs?: FsLike): void {
+  try {
+    fn(fs, 'rmSync')(brk, { recursive: true, force: true })
+  } catch {
+    // a leftover mutex is cleared once it is old
+  }
+}
+
+const readLease = (p: string, fs?: FsLike): Obj | null => {
+  try {
+    const o = JSON.parse(fn(fs, 'readFileSync')(p, 'utf8') as string)
+    return isObj(o) ? o : null
+  } catch {
+    return null
+  }
+}
+
+// Runs f on the lease at p while holding its break mutex and only if the lease still carries token (null: an unreadable lease).
+// Waits up to waitMs for the mutex. Returns false when the mutex was not won or the token changed.
+function underBreak(p: string, token: string | null, waitMs: number, f: () => void, fs?: FsLike): boolean {
+  const brk = `${p}.break`
+  const deadline = Date.now() + waitMs
+  while (!holdBreak(brk, fs)) {
+    if (Date.now() >= deadline) return false
+    sleepSync(25)
+  }
+  try {
+    const o = readLease(p, fs)
+    if ((o && typeof o.token === 'string' ? o.token : null) !== token) return false
+    f()
+    return true
+  } catch {
+    return false
+  } finally {
+    dropBreak(brk, fs)
+  }
+}
+
+// Takes the lease <dir>/locks/<name>.lease and returns {token}, or null while a live lease holds it. A lease is stale when its host is
+// this host and its pid is dead, or when it was not refreshed within LEASE_STALE_MS (a lease of another host is judged by age only: its
+// pid means nothing here). A stale lease is removed by one breaker at a time, which re-reads the token under the mutex <name>.lease.break
+// and never renames it aside; the lease is then taken again. A removal that fails (a win32 EPERM or EACCES) leaves the lease and returns
+// null, so a later call recovers it. Never throws on contention.
+export function takeLease(dir: string, name: string, opts: LeaseOpts = {}): { token: string } | null {
+  safeName(name, 'lease name')
+  const { platform = process.platform, fs, host = hostname(), now = Date.now, pid = process.pid } = opts
+  const locks = `${flat(dir)}/locks`
+  const p = `${locks}/${name}.lease`
+  fn(fs, 'mkdirSync')(locks, { recursive: true })
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const token = randomUUID()
+    const t = now()
+    if (createExclusive(p, { pid, host, since: t, refreshed: t, token }, { fs })) return { token }
+    const o = readLease(p, fs)
+    let stale: boolean
+    if (o) {
+      const seen = typeof o.refreshed === 'number' ? o.refreshed : o.since
+      stale = (o.host === host && pidDead(o.pid)) || typeof seen !== 'number' || now() - seen > LEASE_STALE_MS
+    } else {
+      // createExclusive links a complete file, so an unreadable lease is damaged: judge it by the age of the file
+      try {
+        stale = Date.now() - (fn(fs, 'statSync')(p) as any).mtimeMs > LEASE_STALE_MS
+      } catch {
+        continue // removed meanwhile
+      }
+    }
+    if (!stale) return null
+    const seenToken = o && typeof o.token === 'string' ? o.token : null
+    const removed = underBreak(p, seenToken, 0, () => fn(fs, 'rmSync')(p, { force: true, ...(platform === 'win32' ? { maxRetries: 5, retryDelay: 20 } : {}) }), fs)
+    if (!removed) return null
+  }
+  return null
+}
+
+// Rewrites `refreshed` of the lease while its token is still token: true when it did, false when the lease is gone or another holder's.
+export function refreshLease(dir: string, name: string, token: string, opts: LeaseOpts = {}): boolean {
+  safeName(name, 'lease name')
+  const { fs, now = Date.now } = opts
+  const p = `${flat(dir)}/locks/${name}.lease`
+  const o = readLease(p, fs)
+  if (!o || o.token !== token) return false
+  return underBreak(p, token, 5000, () => writeJsonAtomic(p, { ...o, refreshed: now() }, { fs }), fs)
+}
+
+// Removes the lease only while it is still this holder's (token); another holder's lease stays.
+export function releaseLease(dir: string, name: string, token: string, opts: LeaseOpts = {}): void {
+  safeName(name, 'lease name')
+  const { platform = process.platform, fs } = opts
+  const p = `${flat(dir)}/locks/${name}.lease`
+  const o = readLease(p, fs)
+  if (!o || o.token !== token) return
+  underBreak(p, token, 5000, () => fn(fs, 'rmSync')(p, { force: true, ...(platform === 'win32' ? { maxRetries: 5, retryDelay: 20 } : {}) }), fs)
+}
+
 // ==== jsonl ====
 
 // Appends one JSON line to <dir>/<file> in a single appendFileSync call under the lock <dir>/locks/<lock>.lock.
