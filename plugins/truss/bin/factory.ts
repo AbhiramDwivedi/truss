@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, takeLease, refreshLease, releaseLease } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -2023,42 +2023,59 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const goalFile = `${c.dir}/goals/${slug}.md`
   const membersDeny = membersOf(goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '').Members, goalFile).refuse
   if (membersDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: membersDeny }], [], [])
-  const wt = ensureWorktree(c.repo, slug, c.settings.target)
-  // A stale crew whose branch has no commit beyond the base starts from step 1.
-  const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
-  const rebuild = kind !== 'merge-ready' && !noWork
-  // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
-  const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
-  // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
-  // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
-  const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
-  // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
-  const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior, runLabels: labelsOfRuns(runs, slug) })
-  // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
-  // it; a result read earlier no longer holds for a crew that runs again
-  entry.learned = learnedOf(c.dir, slug)
-  setCrewState(c.dir, slug, null)
-  // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
-  if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
-  const missing = missingWorktrees(c, slug, runs)
-  // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
-  const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
-  if (existsSync(rtFile)) {
-    let section: string | undefined
-    entry.deferred = []
-    for (const line of readFileSync(rtFile, 'utf8').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
-      if (line.startsWith('## ')) section = line.trimEnd()
-      else if (section === '## Notes' && line.startsWith('- ')) entry.deferred.push(line.slice(2))
+  // R-89: one finisher per crew; a live finisher lease refuses the resume
+  const lease = takeLease(c.dir, `finisher-${slug}`)
+  if (lease === null) throw refuse({ slug, why: 'finisher live' })
+  try {
+    const wt = ensureWorktree(c.repo, slug, c.settings.target)
+    // R-90: the target goes into the crew branch as cmdSync does; a conflict is aborted (the worktree stays clean) and stage.js re-syncs it to the resolver
+    let syncConflicts: string[] | undefined
+    try {
+      mergeIn(wt, [c.settings.target])
+    } catch (e) {
+      if (!(e instanceof CliError) || e.code !== 1 || !Array.isArray(e.body.conflicts)) throw e
+      syncConflicts = e.body.conflicts as string[]
+      run(wt, ['merge', '--abort'])
     }
+    // A stale crew whose branch has no commit beyond the base starts from step 1.
+    const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
+    const rebuild = kind !== 'merge-ready' && !noWork
+    // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
+    const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+    const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
+    // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
+    // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
+    const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
+    // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
+    const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
+    const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior, runLabels: labelsOfRuns(runs, slug) })
+    // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
+    // it; a result read earlier no longer holds for a crew that runs again
+    entry.learned = learnedOf(c.dir, slug)
+    if (syncConflicts !== undefined) entry.syncConflicts = syncConflicts
+    setCrewState(c.dir, slug, null)
+    // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
+    if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
+    const missing = missingWorktrees(c, slug, runs)
+    // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
+    const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
+    if (existsSync(rtFile)) {
+      let section: string | undefined
+      entry.deferred = []
+      for (const line of readFileSync(rtFile, 'utf8').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
+        if (line.startsWith('## ')) section = line.trimEnd()
+        else if (section === '## Notes' && line.startsWith('- ')) entry.deferred.push(line.slice(2))
+      }
+    }
+    if (kind === 'stale') {
+      appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(c.roles, 'planner'), by: 'factory' })
+      appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
+    }
+    const out = stageOut(c, [entry], [], [], [], [])
+    return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
+  } finally {
+    releaseLease(c.dir, `finisher-${slug}`, lease.token)
   }
-  if (kind === 'stale') {
-    appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(c.roles, 'planner'), by: 'factory' })
-    appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
-  }
-  const out = stageOut(c, [entry], [], [], [], [])
-  return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
 }
 
 function cmdStart(f: Flags): Obj {
@@ -3200,7 +3217,17 @@ function cmdLand(f: Flags): Obj {
   throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
+// R-89: one finisher per crew. Leases (finisher-<slug>) are taken before a crew is written, refreshed between crews and before each merge,
+// and released on every return and throw.
 function cmdFinish(f: Flags): Obj {
+  const held = new Map<string, string>()
+  try {
+    return finishRun(f, held)
+  } finally {
+    for (const [slug, token] of held) releaseLease(dirOf(f), `finisher-${slug}`, token)
+  }
+}
+function finishRun(f: Flags, held: Map<string, string>): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
   const settings = settingsOf(repo)
@@ -3218,10 +3245,20 @@ function cmdFinish(f: Flags): Obj {
   // ADR-0022 R4: the run's roles table, truss.json roles laid on, so the ux audit names the mapped ux agentType
   const roles = rolesWithTypes(PLUGIN, [], configOf(repo).roles)
   const wfRun = runOf(tdir)
-  const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
+  const allCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
+  const liveFinisher: Obj[] = []
+  for (const c of allCrews) {
+    if (results !== undefined && !results.some((r) => r.slug === c.slug) && !wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug)) continue
+    if (results === undefined && !wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug)) continue
+    const got = takeLease(dir, `finisher-${String(c.slug)}`)
+    if (got === null) liveFinisher.push({ slug: c.slug, why: 'finisher live' })
+    else held.set(String(c.slug), got.token)
+  }
+  const factoryCrews = allCrews.filter((c) => !liveFinisher.some((l) => l.slug === c.slug))
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
   const inRun = factoryCrews.filter((c) => wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug))
   const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[], leftWorktrees: [] as Obj[], warnings: [] as string[] }
+  out.refused.push(...liveFinisher)
   const finishWith = (): Obj => {
     const body = {
       merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped,
@@ -3294,6 +3331,7 @@ function cmdFinish(f: Flags): Obj {
   for (const c of inRun) {
     const res = results.find((r) => r.slug === c.slug)
     if (res === undefined || res.state !== 'passed') continue
+    for (const [slug, token] of held) refreshLease(dir, `finisher-${slug}`, token)
     const files = reportsOf(dir, c.slug)
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)

@@ -2215,6 +2215,8 @@ async function chain(crew) {
     await scope(crew)
     return qc(crew)
   }
+  // R-90: every other resume merges the target into the crew branch before the red check and any member
+  if (e.resume) await syncStep(crew)
   let tasks = e.tasks || []
   crew.tasks = tasks
   // an answers resume skips the red check, unless the stop it answers was at red (an environment failure the client fixed)
