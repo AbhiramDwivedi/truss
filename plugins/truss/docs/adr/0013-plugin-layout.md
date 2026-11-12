@@ -2,7 +2,7 @@
 
 The move to plugins/truss/ is done: goal plugin-move moved every plugin path (agents/, skills/, hooks/, bin/, docs/, .claude-plugin/ and the rest) into plugins/truss/, beside ui/ at the repo root, and the catalog is `marketplace/.claude-plugin/marketplace.json`, with `marketplace/README.md` beside it. Publishing the `marketplace` branch from marketplace/ is still a PM ship step (see "Ship steps").
 
-Status: proposed, 2026-10-31. Written by the design crew `home-design` (stage 0 of goal `repo-home`). It becomes accepted when the PM (project manager) merges this crew. The goal's approval is `auto`, under the client's pre-approval of 04:29 ("don't wait for me, go with the recommended layout"), after plan-check and checker-13's review (decisions.md, 06:06). This ADR is design only: nothing moves in goal `repo-home`.
+Status: proposed, 2026-10-31. Written by the design crew `home-design` (stage 0 of goal `repo-home`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, under the client's pre-approval of 04:29 ("don't wait for me, go with the recommended layout"), after plan-check and checker-13's review (decisions.md, 06:06). This ADR is design only: nothing moves in goal `repo-home`.
 
 VERDICT: change. Two modules change, both as design in this goal. **marketplace** is a new module and seam: the repo has no catalog today (`git ls-files` lists `.claude-plugin/plugin.json` and no `marketplace.json`), so `truss@truss` can't install. **repo-layout** changes: the plugin root becomes plugins/truss/ in the later goal, and main gains a marketplace/ directory. A third module, **ui-server**, changes in the later goal only (see "Seams after the move").
 

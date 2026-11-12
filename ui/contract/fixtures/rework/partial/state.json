@@ -48,9 +48,9 @@
         "owns": [
           "rework-server/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "rework-server",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "reported",
@@ -80,9 +80,9 @@
         "owns": [
           "rework-network/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "rework-network",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "spawned",
@@ -102,7 +102,7 @@
             "detail": "working",
             "ts": "2026-11-02T11:58:30.000Z",
             "agentId": "a1b2c3d4e5f60002",
-            "purpose": "Builds the code a foreman task names, in the crew worktree.",
+            "purpose": "Builds the code a project manager task names, in the crew worktree.",
             "task": "Building AgentCard and Wire in views/crews."
           }
         ],
@@ -126,9 +126,9 @@
         "owns": [
           "rework-chat/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "rework-chat",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "spawned",

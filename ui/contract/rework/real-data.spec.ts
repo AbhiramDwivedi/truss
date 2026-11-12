@@ -28,13 +28,13 @@ test.describe('real-data design', () => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
-      const foreman = agent(o.page, 'build-crew', 'build-crew')
-      await expect(foreman.getByText('Waiting on you', { exact: true })).toHaveCount(1, T)
-      await expect(foreman.getByText('Done', { exact: true })).toHaveCount(0, T)
+      const projectManager = agent(o.page, 'build-crew', 'build-crew')
+      await expect(projectManager.getByText('Waiting on you', { exact: true })).toHaveCount(1, T)
+      await expect(projectManager.getByText('Done', { exact: true })).toHaveCount(0, T)
     } finally { await o.stop() }
   })
 
-  test("real-data 1: a merged crew's agents read Done, the foreman's last BLOCKED tag included", async ({ browser }) => {
+  test("real-data 1: a merged crew's agents read Done, the project manager's last BLOCKED tag included", async ({ browser }) => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(network(o.page)).toBeVisible(LOAD)
@@ -53,14 +53,14 @@ test.describe('real-data design', () => {
       await expect(network(o.page)).toBeVisible(LOAD)
       for (const slug of ['docs-crew', 'build-crew']) await openRuns(o.page, slug)
       for (const slug of ['docs-crew', 'build-crew']) {
-        await expect(agent(o.page, slug, slug), `${slug} foreman has a null model, so no badge`).not.toContainText(/opus|sonnet|haiku|unknown/i)
+        await expect(agent(o.page, slug, slug), `${slug} project manager has a null model, so no badge`).not.toContainText(/opus|sonnet|haiku|unknown/i)
         await expect(agent(o.page, slug, `${slug}-runner`), `${slug} member keeps its model badge`).toContainText(/sonnet/i)
       }
       await expect(o.page.getByText(/model unknown/i)).toHaveCount(0, T)
     } finally { await o.stop() }
   })
 
-  test("real-data 2: an agent shows its own task first, then a foreman's crew goal, then a non-marker detail, then Reported with its marker", async ({ browser }) => {
+  test("real-data 2: an agent shows its own task first, then a project manager's crew goal, then a non-marker detail, then Reported with its marker", async ({ browser }) => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, {
       now: NOW,
       edit: (s) => {
@@ -77,11 +77,11 @@ test.describe('real-data design', () => {
       await openRuns(o.page, 'docs-crew'); await openRuns(o.page, 'build-crew')
       // task first
       await expect(agent(o.page, 'docs-crew', 'docs-crew-runner-2').getByText('Write the design note for the fixture widget in docs/widget.md.')).toBeVisible(T)
-      // a foreman with no task shows its crew goal, not "No activity yet" and not the BLOCKED marker
-      const foreman = agent(o.page, 'build-crew', 'build-crew')
-      await expect(foreman.getByText('Build the fixture widget.')).toBeVisible(T)
-      await expect(foreman.getByText('No activity yet')).toHaveCount(0, T)
-      await expect(foreman.getByText('BLOCKED')).toHaveCount(0, T)
+      // a project manager with no task shows its crew goal, not "No activity yet" and not the BLOCKED marker
+      const projectManager = agent(o.page, 'build-crew', 'build-crew')
+      await expect(projectManager.getByText('Build the fixture widget.')).toBeVisible(T)
+      await expect(projectManager.getByText('No activity yet')).toHaveCount(0, T)
+      await expect(projectManager.getByText('BLOCKED')).toHaveCount(0, T)
       // a non-marker detail
       const runner = agent(o.page, 'build-crew', 'build-crew-runner')
       await expect(runner.getByText('Reading the design note')).toBeVisible(T)
@@ -109,7 +109,7 @@ test.describe('real-data design', () => {
     const o = await openFixture(browser, 'real-data', 'light', DESKTOP, { now: NOW })
     try {
       await expect(metrics(o.page)).toBeVisible(LOAD)
-      // 11:00:26 to the latest foreman stamp 11:59:00 is 58 minutes (the run is not hosted, so it ends there)
+      // 11:00:26 to the latest project manager stamp 11:59:00 is 58 minutes (the run is not hosted, so it ends there)
       const t = tile(o.page, 'Run time')
       await expect(t).toContainText(/\b5[89]m\b/, T)
       await expect(t).not.toHaveText(/—/, T)

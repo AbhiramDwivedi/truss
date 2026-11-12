@@ -1,5 +1,5 @@
 // Stall clear (crew ui-server-fixes, item 4): a spawn line whose `by` names an agent of the same crew counts as
-// a later event of that agent for crew.stuck, so an idle-foreman stall clears when the foreman spawns.
+// a later event of that agent for crew.stuck, so an idle-project-manager stall clears when the project manager spawns.
 // Erasable TypeScript, node:test, built-ins only. Temp dirs come from mkdtemp; nothing listens on a port.
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -34,64 +34,64 @@ const plan = (slugs: string[]) =>
     })),
   })
 const spawn = (ts: string, crew: string, agent: string, by: string) => ({
-  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:foreman' : 'kit:builder',
+  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:project-manager' : 'kit:builder',
   model: 'opus', effort: 'high', by: by,
 })
 const stall = (ts: string, crew: string, agent: string, kind: string, minutes: number) => ({ v: 1, ts, event: 'stall', crew, agent, kind, minutes })
 
-// The foreman a is spawned by main, goes idle, and the stall is logged at T(20). `rest` follows.
-function idleForeman(rest: unknown[], extraCrews: string[] = []) {
+// The project manager a is spawned by main, goes idle, and the stall is logged at T(20). `rest` follows.
+function idleProjectManager(rest: unknown[], extraCrews: string[] = []) {
   return storeFor({
     'plan.json': plan(['a', ...extraCrews]),
-    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-foreman', 12), ...rest]),
+    'events.jsonl': jsonl([spawn(T(0), 'a', 'a', 'main'), stall(T(20), 'a', 'a', 'idle-project-manager', 12), ...rest]),
   })
 }
 
-test('an idle-foreman stall is stuck with no later event', () => {
-  const w = idleForeman([])
+test('an idle-project-manager stall is stuck with no later event', () => {
+  const w = idleProjectManager([])
   try {
     const s = crewBy(w.run(), 'a').stuck
     assert.ok(s, 'stuck is set')
-    assert.equal(s.kind, 'idle-foreman')
+    assert.equal(s.kind, 'idle-project-manager')
   } finally { w.store.close() }
 })
 
-test('an idle-foreman stall, then a later spawn by the foreman, clears stuck', () => {
-  const w = idleForeman([{ ...spawn(T(25), 'a', 'a-builder', 'a'), by: 'a' }])
+test('an idle-project-manager stall, then a later spawn by the project manager, clears stuck', () => {
+  const w = idleProjectManager([{ ...spawn(T(25), 'a', 'a-builder', 'a'), by: 'a' }])
   try {
     assert.equal(crewBy(w.run(), 'a').stuck, null)
   } finally { w.store.close() }
 })
 
-test('a later spawn by main leaves the idle-foreman stall stuck', () => {
-  const w = idleForeman([spawn(T(25), 'a', 'a-builder', 'main')])
+test('a later spawn by main leaves the idle-project-manager stall stuck', () => {
+  const w = idleProjectManager([spawn(T(25), 'a', 'a-builder', 'main')])
   try {
     const s = crewBy(w.run(), 'a').stuck
     assert.ok(s, 'still stuck')
-    assert.equal(s.kind, 'idle-foreman')
+    assert.equal(s.kind, 'idle-project-manager')
   } finally { w.store.close() }
 })
 
 test('a later spawn by factory leaves the stall stuck', () => {
-  const w = idleForeman([spawn(T(25), 'a', 'a-builder', 'factory')])
+  const w = idleProjectManager([spawn(T(25), 'a', 'a-builder', 'factory')])
   try {
     assert.ok(crewBy(w.run(), 'a').stuck, 'still stuck')
   } finally { w.store.close() }
 })
 
 test('a later spawn by a workflow leaves the stall stuck', () => {
-  const w = idleForeman([spawn(T(25), 'a', 'a-builder', 'workflow:wf_1234abcd')])
+  const w = idleProjectManager([spawn(T(25), 'a', 'a-builder', 'workflow:wf_1234abcd')])
   try {
     assert.ok(crewBy(w.run(), 'a').stuck, 'still stuck')
   } finally { w.store.close() }
 })
 
-test('an earlier-ts spawn by the foreman does not clear the stall', () => {
-  const w = idleForeman([spawn(T(10), 'a', 'a-builder', 'a')])
+test('an earlier-ts spawn by the project manager does not clear the stall', () => {
+  const w = idleProjectManager([spawn(T(10), 'a', 'a-builder', 'a')])
   try {
     const s = crewBy(w.run(), 'a').stuck
     assert.ok(s, 'still stuck')
-    assert.equal(s.kind, 'idle-foreman')
+    assert.equal(s.kind, 'idle-project-manager')
   } finally { w.store.close() }
 })
 
@@ -100,7 +100,7 @@ test('a later spawn by an agent of a different crew leaves the stall stuck', () 
     'plan.json': plan(['a', 'b']),
     'events.jsonl': jsonl([
       spawn(T(0), 'a', 'a', 'main'), spawn(T(0), 'b', 'b', 'main'),
-      stall(T(20), 'a', 'a', 'idle-foreman', 12),
+      stall(T(20), 'a', 'a', 'idle-project-manager', 12),
       spawn(T(25), 'a', 'a-builder', 'b'),
     ]),
   })
@@ -125,7 +125,7 @@ test('a stalled member clears when a later spawn names it as by', () => {
 
 // gap g's "a later event from a different agent does not clear the stall" is ui/test/state/gaps.test.ts's.
 test('gap g still holds: the stalled agent speaking again clears stuck', () => {
-  const w = idleForeman([{ v: 1, ts: T(35), event: 'tag', crew: 'a', agent: 'a', tag: 'DONE' }])
+  const w = idleProjectManager([{ v: 1, ts: T(35), event: 'tag', crew: 'a', agent: 'a', tag: 'DONE' }])
   try {
     assert.equal(crewBy(w.run(), 'a').stuck, null)
   } finally { w.store.close() }

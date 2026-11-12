@@ -395,14 +395,14 @@ const spawnLine = (agent: string, agentId: string, type: string) => ({
   v: 1, ts: '2026-11-04T16:00:00Z', event: 'spawn', crew: 'alpha', agent, agentId, type, model: 'opus', effort: 'high', by: 'main',
 })
 const EVENTS = jsonl([
-  spawnLine('alpha', AGENT_A, 'truss:foreman'),
+  spawnLine('alpha', AGENT_A, 'truss:project-manager'),
   spawnLine('alpha-builder', AGENT_B, 'kit:builder'),
   spawnLine('alpha-qc', AGENT_C, 'truss:qc-engineer'),
 ])
 const crewOf = (w: Wired): any => w.state().run?.crews?.find((c: any) => c.slug === 'alpha')
 const memberOf = (w: Wired, agent: string): any => {
   const c = crewOf(w)
-  return c?.foreman?.name === agent ? c.foreman : c?.members?.find((m: any) => m.name === agent)
+  return c?.projectManager?.name === agent ? c.projectManager : c?.members?.find((m: any) => m.name === agent)
 }
 
 test('R-42: a member whose spawn agentId equals a task_id gets Member.task from task_started, then from the latest task_progress', async () => {
@@ -413,7 +413,7 @@ test('R-42: a member whose spawn agentId equals a task_id gets Member.task from 
     assert.equal(memberOf(w, 'alpha-builder').agentId, AGENT_B, 'Member.agentId keeps the spawn line agentId')
     stub()!.emit(row('task-started'))
     stub()!.emit(row('task-started-other'))
-    await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the foreman task from task_started')
+    await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the project manager task from task_started')
     assert.equal(memberOf(w, 'alpha-builder').task, 'Write the network spec')
     stub()!.emit(row('task-progress'))
     await until(() => memberOf(w, 'alpha')?.task === 'Running List directory contents', 'the latest task_progress description')
@@ -431,7 +431,7 @@ test('R-42: a member no task message names has task null (the client then falls 
     await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the matched task to appear')
     const qc = memberOf(w, 'alpha-qc')
     assert.equal(qc.agentId, AGENT_C)
-    assert.equal(qc.task, null, 'no match gives null, not undefined and not the foreman task')
+    assert.equal(qc.task, null, 'no match gives null, not undefined and not the project manager task')
   } finally {
     await w.close()
   }
@@ -439,7 +439,7 @@ test('R-42: a member no task message names has task null (the client then falls 
 
 test('R-42: the session keeps the latest task per task_id up to 500 entries; the newest of 600 tasks still matches', async () => {
   const lastId = 'a' + 'f'.repeat(15) + '9'
-  const events = jsonl([spawnLine('alpha', AGENT_A, 'truss:foreman'), spawnLine('alpha-builder', lastId, 'kit:builder')])
+  const events = jsonl([spawnLine('alpha', AGENT_A, 'truss:project-manager'), spawnLine('alpha-builder', lastId, 'kit:builder')])
   const w = await boot({ files: { 'plan.json': PLAN, 'events.jsonl': events } })
   try {
     await w.start()

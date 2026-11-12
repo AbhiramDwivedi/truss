@@ -10,7 +10,7 @@ import { test } from 'node:test'
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '')
 const RUN = read('../skills/run/SKILL.md')
-const FOREMAN = read('../agents/foreman.md')
+const PROJECT_MANAGER = read('../agents/project-manager.md')
 const WRITER = read('../agents/writer.md')
 const QC = read('../agents/qc-engineer.md')
 const CHECKING = read('../agents/checking-engineer.md')
@@ -42,7 +42,7 @@ test('run skill: watch crew decisions with ack and change', () => {
 
 test('product calls see every crew decision of the run; direct crew members follow persona routing', () => {
   assert.match(RUN, /carries every crew decision of the run so far/)
-  assert.match(FOREMAN, /every crew decision of the run so far/)
+  assert.match(PROJECT_MANAGER, /every crew decision of the run so far/)
   assert.match(read('../docs/adr/0033-crew-knowledge-and-product-calls.md'), /parallel crews stay consistent/)
   assert.match(RUN, /start `<slug>-tester`, as the persona whose area/)
   assert.match(RUN, /Start `<slug>-builder` as the persona whose area/)
@@ -78,16 +78,16 @@ test('run skill: memory holds only how the client works', () => {
   assert.match(RUN, /no `memory:` frontmatter field/)
 })
 
-test('foreman: knowledge step before QC, optional and terse; product calls via the persona', () => {
-  assert.match(FOREMAN, /\*\*Knowledge step\.\*\*/)
-  assert.match(FOREMAN, /Knowledge: crew <slug>/)
-  assert.match(FOREMAN, /skip it silently/)
-  assert.match(FOREMAN, /editing or merging existing entries and not appending/)
-  assert.match(FOREMAN, /\*\*Product calls\.\*\*/)
-  assert.match(FOREMAN, /PO: DECIDE/)
-  assert.match(FOREMAN, /decision-replies --crew <slug>/)
-  assert.match(FOREMAN, /`Knowledge:` block/)
-  assert.match(FOREMAN, /only `## Learned` may be left out/)
+test('project manager: knowledge step before QC, optional and terse; product calls via the persona', () => {
+  assert.match(PROJECT_MANAGER, /\*\*Knowledge step\.\*\*/)
+  assert.match(PROJECT_MANAGER, /Knowledge: crew <slug>/)
+  assert.match(PROJECT_MANAGER, /skip it silently/)
+  assert.match(PROJECT_MANAGER, /editing or merging existing entries and not appending/)
+  assert.match(PROJECT_MANAGER, /\*\*Product calls\.\*\*/)
+  assert.match(PROJECT_MANAGER, /PO: DECIDE/)
+  assert.match(PROJECT_MANAGER, /decision-replies --crew <slug>/)
+  assert.match(PROJECT_MANAGER, /`Knowledge:` block/)
+  assert.match(PROJECT_MANAGER, /only `## Learned` may be left out/)
 })
 
 test('writer: Knowledge mode with the feature-map entry format', () => {
@@ -132,7 +132,7 @@ test('0.23.0 prose: plan result, judge host, trigger, scope and reachable knowle
     assert.match(t, /never runs as `general-purpose`|never `general-purpose`/)
     assert.match(t, /Bash can still write/)
   }
-  for (const t of [RUN, FOREMAN, WRITER, ADR]) {
+  for (const t of [RUN, PROJECT_MANAGER, WRITER, ADR]) {
     assert.match(t, /adds, renames or deletes non-test source files/)
     assert.doesNotMatch(t, /diff adds or moves user-facing functionality;/)
   }
@@ -148,7 +148,7 @@ test('0.23.0 prose: plan result, judge host, trigger, scope and reachable knowle
 test('0.23.0 round 2 prose: one reply checkpoint, SHA exemption, plan review, personas, judges', () => {
   const ADR = read('../docs/adr/0033-crew-knowledge-and-product-calls.md')
   const CL = read('../CHANGELOG.md')
-  for (const t of [RUN, FOREMAN, ADR]) {
+  for (const t of [RUN, PROJECT_MANAGER, ADR]) {
     assert.doesNotMatch(t, /before each member spawn/)
     assert.match(t, /decision-ack --crew <slug>/)
     assert.match(t, /decision-checkpoint --crew <slug>/)
@@ -162,13 +162,13 @@ test('0.23.0 round 2 prose: one reply checkpoint, SHA exemption, plan review, pe
   assert.match(ADR, /loops? QC/)
   assert.match(ADR, /decision-replies --crew <slug>`[^.]*consumes nothing/)
   assert.match(RUN, /factory\.ts knowledge-commit --slug <slug> --sha <sha>/)
-  for (const t of [RUN, FOREMAN, ADR]) assert.match(t, /Sonnet/)
-  for (const t of [RUN, FOREMAN, ADR]) assert.match(t, /writer tasks skips? (the|it)/)
+  for (const t of [RUN, PROJECT_MANAGER, ADR]) assert.match(t, /Sonnet/)
+  for (const t of [RUN, PROJECT_MANAGER, ADR]) assert.match(t, /writer tasks skips? (the|it)/)
   for (const t of [ADR, QC, RUN]) assert.match(t, /never (on )?the (commit )?subject/)
   for (const t of [ADR, QC]) assert.match(t, /frontmatter[^.]*never exempt/)
   assert.match(ADR, /`unrecorded`/)
   assert.match(ADR, /`crew-learned`/)
-  assert.match(FOREMAN, /names its SHA/)
+  assert.match(PROJECT_MANAGER, /names its SHA/)
   assert.match(RUN, /`recheck\.reviews`/)
   assert.match(ADR, /`recheck\.reviews`/)
   assert.match(RUN, /`plan-write` \(step 4\), not `plan\.js`, writes them/)

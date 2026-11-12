@@ -106,9 +106,9 @@ test('case 18 negative: a truss:qc-engineer from the main session with Mode: pla
   expect(planWrites(w)).toEqual([])
 })
 
-test('case 18 negative: a truss:foreman with Mode: plan is not written', async ($, on) => {
+test('case 18 negative: a truss:project-manager with Mode: plan is not written', async ($, on) => {
   const w = await setup($, on)
-  await spawn(w, undefined, 'truss:foreman', 'Mode: plan\nGoal: rate limiting')
+  await spawn(w, undefined, 'truss:project-manager', 'Mode: plan\nGoal: rate limiting')
   await handBack($, 'new1', message())
   expect(planWrites(w)).toEqual([])
 })

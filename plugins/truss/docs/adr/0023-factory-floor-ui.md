@@ -1,6 +1,6 @@
 # ADR-0023: the factory floor UI, direction D and D2
 
-Status: proposed, 2026-11-03. Written by the design crew `floor-design` (stage 2 of goal `ui-redesign`, plan revision 5b, approved auto). It becomes accepted when the PM merges this crew. The crews `floor-server`, `floor-shell` (stage 3) and `floor-views` (stage 4) build from it; it changes no code itself.
+Status: proposed, 2026-11-03. Written by the design crew `floor-design` (stage 2 of goal `ui-redesign`, plan revision 5b, approved auto). It becomes accepted when the program manager (PM) merges this crew. The crews `floor-server`, `floor-shell` (stage 3) and `floor-views` (stage 4) build from it; it changes no code itself.
 
 Decided by: the client, who rejected the revision 4 look and told the PO "go ahead with recommendations"; the PO's revision 5 calls (supersede the crews web-app and ui-serve, build direction D and D2, a UX engineer on every UI crew under [ADR-0022](0022-ux-engineer.md), gaps a, b, d, e, f and g filled, c and h shipped without, the icon in `ui/` only); the PO's revision 5b anti-gaming fixes F1 to F7 and S1 to S4; the plan's "Server gap rulings" and "Layout fixed by this plan" (`plan-ui-redesign.md`); the UX engineer's direction for this crew (report `floor-design-ux`); and this crew for what those leave free. It amends [ADR-0018](0018-ui-redesign.md).
 
@@ -62,8 +62,8 @@ Gap f: fill. crew.estAgents comes from plan.json; there is no task total, so the
 
 Gap g: fill. `crew` gains `stuck`: null, or `{kind, since, minutes, detail}`, derived from the crew's events.
 
-- The source is the crew's latest `stall` event in `events.jsonl` and its rolled files, the line ui-state already parses (`ui/server/state/reduce.ts:160-165`). Its fields are `kind` (`agent` or `idle-foreman`) and `minutes` (`plugins/truss/docs/events.schema.json:80-90`). Today the reducer drops `kind`.
-- `kind` is `"stalled"` when the event's kind is `agent`, and `"idle-foreman"` when it is `idle-foreman`.
+- The source is the crew's latest `stall` event in `events.jsonl` and its rolled files, the line ui-state already parses (`ui/server/state/reduce.ts:160-165`). Its fields are `kind` (`agent` or `idle-project-manager`) and `minutes` (`plugins/truss/docs/events.schema.json:80-90`). Today the reducer drops `kind`.
+- `kind` is `"stalled"` when the event's kind is `agent`, and `"idle-project-manager"` when it is `idle-project-manager`.
 - `minutes` is the event's `minutes`.
 - `since` is the event's `ts` minus `minutes` minutes, RFC 3339 UTC: when the agent went quiet.
 - `detail` is the text the reducer already builds for the event, `<agent> stalled <minutes> min` (`ui/server/state/reduce.ts:165`).
@@ -76,8 +76,8 @@ Gap h: ship without. There are no crew control or pause endpoints.
 - The primary label is `Restart <role>`, where `<role>` is the last hyphen segment of the stalled agent's name in `stuck.detail` (`quota-api-builder` gives `builder`), and it sends `Crew <slug> is stuck: <detail>. Restart its <role>.`. It is built from the detail, never hard-coded: the fixtures' stalled agent is a builder, so they show `Restart builder`, and a stalled `quota-api-tester` shows `Restart tester`.
   - `Re-plan crew`: `Crew <slug> is stuck: <detail>. Re-plan this crew.`
   - `Ask Claude`: `Crew <slug> is stuck: <detail>. What is happening, and what do you suggest?`
-- For a crew whose `stuck.kind` is `idle-foreman`, the primary button is `Start a successor foreman` in place of `Restart <role>`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
-  - `Start a successor foreman`: `Crew <slug> is stuck: <detail>. Start a successor foreman for it.`
+- For a crew whose `stuck.kind` is `idle-project-manager`, the primary button is `Start a successor project manager` in place of `Restart <role>`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
+  - `Start a successor project manager`: `Crew <slug> is stuck: <detail>. Start a successor project manager for it.`
 - Superseded by [ADR-0029](0029-real-data.md) section 5: `Pause build` and its Hint are removed. Before: the `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
 
 ### 2. The design system: tokens, type and icons
@@ -202,8 +202,8 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 
 **stuck-crew.**
 - One crew has a non-null `stuck` (gap g, kind `stalled`).
-- Its button's name holds `stuck: stalled <minutes> min`, or `stuck: foreman idle <minutes> min` for kind `idle-foreman`. ADR-0018's `blocked` wording for `QC FAIL` and `reported BLOCKED` stays.
-- The crew card has a `fail` header band "Stuck, silent <minutes>m". The band's alert icon sits next to the word, exposed as `role="img"` with the accessible name `Alert`, so stuck is never shown by colour alone. Under the band are a Why / How long / Next definition list and three buttons: `Restart <role>` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h). The primary label is `Restart <role>`, where `<role>` is the last hyphen segment of the stalled agent's name in `stuck.detail` (`quota-api-builder` gives `builder`), and it sends `Crew <slug> is stuck: <detail>. Restart its <role>.`; the fixture's agent is a builder, so it reads `Restart builder`. For kind `idle-foreman` the primary button is `Start a successor foreman` instead of `Restart <role>`, and it sends `Crew <slug> is stuck: <detail>. Start a successor foreman for it.` The fixture `stuck-crew/idle-foreman.json` holds that kind.
+- Its button's name holds `stuck: stalled <minutes> min`, or `stuck: project manager idle <minutes> min` for kind `idle-project-manager`. ADR-0018's `blocked` wording for `QC FAIL` and `reported BLOCKED` stays.
+- The crew card has a `fail` header band "Stuck, silent <minutes>m". The band's alert icon sits next to the word, exposed as `role="img"` with the accessible name `Alert`, so stuck is never shown by colour alone. Under the band are a Why / How long / Next definition list and three buttons: `Restart <role>` (primary), `Re-plan crew` and `Ask Claude`. Each sends an ordinary message (gap h). The primary label is `Restart <role>`, where `<role>` is the last hyphen segment of the stalled agent's name in `stuck.detail` (`quota-api-builder` gives `builder`), and it sends `Crew <slug> is stuck: <detail>. Restart its <role>.`; the fixture's agent is a builder, so it reads `Restart builder`. For kind `idle-project-manager` the primary button is `Start a successor project manager` instead of `Restart <role>`, and it sends `Crew <slug> is stuck: <detail>. Start a successor project manager for it.` The fixture `stuck-crew/idle-project-manager.json` holds that kind.
 - The primary button is `surface` text on `fail` (section 3).
 - An 80-character slug is cut short in view with `text-overflow: ellipsis` on one line, and its full value stays in the crew button's accessible name.
 - The `Pause build` button is `aria-disabled` and described by the tip "Pausing needs a server endpoint that doesn't exist yet."
@@ -263,7 +263,7 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 - Each `state.json` is a whole state snapshot: the `$defs.state` shape of `ui/contract/state.schema.json`, gap fields included.
 - Times are relative to a fixed anchor, which the specs shift to now before they plant the state.
 - `live-counter/` also holds `stale.json`, whose `usage.live.at` is more than 2 minutes before the anchor.
-- `stuck-crew/` also holds `idle-foreman.json`: the same state, with the stuck crew's `stuck.kind` `idle-foreman` and its foreman the stalled agent.
+- `stuck-crew/` also holds `idle-project-manager.json`: the same state, with the stuck crew's `stuck.kind` `idle-project-manager` and its project manager the stalled agent.
 - `artifacts/` also holds `no-images.json`: the same state, with `design.images: []`, so the `Images` filter matches nothing.
 - The stuck-crew and artifacts fixtures hold an 80-character slug and a 300-character follow-up.
 - The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`, `:264`). Session fields go through `setSession` (`:242`, `:341`). Requests go through the interface's `question()`, `permission()` and `reply()` (`:244-248`), so the page can answer them.
@@ -359,7 +359,7 @@ The redesign titles renamed by this ADR (the axe row covers all 10 states in bot
 | [redesign] blocked-crew | stuck-crew |
 | [redesign] axe: <state> in <theme> has the ADR-0018 roles and no WCAG 2.2 AA violations | axe: <state> in <theme> has the D2 roles, tokens and no WCAG 2.2 AA violations |
 
-Every `[ui]` and `[contract]` test title is kept as it is, so the table has no `[ui]` or `[contract]` row. A later re-pin that must change one hands it back to the foreman, who adds its row here in the form `| [ui] <old title> | <new title> |`.
+Every `[ui]` and `[contract]` test title is kept as it is, so the table has no `[ui]` or `[contract]` row. A later re-pin that must change one hands it back to the project manager, who adds its row here in the form `| [ui] <old title> | <new title> |`.
 
 ## Consequences
 

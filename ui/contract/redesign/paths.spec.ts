@@ -1,5 +1,5 @@
 // The non-happy paths ADR-0023 section 4 rules as spec cases, not screenshot states: loading before the first
-// snapshot, a send error, an expired token, the idle-foreman stuck crew, a type filter with no items, and the
+// snapshot, a send error, an expired token, the idle-project-manager stuck crew, a type filter with no items, and the
 // 80-character slug cut short in view. Role and name queries only; every colour comes from tokens.json.
 // Written before the client exists: each test opens on the `Dark theme` toggle, which only D2 has.
 import { test, expect, type Page, type Route } from '@playwright/test'
@@ -109,14 +109,14 @@ test.describe('paths', () => {
   })
 
   for (const theme of ['light', 'dark'] as Theme[]) {
-    test(`stuck-crew idle-foreman (${theme}): Stuck with How long <n> min and the idle-foreman Why text, and Start a successor foreman sends its message`, async ({ browser }) => {
-      const s = await scenario('stuck-crew/idle-foreman')
+    test(`stuck-crew idle-project-manager (${theme}): Stuck with How long <n> min and the idle-project-manager Why text, and Start a successor project manager sends its message`, async ({ browser }) => {
+      const s = await scenario('stuck-crew/idle-project-manager')
       const o = await openState(browser, s, theme, DESKTOP)
       try {
         const { page } = o
         await d2(page, theme)
         const stuck = s.fixture.run.crews.find((c: any) => c.stuck)
-        expect(stuck.stuck.kind).toBe('idle-foreman')
+        expect(stuck.stuck.kind).toBe('idle-project-manager')
         // ADR-0028 sections 9 and 10: the crew is an article named by its slug, with the Stuck StatusBadge
         const crews = page.getByRole('region', { name: 'Build network' })
         const line = crews.getByRole('article', { name: new RegExp(`\\b${s.apiSlug}\\b`) })
@@ -125,19 +125,19 @@ test.describe('paths', () => {
         // ruled as "Stuck, silent Nm" was (ADR-0028 section 9, views/crews StuckCard): the Stuck word plus Why / How long / Next
         await expect(line.getByText('How long', { exact: true }).first()).toBeVisible(T)
         await expect(line.getByText(new RegExp(`\\b${stuck.stuck.minutes} min\\b`)).first()).toBeVisible(T)
-        await expect(line.getByText(`The foreman has sent nothing for ${stuck.stuck.minutes} min.`), 'the idle-only Why text').toBeVisible(T)
-        await expect(crews.getByText(/stuck: stalled/), 'an idle foreman is not worded as a stalled agent').toHaveCount(0, T)
-        const successor = crews.getByRole('button', { name: 'Start a successor foreman' })
+        await expect(line.getByText(`The project manager has sent nothing for ${stuck.stuck.minutes} min.`), 'the idle-only Why text').toBeVisible(T)
+        await expect(crews.getByText(/stuck: stalled/), 'an idle project manager is not worded as a stalled agent').toHaveCount(0, T)
+        const successor = crews.getByRole('button', { name: 'Start a successor project manager' })
         await expect(successor).toBeVisible(T)
         await expect(successor, 'the primary button is filled fail').toHaveCSS('background-color', token('fail', theme), T)
         await expect(successor, 'its text is surface').toHaveCSS('color', token('surface', theme), T)
-        await expect(crews.getByRole('button', { name: 'Restart builder' }), 'no Restart builder for an idle foreman').toHaveCount(0, T)
+        await expect(crews.getByRole('button', { name: 'Restart builder' }), 'no Restart builder for an idle project manager').toHaveCount(0, T)
         for (const name of ['Re-plan crew', 'Ask Claude']) await expect(crews.getByRole('button', { name })).toBeVisible(T)
         const sends = () => s.iface.calls.filter((c) => c.kind === 'send') as any[]
         const before = sends().length
         await successor.click()
         await expect.poll(() => sends().length, T).toBe(before + 1)
-        expect(sends()[before].text).toBe(`Crew ${s.apiSlug} is stuck: ${stuck.stuck.detail}. Start a successor foreman for it.`)
+        expect(sends()[before].text).toBe(`Crew ${s.apiSlug} is stuck: ${stuck.stuck.detail}. Start a successor project manager for it.`)
         expect(await o.problems()).toEqual([])
       } finally { await o.close(); await s.stop() }
     })

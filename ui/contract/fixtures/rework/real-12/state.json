@@ -76,7 +76,7 @@
           "ui/README.md",
           "tests/retro/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "retro-scrub-fixes",
           "type": "workflow-crew",
           "model": null,
@@ -204,7 +204,7 @@
           "ui/contract/build.check.ts",
           "ui/e2e/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "redesign-design",
           "type": "workflow-crew",
           "model": null,
@@ -328,7 +328,7 @@
           "ui/tsconfig*.json",
           "ui/components.json"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "web-app",
           "type": "workflow-crew",
           "model": null,
@@ -449,7 +449,7 @@
           "plugins/truss/tests/compose-runtime.check.ts",
           "plugins/truss/docs/events.schema.json"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "compose-runtime",
           "type": "workflow-crew",
           "model": null,
@@ -576,7 +576,7 @@
           "plugins/truss/agents/foreman.md",
           "plugins/truss/tests/init.check.ts"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "compose-wiring",
           "type": "workflow-crew",
           "model": null,
@@ -700,7 +700,7 @@
           "plugins/truss/tests/plugin-validate.check.ts",
           "checks/compose-manifests.check.ts"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "plugin-meta",
           "type": "workflow-crew",
           "model": null,
@@ -824,7 +824,7 @@
           "ui/tsconfig*.json",
           "ui/components.json"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "floor-shell",
           "type": "workflow-crew",
           "model": null,
@@ -942,7 +942,7 @@
           "ui/app/views/**",
           "ui/app/App.tsx"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "floor-views",
           "type": "workflow-crew",
           "model": null,
@@ -1065,7 +1065,7 @@
           "plugins/truss/tests/plugin-fixes-factory-contract.check.ts",
           "plugins/truss/tests/fixtures/workflow-run/start.cases.ts"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "factory-resume",
           "type": "workflow-crew",
           "model": null,
@@ -1185,7 +1185,7 @@
           "plugins/truss/tests/workflow-gate.check.ts",
           "plugins/truss/skills/run/SKILL.md"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "gate-trussfile",
           "type": "workflow-crew",
           "model": null,
@@ -1310,7 +1310,7 @@
           "plugins/truss/tests/plugin-fixes-factory-contract.check.ts",
           "plugins/truss/tests/fixtures/workflow-run/start.cases.ts"
         ],
-        "foreman": null,
+        "projectManager": null,
         "members": [],
         "latest": null,
         "estAgents": 6,
@@ -1329,7 +1329,7 @@
           "ui/scripts/**",
           "ui/package.json"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "ui-fixes5",
           "type": "workflow-crew",
           "model": null,

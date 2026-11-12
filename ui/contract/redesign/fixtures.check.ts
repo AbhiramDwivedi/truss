@@ -101,7 +101,7 @@ test('there is one state.json per state, and the live-counter has stale.json', (
   assert.ok(fs.existsSync(path.join(runDir, 'live-counter', 'stale.json')))
 })
 
-for (const name of ['empty', 'question', 'approval', 'follow-up', 'crews-running', 'stuck-crew', 'artifacts', 'live-counter', 'decisions', 'retro', 'live-counter/stale', 'stuck-crew/idle-foreman', 'artifacts/no-images']) {
+for (const name of ['empty', 'question', 'approval', 'follow-up', 'crews-running', 'stuck-crew', 'artifacts', 'live-counter', 'decisions', 'retro', 'live-counter/stale', 'stuck-crew/idle-project-manager', 'artifacts/no-images']) {
   const rel = name.includes('/') ? `${name}.json` : path.join(name, 'state.json')
   test(`${name}: a whole state valid against state.schema.json, times at or before the anchor`, () => {
     const s = load(rel)
@@ -196,18 +196,18 @@ test('live-counter: usage.live with its stamp, run.goals[0] is run with approved
   assert.deepEqual({ ...stale, session: null }, { ...s, session: null }, 'stale.json differs from state.json in the session only')
 })
 
-test('stuck-crew/idle-foreman.json: the same state, its one stuck crew of kind idle-foreman with the foreman stalled', () => {
+test('stuck-crew/idle-project-manager.json: the same state, its one stuck crew of kind idle-project-manager with the project manager stalled', () => {
   const s = state('stuck-crew')
-  const v = load(path.join('stuck-crew', 'idle-foreman.json'))
+  const v = load(path.join('stuck-crew', 'idle-project-manager.json'))
   const stuck = crews(v).filter((c) => c.stuck !== null)
   assert.equal(stuck.length, 1)
   assert.equal(stuck[0].status, 'running')
-  assert.equal(stuck[0].stuck.kind, 'idle-foreman')
-  assert.equal(stuck[0].foreman.state, 'stalled')
+  assert.equal(stuck[0].stuck.kind, 'idle-project-manager')
+  assert.equal(stuck[0].projectManager.state, 'stalled')
   assert.equal(stuck[0].stuck.since, new Date(ANCHOR - stuck[0].stuck.minutes * 60000).toISOString())
-  assert.equal(stuck[0].stuck.detail, `${stuck[0].foreman.name} stalled ${stuck[0].stuck.minutes} min`)
+  assert.equal(stuck[0].stuck.detail, `${stuck[0].projectManager.name} stalled ${stuck[0].stuck.minutes} min`)
   assert.ok(crews(v).some((c) => c.slug === LONG_SLUG))
-  assert.deepEqual({ ...v, run: null }, { ...s, run: null }, 'idle-foreman.json differs from state.json in the run only')
+  assert.deepEqual({ ...v, run: null }, { ...s, run: null }, 'idle-project-manager.json differs from state.json in the run only')
 })
 
 test('artifacts/no-images.json: the same state with design.images empty', () => {

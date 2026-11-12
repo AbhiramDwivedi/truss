@@ -31,7 +31,7 @@ test('R-4: one status line per crew shows stage, status, latest activity and QC 
   const memberName = `quotas-builder-${run}`
   real = await startReal({
     plan: (p) => { p.crews.find((c: { slug: string }) => c.slug === 'quotas').status = 'running' },
-    events: [spawnEvent('quotas', 'quotas', { type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' }), spawnEvent('quotas', memberName)],
+    events: [spawnEvent('quotas', 'quotas', { type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' }), spawnEvent('quotas', memberName)],
     trussFiles: { 'reports/quotas/quotas-qc.md': `VERDICT: PASS\n\nQC ${run}\n` },
   })
   await page.goto(real.url)
@@ -160,7 +160,7 @@ test('R-14, R-15: a plan of 12 crews with 100 agents renders, opens, and a chang
   const events: Array<Record<string, unknown>> = []
   const members = new Map<string, string[]>()
   let agents = 0
-  for (const slug of slugs) { events.push(spawnEvent(slug, slug, { type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' })); agents++ }
+  for (const slug of slugs) { events.push(spawnEvent(slug, slug, { type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' })); agents++ }
   for (let i = 0; agents < 100; i++, agents++) {
     const slug = slugs[i % 12]!
     const name = `${slug}-m${String(i).padStart(3, '0')}-${run}`

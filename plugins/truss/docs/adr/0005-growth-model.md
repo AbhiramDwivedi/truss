@@ -1,6 +1,6 @@
 # ADR-0005: a slim seed that grows the project, not the plugin
 
-Status: accepted, 2026-10-29. Decided by: Ram (client), with the PM (project manager). For foundry 0.8.0. Section 11 added on acceptance, at the client's ask: keep every web fetch where guardrails can be added later.
+Status: accepted, 2026-10-29. Decided by: Ram (client), with the program manager (PM). For foundry 0.8.0. Section 11 added on acceptance, at the client's ask: keep every web fetch where guardrails can be added later.
 
 ## Context
 
@@ -41,7 +41,7 @@ Fetching is a tool, not a step. No agent runs a research pass by default. Every 
 | --- | --- | --- |
 | design engineer | gains `WebFetch`, `WebSearch` | It writes domain sections (section 5) and must check facts it isn't sure of. |
 | writer | gains `WebFetch`, `WebSearch` | Docs for a tool the model doesn't know. |
-| foreman, members | unchanged (all tools) | Already have them. |
+| project manager, members | unchanged (all tools) | Already have them. |
 | commissioning engineer | unchanged (`WebFetch`) | |
 | QC engineer, checking engineer | unchanged, no web | They rule against the doc and the proof. A QC engineer that needs an outside fact to rule has found a gap in the doc; it reports a finding, it doesn't look the fact up. |
 
@@ -51,7 +51,7 @@ Truss extends a project only on evidence from the work, never ahead of it:
 
 - **At init.** As now, from the code. When the client gives a goal with `/truss:init`, the design engineer also covers the domains the goal names, so a greenfield repo gets a doc.
 - **At plan time.** A domain is uncovered when the goal touches a platform, product type or tool that neither a loaded pack nor a section of the architecture doc covers. The design engineer in plan mode doesn't write the doc. It stops and reports one line per domain, `UNCOVERED: <domain> | <why the goal touches it>`, and no plan. The PM then starts the design engineer in init mode with an extend brief naming those domains, commits the result (section 8), and starts plan mode again. Plan mode stays read-only, and every doc change goes through one path.
-- **At run end.** When a foreman's report has a `## Learned` section (section 7), the PM starts the same extend pass with those items before it closes the run.
+- **At run end.** When a project manager's report has a `## Learned` section (section 7), the PM starts the same extend pass with those items before it closes the run.
 
 ### 5. What an extend pass writes
 
@@ -81,7 +81,7 @@ This ADR adds no approval to a run. ADR-0001 section 6 is unchanged.
 
 ### 7. Capturing what a run learned
 
-A foreman's report may carry an optional `## Learned` section: facts a member found that later runs will need (an internal tool's conventions, a checker's flags), each with its source. The foreman stop gate doesn't require the section. One-off facts stay in the member's report. The extend pass at run end (section 4) adopts the items into the right domain section, or a reference section for a tool.
+A project manager's report may carry an optional `## Learned` section: facts a member found that later runs will need (an internal tool's conventions, a checker's flags), each with its source. The project manager stop gate doesn't require the section. One-off facts stay in the member's report. The extend pass at run end (section 4) adopts the items into the right domain section, or a reference section for a tool.
 
 ### 8. Each extension is its own commit
 
@@ -111,7 +111,7 @@ Guardrails on fetching (an allowlist, a deny list, a client prompt, a size or co
 | `UNCOVERED: ` | The design engineer in plan mode, one line per domain, in place of a plan. |
 | `Decided by: default` | The design engineer, in a fork ADR written by an extend pass. |
 | `from knowledge`, `checked: ` | The design engineer, as the tag on each domain rule. |
-| `## Learned` | A foreman, as an optional heading of its final report. |
+| `## Learned` | A project manager, as an optional heading of its final report. |
 | `docs(arch): extend ` | The PM, as the start of an extend pass's commit subject. |
 | `fetch` | The hooks, as the `event` value of a web-fetch line in `events.jsonl` (section 11). |
 

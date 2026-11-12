@@ -1,5 +1,5 @@
 // @ts-nocheck
-// compose-design contract cp: how init, the run SKILL and the foreman use kit and subagent-limits (ADR-0021)
+// compose-design contract cp: how init, the run SKILL and the project manager use kit and subagent-limits (ADR-0021)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -7,19 +7,19 @@ import { readFileSync } from 'node:fs'
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 const init = read('../skills/init/SKILL.md')
 const run = read('../skills/run/SKILL.md')
-const foreman = read('../agents/foreman.md')
+const projectManager = read('../agents/project-manager.md')
 
 const KIT_ABSENT = 'kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)'
 const OLD_MISSING = 'no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)'
-const OLD_FOREMAN = 'If the `subagent-limits:split-work` skill is available'
+const OLD_PROJECT_MANAGER = 'If the `subagent-limits:split-work` skill is available'
 const LOAD_SPLIT = 'Load the `subagent-limits:split-work` skill before splitting work.'
 const TYPES = '--type builder=kit:builder --type tester=kit:test-writer'
 
 test('control: the three files load and hold today\'s text', () => {
-  assert.ok(init.length > 0 && run.length > 0 && foreman.length > 0)
+  assert.ok(init.length > 0 && run.length > 0 && projectManager.length > 0)
   assert.ok(init.includes('## 5. Build on kit\'s manifest'))
   assert.ok(run.includes('plan-args'))
-  assert.ok(foreman.includes('subagent-limits:split-work'))
+  assert.ok(projectManager.includes('subagent-limits:split-work'))
 })
 
 test('control: init keeps the kit-absent line word for word', () => {
@@ -47,7 +47,7 @@ test('cp 3: the run SKILL passes the kit types only when kit is loaded', () => {
   assert.ok(run.includes('only when kit is loaded'), 'run SKILL never says "only when kit is loaded"')
 })
 
-test('cp 4: the foreman loads split-work unconditionally', () => {
-  assert.ok(foreman.includes(LOAD_SPLIT), 'foreman never holds the unconditional load line')
-  assert.ok(!foreman.includes(OLD_FOREMAN), 'foreman still loads split-work only if available')
+test('cp 4: the project manager loads split-work unconditionally', () => {
+  assert.ok(projectManager.includes(LOAD_SPLIT), 'project manager never holds the unconditional load line')
+  assert.ok(!projectManager.includes(OLD_PROJECT_MANAGER), 'project manager still loads split-work only if available')
 })

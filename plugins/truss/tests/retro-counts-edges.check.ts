@@ -81,7 +81,7 @@ describe('input edges', () => {
     ))
     const out = retro(dir)
     assert.equal(out.runs[0].started, '2026-03-03T10:00:00+02:00')
-    assert.deepEqual(out.runs[0].stalls, { agent: 1, idleForeman: 0 })
+    assert.deepEqual(out.runs[0].stalls, { agent: 1, idleProjectManager: 0 })
     assert.equal(out.eventsOutsideRuns, 1)
   })
 
@@ -114,7 +114,7 @@ describe('input edges', () => {
   test('an empty events file gives zeros for headed runs', () => {
     put('decisions.md', '## Run 2026-01-01T00:00:00Z | g\n')
     put('events.jsonl', '')
-    assert.deepEqual(retro(dir).runs[0].stalls, { agent: 0, idleForeman: 0 })
+    assert.deepEqual(retro(dir).runs[0].stalls, { agent: 0, idleProjectManager: 0 })
   })
 
   test('no decisions file and an odd plan', () => {
@@ -172,7 +172,7 @@ describe('stress regressions', () => {
     const run = out.runs[0]
     assert.equal(out.eventsSkipped, 0)
     assert.deepEqual(run.escalations, { QUESTION: 0, BLOCKED: 1, PROPOSAL: 0 })
-    assert.deepEqual(run.stalls, { agent: 0, idleForeman: 0 })
+    assert.deepEqual(run.stalls, { agent: 0, idleProjectManager: 0 })
     assert.deepEqual(run.qcs, { pass: 0, fail: 0 })
     assert.deepEqual(run.spawns, { total: 1, byModelEffort: { 'unset/unset': 1 } })
   })

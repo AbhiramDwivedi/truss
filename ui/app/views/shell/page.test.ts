@@ -106,7 +106,7 @@ test('crewAnnouncement: one crew gives "Crew <slug> is now <word in lower case>"
   assert.equal(crewAnnouncement(prev, withCrew(prev, 'rework-network', { stuck: STALLED })), 'Crew rework-network is now stuck')
   // Two-word status words stay lower case: rework-chat is Waiting on you in the live fixture; it becomes Active.
   assert.equal(
-    crewAnnouncement(prev, withCrew(prev, 'rework-chat', { foreman: { ...prev.run.crews[2].foreman, detail: 'working on it' } })),
+    crewAnnouncement(prev, withCrew(prev, 'rework-chat', { projectManager: { ...prev.run.crews[2].projectManager, detail: 'working on it' } })),
     'Crew rework-chat is now active',
   )
 })

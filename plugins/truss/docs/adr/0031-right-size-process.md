@@ -3,7 +3,7 @@
 Status: accepted, 2026-11-08
 Decided by: client ruling, 2026-11-08 (R-49 to R-54, confirmed in the client brief)
 Amends: ADR-0009 Decisions 1 and 3; ADR-0001 section 8 (the plan file)
-Amended by: ADR-0041 (a crew's work type sets the least process the PM may give it)
+Amended by: ADR-0041 (a crew's work type sets the least process the program manager (PM) may give it)
 
 ## Context
 
@@ -13,7 +13,7 @@ Every crew pays for the full process today, whatever the task.
 - `finish` merges a crew only on a QC PASS with no UNSCOPED finding (`bin/factory.ts:2553-2555`), and `mergeHeadVerdict` refuses anything else (`bin/factory.ts:1918-1922`).
 - `plan-check` accepts only plan versions 2 and 3: `bin/factory.ts:470`.
 - `$defs/crew` is `additionalProperties: false` (`docs/plan.schema.json:178`), so a crew has nowhere to record a process size or the PM's proof choices.
-- The run skill's foremanless crew, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md:263`).
+- The run skill's crew without a project manager, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md:263`).
 
 A docs fix and a new factory feature get the same planner, red-then-green test and QC engineer. The client ruled on 2026-11-08 that this changes:
 
@@ -109,9 +109,9 @@ With no plan, `gateOf` and `mainEditVerdict` are inactive (`hooks/register.ts:43
 - sets the crew's `status` to `running` and saves `plan.json`;
 - appends the decision line `started direct crew <slug> (process <p>) in stage <n> | worktree truss-<slug> from <target>`;
 - appends no `by: "factory"` spawn line, so `finish`'s `factorySpawned` filter (`bin/factory.ts:2477`) never picks the crew up;
-- counts the crew against `maxParallelCrews`, like foreman crews.
+- counts the crew against `maxParallelCrews`, like project manager crews.
 
-The output gains a top-level key `direct`, beside `held`, `foremen` and `refused`. It is an array of `{ "slug", "process", "qc", "red", "worktree", "branch" }`, where `qc` and `red` are `false` on a `solo` crew. A direct crew never appears in `truss.crews`, the object the PM passes as the Workflow args (`bin/factory.ts:1052`). `--args-file` writes the same body. The PM runs each direct crew itself, naming its agents `<slug>-builder`, `<slug>-tester` and `<slug>-qc`.
+The output gains a top-level key `direct`, beside `held`, `projectManagers` and `refused`. It is an array of `{ "slug", "process", "qc", "red", "worktree", "branch" }`, where `qc` and `red` are `false` on a `solo` crew. A direct crew never appears in `truss.crews`, the object the PM passes as the Workflow args (`bin/factory.ts:1052`). `--args-file` writes the same body. The PM runs each direct crew itself, naming its agents `<slug>-builder`, `<slug>-tester` and `<slug>-qc`.
 
 `start --slug S --resume ...` refuses a `solo` or `lean` crew with exit 1 and `why: "<slug> is a <process> crew; it runs direct, so merge it with land"`. This keeps the resume path's red-record check at `bin/factory.ts:1455` for full crews only.
 
@@ -144,7 +144,7 @@ crew <slug> merged into <target> at <head> | land: process <p>, qc <bool>, red <
 
 `finish` and its gates don't change for `full` crews, and `stage.js` doesn't change.
 
-Under merge mode `single`, a `solo` or `lean` crew takes the foreman path like a full crew, because `land` refuses `single` (exit 2). `factory.ts start` guards this with `settings.merge !== 'single'`, and `skills/run/SKILL.md` says the same.
+Under merge mode `single`, a `solo` or `lean` crew takes the project manager path like a full crew, because `land` refuses `single` (exit 2). `factory.ts start` guards this with `settings.merge !== 'single'`, and `skills/run/SKILL.md` says the same.
 
 ### 7. plan-check rules
 
@@ -206,13 +206,13 @@ Stage 0 pins these seams. The test-writer builds them on fixture git repos and t
 **Negative**
 
 - A solo task has no independent check: the PM's review of the diff and the agent's proof is the only gate. Picking the wrong size is a new kind of mistake, and the size lines make it countable. Counting them in the retro is left for later, not done here.
-- The PM runs lean crews' members by hand, as it runs the foremanless crew today.
+- The PM runs lean crews' members by hand, as it runs the crew without a project manager today.
 - A 0.20.1 session can't read a version-4 plan. It fails closed rather than merge a sized crew under the wrong gate.
 
 **Neutral**
 
 - The hooks don't change. Guard 11 pins that.
-- The foremanless crew of `skills/run/SKILL.md:256` and `:263` is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
+- The project-manager-less crew of `skills/run/SKILL.md:256` and `:263` is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
 
 **Reversing it** touches:
 

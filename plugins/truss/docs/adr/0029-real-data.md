@@ -1,6 +1,6 @@
 # ADR-0029: the UI on real data
 
-Status: proposed, 2026-11-06. Written by the design crew `real-data-design` (stage 0 of the goal `real-data`, plan approved at 2026-11-06T15:01:34Z). It becomes accepted when the PM merges this crew. The crews `real-data-server`, `real-data-network`, `real-data-page` and `arch-current` build from it; it changes no code itself.
+Status: proposed, 2026-11-06. Written by the design crew `real-data-design` (stage 0 of the goal `real-data`, plan approved at 2026-11-06T15:01:34Z). It becomes accepted when the program manager (PM) merges this crew. The crews `real-data-server`, `real-data-network`, `real-data-page` and `arch-current` build from it; it changes no code itself.
 
 Decided by: the client's goal at 23:02 (the five real-data defects, superseding ADR-0023 gap h) and the client's ruling at 09:45, "Yes, read them" (the UI may read Claude Code's workflow transcripts read-only, first brief line only, under a `--claude-dir` flag); checker-8's fixes at 09:45 and checker-9's at 09:56, which the plan carries; and this crew for what those leave free.
 
@@ -10,7 +10,7 @@ Amends: [ADR-0028](0028-ui-rework.md) sections 4, 6, 8 and 9. Supersedes the `Pa
 
 ADR-0028's page passed its fixtures, but screenshots of a copy of this run's truss dir show five defects:
 
-1. Foreman cards of done crews read Waiting on you or BLOCKED, with a "model unknown" badge.
+1. Project manager cards of done crews read Waiting on you or BLOCKED, with a "model unknown" badge.
 2. Members read "No activity yet" and show no task.
 3. Cost and run time are empty.
 4. `Pause build` shows its placeholder hint.
@@ -20,7 +20,7 @@ The plan maps them to requirements: defect 1 to `R-44` and `R-42` (the status an
 
 Three facts of the real dir cause them:
 
-- `workflow-crew` foremen `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts:210-215`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts:38-43`).
+- `workflow-crew` project managers `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts:224-226`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts:38-43`).
 - Members started inside a Workflow crew carry an `agentId` but no session task, because their task descriptions never reach the PM's stream. ADR-0028 section 6 left this as a `TODO:`. Claude Code writes each such agent's transcript to `~/.claude/projects/<projectKey>/<session id>/subagents/workflows/<wf id>/agent-<agentId>.jsonl`, next to a `.meta.json`.
 - A truss dir watched with no hosted session has no transcript and no usage. Run time reads the transcript (`ui/app/views/metrics/RunMetrics.tsx:25-26`), and Cost reads `usage.costUsd` and otherwise says "No usage yet" (`RunMetrics.tsx:48-49`).
 
@@ -58,17 +58,17 @@ This replaces ADR-0028 section 6's `TODO:` on Workflow members. The ui-session m
 The card's task line is the first of these that holds:
 
 1. `task`;
-2. the crew `goal`, for a foreman;
+2. the crew `goal`, for a project manager;
 3. a `detail` that isn't a marker;
 4. `Reported` with its marker, for a reported agent.
 
 "No activity yet" shows only for a spawned agent with none of these. This replaces ADR-0028 section 6's fallback bullet.
 
-The `task` that item 1 reads is chosen in this order: the spawn line's task, then the `description` in Claude Code's `agent-<id>.meta.json` beside the transcript unless it is a bare label (no whitespace), then the first brief line, then null; a foreman with none of these reads the first non-empty line after the `# Goal:` heading of `goals/<slug>.md` in the Truss dir (read only, first 16 KiB, plain slug only). Each card also carries `activity`, the agent's latest tool call (`<Tool>: <short>`, at most 120 characters) from the last 64 KiB of its transcript, re-read when the file changes; the card shows it as a muted second line while the agent is not done. For a Workflow agent whose description is a bare label, a recorded `title` event for that label (ADR-0015 Decision 6, written by `admit --label --title`) comes after the meta description and before the brief's first line.
+The `task` that item 1 reads is chosen in this order: the spawn line's task, then the `description` in Claude Code's `agent-<id>.meta.json` beside the transcript unless it is a bare label (no whitespace), then the first brief line, then null; a project manager with none of these reads the first non-empty line after the `# Goal:` heading of `goals/<slug>.md` in the Truss dir (read only, first 16 KiB, plain slug only). Each card also carries `activity`, the agent's latest tool call (`<Tool>: <short>`, at most 120 characters) from the last 64 KiB of its transcript, re-read when the file changes; the card shows it as a muted second line while the agent is not done. For a Workflow agent whose description is a bare label, a recorded `title` event for that label (ADR-0015 Decision 6, written by `admit --label --title`) comes after the meta description and before the brief's first line.
 
 ### 4. Run time and cost (defect 3; R-43)
 
-- **Run time.** When the transcript is empty, run time starts at the RFC 3339 start of the first `decisions[].run` heading. It ends at now while the run works, and at the latest foreman or member `ts` once the run is finished or no session is hosted.
+- **Run time.** When the transcript is empty, run time starts at the RFC 3339 start of the first `decisions[].run` heading. It ends at now while the run works, and at the latest project manager or member `ts` once the run is finished or no session is hosted.
 - **Cost.** Cost reads "Not recorded" when a run exists and there is neither session usage (`usage.costUsd` is null) nor a transcript. First use with no run keeps "No usage yet".
 - **Banner summary.** The header summary agrees with Cost: it shows no `$0.00` when Cost reads "Not recorded" (for example, it shows only the run time).
 
@@ -95,7 +95,7 @@ Every harness that starts `ui/server/main.ts` passes the Claude dir as `CLAUDE_C
 
 ## Consequences
 
-- `R-42` holds for Workflow members on a real dir, and `R-44` for done crews whose foremen only tagged.
+- `R-42` holds for Workflow members on a real dir, and `R-44` for done crews whose project managers only tagged.
 - `R-9` is wider by one bounded, read-only source. A user who keeps Claude Code's config elsewhere sets `--claude-dir` or `CLAUDE_CONFIG_DIR`. When the transcript is missing or moved, the card falls back down the task chain.
 - The transcript's first-line shape is Claude Code's, not Truss's. If the harness preamble changes, the task line falls back to the chain and the `real-data 2: ` cases go red.
 - `Member`, the schema and `types.ts` gain no field; `by` never leaves the server.

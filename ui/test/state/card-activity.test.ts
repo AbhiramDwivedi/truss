@@ -1,5 +1,5 @@
 // Card title and live line in ui-state (ADR-0029 section 3): the .meta.json description, the `activity` field from the
-// transcript tail, and the foreman's goals/<slug>.md fallback. Public seam only: createStore over temp dirs.
+// transcript tail, and the project manager's goals/<slug>.md fallback. Public seam only: createStore over temp dirs.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -57,7 +57,7 @@ async function withEnv(fn: (env: Env, open: (pollMs?: number) => any) => void | 
 
 function members(store: any): Record<string, any> {
   const out: Record<string, any> = {}
-  for (const c of store.snapshot().state.run.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) out[m.agentId] = m
+  for (const c of store.snapshot().state.run.crews) for (const m of [...(c.projectManager ? [c.projectManager] : []), ...c.members]) out[m.agentId] = m
   return out
 }
 const meta = (env: Env, description: string) => fs.writeFileSync(path.join(env.subagents, `agent-${AGENT}.meta.json`), JSON.stringify({ agentType: 'x', description }))
@@ -151,27 +151,27 @@ test('activity: a transcript that grows is re-read and the value updates', async
   })
 })
 
-const FOREMAN = 'a000000000000010' // docs-crew's foreman in the fixture
+const PROJECT_MANAGER = 'a000000000000010' // docs-crew's project manager in the fixture
 const goal = (env: Env, text: string) => {
   fs.mkdirSync(path.join(env.trussDir, 'goals'), { recursive: true })
   fs.writeFileSync(path.join(env.trussDir, 'goals', 'docs-crew.md'), text)
 }
 
-test('foreman: the first line after the # Goal: heading is the task; the heading and slug never are', async () => {
+test('projectManager: the first line after the # Goal: heading is the task; the heading and slug never are', async () => {
   await withEnv((env, open) => {
     goal(env, '# Goal: docs-crew\n\n   \nWrite the docs.\n\nStage: 1\n')
-    assert.equal(members(open())[FOREMAN].task, 'Write the docs.')
+    assert.equal(members(open())[PROJECT_MANAGER].task, 'Write the docs.')
   })
 })
 
-test('foreman: a missing goal file leaves the task as before', async () => {
+test('projectManager: a missing goal file leaves the task as before', async () => {
   await withEnv((env, open) => {
-    const t = members(open())[FOREMAN].task
+    const t = members(open())[PROJECT_MANAGER].task
     assert.ok(t === null || (t !== 'docs-crew' && !t.startsWith('# Goal')))
   })
 })
 
-test('foreman: a goal file with only a heading gives null from the reader', async () => {
+test('projectManager: a goal file with only a heading gives null from the reader', async () => {
   await withEnv((env) => {
     goal(env, '# Goal: docs-crew\n\n\n')
     assert.equal(readGoalTask(env.trussDir, 'docs-crew'), null)
@@ -180,7 +180,7 @@ test('foreman: a goal file with only a heading gives null from the reader', asyn
   })
 })
 
-test('foreman: a non-plain slug reads nothing', async () => {
+test('projectManager: a non-plain slug reads nothing', async () => {
   await withEnv((env) => {
     goal(env, '# Goal: docs-crew\nSecret.\n')
     fs.writeFileSync(path.join(env.trussDir, 'outside.md'), '# Goal: x\nLeaked.\n')

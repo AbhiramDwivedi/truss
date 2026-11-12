@@ -40,7 +40,7 @@ const row = (slug: string, status: string, estAgents: number) => ({
   slug, stage: 0, verdict: 'build', modules: ['m'], owns: [`src/${slug}.ts`], acceptanceTest: 'npm test', acceptanceTestProved: true, estAgents, status,
 });
 const spawn = (ts: string, crew: string, agent: string) => ({
-  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:foreman' : 'kit:builder', model: 'opus', effort: 'high', by: 'main',
+  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:project-manager' : 'kit:builder', model: 'opus', effort: 'high', by: 'main',
 });
 const stall = (ts: string, crew: string, agent: string, kind: string, minutes: number) => ({ v: 1, ts, event: 'stall', crew, agent, kind, minutes });
 const tag = (ts: string, crew: string, agent: string) => ({ v: 1, ts, event: 'tag', crew, agent, tag: 'DONE' });
@@ -182,13 +182,13 @@ test('gap g: the latest stall wins when a crew has several', () => {
 test('gap g: since is RFC 3339 UTC', () => {
   const w = storeFor({
     'plan.json': plan({ crews: [row('a', 'running', 1)] }),
-    'events.jsonl': jsonl([spawn(T(0), 'a', 'a'), stall(T(30), 'a', 'a', 'idle-foreman', 12)]),
+    'events.jsonl': jsonl([spawn(T(0), 'a', 'a'), stall(T(30), 'a', 'a', 'idle-project-manager', 12)]),
   });
   try {
     const s = crewBy(w.run(), 'a').stuck;
     assert.ok(s, 'stuck is set');
     assert.match(s.since, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/);
-    assert.equal(s.kind, 'idle-foreman');
+    assert.equal(s.kind, 'idle-project-manager');
     assert.equal(s.detail, 'a stalled 12 min');
   } finally { w.store.close(); }
 });

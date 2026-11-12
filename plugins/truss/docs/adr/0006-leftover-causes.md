@@ -1,6 +1,6 @@
 # ADR-0006: why each leftover stayed, a stress test that leaves nothing, and retro's root-cause step
 
-Status: proposed, 2026-10-29. Written by the design crew `leftover-design` (stage 0), for foundry 0.9.0. It becomes accepted when the PM (project manager) merges the stage-0 crew under the client-approved plan; no client trigger applies (no principle breaks, no external service, retro's JSON is not stored, P15).
+Status: proposed, 2026-10-29. Written by the design crew `leftover-design` (stage 0), for foundry 0.9.0. It becomes accepted when the program manager (PM) merges the stage-0 crew under the client-approved plan; no client trigger applies (no principle breaks, no external service, retro's JSON is not stored, P15).
 Amended by ADR-0012 (the retro may read transcripts; P24 no longer binds the retro).
 
 ## Context
@@ -102,7 +102,7 @@ The leftovers contract forbids reading `slots.json`, and retro never reads trans
 - **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts:812`) and then commits the leftovers for it (`commitLeftovers`, `register.ts:1021`, called at 1853); for a stress test that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
 - **Probes.** It prefers temp dirs outside the worktree for probe files. A file in a gitignored path doesn't count as dirty either.
 
-`agents/foreman.md:64`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
+`agents/project-manager.md:66`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
 
 The literals the stage-0 check `tests/redteam-reset.check.ts` pins, each a substring of `qc-engineer.md`'s stress-test section (from the line starting `When your brief opens with the line \`Stress test:\`` to the next `##` heading or the `STRESSTEST: <n> findings` paragraph):
 
@@ -116,13 +116,13 @@ The literals the stage-0 check `tests/redteam-reset.check.ts` pins, each a subst
 | `temp dir` | present |
 | `git checkout --detach` | absent from the whole file |
 
-In `foreman.md`, the bullet starting `- **Stress test, when the brief says yes.**` doesn't contain `checks out` and does contain `git reset --hard <sha>`.
+In `project-manager.md`, the bullet starting `- **Stress test, when the brief says yes.**` doesn't contain `checks out` and does contain `git reset --hard <sha>`.
 
 ### 3. The retro skill's root-cause step
 
 `skills/retro/SKILL.md` gets a new section between "Report the counts" and "Propose changes", headed exactly `## 3. Find the causes`; "Propose changes" becomes `## 4.` and "Write only what the client approves" `## 5.`. The description keeps "why crews stalled or got rejected"; this section is the body step behind it. The stage-1 crew `retro-causes` writes it; these are its rules and literals.
 
-- **Anomalies.** Five kinds, by these exact names: `leftover`, `qc fail`, `stall`, `overrule`, `spent allowance`. One line per anomaly: each `leftoverDetails` entry; each QC file whose first line starts `VERDICT: FAIL`; and, per run, a non-zero `stalls` count (`agent` or `idleForeman`), a non-zero `decisions.overruled` and a non-zero `allowancesSpent`.
+- **Anomalies.** Five kinds, by these exact names: `leftover`, `qc fail`, `stall`, `overrule`, `spent allowance`. One line per anomaly: each `leftoverDetails` entry; each QC file whose first line starts `VERDICT: FAIL`; and, per run, a non-zero `stalls` count (`agent` or `idleProjectManager`), a non-zero `decisions.overruled` and a non-zero `allowancesSpent`.
 - **Not an anomaly.** Spawns over `estAgents` never get a line. Sentence: `Spawns over estAgents are not an anomaly; give them no CAUSE line.`
 - **Form.** Each line is exactly `CAUSE: <anomaly> | <evidence> | <fix location>`. `<anomaly>` starts with one of the five names (for example `leftover a0123456789abcdef`, `qc fail auth-qc-2`). `<evidence>` is a fact from an allowed source, such as the entry's `skip` string or a QC engineer finding line. `<fix location>` is a file and a key, line or section. When the allowed sources don't show a cause, the line is `CAUSE: <anomaly> | not found | none`.
 - **Sources.** Sentence: `Its only sources are git, the disk, decisions.md, the qc files' VERDICT: and finding lines, and the plugin's own files.` A finding line is a line under a QC file's `## Findings` heading that starts `- `.
@@ -138,7 +138,7 @@ The stage-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `
 | --- | --- | --- | --- | --- |
 | retro's `leftoverDetails` | `scripts/retro.py` | the `truss:retro` skill's root-cause step | section 1 | `tests/test_contract_leftover_details.py` |
 | retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py:23`, `tests/test_contract_retro_050.py:69` |
-| the stress test's start and end state | `agents/qc-engineer.md`, `agents/foreman.md` | the stress-test QC engineer; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
+| the stress test's start and end state | `agents/qc-engineer.md`, `agents/project-manager.md` | the stress-test QC engineer; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
 | The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | section 3 | `tests/retro-cause.check.ts` |
 
 ## Consequences

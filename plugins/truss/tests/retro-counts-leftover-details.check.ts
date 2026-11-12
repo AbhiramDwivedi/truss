@@ -237,7 +237,7 @@ describe('contract', () => {
 })
 
 const spawn = (agentId: string) =>
-  JSON.stringify({ v: 1, ts: TS, event: 'spawn', crew: 'c', agent: 'c', agentId, type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' })
+  JSON.stringify({ v: 1, ts: TS, event: 'spawn', crew: 'c', agent: 'c', agentId, type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' })
 
 describe('edges', () => {
   const ID = A
