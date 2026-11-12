@@ -29,8 +29,9 @@ We will tie the client's plan approval to a typed inbox resolve.
    - the item exists in `verifiedItems`, so its resolve, if any, is backed by a typed line;
    - its kind is `client-trigger`;
    - it was opened for this truss dir: its `session` is this dir's session;
-   - its ref is `run` or the id of one of the plan's `goals` whose `approval` is `client`;
+   - its ref is `run`: only a run-ref item approves the plan, so a client-goal-ref item is refused;
    - no later open row of the same kind, session and ref supersedes it;
+   - it is resolved by the client in this same session (`resolve.session` is this dir's session), because `escalate` dedupes a `run` item across sessions and an approve typed next to another session's plan table never covers this plan;
    - it is resolved by the client with the decision `approve` (a `reject`, `answer`, `done` or `dismiss` does not count);
    - the resolve is not older than the plan: its `ts` is at or after the mtime of `plan.md` (else `plan.json`), so a proof the client gave before the plan was (re)written, or before `plan.json` existed, cannot approve the later plan (the replay guard of R-85; `bin/inbox.ts:475-480`). Once the plan is approved, `confirmApproval` skips this one condition (`approved` argument), because approving rewrote `plan.json` past the resolve.
    Otherwise `approve` refuses with the reason and leaves `approvedAt` null (`bin/factory.ts:715-718`). It fails closed: a stored row alone proves nothing.
@@ -44,7 +45,7 @@ We will tie the client's plan approval to a typed inbox resolve.
 - Negative: the staleness check compares the resolve row's `ts` with the plan file's mtime, not the typed line's own time, and reads `plan.md`'s mtime first, so a `patchPlan` edit to `plan.json` alone is not seen. Neither is shown to be reachable in the skill flow (the plan is written once by `plan-write`, then approved); no test pins them.
 - Negative: after an `approveRefused` for an open long-term cost the spent item cannot approve; the program manager opens a fresh `client-trigger --ref run` item (run skill section 5).
 - Positive: the approval keeps one caller, so the run skill no longer has to trust the program manager's account of the client's yes.
-- Negative: only a ref `run` item approves the plan through the inbox (`bin/inbox.ts:535`). A `client-trigger` item whose ref is a client goal's id passes `approvalProof`, but its typed resolve does not call the approval, and `cmdApprove` sets only the top-level `approvedAt`, never `goals[i].approvedAt`.
+- Negative: only a ref `run` item approves the plan, through the inbox (`bin/inbox.ts:535`) and through `approvalProof`. Per-goal approval (`goals[i].approvedAt`) has no proof path yet and is deferred.
 - Negative: `escalate` dedupes an open item by kind and ref without comparing sessions (`bin/inbox.ts:318-326`). While another truss dir of the same repo has an open `client-trigger` item with ref `run`, a second escalate links to that item, and `approvalProof` then refuses it as opened for another truss dir.
 - Neutral: the client approves the plan the way it rules on every other blocking item, by `/truss:inbox approve <E-id> <code>`.
 - Reversing this touches `cmdApprove` and the `onPlanApprove` registration in `bin/factory.ts`, `approvalProof`, `confirmApproval` and `resolveItem` in `bin/inbox.ts`, the tests that pass a proof fixture to `approve --by client`, and the run and inbox skills.

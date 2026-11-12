@@ -451,10 +451,10 @@ function typedProof(repo: string, session: string, open: Obj, decision: string, 
 
 /**
  * The typed client proof `approve --by client` needs (ADR-0045): null when `item` is a client-trigger item of this session (`dir`) whose ref is
- * the run goal or one of `clientGoals`, resolved approve by the client with a typed line that verifiedItems holds, and not superseded by a later
+ * `run`, resolved approve by the client in this same session with a typed line that verifiedItems holds, and not superseded by a later
  * open row of the same kind, session and ref. Else the reason it does not count. Fails closed: a stored row alone proves nothing.
  */
-export function approvalProof(repo: string, dir: string, item: string | undefined, clientGoals: string[], approved = false): string | null {
+export function approvalProof(repo: string, dir: string, item: string | undefined, approved = false): string | null {
   if (item === undefined || item === '') return 'approve --by client needs --item <E-id>: the client-trigger item for this plan, which the client approves by typing /truss:inbox approve <E-id> <code>'
   const items = verifiedItems(repo)
   const it = items.get(item)
@@ -463,7 +463,7 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
   if (it.open.kind !== 'client-trigger') return `${item} is a ${String(it.open.kind)} item, not the client-trigger item that approves a plan`
   if (it.open.session !== session) return `${item} was opened for another truss dir, not ${session}`
   const ref = it.open.ref
-  if (ref !== 'run' && !(typeof ref === 'string' && clientGoals.includes(ref))) return `${item} is for ${JSON.stringify(ref ?? null)}, not the run goal or a client goal of this plan`
+  if (ref !== 'run') return `${item} is for ${JSON.stringify(ref ?? null)}, not the run goal: only a run item approves a plan`
   let later = false
   for (const [id, o] of items) {
     if (id === item) later = true
@@ -472,6 +472,7 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
   const r = it.resolve
   if (r === null) return `no prompt typed by the client approves ${item}: the client types /truss:inbox approve ${item} <code>`
   if (r.by !== 'client' || r.decision !== 'approve') return `${item} was resolved ${String(r.decision)}, not approve`
+  if (r.session !== session) return `${item} was approved in another session (${String(r.session)}), not ${session}: the client never saw this plan`
   // the client's approve must come after the plan was written: a resolve older than plan-write approved a plan the client never saw (replayed proof)
   if (approved) return null // approving rewrote plan.json, so its mtime is past the resolve; the staleness was checked when the plan was approved
   const wrote = [`${dir}/plan.md`, `${dir}/plan.json`].map((p) => { try { return statSync(p).mtimeMs } catch { return null } }).find((m) => m !== null)
@@ -484,8 +485,8 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
  * A plan the client's typed approve already approved (see onPlanApprove): the first `approve --by client --item <id>` with the same proof
  * confirms it, once, by marking the item applied for this session; any later call finds it applied and refuses. True when it confirmed.
  */
-export function confirmApproval(repo: string, dir: string, item: string | undefined, clientGoals: string[]): boolean {
-  if (approvalProof(repo, dir, item, clientGoals, true) !== null) return false
+export function confirmApproval(repo: string, dir: string, item: string | undefined): boolean {
+  if (approvalProof(repo, dir, item, true) !== null) return false
   const session = sessionOf(dir)
   const S = sharedDir(repo)
   let confirmed = false

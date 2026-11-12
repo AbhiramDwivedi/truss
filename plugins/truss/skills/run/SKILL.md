@@ -286,7 +286,7 @@ After `plan-check` passes and before any crew starts, run `node <plugin>/bin/fac
 
 When the design engineer drafted personas (section 3, "Hire the personas the goal needs"), what happens depends on the run's approval. In an `auto` run the drafts don't make the plan wait: the checking engineer reviews them, you approve or amend them, run `persona-install` and log what you installed, and the run report (section 10) lists every persona installed so the client can amend it later. In a non-auto run, show them with the plan, each with its stack and rules, and log the client's answer. If the client rejects a draft, revise it with the design engineer; a task runs with no persona only when the client says to.
 
-Write `approvedAt` with Edit, as an RFC 3339 date-time with a time-zone offset, such as `2026-10-26T14:05:00Z`. Read the time from your own clock, for example with `date -u +%Y-%m-%dT%H:%M:%SZ`: the plugin stamps the time only on `decisions.md` lines, never in `plan.json`.
+For an auto run, write `approvedAt` with Edit, as an RFC 3339 date-time with a time-zone offset, such as `2026-10-26T14:05:00Z`. Read the time from your own clock, for example with `date -u +%Y-%m-%dT%H:%M:%SZ`: the plugin stamps the time only on `decisions.md` lines, never in `plan.json`.
 
 **Auto run (`approval: "auto"`, whatever its stages).** Don't ask the client anything:
 
@@ -296,7 +296,7 @@ Write `approvedAt` with Edit, as an RFC 3339 date-time with a time-zone offset, 
 4. Add the merge mode, the target and the members you chose to `plan.md`.
 5. Go to section 6. The client sees the plan in the end-of-run report. When the client brief filled defaults, the message that starts the run names them in exactly this form: `Defaults filled: R-<n> (<branch id>), ...`.
 
-**Client run (`approval: "client"`: a client trigger, an open long-term cost, or the brief said so).** Leave `approvedAt` null and show the plan as a table, with the ADRs the crews will write:
+**Client run (`approval: "client"`: a client trigger, an open long-term cost, or the brief said so).** Never edit `approvedAt` for a client plan. Leave it null and show the plan as a table, with the ADRs the crews will write:
 
 | Crew | Stage | Verdict | Goal | Requirements | Members (type, model, effort) | Skills | Owns | High-impact paths | Stress test (yes/no) | Acceptance test (not gameable) | Est. agents | Resources (ports line; DB or temp dir) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -403,7 +403,7 @@ When `plan.json` holds the crew's slug, the plugin checks each `truss:project-ma
 
 - `stage <n> isn't merged yet: <slugs>`: a crew in an earlier stage isn't `merged` or `dropped`. Wait for the crews it names, and merge them when their QC engineers pass.
 - `<running> crews running, the cap is <cap>; start <slug> when one merges`: `maxParallelCrews` crews are already running. Start this crew when one of them merges.
-- `this run changes the design; get the client's approval first`: `approval` is `"client"` and `approvedAt` is null. Get the client's approval (section 5), then set `approvedAt`.
+- `this run changes the design; get the client's approval first`: `approval` is `"client"` and `approvedAt` is null. The client's typed `/truss:inbox approve <E-id> <code>` on the approval item sets `approvedAt` (section 5); the PM never sets a client plan's `approvedAt` itself.
 - `<slug> waits for the client's approval`: the crew's `clientApproval` is `"pending"`. Wait for the client's answer, then set it to `"approved"`.
 - `stage <n> of goal <id> isn't merged yet: <slugs>`: the same stage gate for a crew of an added goal; it looks only at earlier stages of that goal. Wait for the crews it names.
 - `<slug> names goal <id>, which isn't in the plan`: the crew's `goal` matches no `goals` entry (and isn't `run`). Fix the crew's `goal` or add the goal through "Take a new goal mid-run"; don't start the project manager until the plan is right.
