@@ -203,6 +203,46 @@ test('control 15: with no merge in progress, integrate of a branch the head alre
 })
 
 // ---------------------------------------------------------------------------------------------------------------
+// ADR-0026 item 58: a resolver's merge left in progress is never merged into or aborted
+
+/** A crew worktree whose merge of main conflicts on a.txt and is left in progress (the resolver's merge). */
+function conflictedMerge() {
+  const env = mkEnv({ config: CFG, files: { 'a.txt': 'base\n' } })
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'running', }) ], { approvedAt: iso(Date.now() - 4 * HOUR) }))
+  writeGoal(env.dir, 's', {})
+  const wt = addCrewWorktree(env.repo, 's')
+  appendEvent(env.dir, factorySpawn('s', iso(Date.now() - 3 * HOUR)))
+  putFile(wt, 'a.txt', 'crew side\n', 'crew edit')
+  putFile(env.repo, 'a.txt', 'main side\n', 'main edit')
+  assert.notEqual(gitStatus(wt, ['merge', '--no-edit', 'main']), 0, 'precondition: the merge conflicts')
+  assert.equal(mergeHead(wt), 0, 'precondition: the merge is in progress')
+  return { env, wt }
+}
+
+test('sync 1: while a merge is in progress in the crew worktree, sync refuses with inProgress and leaves the merge and the head alone', () => {
+  const { env, wt } = conflictedMerge()
+  const tip = head(wt)
+  const res = env.run('sync', { slug: 's' })
+  assert.equal(res.status, 1, say(res))
+  assert.equal(res.json?.merged, false, say(res))
+  assert.equal(res.json?.inProgress, 'merge', say(res))
+  assert.deepEqual(res.json?.conflicts, ['a.txt'], say(res))
+  assert.equal(mergeHead(wt), 0, 'the merge is still in progress')
+  assert.equal(head(wt), tip, 'no commit was made')
+})
+
+test('sync 2: start --resume answers keeps the merge in progress in the crew worktree and answers its unmerged paths as syncConflicts', () => {
+  const { env, wt } = conflictedMerge()
+  const tip = head(wt)
+  const run = deadRun(env, 'wf_sync', [{ label: 's-builder', result: member('t-s', 'truss-s', 'CHECKPOINT') }])
+  const r = env.run('start', { slug: 's', resume: 'answers', transcript: run.dir, answers: answersFile([{ at: 'red', text: 'x' }]) })
+  assert.equal(r.status, 0, say(r))
+  assert.deepEqual(entryOf(r).syncConflicts, ['a.txt'], say(r))
+  assert.equal(mergeHead(wt), 0, 'the merge is still in progress (not aborted)')
+  assert.equal(head(wt), tip, 'no commit was made')
+})
+
+// ---------------------------------------------------------------------------------------------------------------
 // prior: a stopped member's own commits reach its resumed successor
 
 test('prior 1: start --resume answers lists in entry.prior the branch of a QUESTION member with commits the crew branch lacks, and not one whose commits the crew branch already holds', () => {
