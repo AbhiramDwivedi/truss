@@ -152,8 +152,8 @@ const ABOUT = {
   'worktypes.ts:1': 'The built-in profiles',
 }
 
-// Failures of every `path:line` citation in one doc: the file or line is missing, or the cited lines hold none of the names the citation is about.
-function citationFailures(docName, doc, about = ABOUT) {
+// Failures of every `path:line` citation in one doc: the file or line is missing, or neither the cited lines nor the rest of the file hold a name the citation is about. The symbol form is `symbol` (`path:line`) in one clause: it survives line drift while the symbol is in the file.
+export function citationFailures(docName, doc, about = ABOUT) {
   const fails = []
   doc.split('\n').forEach((line, i) => {
     for (const m of line.matchAll(CITE_RE)) {
@@ -167,13 +167,14 @@ function citationFailures(docName, doc, about = ABOUT) {
       if (!file) { fails.push(`${where}: file not found`); continue }
       const lines = readFileSync(file, 'utf8').replace(/\r/g, '').split('\n')
       if (from < 1 || to < from || to > lines.length) { fails.push(`${where}: the file has ${lines.length} lines`); continue }
+      const text = lines.join('\n')
       const held = lines.slice(from - 1, to).join('\n')
       const upto = line.slice(0, m.index)
       const clause = upto.slice(upto.lastIndexOf('. ') + 1)
       const key = `${rel}:${m[2] ?? m[4]}`
       const tokens = about[key] ? [about[key]] : [...new Set([...tokensOf(clause), ...tokensOf(line)])]
       if (tokens.length === 0) continue // names no symbol: only the file and the line range are checked; pin one in ABOUT to check more
-      if (!tokens.some((t) => held.includes(t))) fails.push(`${where}: the cited lines hold none of ${tokens.slice(0, 6).join(', ')}`)
+      if (!tokens.some((t) => held.includes(t) || text.includes(t))) fails.push(`${where}: the cited lines hold none of ${tokens.slice(0, 6).join(', ')}`)
     }
   })
   return fails
@@ -186,9 +187,10 @@ test('release-026: every line citation in architecture.md and the knowledge file
   assert.ok(real > 0, 'OWNERLESS_MS is gone from store.ts')
   const wrong = real === 1 ? 2 : 1
   assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${real}\`).`), [])
-  const bad = citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${wrong}\`).`)
-  assert.equal(bad.length, 1, 'a citation to an existing but wrong line must fail')
-  assert.match(bad[0], /hold none of OWNERLESS_MS/)
+  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${wrong}\`).`), [], 'a wrong line that names a symbol in the file passes')
+  const bad = citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`NO_SUCH_SYMBOL_RELEASE\`, \`bin/store.ts:${wrong}\`).`)
+  assert.equal(bad.length, 1, 'a citation whose symbol is gone from the file must fail')
+  assert.match(bad[0], /hold none of NO_SUCH_SYMBOL_RELEASE/)
   assert.equal(citationFailures('seed', 'See `store.ts:99999`.').length, 1, 'a line past the end of the file must fail')
 
   const docs = ['plugins/truss/docs/architecture.md', ...['product-decisions.md', 'store.md'].map((f) => `docs/knowledge/${f}`), 'plugins/truss/skills/run/SKILL.md']
