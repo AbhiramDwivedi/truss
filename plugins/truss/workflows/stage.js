@@ -1003,14 +1003,28 @@ async function recordCall(crew, role, makePrompt, opts, at, c) {
 // ---------------------------------------------------------------- product calls that wait on an inbox item (R-86, ADR-0046)
 
 // The ref of a task's inbox item: factory escalate dedupes an open item with the same kind and ref, so a re-open on a resume is one item.
-const callRef = (crew, at) => `crew-call:${crew.slug}:${at}`
+// factory inbox and its dedupe span sessions, so the ref also names the run: the truss dir path under .git/truss (the basename repeats
+// as wave subdirs) and the plan's approvedAt (args.truss.approvedAt, '' when the caller passes none), after the slug and task. An
+// older run's item, or another session's with the same slug and task, never carries this suffix, so it never answers this run.
+const RUN_KEY = (() => {
+  const d = trussDir().replace(/\\/g, '/')
+  const k = d.lastIndexOf('/.git/truss/')
+  return [k < 0 ? '' : d.slice(k + '/.git/truss/'.length), typeof F.approvedAt === 'string' ? F.approvedAt : ''].filter(Boolean).join('@')
+})()
+const callRef = (crew, at) => `crew-call:${crew.slug}:${at}${RUN_KEY ? `@${RUN_KEY}` : ''}`
+const callAt = (crew, ref) => {
+  const head = callRef(crew, '')
+  const tail = RUN_KEY ? `@${RUN_KEY}` : ''
+  const lead = head.slice(0, head.length - tail.length)
+  return ref.startsWith(lead) && ref.endsWith(tail) && ref.length > head.length ? ref.slice(lead.length, ref.length - tail.length) : ''
+}
 
 // The inbox rows of one kind linked to this crew whose ref is one of its calls, in the order factory inbox lists them. The wait is
 // this re-read: Workflow scripts have no timers, so the script never polls; a resumed stage reads again, once per pass.
 async function callRows(crew, kind) {
   const r = await runFactory(crew, `inbox --kind ${kind} --crew ${sh(crew.slug)}`, 'ok')
   const list = r.parsed && Array.isArray(r.parsed.items) ? r.parsed.items : []
-  return list.filter((i) => isPlainObject(i) && i.kind === kind && typeof i.ref === 'string' && i.ref.startsWith(callRef(crew, '')) && typeof i.id === 'string')
+  return list.filter((i) => isPlainObject(i) && i.kind === kind && typeof i.ref === 'string' && callAt(crew, i.ref) !== '' && typeof i.id === 'string')
 }
 
 // The stop of a crew whose task waits on an inbox item: only this crew stops, every other crew runs. A scope-change item is the
@@ -1061,7 +1075,7 @@ async function restoreCalls(crew) {
   for (const kind of ['pm-question', 'scope-change']) {
     try {
       for (const row of await callRows(crew, kind)) {
-        const at = row.ref.slice(callRef(crew, '').length)
+        const at = callAt(crew, row.ref)
         const was = crew.calls[at]
         if (at && !(was && was.state === 'open' && row.state !== 'open')) crew.calls[at] = row
       }
