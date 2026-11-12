@@ -1095,7 +1095,12 @@ async function pendingCall(crew, role, makePrompt, opts, at) {
   const row = crew.calls[at]
   if (!row) return null
   if (row.state !== 'resolved') throw holdStop(row, oneLine(row.title), '', at)
-  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => d.item && d.item.task === at))
+  // logged once per item, not per task: a task can ask twice, and the second item's answer is a new decision. An earlier run's
+  // decision stands for this item when it has the item's question or answer (factory crew-decision stores both with | as /)
+  const flat = (s) => oneLine(s).replace(/\|/g, '/')
+  const q = flat(row.title)
+  const a = flat(row.decision === 'answer' ? oneLine(row.note, 800) : `${row.decision}: ${oneLine(row.note, 800)}`)
+  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => d.item && d.item.task === at && (flat(d.question) === q || flat(d.answer) === a)))
   if (got.resume) return got.resume
   throw new Stop('QUESTION', `${oneLine(row.title)}\n\n${got.escalate}`, at)
 }
