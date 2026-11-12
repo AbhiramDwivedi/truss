@@ -66,8 +66,8 @@ describe('run-procedure: SKILL.md section 4 (plan)', () => {
     has(S4, /(failed|fails|failing)\s+plan-check[^.]*resum|plan-check[^.]*fail[^.]*resum[^.]*\bonce\b|resum[^.]*\bonce\b[^.]*plan-check/i, 'resume once on failed plan-check')
     has(S4, /\bonce\b/i, 'once')
   })
-  test('4 keeps the foreman-path Agent designer text for sessions without Workflow, beside the new path', () => {
-    has(S4, /foreman path|without Workflow|no Workflow|Workflow (is )?(not available|unavailable)/i, 'foreman-path / no-Workflow wording')
+  test('4 keeps the project-manager-path Agent designer text for sessions without Workflow, beside the new path', () => {
+    has(S4, /project manager path|without Workflow|no Workflow|Workflow (is )?(not available|unavailable)/i, 'project-manager-path / no-Workflow wording')
     has(S4, /Agent[^.]*designer|designer[^.]*Agent/i, 'Agent call of the designer')
     has(S4, /plan-brief\.md/i, 'new path present too, so this is not today\'s text')
   })
@@ -90,17 +90,17 @@ describe('run-procedure: SKILL.md section 5 (merge mode and target)', () => {
   test('5 gets single only from config or the client\'s own words', () => {
     has(S5, /single[^.]*(truss\.json|config)[^.]*(client|own words)|(truss\.json|config)[^.]*single[^.]*(client|own words)/i, 'single from config or client words')
     has(S5, /own words|client'?s? (instruction|words)/i, "client's own words")
-    has(S5, /single[^.]*foreman path/i, 'a single run puts every crew on the foreman path')
+    has(S5, /single[^.]*project manager path/i, 'a single run puts every crew on the project manager path')
   })
 })
 
 describe('run-procedure: SKILL.md section 6 (goal files and start)', () => {
-  test('6 goal files carry Approved scope, Stress test (yes/no) and Engine (workflow/foreman)', () => {
+  test('6 goal files carry Approved scope, Stress test (yes/no) and Engine (workflow/project-manager)', () => {
     has(S6, /## Approved scope/i, '## Approved scope')
     has(S6, /## Stress test/i, '## Stress test')
     has(S6, /## Engine/i, '## Engine')
     has(S6, /Stress test[^.]*\byes\b[^.]*\bno\b/i, 'Stress test first word yes or no')
-    has(S6, /Engine[^.]*\bworkflow\b[^.]*\bforeman\b/i, 'Engine first word workflow or foreman')
+    has(S6, /Engine[^.]*\bworkflow\b[^.]*\bproject-manager\b/i, 'Engine first word workflow or project manager')
   })
   test('6 Workflow crews run start, Workflow(stage.js), then finish --transcript --result', () => {
     has(S6, /factory\.ts start|\bstart\b[\s\S]*Workflow\(?\s*stage\.js/i, 'start')
@@ -118,15 +118,15 @@ describe('run-procedure: SKILL.md section 6 (goal files and start)', () => {
     has(S6, /run may be live/i, 'run may be live')
     has(S6, /start --stage next/i, 'start --stage next')
   })
-  test('6 --no-workflow falls back to the foreman path, with when to use it', () => {
+  test('6 --no-workflow falls back to the project manager path, with when to use it', () => {
     has(S6, /start --no-workflow/i, 'start --no-workflow')
-    has(S6, /--no-workflow[^.]*(every crew|all crews)[^.]*foreman path|foreman path[^.]*--no-workflow/i, '--no-workflow puts every crew on the foreman path')
+    has(S6, /--no-workflow[^.]*(every crew|all crews)[^.]*project manager path|project manager path[^.]*--no-workflow/i, '--no-workflow puts every crew on the project manager path')
     has(S6, /Workflow tool (is )?(unavailable|not available)|no Workflow tool|without the Workflow tool/i, 'when: Workflow tool unavailable')
     has(S6, /not opted in|has not opted|hasn'?t opted|did not opt|not opt/i, 'when: client has not opted in')
   })
-  test('6 deploy and raised-effort crews stay on the foreman path', () => {
-    has(S6, /deploy[^.]*foreman path|foreman path[^.]*deploy/i, 'deploy on the foreman path')
-    has(S6, /raised[- ]effort[^.]*foreman path|foreman path[^.]*raised[- ]effort|(xhigh|high effort)[^.]*foreman path/i, 'raised-effort on the foreman path')
+  test('6 deploy and raised-effort crews stay on the project manager path', () => {
+    has(S6, /deploy[^.]*project manager path|project manager path[^.]*deploy/i, 'deploy on the project manager path')
+    has(S6, /raised[- ]effort[^.]*project manager path|project manager path[^.]*raised[- ]effort|(xhigh|high effort)[^.]*project manager path/i, 'raised-effort on the project manager path')
   })
 })
 
