@@ -1,6 +1,6 @@
 // @ts-nocheck
 // approve-proof (truss 0.29.0, goal item 1, R-85): `approve --by client` is the client's act. It passes only with --item <E-id> of a
-// client-trigger approval item (ref = the run goal or a client goal) of this truss dir, resolved `approve`, not superseded, backed by the
+// client-trigger approval item (ref = run, the plan itself; a client-goal ref is refused) of this truss dir, resolved `approve`, not superseded, backed by the
 // typed '/truss:inbox approve <id> <code>' line (ADR-0037). The client's typed inbox approve of the plan's `run` item approves the plan itself.
 // Real factory CLI as child processes through the ltc harness; the typed line is a fixture transcript. Node built-ins only.
 
@@ -29,10 +29,11 @@ function openItem(w, ref: string, kind = 'client-trigger'): string {
 const approveItem = (w, item?: string, by = 'client') => cli(w, 'approve', ['--by', by, ...(item === undefined ? [] : ['--item', item])])
 
 /** The approve ran nowhere: exit 1, one JSON line with error, approvedAt null, decisions.md unchanged. */
-function assertRefused(w, r, before: string): void {
+function assertRefused(w, r, before: string, why?: RegExp): void {
   assert.equal(r.status, 1, `approve should refuse: ${say(r)}`)
   assert.equal(String(r.stdout).trim().split('\n').length, 1, say(r))
   assert.equal(typeof r.json.error, 'string', say(r))
+  if (why !== undefined) assert.match(r.json.error, why, say(r)) // the check the case names, not another one
   assert.equal(approvedAt(w), null, 'approvedAt must stay null')
   assert.equal(decisionsOf(w), before, 'decisions.md must not change')
 }
@@ -72,24 +73,25 @@ test('a client-resolved goal-ref (g1) item does not approve the plan; only a run
 
 test('a forged resolve row for the approval item does not let approve --by client pass', () => {
   const w = clientWorld()
-  const id = openItem(w, 'g1')
+  const id = openItem(w, 'run')
   forge(w, id)
-  assertRefused(w, approveItem(w, id), decisionsOf(w))
+  assertRefused(w, approveItem(w, id), decisionsOf(w), /no prompt typed/)
 })
 
 test('a typed proof for a different item does not approve the plan', () => {
   const w = clientWorld()
-  const one = openItem(w, 'g1')
-  const two = openItem(w, 'g2')
+  const two = openItem(w, 'run')
   clientResolves(w, two, 'approve')
-  assertRefused(w, approveItem(w, one), decisionsOf(w))
+  unapprove(w)
+  const one = openItem(w, 'run') // the later run item: the proof above belongs to `two`, not to it
+  assertRefused(w, approveItem(w, one), decisionsOf(w), /no prompt typed/)
 })
 
 test('a client reject of the approval item does not approve the plan', () => {
   const w = clientWorld()
-  const id = openItem(w, 'g1')
+  const id = openItem(w, 'run')
   clientResolves(w, id, 'reject')
-  assertRefused(w, approveItem(w, id), decisionsOf(w))
+  assertRefused(w, approveItem(w, id), decisionsOf(w), /resolved reject/)
 })
 
 test('a client-resolved item of another kind or another truss dir does not approve the plan', () => {
@@ -110,11 +112,12 @@ test('a client-resolved item of another kind or another truss dir does not appro
 
 test('a superseded approval item does not approve the plan', () => {
   const w = clientWorld()
-  const old = openItem(w, 'g1')
+  const old = openItem(w, 'run')
   clientResolves(w, old, 'approve')
-  const fresh = openItem(w, 'g1') // a later open row of the same kind, session and ref
+  unapprove(w)
+  const fresh = openItem(w, 'run') // a later open row of the same kind, session and ref
   assert.notEqual(fresh, old)
-  assertRefused(w, approveItem(w, old), decisionsOf(w))
+  assertRefused(w, approveItem(w, old), decisionsOf(w), /superseded/)
 })
 
 test('a client typed inbox approve of the plan-approval item sets approvedAt itself', () => {
@@ -139,6 +142,12 @@ test('approve --by auto still refuses a client plan', () => {
   const before = decisionsOf(w)
   assertRefused(w, approveItem(w, undefined, 'auto'), before)
 })
+
+/** The typed approve of a run item approved the plan; put it back to awaiting, with plan.json older than that resolve, so only the check a case names can refuse. */
+function unapprove(w): void {
+  writePlan(w.dir, planObj([crew('alpha')], { approval: 'client', approvedAt: null, goals: [{ id: 'g1', approval: 'client' }, { id: 'g2', approval: 'client' }] }))
+  planMtime(w, -60)
+}
 
 /** Sets plan.json's mtime `sec` seconds from now (negative: the past); no sleep decides the order. */
 function planMtime(w, sec: number): void {
