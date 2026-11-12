@@ -110,7 +110,7 @@ function typeRole(type: string | null | undefined): string | null {
 /** The agent card's role word (ADR-0028 section 6). */
 export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
   const type = m.type ?? ''
-  if (type === 'truss:foreman' || type === 'workflow-crew') return 'Foreman'
+  if (type === 'truss:project-manager' || type === 'workflow-crew') return 'Project manager'
   if (type === 'truss:qc-engineer') return 'QC engineer'
   if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
   const typed = typeRole(m.type)
@@ -136,13 +136,13 @@ export function isCheckRun(m: Pick<Member, 'type' | 'name'>): boolean {
 const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writer', 'resolver']
 
 /**
- * The member list order: foreman first, then the named truss roles (builder, tester, ux, qc, stress, planning,
+ * The member list order: project manager first, then the named truss roles (builder, tester, ux, qc, stress, planning,
  * writer, resolver), then the rest; check runs last, split off by the caller.
  */
-export function orderAgents(agents: readonly Member[], foreman: Member | null): Member[] {
+export function orderAgents(agents: readonly Member[], projectManager: Member | null): Member[] {
   const rank = (m: Member): number => {
-    if (foreman ? m === foreman || m.name === foreman.name : false) return 0
-    if (m.type === 'truss:foreman' || m.type === 'workflow-crew') return 0
+    if (projectManager ? m === projectManager || m.name === projectManager.name : false) return 0
+    if (m.type === 'truss:project-manager' || m.type === 'workflow-crew') return 0
     const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (typeRole(m.type) ?? nameRole(m.name) ?? '')
     const i = ROLE_ORDER.indexOf(key)
     return i >= 0 ? i + 1 : ROLE_ORDER.length + 1
@@ -168,13 +168,13 @@ export function crewGoalText(crew: Pick<Crew, 'goal'>, goals: readonly { id: str
 }
 
 /**
- * The one task line: the task, else the foreman's crew goal, else a detail that is not a bare marker, else for a
+ * The one task line: the task, else the project manager's crew goal, else a detail that is not a bare marker, else for a
  * reported agent `Reported: <MARKER>` or `Reported`, else null (the card words the empty case).
  */
 export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
   if (m.task) return m.task
-  const isForeman = m.type === 'truss:foreman' || m.type === 'workflow-crew' || crew.foreman === m
-  if (isForeman) {
+  const isProjectManager = m.type === 'truss:project-manager' || m.type === 'workflow-crew' || crew.foreman === m
+  if (isProjectManager) {
     const g = crewGoalText(crew, goals)
     if (g) return g
   }
@@ -210,7 +210,7 @@ export function stalledRole(c: Crew): string {
 }
 
 export function stuckWords(s: CrewStuck): string {
-  return s.kind === 'idle-foreman' ? `stuck: foreman idle ${s.minutes} min` : `stuck: stalled ${s.minutes} min`
+  return s.kind === 'idle-foreman' ? `stuck: project manager idle ${s.minutes} min` : `stuck: stalled ${s.minutes} min`
 }
 
 /** ADR-0018 section 10's blocked reason in words, for a crew with no stuck record. */
@@ -254,7 +254,7 @@ export function crewNameExtra(c: Crew): string {
   return parts.join(', ')
 }
 
-/** When the crew started: its foreman's spawn, else its earliest member. */
+/** When the crew started: its project manager's spawn, else its earliest member. */
 export function crewStart(c: Crew): number | null {
   const stamps = [c.foreman?.ts, ...c.members.map((m) => m.ts)].map(ms).filter((x): x is number => x !== null)
   return stamps.length ? Math.min(...stamps) : null

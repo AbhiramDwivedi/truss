@@ -27,7 +27,7 @@ function stuckMessage(crew: Crew, stuck: CrewStuck, action: Action): string {
   const head = `Crew ${crew.slug} is stuck: ${stuck.detail}.`
   if (action === 'replan') return `${head} Re-plan this crew.`
   if (action === 'ask') return `${head} What is happening, and what do you suggest?`
-  if (stuck.kind === 'idle-foreman') return `${head} Start a successor foreman for it.`
+  if (stuck.kind === 'idle-foreman') return `${head} Start a successor project manager for it.`
   return `${head} Restart its ${stalledRole(crew)}.`
 }
 
@@ -62,7 +62,7 @@ export function StuckCard({ crew, stuck, now }: StuckCardProps) {
   const busy = sent?.phase === 'sending'
   const idle = stuck.kind === 'idle-foreman'
   const flag = flaggedAt(stuck)
-  const primary = idle ? 'Start a successor foreman' : `Restart ${stalledRole(crew)}`
+  const primary = idle ? 'Start a successor project manager' : `Restart ${stalledRole(crew)}`
 
   const send = (action: Action) => {
     if (busy) return
@@ -80,7 +80,7 @@ export function StuckCard({ crew, stuck, now }: StuckCardProps) {
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-meta">
         <dt className="font-semibold text-fail-text">Why</dt>
         <dd className="min-w-0 break-words text-fg">
-          {idle ? `The foreman has sent nothing for ${stuck.minutes} min.` : `${stalledAgent(crew)} has sent nothing for ${stuck.minutes} min.`}
+          {idle ? `The project manager has sent nothing for ${stuck.minutes} min.` : `${stalledAgent(crew)} has sent nothing for ${stuck.minutes} min.`}
         </dd>
         <dt className="font-semibold text-fail-text">How long</dt>
         <dd className="font-mono tabular-nums text-fg">
@@ -89,7 +89,7 @@ export function StuckCard({ crew, stuck, now }: StuckCardProps) {
         </dd>
         <dt className="font-semibold text-fail-text">Next</dt>
         <dd className="min-w-0 text-fg">
-          {idle ? 'Start a successor foreman, re-plan the crew, or ask Claude.' : `Restart the ${stalledRole(crew)}, re-plan the crew, or ask Claude.`}
+          {idle ? 'Start a successor project manager, re-plan the crew, or ask Claude.' : `Restart the ${stalledRole(crew)}, re-plan the crew, or ask Claude.`}
         </dd>
       </dl>
       <div className="mt-3 flex flex-wrap gap-2">

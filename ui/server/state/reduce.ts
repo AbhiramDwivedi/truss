@@ -102,13 +102,13 @@ interface CrewAcc {
   stall: StallAcc | null // the crew's newest stall event of a known kind
 }
 
-// A successor foreman of crew <slug> is <slug>-<n> with n an integer >= 2 (architecture.md); <slug>-1 is not one.
-// Returns the slug a name succeeds, or null when the name is no successor foreman.
+// A successor project manager of crew <slug> is <slug>-<n> with n an integer >= 2 (architecture.md); <slug>-1 is not one.
+// Returns the slug a name succeeds, or null when the name is no successor project manager.
 function successorBase(name: string): string | null {
   const m = /^(.+)-([1-9][0-9]*)$/.exec(name)
   return m !== null && Number(m[2]) >= 2 ? m[1] : null
 }
-// `name` is a successor foreman of crew `slug` when it is <slug>-<n> and not itself a plan crew: a plan crew
+// `name` is a successor project manager of crew `slug` when it is <slug>-<n> and not itself a plan crew: a plan crew
 // phase-2 next to phase is a crew in its own right, so its lines never clear phase's stall.
 function follows(name: string, slug: string, planned: { has(slug: string): boolean }): boolean {
   return !planned.has(name) && successorBase(name) === slug
@@ -157,7 +157,7 @@ export function createReducer(): Reducer {
   const pairs = new Map<string, Pair>() // the newest message of each (from, to) pair
   const skipped: Skipped[] = []
   // successor-shaped name <b>-<n> -> its newest event line (under crew <b>-<n> or crew b). The hook logs a successor
-  // foreman's lines under its own crew <b>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept outside
+  // project manager's lines under its own crew <b>-<n> (plugins/truss/hooks/register.ts crewOf), so this is kept outside
   // the crew accumulators; a crew's stall reads the names that follow it (see follows) once the plan is known.
   const successorLatest = new Map<string, Stamped>()
   const spawnBy = new Map<string, string | null>() // agentId -> the spawn line's `by`; read by the store, not published
@@ -187,6 +187,7 @@ export function createReducer(): Reducer {
     }
     if (kind === null || !EVENTS.has(kind) || slug === null || slug === '' || agent === null || agent === '' || ts === null) return undefined
     if (slug === 'main') return undefined // crew main is never a crew
+    if (kind === 'stall' && obj.kind !== 'agent' && obj.kind !== 'idle-project-manager') return undefined // an unknown stall kind is ignored
     const acc = crewOf(slug)
     if (!agentCrew.has(agent)) agentCrew.set(agent, slug)
     let text: string
@@ -195,11 +196,11 @@ export function createReducer(): Reducer {
       ev = 'incomplete'
       text = `workflow run ${str(obj.run) ?? ''} incomplete`
     } else {
-      const isForeman = agent === slug
-      let m = isForeman ? acc.foreman : (acc.members.get(agent) ?? null)
+      const isProjectManager = agent === slug
+      let m = isProjectManager ? acc.foreman : (acc.members.get(agent) ?? null)
       if (m === null) {
         m = { name: agent, type: null, model: null, effort: null, state: 'spawned', detail: null, ts, agentId: null, purpose: null, task: null }
-        if (isForeman) acc.foreman = m
+        if (isProjectManager) acc.foreman = m
         else acc.members.set(agent, m)
       }
       m.ts = ts
@@ -247,7 +248,7 @@ export function createReducer(): Reducer {
     const act: Stamped = { ts, agent, event: ev, text, seq: ++seq }
     if (newerOrEqual(act, acc.latest)) acc.latest = act
     if (newerOrEqual(act, acc.lastOf.get(agent) ?? null)) acc.lastOf.set(agent, act)
-    // A line of successor foreman <b>-<n> counts for crew b: its own line (agent <b>-<n>) or a spawn by it, logged
+    // A line of successor project manager <b>-<n> counts for crew b: its own line (agent <b>-<n>) or a spawn by it, logged
     // under crew <b>-<n> (the hook's shape) or under crew b.
     const by = kind === 'spawn' ? str(obj.by) : null
     for (const name of by !== null && by !== agent ? [agent, by] : [agent]) {
@@ -255,12 +256,12 @@ export function createReducer(): Reducer {
       if (base === null || (slug !== name && slug !== base)) continue
       if (newerOrEqual(act, successorLatest.get(name) ?? null)) successorLatest.set(name, act)
     }
-    // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its foreman or a
+    // A spawn also counts as a later event of its `by` agent when that agent is of this crew (its project manager or a
     // member), so a stall clears once the stalled agent spawns someone. main, factory and workflow:* credit no one.
     if (by !== null && by !== agent && by !== 'main' && by !== 'factory' && !by.startsWith('workflow:') && (by === slug || acc.members.has(by))) {
       if (newerOrEqual(act, acc.lastOf.get(by) ?? null)) acc.lastOf.set(by, act)
     }
-    if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-foreman') && timeOf(ts) !== -Infinity) {
+    if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-project-manager') && timeOf(ts) !== -Infinity) {
       const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-foreman', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
       if (acc.stall === null || newerOrEqual(act, acc.stall.act)) acc.stall = s
     }
@@ -292,7 +293,7 @@ export function createReducer(): Reducer {
     if (acc === undefined || acc.stall === null || status !== 'running') return null
     const s = acc.stall
     if (acc.lastOf.get(s.act.agent) !== s.act) return null
-    // An idle-foreman stall also clears on a later line of a successor foreman; a kind agent stall does not.
+    // An idle-foreman stall also clears on a later line of a successor project manager; a kind agent stall does not.
     if (s.kind === 'idle-foreman') {
       for (const [name, succ] of successorLatest) {
         if (succ !== s.act && follows(name, acc.slug, planned) && newerOrEqual(succ, s.act)) return null
@@ -313,7 +314,7 @@ export function createReducer(): Reducer {
     for (const slug of crews.keys()) if (!planned.has(slug)) order.push(slug)
 
     // A message line belongs to the crew of its from agent, else of its to agent, as the event lines name them.
-    // A crew's own slug names its foreman, so a plan crew's slug counts too.
+    // A crew's own slug names its project manager, so a plan crew's slug counts too.
     const resolve = (name: string): string | undefined => agentCrew.get(name) ?? (planned.has(name) ? name : undefined)
     const messageLatest = new Map<string, Stamped>()
     for (const p of pairs.values()) {
