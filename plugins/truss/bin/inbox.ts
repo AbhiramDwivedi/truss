@@ -454,7 +454,7 @@ function typedProof(repo: string, session: string, open: Obj, decision: string, 
  * the run goal or one of `clientGoals`, resolved approve by the client with a typed line that verifiedItems holds, and not superseded by a later
  * open row of the same kind, session and ref. Else the reason it does not count. Fails closed: a stored row alone proves nothing.
  */
-export function approvalProof(repo: string, dir: string, item: string | undefined, clientGoals: string[]): string | null {
+export function approvalProof(repo: string, dir: string, item: string | undefined, clientGoals: string[], approved = false): string | null {
   if (item === undefined || item === '') return 'approve --by client needs --item <E-id>: the client-trigger item for this plan, which the client approves by typing /truss:inbox approve <E-id> <code>'
   const items = verifiedItems(repo)
   const it = items.get(item)
@@ -473,6 +473,7 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
   if (r === null) return `no prompt typed by the client approves ${item}: the client types /truss:inbox approve ${item} <code>`
   if (r.by !== 'client' || r.decision !== 'approve') return `${item} was resolved ${String(r.decision)}, not approve`
   // the client's approve must come after the plan was written: a resolve older than plan-write approved a plan the client never saw (replayed proof)
+  if (approved) return null // approving rewrote plan.json, so its mtime is past the resolve; the staleness was checked when the plan was approved
   const wrote = [`${dir}/plan.md`, `${dir}/plan.json`].map((p) => { try { return statSync(p).mtimeMs } catch { return null } }).find((m) => m !== null)
   const at = Date.parse(String(r.ts))
   if (wrote === undefined || wrote === null || !(at >= Math.floor(wrote))) return `${item} was resolved before the current plan was written, so the client never approved this plan: open a new client-trigger item for it`
@@ -484,7 +485,7 @@ export function approvalProof(repo: string, dir: string, item: string | undefine
  * confirms it, once, by marking the item applied for this session; any later call finds it applied and refuses. True when it confirmed.
  */
 export function confirmApproval(repo: string, dir: string, item: string | undefined, clientGoals: string[]): boolean {
-  if (approvalProof(repo, dir, item, clientGoals) !== null) return false
+  if (approvalProof(repo, dir, item, clientGoals, true) !== null) return false
   const session = sessionOf(dir)
   const S = sharedDir(repo)
   let confirmed = false
