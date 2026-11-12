@@ -62,8 +62,8 @@ test(P + 'run-skill names sizing-engineer', () => {
   assert.match(read('skills', 'run', 'SKILL.md'), /sizing-engineer/)
 })
 
-test(P + 'run-skill contains no foremanless', () => {
-  assert.doesNotMatch(read('skills', 'run', 'SKILL.md'), /foremanless/i)
+test(P + 'run-skill contains no project-managerless', () => {
+  assert.doesNotMatch(read('skills', 'run', 'SKILL.md'), /project[- ]?managerless/i)
 })
 
 test(P + 'agent-file sizing-engineer frontmatter tools is exactly Read, Grep, Glob', () => {
@@ -83,6 +83,6 @@ test(P + 'agent-file design-engineer plan mode names process, solo, lean, full, 
   words(sec, ['process', 'solo', 'lean', 'full', 'qc', 'red'])
 })
 
-test(P + 'agent-file foreman names process and full', () => {
-  words(read('agents', 'foreman.md'), ['process', 'full'])
+test(P + 'agent-file project-manager names process and full', () => {
+  words(read('agents', 'project-manager.md'), ['process', 'full'])
 })

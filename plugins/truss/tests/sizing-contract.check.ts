@@ -88,7 +88,7 @@ test(P + 'start lists solo and lean crews under direct and leaves them out of th
     assert.ok(existsSync(join(env.repo, '.claude', 'worktrees', `truss-${s}`)), `worktree for ${s}`)
   }
   assert.deepEqual((j.truss?.crews ?? []).map((c: any) => c.slug), ['fu'], 'only the full crew goes to the Workflow args')
-  for (const key of ['foremen', 'held', 'refused']) {
+  for (const key of ['projectManagers', 'held', 'refused']) {
     const list = (j[key] ?? []).map((x: any) => (typeof x === 'string' ? x : x.slug))
     assert.ok(!list.includes('sa') && !list.includes('le'), `${key} holds a direct crew: ${JSON.stringify(j[key])}`)
   }

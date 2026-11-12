@@ -119,7 +119,7 @@ function goalsWorld(crews: any[], goals: any[]) {
   return env
 }
 const slugsOf = (j: any): string[] => (j.truss?.crews ?? []).map((c: any) => c.slug)
-const mentions = (j: any, slug: string): boolean => [...(j.refused ?? []), ...(j.held ?? []), ...(j.foremen ?? [])].some((x: any) => x.slug === slug)
+const mentions = (j: any, slug: string): boolean => [...(j.refused ?? []), ...(j.held ?? []), ...(j.projectManagers ?? [])].some((x: any) => x.slug === slug)
 
 test('i37 1: start --stage next never starts, refuses or holds the crews of an unapproved goal, next to an approved goal and the run goal', () => {
   const env = goalsWorld(
@@ -130,7 +130,7 @@ test('i37 1: start --stage next never starts, refuses or holds the crews of an u
   assert.equal(r.status, 0, say(r))
   assert.deepEqual(slugsOf(r.json).sort(), ['apc', 'runc'])
   for (const s of ['unc', 'unc2']) {
-    assert.ok(!mentions(r.json, s), `${s} is absent from refused, held and foremen: ${say(r)}`)
+    assert.ok(!mentions(r.json, s), `${s} is absent from refused, held and projectManagers: ${say(r)}`)
     assert.equal(readPlan(env.dir).crews.find((c: any) => c.slug === s).status, 'planned')
     assert.equal(git(env.repo, ['branch', '--list', `truss-${s}`]), '', `no branch for ${s}`)
   }
