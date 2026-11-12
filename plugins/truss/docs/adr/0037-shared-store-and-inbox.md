@@ -1,7 +1,7 @@
 # ADR-0037: keep cross-session state in one shared store and route every client exception through an inbox
 
 Status: accepted, 2026-11-10; amended 2026-11-11 (see the amendment at the end)
-Decided by: PM and product owner (review of contract-025 revision 2)
+Decided by: program manager (PM) and product owner (review of contract-025 revision 2)
 
 ## Context
 

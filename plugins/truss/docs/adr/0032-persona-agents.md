@@ -21,7 +21,7 @@ What the reference project shows about the content of a persona:
 
 Standards are stack-idiomatic. A Java persona never leaves open version ranges in `pom.xml`; a Node persona uses caret ranges and a committed lockfile. Each is right in its own ecosystem and wrong in the other.
 
-Truss has a PM that makes product calls itself, logged as `PO:` lines in `decisions.md`, while the client decides the approval triggers. In the client's own projects the client is the product owner. Truss runs unattended, so it needs a product owner it can consult.
+Truss has a program manager (PM) that makes product calls itself, logged as `PO:` lines in `decisions.md`, while the client decides the approval triggers. In the client's own projects the client is the product owner. Truss runs unattended, so it needs a product owner it can consult.
 
 ## Decision Drivers
 
@@ -62,7 +62,7 @@ The planning engineer gives every task a `persona` (a name, or null) and may set
 
 ### 4. Spawning
 
-A persona task spawns as the persona's agent type when `loaded`. Otherwise it spawns as `general-purpose` with the persona's body inlined as its system prompt. The model comes from the persona; the effort is the higher of the persona's and the task's. The foreman path delegates the same way. `## Members` in the goal file applies only to tasks with no persona. The task's role still decides its step, its isolation and its report shape.
+A persona task spawns as the persona's agent type when `loaded`. Otherwise it spawns as `general-purpose` with the persona's body inlined as its system prompt. The model comes from the persona; the effort is the higher of the persona's and the task's. The project manager path delegates the same way. `## Members` in the goal file applies only to tasks with no persona. The task's role still decides its step, its isolation and its report shape.
 
 ### 5. QC holds the diff to the Standards
 
@@ -115,4 +115,4 @@ Every project gets a read-only `product-owner` persona. The design engineer draf
 - `workflows/roles.json` keeps `general-purpose` as the default for a task with no persona.
 - The mechanics (the `personas` map, spawning, the `Standards:` block, `persona-install`) are in `bin/factory.ts` and `workflows/stage.js`, built by a separate crew from this prose.
 
-**Reversing it** touches: the persona prose in the run skill, the design, planning, QC, checking-engineer and foreman prompts, the init skill; the `personas` map in `factory.ts start`; the `persona` field of the planner's tasks; `persona-install`; and `tests/personas-prose.check.ts`. Installed persona files stay in the project's `.claude/agents/`, where they are ordinary agents.
+**Reversing it** touches: the persona prose in the run skill, the design, planning, QC, checking-engineer and project manager prompts, the init skill; the `personas` map in `factory.ts start`; the `persona` field of the planner's tasks; `persona-install`; and `tests/personas-prose.check.ts`. Installed persona files stay in the project's `.claude/agents/`, where they are ordinary agents.

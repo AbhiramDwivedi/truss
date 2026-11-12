@@ -1,7 +1,7 @@
 # ADR-0034: hold a plan or a crew merge until the client approves each long-term cost
 
 Status: accepted, 2026-11-10
-Decided by: PM and product owner (review of contract-025 revision 2)
+Decided by: program manager (PM) and product owner (review of contract-025 revision 2)
 
 ## Context
 
@@ -9,7 +9,7 @@ truss 0.25.0 wave 2 lets a run go on without the client watching. R-57 says noth
 
 Two gaps in the obvious fix shaped this decision.
 
-- **Not every crew has a QC.** Solo crews, `qc:false` crews and foreman crews can merge without a QC report, so a check that lives only in QC lets them through (finding #22).
+- **Not every crew has a QC.** Solo crews, `qc:false` crews and project manager crews can merge without a QC report, so a check that lives only in QC lets them through (finding #22).
 - **A rejection must not outlive its plan.** If the client rejects a cost and the designer re-plans without it, the old rejection must stop blocking (finding #9).
 
 The design is contract-025 revision 2, section 3, "Long-term cost guard". The code is crew a2-ltc-guard's `bin/guard.ts`; crew a0-foundation wired its call sites in `bin/factory.ts` and the workflow scripts. The cases in `tests/ltc-guard.check.ts` and `tests/ltc-paragraph.check.ts` pin the behaviour below. The inbox the guard escalates to is ADR-0037.
@@ -17,7 +17,7 @@ The design is contract-025 revision 2, section 3, "Long-term cost guard". The co
 ## Decision Drivers
 
 - Nothing that costs the client later merges without the client (R-57).
-- Every crew passes the guard, whatever its process: solo, `qc:false` and foreman crews included (finding #22).
+- Every crew passes the guard, whatever its process: solo, `qc:false` and project manager crews included (finding #22).
 - A re-plan clears an old rejection (finding #9).
 - The guard fails closed: when it can't tell what a crew changed, the merge is refused.
 - A long-term cost is never a QC FAIL. The work can be right and still need the client's yes.

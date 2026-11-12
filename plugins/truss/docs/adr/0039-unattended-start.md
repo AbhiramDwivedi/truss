@@ -1,7 +1,7 @@
 # ADR-0039: run one queued item with no one present
 
 Status: accepted, 2026-11-10
-Decided by: client, through the wave 2 goal (contract-025 revision 2, section 7); the PM, acting as product owner for the absent client, accepted the plan's client triggers for it on 2026-11-10
+Decided by: client, through the wave 2 goal (contract-025 revision 2, section 7); the program manager (PM), acting as product owner for the absent client, accepted the plan's client triggers for it on 2026-11-10
 Amends: ADR-0008 (the client brief gains an unattended path that fills defaults instead of asking)
 
 ## Context
