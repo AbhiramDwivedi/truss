@@ -296,7 +296,7 @@ Status: met
 Kind: functional
 Added: 2026-11-04T07:56:26Z | Rework the truss local web UI to match the client's design reference and fix the client's 10 points
 Source: client
-Example: Given a crew with a foreman, a builder and a QC engineer, when the client looks at the crew card, then each agent card shows its role, a one-line purpose (for the QC engineer, "Checks the crew's work against proof before it merges"), and its current task or last activity.
+Example: Given a crew with a project manager, a builder and a QC engineer, when the client looks at the crew card, then each agent card shows its role, a one-line purpose (for the QC engineer, "Checks the crew's work against proof before it merges"), and its current task or last activity.
 
 ## R-43: Costs and run metrics have their own area, with no ceiling
 Status: met
@@ -346,7 +346,7 @@ Status: met
 Kind: functional
 Added: 2026-11-08T08:40:52Z | Right-size the process per crew
 Source: client
-Example: Given a goal that is a docs fix, a config change and a new factory feature, when the PM plans it, then the docs fix and the config change each go to one agent with no foreman, planner, tester or QC engineer, and the feature gets a full crew (planner through QC engineer). The size is the PM's own call, logged with a one-line reason.
+Example: Given a goal that is a docs fix, a config change and a new factory feature, when the PM plans it, then the docs fix and the config change each go to one agent with no project manager, planner, tester or QC engineer, and the feature gets a full crew (planner through QC engineer). The size is the PM's own call, logged with a one-line reason.
 
 ## R-50: A one-agent task needs no red-then-green test and no QC engineer
 Status: met
@@ -499,45 +499,73 @@ Kind: constraint
 Added: 2026-11-11T04:09:40Z | truss 0.26.0 wave-2 fixes
 Source: goal
 
-## R-72: The crew lead is the project manager agent, with the foreman name kept as an alias for one release
-Status: open
+## R-72: The crew lead is the project manager agent, with the old crew-lead name kept as an alias for one release
+Status: replaced by R-78
 Kind: functional
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
-Example: Given a plan and a run started after the rename, when the program manager starts a crew lead, then it starts `truss:project-manager`; and when a 0.26.0 plan or brief names `truss:foreman`, then that agent type still resolves and the CHANGELOG says in which release the alias goes.
+Example: Given a plan and a run started after the rename, when the program manager starts a crew lead, then it starts `truss:project-manager`; and when a 0.26.0 plan or brief names the old agent type, then that type still resolves and the CHANGELOG says in which release the alias goes.
 
-## R-73: Role and config keys that name the foreman have new names, and the old names still parse
-Status: open
+## R-73: Role and config keys that name the old crew lead have new names, and the old names still parse
+Status: replaced by R-79
 Kind: functional
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
-Example: Given a roles.json or .claude/truss.json that uses an old foreman key (for example a `foreman` prompt override), when factory reads it, then it is read as the new project-manager key, and a test covers each such alias.
+Example: Given a roles.json or .claude/truss.json that uses an old crew-lead key (for example the old prompt override key), when factory reads it, then it is read as the new project-manager key, and a test covers each such alias.
 
 ## R-74: Labels, slugs and transcripts written before the rename keep parsing
-Status: open
+Status: replaced by R-80
 Kind: functional
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
-Example: Given a Workflow transcript or crew report from 0.26.0 whose labels or event fields name the foreman, when finish, the retro or the cost meter reads it, then it parses and counts it as it did before the rename.
+Example: Given a Workflow transcript or crew report from 0.26.0 whose labels or event fields name the old crew lead, when finish, the retro or the cost meter reads it, then it parses and counts it as it did before the rename.
 
 ## R-75: Docs, skills, agent prompts and tests use the new role names, and the rename is recorded in an ADR
 Status: open
 Kind: constraint
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
 
 ## R-76: Prose names the project manager and the program manager in full; a file that keeps PM defines it
 Status: open
 Kind: constraint
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
 Source: goal
 
-## R-77: Only alias code, alias tests, the CHANGELOG and historical ADRs still say foreman
+## R-77: Only alias code, alias tests, the CHANGELOG and historical ADRs still use the old crew-lead name
+Status: replaced by R-81
+Kind: nfr
+Measure: 0 lines naming the old crew lead over plugins/truss, docs and checks outside alias code, alias tests, the CHANGELOG and historical ADRs, with the plugin suite and root checks at exit 0
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
+Source: goal
+
+## R-78: The crew lead is the project manager agent, and the old crew-lead agent type is gone
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
+Source: client
+Example: Given a run after the rename, when the program manager starts a crew lead, then it starts `truss:project-manager`, the hooks gate it as a crew lead, and no agent file or type under the old name exists, so a start under the old type is not treated as a crew lead.
+
+## R-79: Role and config keys that named the old crew lead are renamed, with no alias
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
+Source: client
+Example: Given a .claude/truss.json whose `promptOverrides` sets `project-manager`, when it is validated against the config schema, then it passes; and the old key is no longer a property, so a config that still sets it fails validation.
+
+## R-80: Stored and printed names that carried the old crew-lead name are renamed, with no dual reader
+Status: open
+Kind: functional
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
+Source: client
+Example: Given a run after the rename, when the hooks record an idle crew lead, then the stall event kind is `idle-project-manager` and the retro counts it under `stalls.idleProjectManager`; labels and slugs that never held the old name keep parsing as before.
+
+## R-81: No file in the plugin, docs or checks names the old crew lead
 Status: open
 Kind: nfr
-Measure: 0 lines from `grep -rni foreman` over plugins/truss, docs and checks outside alias code, alias tests, the CHANGELOG and historical ADRs, with the plugin suite and root checks at exit 0
-Added: 2026-11-11T19:18:05Z | truss 0.27.0 foreman rename
-Source: goal
+Measure: 0 lines naming the old crew lead (any case) in every file `git ls-files plugins/truss docs checks` lists, historical ADRs, CHANGELOG, fixtures and eval inputs included, with the plugin suite and root checks at exit 0
+Added: 2026-11-11T19:18:05Z | truss 0.27.0 crew-lead rename
+Source: client
 
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
