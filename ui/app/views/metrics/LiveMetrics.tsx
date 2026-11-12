@@ -28,7 +28,7 @@ export interface LiveMetricsProps {
   now: number
 }
 
-const agentsOf = (c: Crew): Member[] => (c.foreman ? [c.foreman, ...c.members] : c.members)
+const agentsOf = (c: Crew): Member[] => (c.projectManager ? [c.projectManager, ...c.members] : c.members)
 
 /** The stamps this client has seen, oldest first: a new one is added when live.at moves. */
 function useStamps(at: string | undefined, total: number | undefined, now: number): Stamp[] {

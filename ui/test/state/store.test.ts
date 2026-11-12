@@ -394,7 +394,7 @@ function registerTests(mod: any): void {
     const s = store.snapshot().state
     assert.equal(s.run.skipped.length, 2, 'nothing read twice')
     assert.deepEqual(crew(s, 'auth').members.map((m: any) => m.name), ['auth-builder', 'auth-tester', 'auth-qc', 'auth-qc-2', 'auth-stress', 'auth-torn'])
-    assert.equal(crew(s, 'auth').foreman.detail, 'QUESTION')
+    assert.equal(crew(s, 'auth').projectManager.detail, 'QUESTION')
   })
 
   test('ADR-0011 D4 Rolling: a rolled file equal to the newest older rolled file is a duplicate and is skipped', async () => {
@@ -516,14 +516,14 @@ function registerTests(mod: any): void {
 
   test('R-14 at 12 crews and 100 agents from real fixture lines: state right, a later append shown within 2 s', async () => {
     const w = makeWorld()
-    // Lines derived from the real fixture: a foreman spawn (events.jsonl line 1), a member spawn
+    // Lines derived from the real fixture: a project manager spawn (events.jsonl line 1), a member spawn
     // (line 2), a stall (line 5) and a report (line 12).
     const real = fs.readFileSync(path.join(fixtureDir, 'events.jsonl'), 'utf8').split('\n').filter((l) => l !== '')
-    const foremanT = JSON.parse(real[0])
+    const pmT = JSON.parse(real[0])
     const memberT = JSON.parse(real[1])
     const stallT = JSON.parse(real[4])
     const reportT = JSON.parse(real[11])
-    assert.equal(foremanT.type, 'truss:foreman')
+    assert.equal(pmT.type, 'truss:project-manager')
     assert.equal(memberT.agent, 'auth-builder')
     assert.equal(stallT.event, 'stall')
     assert.equal(reportT.event, 'report')
@@ -538,9 +538,9 @@ function registerTests(mod: any): void {
     const ts = (): string => new Date((t += 1000)).toISOString()
     let agents = 0
     slugs.forEach((slug, ci) => {
-      out.push(JSON.stringify({ ...foremanT, ts: ts(), crew: slug, agent: slug, agentId: `f${ci}` }))
+      out.push(JSON.stringify({ ...pmT, ts: ts(), crew: slug, agent: slug, agentId: `f${ci}` }))
       agents++
-      const members = ci < 4 ? 8 : 7 // 4 * 9 + 8 * 8 = 100 agents with the foremen
+      const members = ci < 4 ? 8 : 7 // 4 * 9 + 8 * 8 = 100 agents with the project managers
       for (let k = 1; k <= members; k++) {
         out.push(JSON.stringify({ ...memberT, ts: ts(), crew: slug, agent: `${slug}-m${k}`, agentId: `a${ci}-${k}`, by: slug }))
         agents++
@@ -556,11 +556,11 @@ function registerTests(mod: any): void {
     const s = store.snapshot().state
     assertSchema('snapshot', store.snapshot())
     assert.deepEqual(s.run.crews.map((c: any) => c.slug), slugs)
-    assert.equal(s.run.crews.reduce((n: number, c: any) => n + c.members.length + (c.foreman === null ? 0 : 1), 0), 100)
+    assert.equal(s.run.crews.reduce((n: number, c: any) => n + c.members.length + (c.projectManager === null ? 0 : 1), 0), 100)
     assert.deepEqual(s.run.crews.map((c: any) => c.members.length), [8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7])
     for (const c of s.run.crews) {
-      assert.equal(c.foreman.name, c.slug)
-      assert.equal(c.foreman.model, 'opus')
+      assert.equal(c.projectManager.name, c.slug)
+      assert.equal(c.projectManager.model, 'opus')
       assert.equal(member(c, `${c.slug}-m1`).state, 'stalled')
       assert.equal(member(c, `${c.slug}-m1`).detail, '15 min')
       assert.equal(member(c, `${c.slug}-m2`).state, 'reported')

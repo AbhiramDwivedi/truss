@@ -66,7 +66,7 @@ Decided by: the plan, items 2 and 3 (approved auto, checker-41); PM ruling D (14
 
 ### 4. split-work is loaded unconditionally
 
-The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:40` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
+The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:42` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
 
 Decided by: the plan, item 4 (approved auto, checker-41).
 

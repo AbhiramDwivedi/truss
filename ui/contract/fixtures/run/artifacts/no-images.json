@@ -64,9 +64,9 @@
         "owns": [
           "server/quota/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "quota-store",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "reported",
@@ -96,9 +96,9 @@
         "owns": [
           "ui/quota/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "quota-ui",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "spawned",
@@ -125,7 +125,7 @@
         "owns": [
           "docs/**"
         ],
-        "foreman": null,
+        "projectManager": null,
         "members": [],
         "latest": null,
         "estAgents": 2,

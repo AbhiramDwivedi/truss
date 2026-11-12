@@ -364,7 +364,7 @@
     "crew": {
       "description": "plan.json crews in plan order, then crews named only in event lines (rolled files first, by n, then events.jsonl), in order of first appearance. Crew main is never a crew.",
       "type": "object",
-      "required": ["slug", "stage", "verdict", "status", "goal", "owns", "foreman", "members", "latest", "qc"],
+      "required": ["slug", "stage", "verdict", "status", "goal", "owns", "projectManager", "members", "latest", "qc"],
       "additionalProperties": false,
       "properties": {
         "slug": { "type": "string", "minLength": 1 },
@@ -373,7 +373,7 @@
         "status": { "description": "plan.json status; null for a crew not in plan.json.", "enum": ["planned", "running", "merged", "dropped", null] },
         "goal": { "description": "plan.json v3 crew goal id, else null.", "type": ["string", "null"] },
         "owns": { "type": "array", "items": { "type": "string" } },
-        "foreman": { "description": "The member line of the agent whose name equals the slug.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/member" }] },
+        "projectManager": { "description": "The member line of the agent whose name equals the slug.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/member" }] },
         "members": { "description": "Every other agent named in the crew's event lines, in order of first appearance.", "type": "array", "items": { "$ref": "#/$defs/member" } },
         "latest": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/activity" }] },
         "estAgents": { "description": "ADR-0023 gap f: plan.json's crew estAgents, or null for a crew not in plan.json.", "type": ["integer", "null"], "minimum": 1 },
@@ -387,7 +387,7 @@
               "required": ["kind", "since", "minutes", "detail"],
               "additionalProperties": false,
               "properties": {
-                "kind": { "description": "stalled for a stall event of kind agent, idle-foreman for kind idle-foreman.", "enum": ["stalled", "idle-foreman"] },
+                "kind": { "description": "stalled for a stall event of kind agent, idle-project-manager for kind idle-project-manager.", "enum": ["stalled", "idle-project-manager"] },
                 "since": { "description": "The event's ts minus minutes minutes, RFC 3339 UTC.", "type": "string", "format": "date-time" },
                 "minutes": { "type": "number", "minimum": 0 },
                 "detail": { "description": "<agent> stalled <minutes> min.", "type": "string" }

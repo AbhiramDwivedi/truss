@@ -402,7 +402,7 @@ const EVENTS = jsonl([
 const crewOf = (w: Wired): any => w.state().run?.crews?.find((c: any) => c.slug === 'alpha')
 const memberOf = (w: Wired, agent: string): any => {
   const c = crewOf(w)
-  return c?.foreman?.name === agent ? c.foreman : c?.members?.find((m: any) => m.name === agent)
+  return c?.projectManager?.name === agent ? c.projectManager : c?.members?.find((m: any) => m.name === agent)
 }
 
 test('R-42: a member whose spawn agentId equals a task_id gets Member.task from task_started, then from the latest task_progress', async () => {
@@ -413,7 +413,7 @@ test('R-42: a member whose spawn agentId equals a task_id gets Member.task from 
     assert.equal(memberOf(w, 'alpha-builder').agentId, AGENT_B, 'Member.agentId keeps the spawn line agentId')
     stub()!.emit(row('task-started'))
     stub()!.emit(row('task-started-other'))
-    await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the foreman task from task_started')
+    await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the project manager task from task_started')
     assert.equal(memberOf(w, 'alpha-builder').task, 'Write the network spec')
     stub()!.emit(row('task-progress'))
     await until(() => memberOf(w, 'alpha')?.task === 'Running List directory contents', 'the latest task_progress description')
@@ -431,7 +431,7 @@ test('R-42: a member no task message names has task null (the client then falls 
     await until(() => memberOf(w, 'alpha')?.task === 'Run ls in working directory', 'the matched task to appear')
     const qc = memberOf(w, 'alpha-qc')
     assert.equal(qc.agentId, AGENT_C)
-    assert.equal(qc.task, null, 'no match gives null, not undefined and not the foreman task')
+    assert.equal(qc.task, null, 'no match gives null, not undefined and not the project manager task')
   } finally {
     await w.close()
   }

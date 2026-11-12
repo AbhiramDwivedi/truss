@@ -80,18 +80,18 @@ if (existsSync(AGENTS_DIR)) {
     if (m) descriptions.set(f.slice(0, -3), m[1]!.trim().replace(/^["']|["']$/g, '').split(/(?<=\.)\s/)[0]!)
   }
 }
-const purposeOf = (type: string | null, isForeman: boolean): string | null => {
-  if (isForeman || type === 'workflow-crew') return descriptions.get('foreman') ?? null
+const purposeOf = (type: string | null, isProjectManager: boolean): string | null => {
+  if (isProjectManager || type === 'workflow-crew') return descriptions.get('project-manager') ?? null
   if (type === null) return null
   return descriptions.get(type.replace(/^truss:/, '')) ?? null
 }
-const decorate = (m: any, crew: string, isForeman: boolean): any => {
+const decorate = (m: any, crew: string, isProjectManager: boolean): any => {
   const key = `${crew}\0${m.name}`
   const agentId = idOf.get(key) ?? null
-  return { ...m, agentId, purpose: purposeOf(m.type, isForeman), task: taskOf(agentId, byOf.get(key) ?? null) }
+  return { ...m, agentId, purpose: purposeOf(m.type, isProjectManager), task: taskOf(agentId, byOf.get(key) ?? null) }
 }
 for (const c of run.crews as any[]) {
-  if (c.foreman) c.foreman = decorate(c.foreman, c.slug, true)
+  if (c.projectManager) c.projectManager = decorate(c.projectManager, c.slug, true)
   c.members = c.members.map((m: any) => decorate(m, c.slug, false))
 }
 

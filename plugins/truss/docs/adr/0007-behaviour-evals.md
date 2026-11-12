@@ -93,7 +93,7 @@ export function score(report: string, expected: Expected): Score
 
 ### 5. The snippet runner, `evals/snippets.ts`
 
-The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/project-manager.md:169`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
+The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/project-manager.md:199`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
 
 ```ts
 export type Where = 'root' | 'subdir' | 'worktree'

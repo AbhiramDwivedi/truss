@@ -940,7 +940,7 @@ sequenceDiagram
 ```
 
 *The bounded repair loop and the head guard on a v2 plan, as designed.*
-Traces to: `docs/adr/0004-scope-repair-and-head-gates.md` (sections 5 and 6), `hooks/register.ts:2202` (the `Agent` handler the gate joins), `:2506` (the stop gate, `classic.SubagentStop`), `:1534` (`writeReport`, where the spent-allowance line is appended), `:1671` (`qcFilesOf`), `:615` (`latestQc`) and `:646` (`qcRuling`), which pick the crew's newest QC file this run and rule it (line numbers at 0.26.0), `agents/project-manager.md:131-139`, `:153-155`.
+Traces to: `docs/adr/0004-scope-repair-and-head-gates.md` (sections 5 and 6), `hooks/register.ts:2202` (the `Agent` handler the gate joins), `:2506` (the stop gate, `classic.SubagentStop`), `:1534` (`writeReport`, where the spent-allowance line is appended), `:1671` (`qcFilesOf`), `:615` (`latestQc`) and `:646` (`qcRuling`), which pick the crew's newest QC file this run and rule it (line numbers at 0.26.0), `agents/project-manager.md:133-139`, `:160-162`.
 
 ### Seams
 

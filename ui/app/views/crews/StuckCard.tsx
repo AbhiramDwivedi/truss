@@ -27,7 +27,7 @@ function stuckMessage(crew: Crew, stuck: CrewStuck, action: Action): string {
   const head = `Crew ${crew.slug} is stuck: ${stuck.detail}.`
   if (action === 'replan') return `${head} Re-plan this crew.`
   if (action === 'ask') return `${head} What is happening, and what do you suggest?`
-  if (stuck.kind === 'idle-foreman') return `${head} Start a successor project manager for it.`
+  if (stuck.kind === 'idle-project-manager') return `${head} Start a successor project manager for it.`
   return `${head} Restart its ${stalledRole(crew)}.`
 }
 
@@ -60,7 +60,7 @@ function ActionButton({ variant, busy, onPress, children }: { variant: 'danger' 
 export function StuckCard({ crew, stuck, now }: StuckCardProps) {
   const [sent, setSent] = React.useState<Sent | null>(null)
   const busy = sent?.phase === 'sending'
-  const idle = stuck.kind === 'idle-foreman'
+  const idle = stuck.kind === 'idle-project-manager'
   const flag = flaggedAt(stuck)
   const primary = idle ? 'Start a successor project manager' : `Restart ${stalledRole(crew)}`
 

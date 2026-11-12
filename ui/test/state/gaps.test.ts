@@ -188,7 +188,7 @@ test('gap g: since is RFC 3339 UTC', () => {
     const s = crewBy(w.run(), 'a').stuck;
     assert.ok(s, 'stuck is set');
     assert.match(s.since, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/);
-    assert.equal(s.kind, 'idle-foreman');
+    assert.equal(s.kind, 'idle-project-manager');
     assert.equal(s.detail, 'a stalled 12 min');
   } finally { w.store.close(); }
 });

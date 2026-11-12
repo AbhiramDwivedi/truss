@@ -29,7 +29,7 @@ const asks = (detail: string | null | undefined): boolean => detail != null && A
 export function crewStatus(crew: Crew): Status {
   if (crew.status === 'merged' || crew.status === 'dropped') return 'done'
   if (crew.stuck) return 'stuck'
-  if (crew.status === 'running') return asks(crew.foreman?.detail) ? 'waiting' : 'active'
+  if (crew.status === 'running') return asks(crew.projectManager?.detail) ? 'waiting' : 'active'
   if (crew.status === 'planned') return 'planned'
   if (crew.status === null && crew.members.length === 0) return 'planned'
   return 'active'

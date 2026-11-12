@@ -487,7 +487,7 @@ test('gap g: crew.stuck is {kind, since, minutes, detail} from the latest stall 
     assert.equal(Date.parse(a.since), Date.parse('2026-10-27T09:25:00.000Z'), 'since is the event ts minus minutes')
     const d = by.delta.stuck
     assert.ok(d && typeof d === 'object', 'delta is stuck')
-    assert.equal(d.kind, 'idle-foreman')
+    assert.equal(d.kind, 'idle-project-manager')
     assert.equal(d.minutes, 20)
     assert.equal(Date.parse(d.since), Date.parse('2026-10-27T09:35:00.000Z'))
     assert.equal(by.epsilon.stuck, null, 'a crew with no stall event is not stuck')

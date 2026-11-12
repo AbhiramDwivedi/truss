@@ -36,7 +36,7 @@ export interface Crew {
   status: 'planned' | 'running' | 'merged' | 'dropped' | null
   goal: string | null
   owns: string[]
-  foreman: Member | null
+  projectManager: Member | null
   members: Member[]
   latest: Activity | null
   estAgents: number | null // ADR-0023 gap f
@@ -44,7 +44,7 @@ export interface Crew {
   qc: Qc | null
 }
 export interface Stuck {
-  kind: 'stalled' | 'idle-foreman'
+  kind: 'stalled' | 'idle-project-manager'
   since: string
   minutes: number
   detail: string
@@ -95,7 +95,7 @@ interface Stamped extends Activity {
 }
 interface CrewAcc {
   slug: string
-  foreman: Member | null
+  projectManager: Member | null
   members: Map<string, Member>
   latest: Stamped | null
   lastOf: Map<string, Stamped> // each agent's newest event line in this crew
@@ -167,7 +167,7 @@ export function createReducer(): Reducer {
   function crewOf(slug: string): CrewAcc {
     let c = crews.get(slug)
     if (c === undefined) {
-      c = { slug, foreman: null, members: new Map(), latest: null, lastOf: new Map(), stall: null }
+      c = { slug, projectManager: null, members: new Map(), latest: null, lastOf: new Map(), stall: null }
       crews.set(slug, c)
     }
     return c
@@ -197,10 +197,10 @@ export function createReducer(): Reducer {
       text = `workflow run ${str(obj.run) ?? ''} incomplete`
     } else {
       const isProjectManager = agent === slug
-      let m = isProjectManager ? acc.foreman : (acc.members.get(agent) ?? null)
+      let m = isProjectManager ? acc.projectManager : (acc.members.get(agent) ?? null)
       if (m === null) {
         m = { name: agent, type: null, model: null, effort: null, state: 'spawned', detail: null, ts, agentId: null, purpose: null, task: null }
-        if (isProjectManager) acc.foreman = m
+        if (isProjectManager) acc.projectManager = m
         else acc.members.set(agent, m)
       }
       m.ts = ts
@@ -262,7 +262,7 @@ export function createReducer(): Reducer {
       if (newerOrEqual(act, acc.lastOf.get(by) ?? null)) acc.lastOf.set(by, act)
     }
     if (kind === 'stall' && (obj.kind === 'agent' || obj.kind === 'idle-project-manager') && timeOf(ts) !== -Infinity) {
-      const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-foreman', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
+      const s: StallAcc = { act, kind: obj.kind === 'agent' ? 'stalled' : 'idle-project-manager', minutes: typeof obj.minutes === 'number' && obj.minutes >= 0 ? obj.minutes : 0 }
       if (acc.stall === null || newerOrEqual(act, acc.stall.act)) acc.stall = s
     }
     return undefined
@@ -293,8 +293,8 @@ export function createReducer(): Reducer {
     if (acc === undefined || acc.stall === null || status !== 'running') return null
     const s = acc.stall
     if (acc.lastOf.get(s.act.agent) !== s.act) return null
-    // An idle-foreman stall also clears on a later line of a successor project manager; a kind agent stall does not.
-    if (s.kind === 'idle-foreman') {
+    // An idle-project-manager stall also clears on a later line of a successor project manager; a kind agent stall does not.
+    if (s.kind === 'idle-project-manager') {
       for (const [name, succ] of successorLatest) {
         if (succ !== s.act && follows(name, acc.slug, planned) && newerOrEqual(succ, s.act)) return null
       }
@@ -337,7 +337,7 @@ export function createReducer(): Reducer {
         status: pc?.status ?? null,
         goal: pc?.goal ?? null,
         owns: pc === undefined ? [] : [...pc.owns],
-        foreman: acc?.foreman === null || acc === undefined ? null : { ...acc.foreman },
+        projectManager: acc?.projectManager === null || acc === undefined ? null : { ...acc.projectManager },
         members: acc === undefined ? [] : [...acc.members.values()].map((m) => ({ ...m })),
         latest: latest === null ? null : { ts: latest.ts, agent: latest.agent, event: latest.event, text: latest.text },
         estAgents: pc?.estAgents ?? null,

@@ -48,9 +48,9 @@
         "owns": [
           "rework-docs/**"
         ],
-        "foreman": {
+        "projectManager": {
           "name": "rework-docs",
-          "type": "truss:foreman",
+          "type": "truss:project-manager",
           "model": "claude-opus-5-5",
           "effort": "medium",
           "state": "reported",

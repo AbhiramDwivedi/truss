@@ -217,15 +217,15 @@ test('BuildNetwork: the meta row has Stage n and n agents as separate spans with
   assert.equal(all(art, (n) => n.tag === 'span' && own(n) === '3 agents').length, 1)
   assert.doesNotMatch(headText(art), /·/)
 })
-test('BuildNetwork: a waiting crew has the question notice and its foreman card is Waiting on you', async () => {
+test('BuildNetwork: a waiting crew has the question notice and its project manager card is Waiting on you', async () => {
   const art = articleOf(region(await network(rx('live'))), 'rework-chat')
-  assert.match(tidy(text(art)), /The foreman asked a question\. You'll answer it in Your move\./)
+  assert.match(tidy(text(art)), /The project manager asked a question\. You'll answer it in Your move\./)
   const card = agentCards(art)[0]!
   assert.ok(hasWord(tidy(text(card)), 'Waiting on you'))
 })
-test('BuildNetwork: the notice follows the foreman detail: BLOCKED and PROPOSAL', async () => {
-  for (const [detail, copy] of [['BLOCKED', 'The foreman is blocked.'], ['PROPOSAL', 'The foreman proposed a change.']] as const) {
-    const s = mutate(rx('live'), 'rework-chat', (c) => { c.foreman.detail = detail + ': need a call' })
+test('BuildNetwork: the notice follows the project manager detail: BLOCKED and PROPOSAL', async () => {
+  for (const [detail, copy] of [['BLOCKED', 'The project manager is blocked.'], ['PROPOSAL', 'The project manager proposed a change.']] as const) {
+    const s = mutate(rx('live'), 'rework-chat', (c) => { c.projectManager.detail = detail + ': need a call' })
     const art = articleOf(region(await network(s)), 'rework-chat')
     assert.match(tidy(text(art)), new RegExp(`${esc(copy)} You'll answer it in Your move\\.`), detail)
     assert.ok(hasWord(headText(art), 'Waiting on you'), detail)
@@ -236,7 +236,7 @@ test('BuildNetwork: a crew with no pending question has no notice', async () => 
   assert.doesNotMatch(tidy(text(articleOf(reg, 'rework-network'))), /Your move/)
   assert.equal(tidy(text(reg)).split("You'll answer it in Your move.").length - 1, 1, 'one notice in the network')
 })
-test('BuildNetwork: a stuck crew keeps the StuckCard under the header and its foreman card reads Stuck, Stalled 14 min', async () => {
+test('BuildNetwork: a stuck crew keeps the StuckCard under the header and its project manager card reads Stuck, Stalled 14 min', async () => {
   const art = articleOf(region(await network(rx('live'))), 'rework-docs')
   assert.match(tidy(text(art)), /14 min/)
   assert.equal(find(art, 'term', 'Why').length, 1)
@@ -255,7 +255,7 @@ test('BuildNetwork: a planned crew says Starts after stage 1. and No agents yet.
   assert.match(tidy(text(articleOf(region(await network(s)), 'rework-page'))), /Not started yet\.[\s\S]*No agents yet\./)
 })
 test('BuildNetwork: a running crew with no agents says No agents yet.', async () => {
-  const s = mutate(rx('live'), 'rework-network', (c) => { c.foreman = null; c.members = [] })
+  const s = mutate(rx('live'), 'rework-network', (c) => { c.projectManager = null; c.members = [] })
   const art = articleOf(region(await network(s)), 'rework-network')
   assert.match(tidy(text(art)), /No agents yet\./)
   assert.equal(agentCards(art).length, 0)
@@ -275,16 +275,16 @@ test('BuildNetwork: no stock palette classes in the network', async () => {
 })
 
 // ---- BuildNetwork: agent cards in the network ------------------------------------------------------------
-test('BuildNetwork: rework-network lists the foreman first, then the builder, then the QC engineer, each a list item', async () => {
+test('BuildNetwork: rework-network lists the project manager first, then the builder, then the QC engineer, each a list item', async () => {
   // the recorded lead has the retired type; ADR-0042 reads the new type only, so set it first
-  const art = articleOf(region(await network(mutate(rx('live'), 'rework-network', (c) => { c.foreman.type = 'truss:project-manager' }))), 'rework-network')
+  const art = articleOf(region(await network(mutate(rx('live'), 'rework-network', (c) => { c.projectManager.type = 'truss:project-manager' }))), 'rework-network')
   const cards = agentCards(art)
   assert.equal(cards.length, 3)
   const t = cards.map((c) => tidy(text(c)))
-  assert.ok(t[0]!.includes('Foreman') && t[1]!.includes('Builder') && t[2]!.includes('QC engineer'), 'foreman, builder, QC engineer in order')
+  assert.ok(t[0]!.includes('Project manager') && t[1]!.includes('Builder') && t[2]!.includes('QC engineer'), 'project manager, builder, QC engineer in order')
   assert.ok(/opus/i.test(t[0]!) && t[0]!.includes('Leads one truss crew.') && t[0]!.includes('Splitting the network goal into builder tasks.'))
   assert.ok(t[0]!.includes('rework-network'))
-  assert.ok(/sonnet/i.test(t[1]!) && t[1]!.includes('Builds the code a foreman task names, in the crew worktree.') && t[1]!.includes('Building AgentCard and Wire in views/crews.'))
+  assert.ok(/sonnet/i.test(t[1]!) && t[1]!.includes('Builds the code a project manager task names, in the crew worktree.') && t[1]!.includes('Building AgentCard and Wire in views/crews.'))
   assert.ok(t[1]!.includes('rework-network-builder'))
   assert.match(t[2]!, /Rules on one truss crew's work/)
   assert.ok(t[2]!.includes('No activity yet'))
@@ -305,7 +305,7 @@ test('BuildNetwork: every agent card shows Spawned, Working and Reported with th
     assert.equal(tidy(text(holder)), current[i])
   })
 })
-test('BuildNetwork: a reported foreman is at step Reported and Done', async () => {
+test('BuildNetwork: a reported project manager is at step Reported and Done', async () => {
   const art = articleOf(region(await network(rx('live'))), 'rework-server')
   const card = agentCards(art)[0]!
   assert.ok(hasWord(tidy(text(card)), 'Done'))
@@ -331,7 +331,7 @@ test('BuildNetwork: partial shows the unread-events notice once, with the last k
   assert.equal(agentCards(art).length, 2)
   assert.equal(find(reg, 'article').length, s.run.crews.length)
 })
-test('BuildNetwork: real-12 shows Dropped, not Done, for a dropped crew and Done for a merged crew with a BLOCKED foreman', async () => {
+test('BuildNetwork: real-12 shows Dropped, not Done, for a dropped crew and Done for a merged crew with a BLOCKED projectManager', async () => {
   const reg = region(await network(rx('real-12')))
   const dropped = articleOf(reg, 'web-app')
   assert.ok(!hasWord(headText(dropped), 'Done'), 'a dropped crew is not Done')
@@ -349,7 +349,7 @@ test('BuildNetwork: real-12 shows 6 named agent cards, a Show n more agents butt
   assert.equal(find(reg, 'article').length, 12)
   for (const c of s.run.crews) {
     const art = articleOf(reg, c.slug)
-    const agents = [...(c.foreman ? [c.foreman] : []), ...c.members]
+    const agents = [...(c.projectManager ? [c.projectManager] : []), ...c.members]
     const runs = agents.filter(isCheckRun).length
     const named = agents.length - runs
     assert.equal(agentCards(art).length, Math.min(6, named), c.slug)
@@ -370,12 +370,12 @@ test('BuildNetwork: real-12 shows 6 named agent cards, a Show n more agents butt
 })
 test('BuildNetwork: a crew with 7 named agents says Show 1 more agent', async () => {
   const s = rx('real-12')
-  mutate(s, 'ui-fixes5', (c) => { c.members = Array.from({ length: 6 }, (_, i) => ({ ...c.foreman, name: `ui-fixes5-w${i}`, type: 'truss:writer', agentId: `w${i}` })) })
+  mutate(s, 'ui-fixes5', (c) => { c.members = Array.from({ length: 6 }, (_, i) => ({ ...c.projectManager, name: `ui-fixes5-w${i}`, type: 'truss:writer', agentId: `w${i}` })) })
   const more = find(articleOf(region(await network(s)), 'ui-fixes5'), 'button').filter((b) => b.a['aria-expanded'] !== undefined)
   assert.equal(more.length, 1)
   assert.equal(nameOf(more[0]!), 'Show 1 more agent')
 })
-test('orderAgents: foreman first, then builder, tester, ux, qc, stress, planning, writer, resolver, then the rest', async () => {
+test('orderAgents: project manager first, then builder, tester, ux, qc, stress, planning, writer, resolver, then the rest', async () => {
   const { orderAgents } = await r.load('views/crews/format.ts')
   const m = (name: string, type: string | null) => member({ name, type })
   const fm = m('c', 'truss:project-manager')
@@ -408,7 +408,7 @@ test('isCheckRun and the runner purpose: runners and unnamed general-purpose age
   const v = await card({ member: member({ name: 'c-runner', purpose: null }), role: 'Runner', task: 'x', status: 'active', step: 2 })
   assert.ok(tidy(text(v)).includes(RUNNER_PURPOSE))
 })
-test('BuildNetwork: a crew whose agents are all check runs shows the foreman card and one N check runs row, closed', async () => {
+test('BuildNetwork: a crew whose agents are all check runs shows the project manager card and one N check runs row, closed', async () => {
   const base = rx('real-12')
   const tpl = base.run.crews[0]
   const m = (j: number) => ({ name: `crew-0-agent-${j}`, type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:00.000Z', agentId: `id-${j}`, purpose: null, task: null })
@@ -437,15 +437,15 @@ test('BuildNetwork: a 300 character task shows in full once per card, not twice'
   const s = rx('long')
   const c = s.run.crews[0]
   const art = articleOf(region(await network(s)), c.slug)
-  for (const task of [c.foreman.task, c.members[0].task] as string[]) assert.equal(all(art, (n) => own(n) === task).length, 1)
+  for (const task of [c.projectManager.task, c.members[0].task] as string[]) assert.equal(all(art, (n) => own(n) === task).length, 1)
   assert.equal(all(art, (n) => n.a['aria-controls'] !== undefined).length, 0, 'no toggle before the line is measured')
 })
-test('BuildNetwork: 12 crews with 100 agents render only the 12 foreman cards inside one second (the check runs fold)', async () => {
+test('BuildNetwork: 12 crews with 100 agents render only the 12 project manager cards inside one second (the check runs fold)', async () => {
   const base = rx('real-12')
   const mk = (i: number, n: number) => {
     const m = (j: number) => ({ name: `crew-${i}-agent-${j}`, type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:00.000Z', agentId: `id-${i}-${j}`, purpose: 'Builds one thing.', task: `Task ${i}-${j}` })
     const tpl = base.run.crews[0]
-    return { ...tpl, slug: `crew-${i}`, stage: i % 3, status: 'running', foreman: { ...tpl.foreman, name: `crew-${i}`, state: 'tagged', detail: 'working' }, members: Array.from({ length: n }, (_, j) => m(j)), stuck: null, qc: null }
+    return { ...tpl, slug: `crew-${i}`, stage: i % 3, status: 'running', projectManager: { ...tpl.projectManager, name: `crew-${i}`, state: 'tagged', detail: 'working' }, members: Array.from({ length: n }, (_, j) => m(j)), stuck: null, qc: null }
   }
   const s = { ...base, run: { ...base.run, crews: Array.from({ length: 12 }, (_, i) => mk(i, i < 4 ? 9 : 8)) } }
   assert.equal(s.run.crews.reduce((a: number, c: any) => a + c.members.length, 0), 100)
@@ -478,14 +478,14 @@ test('BuildNetwork: a stalled tester gives Restart tester', async () => {
   s.run.crews[1].members[0].name = 'quota-api-tester'
   assert.equal(find(region(await network(s)), 'button', 'Restart tester').length, 1)
 })
-test('BuildNetwork: an idle foreman gives Start a successor foreman and no Restart button', async () => {
-  const reg = region(await network(fx('stuck-crew/idle-foreman')))
-  assert.equal(find(reg, 'button', 'Start a successor foreman').length, 1)
+test('BuildNetwork: an idle project manager gives Start a successor project manager and no Restart button', async () => {
+  const reg = region(await network(fx('stuck-crew/idle-project-manager')))
+  assert.equal(find(reg, 'button', 'Start a successor project manager').length, 1)
   assert.equal(find(reg, 'button', /^Restart /).length, 0)
 })
 
 // ---- AgentCard -------------------------------------------------------------------------------------------
-const member = (o: Record<string, unknown> = {}) => ({ name: 'rework-network-builder', type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:30.000Z', agentId: 'a1', purpose: 'Builds the code a foreman task names, in the crew worktree.', task: 'Building AgentCard and Wire in views/crews.', ...o })
+const member = (o: Record<string, unknown> = {}) => ({ name: 'rework-network-builder', type: 'general-purpose', model: 'claude-sonnet-5-5', effort: 'medium', state: 'tagged', detail: 'working', ts: '2026-11-02T11:58:30.000Z', agentId: 'a1', purpose: 'Builds the code a project manager task names, in the crew worktree.', task: 'Building AgentCard and Wire in views/crews.', ...o })
 async function card(props: Record<string, unknown>): Promise<N> {
   const mod = await r.load('views/crews/AgentCard.tsx')
   assert.ok(mod.AgentCard, 'views/crews/AgentCard.tsx exports AgentCard')
@@ -544,7 +544,7 @@ test('AgentCard: the full task appears once, in a paragraph with an id', async (
 })
 test('AgentCard: a long name and purpose carry the full text in title', async () => {
   const name = 'rework-the-network-view-with-agent-cards-builder-number-seventeen'
-  const purpose = 'Builds the code a foreman task names, in the crew worktree, and reports back when the task is done.'
+  const purpose = 'Builds the code a project manager task names, in the crew worktree, and reports back when the task is done.'
   const v = await card({ member: member({ name, purpose }), role: 'Builder', task: 'x', status: 'active', step: 2 })
   assert.equal(all(v, (n) => n.a.title === name).length > 0, true)
   assert.equal(all(v, (n) => n.a.title === purpose).length > 0, true)
@@ -560,12 +560,12 @@ test('AgentCard helpers: modelKey names opus, sonnet, the raw model, and is null
   assert.equal(modelKey('haiku-9'), 'haiku-9')
   assert.equal(modelKey(null), null)
 })
-test('AgentCard helpers: roleWord names the foreman, QC engineer, other truss types and general-purpose by its name', async () => {
+test('AgentCard helpers: roleWord names the project manager, QC engineer, other truss types and general-purpose by its name', async () => {
   const { roleWord } = await fmt()
   assert.equal(typeof roleWord, 'function', 'format.ts exports roleWord')
   const w = (type: string | null, name = 'x') => roleWord(member({ type, name }))
-  assert.equal(w('truss:project-manager'), 'Foreman')
-  assert.equal(w('workflow-crew'), 'Foreman')
+  assert.equal(w('truss:project-manager'), 'Project manager')
+  assert.equal(w('workflow-crew'), 'Project manager')
   assert.equal(w('truss:qc-engineer'), 'QC engineer')
   assert.equal(w('truss:design-engineer'), 'Design engineer')
   assert.equal(w('truss:ux-engineer'), 'Ux engineer')
@@ -574,19 +574,19 @@ test('AgentCard helpers: roleWord names the foreman, QC engineer, other truss ty
   assert.equal(w('general-purpose', 'crew-gardener'), 'General purpose')
   assert.equal(w('general-purpose', 'solo'), 'General purpose')
 })
-test('AgentCard helpers: taskLine picks the task, then the foreman goal, then a real detail, else null', async () => {
+test('AgentCard helpers: taskLine picks the task, then the project manager goal, then a real detail, else null', async () => {
   const { taskLine } = await fmt()
   assert.equal(typeof taskLine, 'function', 'format.ts exports taskLine')
   const fm = member({ type: 'truss:project-manager', name: 'c', task: null, detail: null })
-  const crew = { slug: 'c', goal: 'Ship the thing.', foreman: fm, members: [] }
+  const crew = { slug: 'c', goal: 'Ship the thing.', projectManager: fm, members: [] }
   assert.equal(taskLine(member({ task: 'Do T.', detail: 'working' }), crew), 'Do T.')
   assert.equal(taskLine(fm, crew), 'Ship the thing.')
-  assert.equal(taskLine({ ...fm, task: 'Foreman task.' }, crew), 'Foreman task.')
+  assert.equal(taskLine({ ...fm, task: 'Project manager task.' }, crew), 'Project manager task.')
   assert.equal(taskLine(member({ task: null, detail: 'Reading the spec' }), crew), 'Reading the spec')
   assert.equal(taskLine(member({ task: null, detail: 'working' }), crew), null)
   assert.equal(taskLine(member({ task: null, detail: null }), crew), null)
   assert.equal(taskLine(fm, { ...crew, goal: null }), null)
-  // crew.goal is a goal id: the foreman line is the goal's text (first line), never the id
+  // crew.goal is a goal id: the project manager line is the goal's text (first line), never the id
   const goals = [{ id: 'run', goal: 'Run goal.' }, { id: 'g2', goal: '\nSecond goal line.\nMore.' }]
   assert.equal(taskLine(fm, { ...crew, goal: 'g2' }, goals), 'Second goal line.')
   assert.equal(taskLine(fm, { ...crew, goal: null }, goals), 'Run goal.')
@@ -631,7 +631,7 @@ test('RetroRail: a failed step is named with its status word', async () => {
 // ---- CrewCard QC verdict (ADR-0018 section 10, ADR-0023, ADR-0028 section 9) ----
 for (const [verdict, words] of [['PASS', 'QC PASS'], ['FAIL', 'QC FAIL'], [null, 'QC none']] as const) {
   test(`CrewCard: a running crew with QC ${verdict ?? 'none'} shows "${words}" beside the status${verdict === 'FAIL' ? ' and blocked: QC FAIL' : ''}`, async () => {
-    const base = rx('live').run.crews.find((c: any) => c.status === 'running' && !c.stuck && !/^\s*(QUESTION|BLOCKED|PROPOSAL)/.test(c.foreman?.detail ?? ''))
+    const base = rx('live').run.crews.find((c: any) => c.status === 'running' && !c.stuck && !/^\s*(QUESTION|BLOCKED|PROPOSAL)/.test(c.projectManager?.detail ?? ''))
     const crew = { ...base, qc: verdict ? { verdict, file: 'reports/x/x-qc.md', at: '2026-11-02T11:00:00.000Z' } : null }
     const mod = await r.load('views/crews/CrewCard.tsx')
     const v = parse(r.render(React.createElement(mod.CrewCard, { crew, now: NOW, checkRunsOpen: true })))
@@ -675,7 +675,7 @@ const mergedWithStalled = () => {
 
 test('taskLine: a detail with text after its marker shows whole, a bare marker never shows (any case, padded)', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
+  const crew = { slug: 'c', goal: null, projectManager: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   const line = (detail: string) => taskLine(member({ task: null, state: 'tagged', detail }), crew)
   assert.equal(line('BLOCKED: need the API key'), 'BLOCKED: need the API key')
   assert.equal(line('QUESTION: which port?'), 'QUESTION: which port?')
@@ -684,32 +684,32 @@ test('taskLine: a detail with text after its marker shows whole, a bare marker n
     assert.ok(got === null || !/^(blocked|question|proposal|done)$/i.test(got.trim()), `bare "${d}" never shows as a task line, got ${JSON.stringify(got)}`)
   }
 })
-test('taskLine: a foreman with no task shows the crew goal, never its raw BLOCKED marker', async () => {
+test('taskLine: a project manager with no task shows the crew goal, never its raw BLOCKED marker', async () => {
   const { taskLine } = await fmt()
   const fm = member({ name: 'build-crew', type: 'workflow-crew', task: null, state: 'tagged', detail: 'BLOCKED' })
-  const crew = { slug: 'build-crew', goal: 'Build the fixture widget.', foreman: fm, members: [] }
+  const crew = { slug: 'build-crew', goal: 'Build the fixture widget.', projectManager: fm, members: [] }
   assert.equal(taskLine(fm, crew), 'Build the fixture widget.')
   assert.equal(taskLine({ ...fm, task: 'Own task.' }, crew), 'Own task.')
 })
 test('taskLine: a reported agent with a bare-marker detail and no task reads exactly "Reported: DONE"', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
+  const crew = { slug: 'c', goal: null, projectManager: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE' }), crew), 'Reported: DONE')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'done' }), crew), 'Reported: DONE')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: ' DONE ' }), crew), 'Reported: DONE')
 })
 test('taskLine: a reported agent with no task and no detail reads exactly "Reported"', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
+  const crew = { slug: 'c', goal: null, projectManager: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: null }), crew), 'Reported')
 })
 test('taskLine: a reported agent keeps its task, and a reported detail that carries text shows whole, over Reported', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
+  const crew = { slug: 'c', goal: null, projectManager: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: 'Write the note.', detail: 'DONE' }), crew), 'Write the note.')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE: all green' }), crew), 'DONE: all green')
 })
-test('AgentCard helpers: stepOf with a merged or dropped crew is Reported (3) for a tagged foreman and a stalled member', async () => {
+test('AgentCard helpers: stepOf with a merged or dropped crew is Reported (3) for a tagged project manager and a stalled member', async () => {
   const { stepOf } = await fmt()
   for (const status of ['merged', 'dropped']) {
     const c = { status }
@@ -733,7 +733,7 @@ test('AgentCard helpers: the new strings Reported, "Reported: " and No task reco
 
 test('AgentCard: a null model renders no model badge, no "unknown" and no model text, and the status badge still renders', async () => {
   const withModel = await card({ member: member({ model: 'claude-sonnet-5-5' }), role: 'Builder', task: 'x', status: 'done', step: 3 })
-  const v = await card({ member: member({ model: null }), role: 'Foreman', task: 'x', status: 'done', step: 3 })
+  const v = await card({ member: member({ model: null }), role: 'Project manager', task: 'x', status: 'done', step: 3 })
   const chips = (root: N) => all(root, (n) => cls(n, 'bg-transparent')).length
   assert.ok(chips(withModel) >= 1, 'a known model shows the ModelBadge')
   assert.equal(chips(v), chips(withModel) - 1, 'a null model removes exactly the ModelBadge element')
@@ -747,7 +747,7 @@ test('AgentCard: a known model still shows its badge', async () => {
   assert.match(tidy(text(v)), /sonnet/)
 })
 test('AgentCard: a non-spawned agent with no task says No task recorded in text-subtle, never No activity yet', async () => {
-  const v = await card({ member: member({ purpose: null, task: null, detail: 'BLOCKED', state: 'tagged' }), role: 'Foreman', task: null, status: 'done', step: 3 })
+  const v = await card({ member: member({ purpose: null, task: null, detail: 'BLOCKED', state: 'tagged' }), role: 'Project manager', task: null, status: 'done', step: 3 })
   const t = tidy(text(v))
   assert.ok(t.includes('No task recorded'))
   assert.ok(!t.includes('No activity yet'))
@@ -812,7 +812,7 @@ test('CrewCard: a running crew still shows Stalled N min on its stalled member',
   const t = tidy(text(cardOf(await crewCard(c), 'build-crew-tester')))
   assert.ok(t.includes('Stalled 14 min') && hasWord(t, 'Stuck'), t)
 })
-test('CrewCard: real-data docs-crew lines: the foreman reads the crew goal, runner-2 its task, no BLOCKED and no model text', async () => {
+test('CrewCard: real-data docs-crew lines: the project manager reads the crew goal, runner-2 its task, no BLOCKED and no model text', async () => {
   const art = await crewCard(crewOfRd('docs-crew'))
   const fm = tidy(text(cardOf(art, 'docs-crew')))
   assert.ok(fm.includes('Write the design for the fixture widget.'), fm)
@@ -821,14 +821,14 @@ test('CrewCard: real-data docs-crew lines: the foreman reads the crew goal, runn
   assert.ok(!tidy(text(art)).includes('No activity yet'))
   assert.ok(tidy(text(cardOf(art, 'docs-crew-runner'))).includes('sonnet'))
 })
-test('CrewCard: a running crew with a BLOCKED foreman keeps Waiting on you and the foreman Notice, and shows the goal', async () => {
+test('CrewCard: a running crew with a BLOCKED project manager keeps Waiting on you and the project manager Notice, and shows the goal', async () => {
   const art = await crewCard(crewOfRd('build-crew'))
   const fm = cardOf(art, 'build-crew')
   const t = tidy(text(fm))
   assert.ok(hasWordAndIcon(fm, 'Waiting on you'), t)
   assert.ok(!hasWord(t, 'Done'), t)
   assert.ok(t.includes('Build the fixture widget.') && !t.includes('BLOCKED') && !t.includes('No activity yet'), t)
-  assert.ok(tidy(text(art)).includes("The foreman is blocked. You'll answer it in Your move."))
+  assert.ok(tidy(text(art)).includes("The project manager is blocked. You'll answer it in Your move."))
 })
 test('CrewCard: real-data build-crew lines: builder reads exactly Reported: DONE, runner (spawned) says No activity yet once', async () => {
   const art = await crewCard(crewOfRd('build-crew'))
@@ -857,7 +857,7 @@ test('CrewCard: a detail that is not a bare marker shows as the line, with text 
   assert.ok(tidy(text(cardOf(art, 'build-crew-reader'))).includes('Reading the design note'))
   assert.ok(tidy(text(cardOf(art, 'build-crew-asker'))).includes('BLOCKED: need the API key'))
 })
-test('CrewCard: a foreman of a merged crew with no goal and only a BLOCKED detail says No task recorded', async () => {
+test('CrewCard: a project manager of a merged crew with no goal and only a BLOCKED detail says No task recorded', async () => {
   const c = crewOfRd('docs-crew')
   c.goal = null
   const fm = tidy(text(cardOf(await crewCard(c), 'docs-crew')))

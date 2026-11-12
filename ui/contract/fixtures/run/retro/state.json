@@ -27,7 +27,7 @@
     "crews": [
       {
         "slug": "quota-store", "stage": 0, "verdict": "change", "status": "merged", "goal": null, "owns": ["server/quota/**"],
-        "foreman": { "name": "quota-store", "type": "truss:foreman", "model": "claude-opus-5-5", "effort": "medium", "state": "reported", "detail": "DONE", "ts": "2026-11-02T11:40:00.000Z" },
+        "projectManager": { "name": "quota-store", "type": "truss:project-manager", "model": "claude-opus-5-5", "effort": "medium", "state": "reported", "detail": "DONE", "ts": "2026-11-02T11:40:00.000Z" },
         "members": [],
         "latest": { "ts": "2026-11-02T11:40:00.000Z", "agent": "quota-store", "event": "report", "text": "quota-store reported DONE" },
         "estAgents": 5, "stuck": null, "qc": { "verdict": "PASS", "file": "reports/quota-store/quota-store-qc-1.md" }

@@ -171,9 +171,9 @@ export function crewGoalText(crew: Pick<Crew, 'goal'>, goals: readonly { id: str
  * The one task line: the task, else the project manager's crew goal, else a detail that is not a bare marker, else for a
  * reported agent `Reported: <MARKER>` or `Reported`, else null (the card words the empty case).
  */
-export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
+export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'projectManager'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
   if (m.task) return m.task
-  const isProjectManager = m.type === 'truss:project-manager' || m.type === 'workflow-crew' || crew.foreman === m
+  const isProjectManager = m.type === 'truss:project-manager' || m.type === 'workflow-crew' || crew.projectManager === m
   if (isProjectManager) {
     const g = crewGoalText(crew, goals)
     if (g) return g
@@ -210,7 +210,7 @@ export function stalledRole(c: Crew): string {
 }
 
 export function stuckWords(s: CrewStuck): string {
-  return s.kind === 'idle-foreman' ? `stuck: project manager idle ${s.minutes} min` : `stuck: stalled ${s.minutes} min`
+  return s.kind === 'idle-project-manager' ? `stuck: project manager idle ${s.minutes} min` : `stuck: stalled ${s.minutes} min`
 }
 
 /** ADR-0018 section 10's blocked reason in words, for a crew with no stuck record. */
@@ -256,7 +256,7 @@ export function crewNameExtra(c: Crew): string {
 
 /** When the crew started: its project manager's spawn, else its earliest member. */
 export function crewStart(c: Crew): number | null {
-  const stamps = [c.foreman?.ts, ...c.members.map((m) => m.ts)].map(ms).filter((x): x is number => x !== null)
+  const stamps = [c.projectManager?.ts, ...c.members.map((m) => m.ts)].map(ms).filter((x): x is number => x !== null)
   return stamps.length ? Math.min(...stamps) : null
 }
 

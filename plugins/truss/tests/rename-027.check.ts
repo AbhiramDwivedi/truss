@@ -67,9 +67,9 @@ test('rename-027: each owned prose file that keeps PM defines it', () => {
   for (const f of OWNED_MD()) {
     const text = read(f)
     if (!/\bPM\b/.test(text)) continue
-    if (!/program manager \(PM\)|project manager \(PM\)/.test(text)) bad.push(f)
+    if (!/program manager \(PM\)/.test(text)) bad.push(f)
   }
-  assert.deepEqual(bad, [], `these files use PM without defining it as "program manager (PM)" or "project manager (PM)":\n${bad.join('\n')}`)
+  assert.deepEqual(bad, [], `these files use PM without defining it as "program manager (PM)":\n${bad.join('\n')}`)
 })
 
 test('rename-027: ADR-0042 is accepted, decided by the client, and names the new values', () => {

@@ -102,7 +102,7 @@ The leftovers contract forbids reading `slots.json`, and retro never reads trans
 - **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts:812`) and then commits the leftovers for it (`commitLeftovers`, `register.ts:1021`, called at 1853); for a stress test that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
 - **Probes.** It prefers temp dirs outside the worktree for probe files. A file in a gitignored path doesn't count as dirty either.
 
-`agents/project-manager.md:64`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
+`agents/project-manager.md:66`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
 
 The literals the stage-0 check `tests/redteam-reset.check.ts` pins, each a substring of `qc-engineer.md`'s stress-test section (from the line starting `When your brief opens with the line \`Stress test:\`` to the next `##` heading or the `STRESSTEST: <n> findings` paragraph):
 

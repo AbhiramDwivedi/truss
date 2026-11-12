@@ -301,7 +301,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     if (r === null) return null
     const ids: (string | null)[] = []
     for (const c of r.crews) {
-      if (c.foreman) ids.push(taskFor(c.foreman, c.slug), activityFor(c.foreman))
+      if (c.projectManager) ids.push(taskFor(c.projectManager, c.slug), activityFor(c.projectManager))
       for (const m of c.members) ids.push(taskFor(m, null), activityFor(m))
       for (const m of liveMembers(c)) ids.push(m.name, m.agentId, m.task, m.activity ?? null)
     }
@@ -318,7 +318,7 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
       task: taskFor(m, projectManagerOf),
       activity: activityFor(m),
     })
-    return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, c.slug), members: [...c.members.map((m) => fill(m, null)), ...liveMembers(c)] })) }
+    return { ...r, crews: r.crews.map((c) => ({ ...c, projectManager: c.projectManager === null ? null : fill(c.projectManager, c.slug), members: [...c.members.map((m) => fill(m, null)), ...liveMembers(c)] })) }
   }
 
   function compute(): Record<string, unknown> {

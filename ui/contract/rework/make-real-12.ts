@@ -3,7 +3,7 @@
 // The run is folded through the real server reducer (ui/server/state/reduce.ts), so the crews have the shape the
 // server serves. Reproducible: the same dir gives the same bytes. Run: node ui/contract/rework/make-real-12.ts [dir]
 //
-// The trim: the 12 crews with the most agents (ties by plan order); each keeps its foreman and its first
+// The trim: the 12 crews with the most agents (ties by plan order); each keeps its project manager and its first
 // MEMBERS_PER_CREW other agents, in order of first appearance. That is at most 12 x 8 = 96 agents, and every crew
 // has more than 6, so each card shows "Show n more agents". Then, for a live-looking page: the last crew in plan
 // order is running, the one before it planned, and every time is moved so the newest is one minute before the
@@ -84,22 +84,22 @@ if (existsSync(AGENTS_DIR)) {
     if (m) descriptions.set(f.slice(0, -3), m[1]!.trim().replace(/^["']|["']$/g, '').split(/(?<=\.)\s/)[0]!)
   }
 }
-const purposeOf = (type: string | null, isForeman: boolean): string | null => {
-  if (isForeman || type === 'workflow-crew') return descriptions.get('foreman') ?? null
+const purposeOf = (type: string | null, isProjectManager: boolean): string | null => {
+  if (isProjectManager || type === 'workflow-crew') return descriptions.get('project-manager') ?? null
   if (type === null) return null
   return descriptions.get(type.replace(/^truss:/, '')) ?? null
 }
-const decorate = (m: any, crew: string, isForeman: boolean): any => ({
-  ...m, agentId: idOf.get(`${crew}\0${m.name}`) ?? null, purpose: purposeOf(m.type, isForeman), task: null,
+const decorate = (m: any, crew: string, isProjectManager: boolean): any => ({
+  ...m, agentId: idOf.get(`${crew}\0${m.name}`) ?? null, purpose: purposeOf(m.type, isProjectManager), task: null,
 })
 for (const c of run.crews as any[]) {
-  if (c.foreman) c.foreman = decorate(c.foreman, c.slug, true)
+  if (c.projectManager) c.projectManager = decorate(c.projectManager, c.slug, true)
   c.members = c.members.map((m: any) => decorate(m, c.slug, false))
 }
 
 // ---- the state --------------------------------------------------------------------------------------------------
 
-const agents = (run.crews as any[]).reduce((n, c) => n + (c.foreman ? 1 : 0) + c.members.length, 0)
+const agents = (run.crews as any[]).reduce((n, c) => n + (c.projectManager ? 1 : 0) + c.members.length, 0)
 if (agents > 100) throw new Error(`${agents} agents, over 100`)
 const at = (min: number): string => new Date(ANCHOR - min * 60_000).toISOString()
 const state = {
