@@ -57,7 +57,7 @@ const crewOf = (state: any, slug: string) => state.run.crews.find((c: any) => c.
 
 const member = (over: Record<string, unknown> = {}) => ({ name: 'a-builder', type: 'general-purpose', model: 'sonnet', effort: null, state: 'spawned', detail: null, ts: '2026-11-02T12:00:00.000Z', ...over })
 const crew = (over: Record<string, unknown> = {}) => ({
-  slug: 'c', stage: 1, verdict: null, status: 'running', goal: null, owns: [], foreman: member({ name: 'c-foreman', type: 'truss:foreman' }),
+  slug: 'c', stage: 1, verdict: null, status: 'running', goal: null, owns: [], foreman: member({ name: 'c-foreman', type: 'truss:project-manager' }),
   members: [member()], latest: null, qc: null, ...over,
 })
 
@@ -88,7 +88,7 @@ test('crewStatus: stuck non-null is stuck', async () => {
 for (const marker of ['QUESTION', 'BLOCKED', 'PROPOSAL']) {
   test(`crewStatus: running with a foreman detail starting ${marker} is waiting`, async () => {
     const { crewStatus } = await status()
-    assert.equal(crewStatus(crew({ foreman: member({ type: 'truss:foreman', detail: `${marker}: need a decision` }) })), 'waiting')
+    assert.equal(crewStatus(crew({ foreman: member({ type: 'truss:project-manager', detail: `${marker}: need a decision` }) })), 'waiting')
   })
 }
 test('crewStatus: running with another foreman detail is active', async () => {

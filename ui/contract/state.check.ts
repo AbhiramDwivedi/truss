@@ -314,7 +314,7 @@ function registerTests(mod: any): void {
     const w = makeWorld()
     const store = await ready(w)
     const live = path.join(w.truss, 'events.jsonl')
-    const full = '{"v":1,"ts":"2026-10-27T15:00:00.000Z","event":"spawn","crew":"zeta-crew","agent":"zeta-crew","agentId":"z0","type":"truss:foreman","model":"opus","effort":"low","by":"main"}'
+    const full = '{"v":1,"ts":"2026-10-27T15:00:00.000Z","event":"spawn","crew":"zeta-crew","agent":"zeta-crew","agentId":"z0","type":"truss:project-manager","model":"opus","effort":"low","by":"main"}'
     const cut = full.indexOf('"event"')
     fs.appendFileSync(live, full.slice(0, cut))
     await new Promise((r) => setTimeout(r, 400)) // several 50 ms polls
