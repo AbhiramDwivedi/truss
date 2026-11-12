@@ -35,7 +35,7 @@ import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, rea
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
-import { INBOX_COMMANDS, blockingFor, escalate } from './inbox.ts'
+import { INBOX_COMMANDS, approvalProof, blockingFor, confirmApproval, escalate, onPlanApprove } from './inbox.ts'
 import { COST_COMMANDS, budgetVerdict, crewCost } from './cost.ts'
 import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS, profilesOf, workTypeErrors } from './worktypes.ts'
@@ -698,13 +698,22 @@ function cmdApprove(f: Flags): Obj {
   if (by !== 'client' && by !== 'auto') throw usage('--by must be client or auto')
   const repo = repoOf(f)
   const plan = loadPlan(dir)
-  if (plan.approvedAt !== null && plan.approvedAt !== undefined) throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
+  const clientGoals = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
+  if (plan.approvedAt !== null && plan.approvedAt !== undefined) {
+    // ADR-0045: the client's typed approve of the run item already approved the plan; the first --by client call with that proof confirms it
+    if (by === 'client' && confirmApproval(repo, dir, str(f, 'item'), clientGoals)) return { approvedAt: plan.approvedAt }
+    throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
+  }
   // contract-025 section 3 (finding #17): auto never approves a goal that needs the client. ADR-0044: a stage-0 crew alone no longer
   // needs the client; a plan whose own approval is client does.
   if (by === 'auto') {
     if (plan.approval === 'client') throw refuse({ error: "approve --by auto: the plan's approval is client, so it needs the client's approval", goals: [RUN_GOAL] })
-    const client = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
-    if (client.length > 0) throw refuse({ error: `approve --by auto: ${client.length === 1 ? 'goal' : 'goals'} ${client.join(', ')} ${client.length === 1 ? 'needs' : 'need'} the client's approval`, goals: client })
+    if (clientGoals.length > 0) throw refuse({ error: `approve --by auto: ${clientGoals.length === 1 ? 'goal' : 'goals'} ${clientGoals.join(', ')} ${clientGoals.length === 1 ? 'needs' : 'need'} the client's approval`, goals: clientGoals })
+  }
+  // ADR-0045: approve --by client is the client's act; it passes only with the typed proof /truss:inbox resolve requires (ADR-0037).
+  if (by === 'client') {
+    const why = approvalProof(repo, dir, str(f, 'item'), clientGoals)
+    if (why !== null) throw refuse({ error: `approve --by client: ${why}` })
   }
   const ltc = ltcPlanGate(repo, dir)
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
@@ -714,6 +723,11 @@ function cmdApprove(f: Flags): Obj {
   appendDecision(dir, `plan approved (${by}): merge ${s.merge}, target ${s.target} from ${s.source}; approvedAt ${approvedAt}; scope frozen | the plan is approved by ${by}, so crews may start`)
   return { approvedAt }
 }
+onPlanApprove((repo, dir, item) => {
+  const at = loadPlan(dir).approvedAt // an approved plan is not confirmed here: only an explicit approve call confirms (confirmApproval)
+  if (at !== null && at !== undefined) throw refuse({ error: `the plan is already approved (${String(at)})` })
+  return cmdApprove({ repo, dir, by: 'client', item })
+})
 
 // Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
 // fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
