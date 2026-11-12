@@ -143,13 +143,14 @@ test('the finisher lease refresh interval is shorter than its staleness window',
 
 const RACE_WORKER = `
 import { pathToFileURL } from 'node:url'
-const [store, dir, rounds] = process.argv.slice(1)
+const [store, dir, rounds] = process.argv.slice(2)
 const { takeLease } = await import(pathToFileURL(store).href)
 process.stdout.write('ready\\n')
 await new Promise((res) => process.stdin.once('data', res))
 const won = []
 for (let i = 0; i < Number(rounds); i++) if (takeLease(dir, 'race-' + i) !== null) won.push(i)
 process.stdout.write(JSON.stringify(won) + '\\n')
+await new Promise((res) => process.stdin.once('data', res))
 process.exit(0)
 `
 
@@ -161,14 +162,18 @@ test('the finisher lock is exclusive across two processes', async () => {
   const ROUNDS = 150
   const kids = [0, 1].map(() => {
     const c = spawn(process.execPath, [script, STORE, dir, String(ROUNDS)], { windowsHide: true })
-    const st = { out: '', err: '', ready: null as null | (() => void), done: null as any }
+    const st = { out: '', err: '', ready: null as any, result: null as any, done: null as any }
     st.done = new Promise((res) => c.on('close', (code) => res(code)))
     st.ready = new Promise<void>((res) => c.stdout.on('data', (d) => { st.out += d; if (st.out.includes('ready\n')) res() }))
+    st.result = new Promise<void>((res) => c.stdout.on('data', () => { if (/^\[.*\]$/m.test(st.out)) res() }))
     c.stderr.on('data', (d) => (st.err += d))
     return { c, st }
   })
   await Promise.all(kids.map((k) => k.st.ready))
   for (const k of kids) k.c.stdin.write('go\n')
+  // a worker stays alive until both are done: an exited holder's lease is dead-pid stale and rightly recoverable
+  await Promise.all(kids.map((k) => k.st.result))
+  for (const k of kids) k.c.stdin.write('exit\n')
   const codes = await Promise.all(kids.map((k) => k.st.done))
   for (const [i, k] of kids.entries()) assert.equal(codes[i], 0, k.st.err)
   const wins = kids.map((k) => JSON.parse(k.st.out.split('\n').filter((l) => l.startsWith('['))[0]))
@@ -176,7 +181,7 @@ test('the finisher lock is exclusive across two processes', async () => {
     const n = wins.filter((w) => w.includes(i)).length
     assert.equal(n, 1, `round ${i}: exactly one process holds the lease, got ${n}`)
   }
-})
+}, { timeout: 60000 })
 
 test('the finisher lock holds under linux, darwin and win32 platform fixtures', async () => {
   const { takeLease, releaseLease } = await leaseStore()
