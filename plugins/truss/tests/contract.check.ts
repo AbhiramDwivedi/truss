@@ -86,7 +86,7 @@ test('the config schema parses as JSON and is closed', () => {
 test('each promptOverrides value pattern takes a file directly under .claude/truss/prompts/', () => {
   const schema = JSON.parse(schemaText())
   const roles = schema.properties?.promptOverrides?.properties ?? {}
-  assert.deepEqual(Object.keys(roles).sort(), ['checking-engineer', 'commissioning-engineer', 'design-engineer', 'foreman', 'qc-engineer', 'writer'])
+  assert.deepEqual(Object.keys(roles).sort(), ['checking-engineer', 'commissioning-engineer', 'design-engineer', 'project-manager', 'qc-engineer', 'writer'])
   for (const [role, def] of Object.entries(roles)) {
     let node = def
     if (node.$ref) node = node.$ref.replace(/^#\//, '').split('/').reduce((o, k) => o?.[k], schema)

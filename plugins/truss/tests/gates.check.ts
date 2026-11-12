@@ -47,9 +47,9 @@ test('qc-engineer.md carries the Head: line literal', () => has(read('agents', '
 test('qc-engineer.md carries the Patch: line literal', () => has(read('agents', 'qc-engineer.md'), PATCH_LINE, 'agents/qc-engineer.md'))
 test('qc-engineer.md carries the - UNSCOPED: finding literal', () => has(read('agents', 'qc-engineer.md'), UNSCOPED, 'agents/qc-engineer.md'))
 
-test('foreman.md carries the ## Examined heading', () => has(read('agents', 'foreman.md'), EXAMINED, 'agents/foreman.md'))
-test('foreman.md carries the ## Not examined heading', () => has(read('agents', 'foreman.md'), NOT_EXAMINED, 'agents/foreman.md'))
-test('foreman.md carries BLOCKED: rework allowance spent', () => has(read('agents', 'foreman.md'), ALLOWANCE_BLOCKED, 'agents/foreman.md'))
+test('project-manager.md carries the ## Examined heading', () => has(read('agents', 'project-manager.md'), EXAMINED, 'agents/project-manager.md'))
+test('project-manager.md carries the ## Not examined heading', () => has(read('agents', 'project-manager.md'), NOT_EXAMINED, 'agents/project-manager.md'))
+test('project-manager.md carries BLOCKED: rework allowance spent', () => has(read('agents', 'project-manager.md'), ALLOWANCE_BLOCKED, 'agents/project-manager.md'))
 
 test('writer.md pins a model', () => {
   const fm = frontmatter(read('agents', 'writer.md'))
@@ -62,7 +62,7 @@ test('writer.md pins an effort of low or medium', () => {
 
 // ADR-0004 section 6, the pm's merge gate: the crew's newest qc file modified at or after
 // approvedAt (not "highest-numbered"); a PASS with no UNSCOPED line; its Head: value equals
-// `git rev-parse <crew branch>`, or its Patch: value equals the patch id of PATCH_COMMAND with the foreman's
+// `git rev-parse <crew branch>`, or its Patch: value equals the patch id of PATCH_COMMAND with the project manager's
 // checks re-run green after the merge of the target.
 test('run skill merge rule names the Head: and Patch: lines', () => {
   const run = read('skills', 'run', 'SKILL.md')
@@ -75,7 +75,7 @@ test('run skill merge rule reads the newest QC engineer file at or after approve
   assert.ok(!run.includes('highest-numbered'), 'skills/run/SKILL.md still says "highest-numbered"')
 })
 test('run skill merge rule refuses a PASS with an UNSCOPED line', () => has(read('skills', 'run', 'SKILL.md'), 'UNSCOPED', 'skills/run/SKILL.md'))
-test('run skill merge rule re-runs the foreman checks when only the patch id matches', () => {
+test('run skill merge rule re-runs the project manager checks when only the patch id matches', () => {
   const run = read('skills', 'run', 'SKILL.md')
   assert.ok(/Patch: [^\n]*(checks|re-run)/i.test(run) || /patch id[^\n]*(checks|re-run)/i.test(run), 'skills/run/SKILL.md does not tie a patch-id match to re-running the checks')
 })
@@ -129,7 +129,7 @@ const LITERALS: Array<[string, string[], string]> = [
   ['Decided by: default', ['agents', 'design-engineer.md'], 'agents/design-engineer.md'],
   ['from knowledge', ['agents', 'design-engineer.md'], 'agents/design-engineer.md'],
   ['checked: ', ['agents', 'design-engineer.md'], 'agents/design-engineer.md'],
-  ['## Learned', ['agents', 'foreman.md'], 'agents/foreman.md'],
+  ['## Learned', ['agents', 'project-manager.md'], 'agents/project-manager.md'],
   ['docs(arch): extend ', ['skills', 'run', 'SKILL.md'], 'skills/run/SKILL.md'],
 ]
 // red on 0.7.1: none of these literals is in the prompts yet.
@@ -143,7 +143,7 @@ const FETCH_RULE =
 const FETCH_RULE_FILES: Array<[string[], string]> = [
   [['agents', 'design-engineer.md'], 'agents/design-engineer.md'],
   [['agents', 'writer.md'], 'agents/writer.md'],
-  [['agents', 'foreman.md'], 'agents/foreman.md'],
+  [['agents', 'project-manager.md'], 'agents/project-manager.md'],
   [['agents', 'qc-engineer.md'], 'agents/qc-engineer.md'],
   [['agents', 'checking-engineer.md'], 'agents/checking-engineer.md'],
   [['agents', 'commissioning-engineer.md'], 'agents/commissioning-engineer.md'],
@@ -153,13 +153,13 @@ const FETCH_RULE_FILES: Array<[string[], string]> = [
 for (const [path, where] of FETCH_RULE_FILES) {
   test(`ADR-0005 ${where} carries the fetch rule word for word`, () => has(read(...path), FETCH_RULE, where))
 }
-// Loose anchor: some paragraph (lines with no blank line between) of foreman.md names the "member brief" and the
+// Loose anchor: some paragraph (lines with no blank line between) of project-manager.md names the "member brief" and the
 // "fetch rule" together (the phrase "fetch rule", or "rule" and "fetch" in one sentence), case-insensitive.
-// The `git fetch` text in foreman.md has no "member brief" next to it, so this is red on 0.7.1.
-test('ADR-0005 foreman.md tells the foreman every member brief carries the fetch rule', () => {
-  const paras = read('agents', 'foreman.md').split(/\n\s*\n/)
+// The `git fetch` text in project-manager.md has no "member brief" next to it, so this is red on 0.7.1.
+test('ADR-0005 project-manager.md tells the project manager every member brief carries the fetch rule', () => {
+  const paras = read('agents', 'project-manager.md').split(/\n\s*\n/)
   const ok = paras.some((p) => /member brief/i.test(p) && /fetch rule|rule[^.\n]*fetch|fetch[^.\n]*rule/i.test(p))
-  assert.ok(ok, 'agents/foreman.md has no paragraph that names the member brief and the fetch rule together')
+  assert.ok(ok, 'agents/project-manager.md has no paragraph that names the member brief and the fetch rule together')
 })
 
 // ADR-0005 section 3: web tools by role. Frontmatter block only.

@@ -9,8 +9,8 @@
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
     "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc"] },
-    "crew": { "description": "The crew's name: its foreman's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
-    "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the foreman; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
+    "crew": { "description": "The crew's name: its project manager's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
+    "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the project manager; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
   "allOf": [
     {
@@ -186,7 +186,7 @@
     {
       "if": { "properties": { "event": { "const": "allowance-spent" } } },
       "then": {
-        "description": "A crew's rework allowance is spent: its QC FAIL count passed reworkAllowance (truss ADR-0004 section 5). Written by the hooks on the foreman path and by factory finish for a Workflow crew (truss ADR-0009).",
+        "description": "A crew's rework allowance is spent: its QC FAIL count passed reworkAllowance (truss ADR-0004 section 5). Written by the hooks on the project manager path and by factory finish for a Workflow crew (truss ADR-0009).",
         "additionalProperties": false,
         "properties": { "v": true, "ts": true, "event": true, "crew": true, "agent": true }
       }
@@ -194,7 +194,7 @@
     {
       "if": { "properties": { "event": { "const": "spawn" } } },
       "then": {
-        "description": "A crew agent's or a foreman's Agent call that the engine let through.",
+        "description": "A crew agent's or a project manager's Agent call that the engine let through.",
         "additionalProperties": false,
         "required": ["agentId", "type", "model", "effort", "by"],
         "properties": {
@@ -295,12 +295,12 @@
     {
       "if": { "properties": { "event": { "const": "stall" } } },
       "then": {
-        "description": "One stall or idle-foreman wake, when its prompt goes out.",
+        "description": "One stall or idle project manager wake, when its prompt goes out.",
         "additionalProperties": false,
         "required": ["kind", "minutes"],
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true, "agent": true,
-          "kind": { "enum": ["agent", "idle-foreman"] },
+          "kind": { "enum": ["agent", "idle-project-manager"] },
           "minutes": { "description": "Whole minutes idle, rounded down: the number the wake's prompt shows.", "type": "integer", "minimum": 0 }
         }
       }
@@ -308,7 +308,7 @@
     {
       "if": { "properties": { "event": { "const": "tag" } } },
       "then": {
-        "description": "A foreman's tagged message to main, or a Workflow crew's stage.js stop as factory finish records it (truss ADR-0009): then agent repeats crew and run is the Workflow run id.",
+        "description": "A project manager's tagged message to main, or a Workflow crew's stage.js stop as factory finish records it (truss ADR-0009): then agent repeats crew and run is the Workflow run id.",
         "additionalProperties": false,
         "required": ["tag"],
         "properties": {

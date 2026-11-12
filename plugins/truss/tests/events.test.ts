@@ -4,7 +4,7 @@ import { EFFORT_REFUSAL, EVENT_BACKLOG_MAX, EVENT_WAIT_MS, HANDBACK_REFUSAL, ROL
 import { NOW, ROOT, handBack, quiet, startSession, stop, world, test } from './harness'
 
 // truss 0.4.0 event log (ADR-0003 s1) and the HH:MM stamp (s2), past what contract.test.ts pins: tag and report
-// lines, the idle-foreman stall, the roll at ROLL_BYTES, refused calls, and an Edit holding HH:MM on both sides.
+// lines, the idle-project-manager stall, the roll at ROLL_BYTES, refused calls, and an Edit holding HH:MM on both sides.
 
 type W = ReturnType<typeof world>
 
@@ -23,7 +23,7 @@ const setStatus = (w: W, id: string, s: W['agents'][number]['status']) => {
   w.agents = w.agents.map(a => (a.id === id ? { ...a, status: s } : a))
 }
 
-test('a foreman tagging its message to main appends one tag line, without the message text', async ($, on) => {
+test('a project manager tagging its message to main appends one tag line, without the message text', async ($, on) => {
   const w = world($, on)
   await startSession($)
   await w.send('L1', 'main', 'QUESTION: keep the v1 endpoint secret-text?\nOptions: keep or drop.')
@@ -53,17 +53,17 @@ test('a refused SendMessage, a refused Agent call and a refused hand-back append
   expect(w.files.has(EVENTS)).toBe(false)
 })
 
-test('a foreman started by the main session appends a spawn line with by main and the foreman as its own crew', async ($, on) => {
+test('a project manager started by the main session appends a spawn line with by main and the project manager as its own crew', async ($, on) => {
   const w = world($, on)
   await startSession($)
-  await w.agentCall(undefined, { subagent_type: 'truss:foreman', name: 'docs', model: 'opus' })
+  await w.agentCall(undefined, { subagent_type: 'truss:project-manager', name: 'docs', model: 'opus' })
   // outside every crew: no line
   await w.agentCall('X', { subagent_type: 'Explore', name: 'scout' })
   await settle()
   const got = events(w)
   expect(got.length).toBe(1)
   const e = got[0] ?? {}
-  expect([e.event, e.crew, e.agent, e.agentId, e.type, e.model, e.effort, e.by]).toEqual(['spawn', 'docs', 'docs', 'new1', 'truss:foreman', 'opus', null, 'main'])
+  expect([e.event, e.crew, e.agent, e.agentId, e.type, e.model, e.effort, e.by]).toEqual(['spawn', 'docs', 'docs', 'new1', 'truss:project-manager', 'opus', null, 'main'])
   expect(keys(e)).toEqual(['agent', 'agentId', 'by', 'crew', 'effort', 'event', 'model', 'ts', 'type', 'v'])
   expect(lines(w).some(l => l.includes('"p"') || l.includes('"d"'))).toBe(false)
 })
@@ -102,7 +102,7 @@ test('markerOf reads the first non-empty line, else null', () => {
   expect(markerOf('VERDICT: FAIL - why')).toBe('VERDICT: FAIL')
 })
 
-test('an idle foreman wake appends one stall line with kind idle-foreman and the minutes its prompt shows', async ($, on) => {
+test('an idle project manager wake appends one stall line with kind idle-project-manager and the minutes its prompt shows', async ($, on) => {
   const w = quiet(world($, on))
   await startSession($)
   await w.clock.advance(2 * MIN)
@@ -111,12 +111,12 @@ test('an idle foreman wake appends one stall line with kind idle-foreman and the
   await settle()
   await w.clock.advance(60 * MIN)
   await settle()
-  const idle = events(w).filter(e => e.kind === 'idle-foreman')
+  const idle = events(w).filter(e => e.kind === 'idle-project-manager')
   expect(idle.length).toBe(1)
   const e = idle[0] ?? {}
   expect([e.event, e.crew, e.agent]).toEqual(['stall', 'auth', 'auth'])
   expect(keys(e)).toEqual(['agent', 'crew', 'event', 'kind', 'minutes', 'ts', 'v'])
-  const prompt = w.prompts.find(p => p.startsWith('[truss] idle foreman: auth '))
+  const prompt = w.prompts.find(p => p.startsWith('[truss] idle project manager: auth '))
   expect(prompt).toBeDefined()
   expect(Number(/no report for (\d+)m/.exec(prompt ?? '')?.[1])).toBe(e.minutes as number)
 })
@@ -193,7 +193,7 @@ test('with the event log hung, a hand-back reaches its tool and a final Subagent
   expect(w.files.has(`${ROOT}/reports/billing/billing-builder.md`)).toBe(true)
 })
 
-test('with the event log hung, a foreman tagging main gets its message through within the bound', async ($, on) => {
+test('with the event log hung, a project manager tagging main gets its message through within the bound', async ($, on) => {
   const w = world($, on)
   await startSession($)
   hang(w)
@@ -201,7 +201,7 @@ test('with the event log hung, a foreman tagging main gets its message through w
   expect(w.ran.filter(c => c.tool === 'SendMessage').length).toBe(1)
 })
 
-test('with the event log hung, every stall wake and idle-foreman wake still goes out, the later ones too', async ($, on) => {
+test('with the event log hung, every stall wake and idle-project-manager wake still goes out, the later ones too', async ($, on) => {
   const w = world($, on)
   await startSession($)
   hang(w)
@@ -221,14 +221,14 @@ test('with the event log hung, every stall wake and idle-foreman wake still goes
   await w.clock.advance(17 * MIN)
   await settle()
   expect(billing()).toBe(2)
-  // and an idle foreman after both, once its members are done
+  // and an idle project manager after both, once its members are done
   quiet(w)
   setStatus(w, 'L1', 'idle')
   await w.clock.advance(17 * MIN)
   await settle()
   await w.clock.advance(17 * MIN)
   await settle()
-  expect(w.prompts.filter(p => p.startsWith('[truss] idle foreman: auth ')).length).toBe(1)
+  expect(w.prompts.filter(p => p.startsWith('[truss] idle project manager: auth ')).length).toBe(1)
 })
 
 // ---------- the event log stays serial: a slow write delays the appends after it, never clobbers them ----------

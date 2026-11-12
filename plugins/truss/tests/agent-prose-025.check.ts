@@ -108,8 +108,8 @@ test('agent prose 025: design-engineer turns an ADR that no longer holds into a 
   assert.doesNotMatch(p, /rewrite the ADR\b/i, 'the paragraph must not tell the engineer to rewrite the ADR itself')
 })
 
-test('agent prose 025: foreman turns a meaningful change outside owns into a scope-change PROPOSAL and drops drift', () => {
-  const text = agent('foreman')
+test('agent prose 025: project manager turns a meaningful change outside owns into a scope-change PROPOSAL and drops drift', () => {
+  const text = agent('project-manager')
   paragraphWith(text, [/\boutside\b[^.]*\bowns?\b|\bowned files\b/i, /\bmeaningful\b/i, /PROPOSAL/, /scope-change/], 'turns a meaningful change outside owns into a scope-change PROPOSAL')
   paragraphWith(text, [/\bdrift\b/i, /\b(dropped|drop|drops)\b/i, /(never|not) (build|built)|PROPOSAL|silently/i], 'says drift is dropped')
   // The scope-change rule and the drift rule belong to the same rule block (adjacent paragraphs or one section).
@@ -124,5 +124,5 @@ test('agent prose 025: foreman turns a meaningful change outside owns into a sco
     }
     return /scope-change/.test(b) && /\bdrift\b[^.]*\b(dropped|drop)/i.test(b)
   })
-  assert.ok(carrier, 'no one section of foreman.md holds both the scope-change rule and the drift-is-dropped rule')
+  assert.ok(carrier, 'no one section of project-manager.md holds both the scope-change rule and the drift-is-dropped rule')
 })

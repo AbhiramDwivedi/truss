@@ -85,7 +85,7 @@ describe('contract: allowancesSpent', () => {
 const bl = (ts: string, crew: unknown = 'auth', kw = {}) =>
   JSON.stringify({ v: 1, ts, event: 'allowance-spent', crew, agent: `${crew}-qc-3`, ...kw })
 const sp = (ts: string, crew = 'auth') =>
-  JSON.stringify({ v: 1, ts, event: 'spawn', crew, agent: crew, agentId: 'x', type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' })
+  JSON.stringify({ v: 1, ts, event: 'spawn', crew, agent: crew, agentId: 'x', type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' })
 
 describe('fixtures', () => {
   test('an allowance line in the second run belongs to the second run only', () => {
@@ -213,7 +213,7 @@ describe('edges', () => {
     put('events.jsonl', '')
     const run = retro(dir).runs[0]
     assert.equal(run.allowancesSpent, NR)
-    assert.deepEqual(run.stalls, { agent: 0, idleForeman: 0 })
+    assert.deepEqual(run.stalls, { agent: 0, idleProjectManager: 0 })
   })
 
   test('allowancesSpent comes right after qcs and the old keys remain', () => {

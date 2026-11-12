@@ -53,7 +53,7 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "fix": {
-          "description": "The known fix, as the PM or a foreman acts on it. Also the standing ruling factory.ts doctor puts in the bundle when the entry's probe fails.",
+          "description": "The known fix, as the PM or a project manager acts on it. Also the standing ruling factory.ts doctor puts in the bundle when the entry's probe fails.",
           "type": "string",
           "minLength": 1
         },

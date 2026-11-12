@@ -14,7 +14,7 @@ const RUN = read('../skills/run/SKILL.md')
 const DESIGN = read('../agents/design-engineer.md')
 const PLANNER = read('../agents/planning-engineer.md')
 const QC = read('../agents/qc-engineer.md')
-const FOREMAN = read('../agents/foreman.md')
+const PROJECT_MANAGER = read('../agents/project-manager.md')
 const CHECKING = read('../agents/checking-engineer.md')
 const INIT = read('../skills/init/SKILL.md')
 
@@ -72,9 +72,9 @@ test('QC engineer: a Standards block is held to, each ruling quotes the item, a 
   assert.ok(/^tools: Read, Grep, Glob, Bash$/m.test(QC), 'the QC engineer stays read-only')
 })
 
-test('foreman and checking engineer: delegate by persona, QC brief lists Standards, drafts are reviewed', () => {
-  assert.match(FOREMAN, /Give each member task a persona/)
-  assert.match(FOREMAN, /`Standards:` block/)
+test('project manager and checking engineer: delegate by persona, QC brief lists Standards, drafts are reviewed', () => {
+  assert.match(PROJECT_MANAGER, /Give each member task a persona/)
+  assert.match(PROJECT_MANAGER, /`Standards:` block/)
   assert.match(CHECKING, /## Persona draft review/)
   assert.match(CHECKING, /Not stack-specific/)
   assert.match(CHECKING, /A named path doesn't exist/)
