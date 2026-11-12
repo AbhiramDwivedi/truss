@@ -1,6 +1,6 @@
 # ADR-0021: truss depends on kit, worktrees and subagent-limits as plugins from the claude-ops marketplace
 
-Status: accepted, 2026-11-02. Written by the writer of crew `compose-design` for goal `compose-ops` (plan revision 2, approved auto with checker-41, and the PM and PO rulings of 14:40 to 15:10). Truss goes to 0.16.0. It amends [ADR-0002](0002-kit-manifest-and-config.md) Decision 1, [ADR-0009](0009-workflow-factory.md) Decision 4 and [ADR-0013](0013-plugin-layout.md), and adds the "Plugin dependencies" section of [architecture.md](../architecture.md).
+Status: accepted, 2026-11-02. Written by the writer of crew `compose-design` for goal `compose-ops` (plan revision 2, approved auto with checker-41, and the program manager (PM) and PO rulings of 14:40 to 15:10). Truss goes to 0.16.0. It amends [ADR-0002](0002-kit-manifest-and-config.md) Decision 1, [ADR-0009](0009-workflow-factory.md) Decision 4 and [ADR-0013](0013-plugin-layout.md), and adds the "Plugin dependencies" section of [architecture.md](../architecture.md).
 
 ## Context
 
@@ -66,7 +66,7 @@ Decided by: the plan, items 2 and 3 (approved auto, checker-41); PM ruling D (14
 
 ### 4. split-work is loaded unconditionally
 
-The foreman prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/foreman.md:40` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
+The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:40` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
 
 Decided by: the plan, item 4 (approved auto, checker-41).
 
@@ -142,11 +142,11 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 - **leftWorktrees.** `why` is one of `dirty`, `locked` or `unmerged`. Fixtures use a real-shaped id such as `wf_e804087f-eaa`; `wf_e804087f-eaa-1x`, `wf_e804087f-eaax-1` and another run's id stay.
 - **Roles.** `roles.build` sets builder and resolver, `roles.test` sets tester, and the mapping maps whenever configured; the config author owns the kit dependency; `--type` wins; no `roles` leaves `roles.json` as it is.
 
-### cp: init, run and foreman
+### cp: init, run and project manager
 
 - `skills/init/SKILL.md` runs `Skill({ skill: "kit:init" })` on a missing manifest when `kit:init` is listed, no longer holds `no kit manifest; truss init carries on without one (run /kit:init on its own to set kit up)`, keeps the kit-absent line, and proposes `build: kit:builder`, `test: kit:test-writer`, `nudgeAtK` and `stopAtK`.
 - `skills/run/SKILL.md` holds `--type builder=kit:builder --type tester=kit:test-writer` and `only when kit is loaded`.
-- `agents/foreman.md` holds `Load the \`subagent-limits:split-work\` skill before splitting work.` and no longer `If the \`subagent-limits:split-work\` skill is available`.
+- `agents/project-manager.md` holds `Load the \`subagent-limits:split-work\` skill before splitting work.` and no longer `If the \`subagent-limits:split-work\` skill is available`.
 
 ### cm: manifests
 

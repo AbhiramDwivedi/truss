@@ -55,7 +55,7 @@ Rows store `agentId`, not a crew. The crew is resolved each time the rows are re
 2. A Workflow agent's meta `description` (the Workflow label) whose `parseLabel` slug is a plan slug. Plan labels such as `truss-designer` parse to `truss`, which is no crew, so planning agents fall through.
 3. An `events.jsonl` `spawn` event with the same `agentId`.
 4. A meta `worktreePath` equal to the crew worktree `<repo>/.claude/worktrees/truss-<slug>`, compared after flattening to `/` and, on win32, lowercasing.
-5. An Agent-tool meta `description` whose parsed slug is a plan slug. For a direct crew the PM sets `description: <slug>-<role>`.
+5. An Agent-tool meta `description` whose parsed slug is a plan slug. For a direct crew the program manager (PM) sets `description: <slug>-<role>`.
 6. Otherwise `unattributed`.
 
 Contract-025 lists `main` fifth; the code tests it first. The result is the same, because only main-transcript rows have a null `agentId`.

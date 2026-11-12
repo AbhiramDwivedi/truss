@@ -1,6 +1,6 @@
 # ADR-0025: factory-fixes4: plugin bugs 36 to 44 in factory start, resume and the resource monitor
 
-Status: proposed, 2026-11-03. Written by the design crew `fixes4-design` (stage 0 of goal `factory-fixes4`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is `plan-factory-fixes4.md` (revision 2) in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
+Status: proposed, 2026-11-03. Written by the design crew `fixes4-design` (stage 0 of goal `factory-fixes4`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is `plan-factory-fixes4.md` (revision 2) in the truss dir. The client's words: "Don't just log a plugin bug, fix it."
 
 Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 45's up bar of three times `minFreeMB` replaces the four times that items 38 and 39 kept, and item 57 adds two down conditions (`memPressure` above 10, `swapUsedPct` above 70). The item 38 hold and the item 39 step-3 text stay.
 

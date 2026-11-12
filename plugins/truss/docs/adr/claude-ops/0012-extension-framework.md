@@ -1,7 +1,7 @@
 # ADR-0012: plugins extend each other through manifests the base owns
 
 Status: accepted, 2026-10-27
-Proposed on 2026-10-26 by foundry run 2's design crew, against `main` at `b665583`. Accepted on 2026-10-27 in the foreman's acceptance review at wave 0's merge, with that review's fixes, together with the per-module ADRs that apply it: [ADR-0013](0013-kit-manifest.md), [ADR-0014](0014-worktrees-declared-read-only-agents.md), [foundry ADR-0002](../../plugins/foundry/docs/adr/0002-kit-manifest-and-config.md) and [foundry ADR-0003](../../plugins/foundry/docs/adr/0003-event-log-and-retro.md).
+Proposed on 2026-10-26 by foundry run 2's design crew, against `main` at `b665583`. Accepted on 2026-10-27 in the program manager's acceptance review at wave 0's merge, with that review's fixes, together with the per-module ADRs that apply it: [ADR-0013](0013-kit-manifest.md), [ADR-0014](0014-worktrees-declared-read-only-agents.md), [foundry ADR-0002](../../plugins/foundry/docs/adr/0002-kit-manifest-and-config.md) and [foundry ADR-0003](../../plugins/foundry/docs/adr/0003-event-log-and-retro.md).
 
 ## Context
 

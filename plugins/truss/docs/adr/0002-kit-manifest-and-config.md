@@ -29,7 +29,7 @@ The rows don't overlap, because init decides on the manifest before it looks at 
 
 **Amendment, 2026-11-02 (truss 0.16.0, [ADR-0021](0021-plugin-dependencies.md)).** kit is no longer a soft dependency: plugin.json depends on kit `^0.3.1` from the claude-ops marketplace, which replaces "There is no plugin.json `dependencies` entry" above. The no-manifest row is reversed again: when the manifest is missing and `kit:init` is listed, init runs `kit:init` through the Skill tool, and kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`. The `kit is not installed` row stays word for word, because truss loaded alone by `--plugin-dir` still reaches it. The other rows don't change.
 
-The QC engineer and checking engineer are the declared types because both are `tools: Read, Grep, Glob, Bash`. The writer, commissioning engineer, foreman and design engineer edit files and stay isolated. Once kit records them, worktrees gives them no worktree (repo [ADR-0014](claude-ops/0014-worktrees-declared-read-only-agents.md)) and kit's stop gate skips them.
+The QC engineer and checking engineer are the declared types because both are `tools: Read, Grep, Glob, Bash`. The writer, commissioning engineer, project manager and design engineer edit files and stay isolated. Once kit records them, worktrees gives them no worktree (repo [ADR-0014](claude-ops/0014-worktrees-declared-read-only-agents.md)) and kit's stop gate skips them.
 
 ### 2. New truss.json keys
 
@@ -37,10 +37,10 @@ The contract is [`truss-config.schema.json`](../truss-config.schema.json), which
 
 | Key | Shape | Default | Read by |
 | --- | --- | --- | --- |
-| `roles` | job (`build`, `test`, `review`, `search`, `docs`, `deploy`) to a full agent type | inventory, as 0.3.0 | the PM's (project manager's) inventory and member choices (run skill, sections 3 and 4) |
-| `deploy` | `{target, command, production}` | none: commissioning engineer asks its foreman | the commissioning engineer member's brief; `production: true` always goes to the client first |
+| `roles` | job (`build`, `test`, `review`, `search`, `docs`, `deploy`) to a full agent type | inventory, as 0.3.0 | the PM's (program manager's) inventory and member choices (run skill, sections 3 and 4) |
+| `deploy` | `{target, command, production}` | none: commissioning engineer asks its project manager | the commissioning engineer member's brief; `production: true` always goes to the client first |
 | `writingSkill` | a skill name, such as `technical-writer` | none | the writer's brief: load it when listed, else say so |
-| `promptOverrides` | Truss role (`foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`) to `.claude/truss/prompts/<name>.md` | none | briefs (below) |
+| `promptOverrides` | Truss role (`project-manager`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`) to `.claude/truss/prompts/<name>.md` | none | briefs (below) |
 
 init proposes these from the manifest and the repo. `roles` comes from the manifest's agents, for example `build: kit:builder`, `test: kit:test-writer`, `review: kit:reviewer`, `search: kit:scout`; `deploy` from what the repo shows. init shows the client the proposed keys and writes only the approved ones. It writes only keys the schema declares and keeps every key and value already in the file, at any depth.
 
@@ -54,14 +54,14 @@ The paths init writes are the leaf paths it adds in this run, such as `/roles/bu
 
 Readers (the run skill, the PM's briefs) treat the file the same way, and report each problem once. Outside `deploy`, an undeclared key at any depth is ignored, and a rejected value unsets the smallest thing it can:
 
-- **`deploy` fails closed, as a whole.** Any error at or inside `/deploy`, whether a wrong type, a missing or bad field, or an undeclared key, unsets the whole `deploy` key, so the commissioning engineer member asks its foreman, as when `deploy` is absent. A reader never fills in or defaults one field of `deploy` on its own: a missing or non-boolean `production` is never read as `false`.
+- **`deploy` fails closed, as a whole.** Any error at or inside `/deploy`, whether a wrong type, a missing or bad field, or an undeclared key, unsets the whole `deploy` key, so the commissioning engineer member asks its project manager, as when `deploy` is absent. A reader never fills in or defaults one field of `deploy` on its own: a missing or non-boolean `production` is never read as `false`.
 - **`roles` unsets only the bad entry.** A job whose agent type fails the pattern is picked from the inventory, as if it weren't listed; the other jobs keep their mapping. When `roles` itself is rejected (not an object, or empty), every job is picked from the inventory.
 - **`promptOverrides` unsets only the bad entry.** A role whose prompt file fails the pattern has no override; the other roles keep theirs. When `promptOverrides` itself is rejected, no role has an override.
 - **Any other declared key** whose value fails the schema is treated as unset, so its default applies. `architecture` and `adr` have no default, so a rejected one counts as init missing.
 
 ### 3. Prompt overrides name files, and the briefs carry them
 
-`promptOverrides` stores paths, never prompt text (P21). The files are the client's, committed in the project. They add to a role's prompt and never replace it: no `skill.prompt` hook, no re-registered agent type (repo ADR-0012, rule 4). The PM writes a `Prompt overrides:` line in each goal file, naming the role and file for every configured role. Each foreman's brief names the foreman's file. The foreman puts the right line into each QC engineer, writer and commissioning engineer brief: "Read `<path>` before you start; it adds to your instructions. Your report format and the hooks' rules still hold." The PM does the same for the checking engineer and the design engineer. A missing file is reported and skipped.
+`promptOverrides` stores paths, never prompt text (P21). The files are the client's, committed in the project. They add to a role's prompt and never replace it: no `skill.prompt` hook, no re-registered agent type (repo ADR-0012, rule 4). The program manager (PM) writes a `Prompt overrides:` line in each goal file, naming the role and file for every configured role. Each project manager's brief names the project manager's file. The project manager puts the right line into each QC engineer, writer and commissioning engineer brief: "Read `<path>` before you start; it adds to your instructions. Your report format and the hooks' rules still hold." The PM does the same for the checking engineer and the design engineer. A missing file is reported and skipped.
 
 ### 4. Ports come from worktrees
 

@@ -7,11 +7,11 @@ Proposed on 2026-10-26 by foundry run 2's design crew, for foundry 0.4.0. It app
 
 ## Context
 
-`truss retro` should say how a run went: how many decisions, how the checking engineer's advice was followed, which models and efforts the crews used, how often agents stalled and foremen escalated, how many QC engineers failed. Today:
+`truss retro` should say how a run went: how many decisions, how the checking engineer's advice was followed, which models and efforts the crews used, how often agents stalled and project managers escalated, how many QC engineers failed. Today:
 
-- Stalls, idle-foreman wakes and foreman tags live only in the hooks' memory, toasts and prompts (module doc, "On disk"). Spawn models are in memory too (`agent.spawn`, `hooks/register.ts:1059`).
+- Stalls, idle-project-manager wakes and project manager tags live only in the hooks' memory, toasts and prompts (module doc, "On disk"). Spawn models are in memory too (`agent.spawn`, `hooks/register.ts:1059`).
 - `decisions.md` has no declared grammar. This repo's session log holds three runs in one file with no markers between them, in at least six line forms: `- 2026-10-26 | dec | reason | — | —`, free-form `- 2026-10-26 hooks: ...`, `- 14:10 | ... | checker: n/a`, the literal `- HH:MM | ...`, `- 2026-10-26T09:20:20Z king: ...`, and indented sub-bullets. The intel run's log uses `- HH:MM | ... | checker: none | followed`, with 18 `- 09:10 | checker-1 RECOMMEND answer: ... | followed` lines.
-- The stamp hook's `DECISION_TIME` (`/^- (\d{1,2}:\d{2}) \|/`, `register.ts:399`) doesn't match the literal `HH:MM` the run skill tells the PM (project manager) to write, so those lines kept no time.
+- The stamp hook's `DECISION_TIME` (`/^- (\d{1,2}:\d{2}) \|/`, `register.ts:399`) doesn't match the literal `HH:MM` the run skill tells the program manager (PM) to write, so those lines kept no time.
 
 The interface that can't take the work: the Truss dir holds no record of these events, and `decisions.md` is a file only the PM reads, with no shape code can rely on.
 
@@ -23,12 +23,12 @@ The hooks append one JSON line per event, under [`events.schema.json`](../events
 
 | `event` | Written when | Extra fields |
 | --- | --- | --- |
-| `spawn` | the `tool.call` handler on `Agent` (`register.ts:1109`), after `next(e)` returns without a deny, for a call from inside a crew or one that starts a foreman: the same calls that get the report note | `agent` is the new agent's spawn name, as the report note names it: the label `agent.spawn` recorded, else the call's `name`, else the new agent's id, else `unknown`. `agentId` (or null), `type` (`subagent_type`, else `general-purpose`), `model` and `effort` as the call asked (or null), `by` (`main` when the PM starts a foreman, else the calling agent's spawn name) |
-| `stall` | each stall wake and idle-foreman wake, as its prompt goes out | `agent` is the idle agent's spawn name. `kind` (`agent` or `idle-foreman`), `minutes`: whole minutes idle, rounded down, the same number the wake's prompt shows (`Math.floor`, as `register.ts:903` and `:858` do) |
-| `tag` | a foreman's message to `main` that sets a tag | `tag` (`QUESTION`, `BLOCKED` or `PROPOSAL`) |
+| `spawn` | the `tool.call` handler on `Agent` (`register.ts:1109`), after `next(e)` returns without a deny, for a call from inside a crew or one that starts a project manager: the same calls that get the report note | `agent` is the new agent's spawn name, as the report note names it: the label `agent.spawn` recorded, else the call's `name`, else the new agent's id, else `unknown`. `agentId` (or null), `type` (`subagent_type`, else `general-purpose`), `model` and `effort` as the call asked (or null), `by` (`main` when the PM starts a project manager, else the calling agent's spawn name) |
+| `stall` | each stall wake and idle-project-manager wake, as its prompt goes out | `agent` is the idle agent's spawn name. `kind` (`agent` or `idle-project-manager`), `minutes`: whole minutes idle, rounded down, the same number the wake's prompt shows (`Math.floor`, as `register.ts:903` and `:858` do) |
+| `tag` | a project manager's message to `main` that sets a tag | `tag` (`QUESTION`, `BLOCKED` or `PROPOSAL`) |
 | `report` | a final report written to a report file (not an `.interim.md`) | `marker`: `VERDICT: PASS`, `VERDICT: FAIL`, `STRESSTEST`, `CHECKPOINT`, `BLOCKED`, `QUESTION`, `PROPOSAL`, from the start of its first non-empty line, or null |
 
-No line holds message, prompt or report text (P8). Appends go through one in-module promise chain, as `appendMessage` does (`register.ts:718`), because `$.fs` has no append. At 3 MiB (`ROLL_BYTES`) the next append first copies the log to `events.<n>.jsonl` at the first free `n`. A failed append is logged as `truss: event log failed, letting the call through: <error>` and changes nothing else: the call, its note and its refusal behave as without the log (P5). The exact `crew` for a spawn is the caller's crew, or the foreman's own name when the call starts a foreman.
+No line holds message, prompt or report text (P8). Appends go through one in-module promise chain, as `appendMessage` does (`register.ts:718`), because `$.fs` has no append. At 3 MiB (`ROLL_BYTES`) the next append first copies the log to `events.<n>.jsonl` at the first free `n`. A failed append is logged as `truss: event log failed, letting the call through: <error>` and changes nothing else: the call, its note and its refusal behave as without the log (P5). The exact `crew` for a spawn is the caller's crew, or the project manager's own name when the call starts a project manager.
 
 ### 2. The `decisions.md` grammar, from 0.4.0
 
@@ -82,7 +82,7 @@ No line holds message, prompt or report text (P8). Appends go through one in-mod
     "recommendations": {"total", "answer", "defer", "pass"},
     "messages": <n>,
     "spawns": {"total", "byModelEffort": {"<model>/<effort>": <n>}} | "not recorded",
-    "stalls": {"agent", "idleForeman"} | "not recorded",
+    "stalls": {"agent", "idleProjectManager"} | "not recorded",
     "escalations": {"QUESTION", "BLOCKED", "PROPOSAL"} | "not recorded",
     "qcs": {"pass", "fail"} | "not recorded"
   }],

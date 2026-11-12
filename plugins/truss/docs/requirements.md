@@ -36,7 +36,7 @@ Status: met
 Kind: functional
 Added: 2026-10-30T21:57:33Z | Build an optional local web UI in ui/ that drives Truss runs through the Claude Agent SDK (brief questions and approvals via canUseTool) and shows live crew status from the Truss state files, with no changes to the plugin
 Source: client
-Example: Given a run, when the PM appends a line to decisions.md or a new file appears under the ADR directory named in .claude/truss.json, then it shows in the decisions and ADRs panel within 2 s.
+Example: Given a run, when the program manager (PM) appends a line to decisions.md or a new file appears under the ADR directory named in .claude/truss.json, then it shows in the decisions and ADRs panel within 2 s.
 
 ## R-6: A design panel shows the technical design and what the run built
 Status: met

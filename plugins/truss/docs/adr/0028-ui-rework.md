@@ -1,6 +1,6 @@
 # ADR-0028: the UI rework to the client's design reference
 
-Status: proposed, 2026-11-04. Written by the design crew `rework-design` (stage 0 of the UI rework goal, plan approved by the client at 2026-11-04T15:31:12.385Z). It becomes accepted when the PM merges this crew. The crews `rework-server`, `rework-network`, `rework-chat`, `rework-docs` and `rework-page` build from it; it changes no code itself.
+Status: proposed, 2026-11-04. Written by the design crew `rework-design` (stage 0 of the UI rework goal, plan approved by the client at 2026-11-04T15:31:12.385Z). It becomes accepted when the program manager (PM) merges this crew. The crews `rework-server`, `rework-network`, `rework-chat`, `rework-docs` and `rework-page` build from it; it changes no code itself.
 
 Decided by: the client, who asked for R-36 to R-47 in the brief and accepted, at 10:30, that this goal breaks frontend rule 14 "Mermaid isn't added" and the P19 dependency list; the approved plan's "What rework-design decides" (`plan.md`, points 1 to 12); the UX engineer's direction for this crew (report `rework-design-ux`), which keeps the D2 tokens; and this crew for what those leave free.
 
@@ -78,8 +78,8 @@ task?: string | null     // see below
 
 - `agentId`: ui-state keeps it from the spawn line (`reduce.ts:192-197`).
 - `task`: ui-session keeps the latest `description` per `task_id` from `task_started` and `task_progress`, at most 500 entries. ui-server sets `Member.task` when it builds the snapshot, where `task_id === agentId`. It is null when nothing matches. TODO: no recording shows whether the tasks of members started inside a Workflow crew reach the PM's stream; rework-server's `R-42:` case must record one, or this falls back.
-- Fallback, in the client: the crew's `goal` for the foreman; otherwise the member's latest activity (its `detail`, for example the report marker); otherwise "No activity yet".
-- `purpose`: the first sentence of the `description:` line in `<pluginPath>/agents/<name>.md`. The name is the member's `type` with `truss:` stripped. Type `workflow-crew`, and the crew's foreman, map to `foreman`. Unknown types, and `general-purpose` (1,566 of the real dir's spawns), get null, and the card shows the type only. ui-state reads the files once at start; it writes nothing (R-9).
+- Fallback, in the client: the crew's `goal` for the project manager; otherwise the member's latest activity (its `detail`, for example the report marker); otherwise "No activity yet".
+- `purpose`: the first sentence of the `description:` line in `<pluginPath>/agents/<name>.md`. The name is the member's `type` with `truss:` stripped. Type `workflow-crew`, and the crew's project manager, map to `project-manager`. Unknown types, and `general-purpose` (1,566 of the real dir's spawns), get null, and the card shows the type only. ui-state reads the files once at start; it writes nothing (R-9).
 - Progress: three steps, Spawned, Working and Reported. Spawned is a spawn line with no later activity. Reported is `state === 'reported'`. Everything else is Working. There is no percentage.
 
 Amended by [ADR-0029](0029-real-data.md) sections 2 and 3: the transcript task for Workflow members, and the client task chain.
@@ -108,7 +108,7 @@ One section, h2 "Run metrics", `#run-metrics`, at the end of main. Every value i
 - cost: `session.usage.costUsd`;
 - tokens per model: a table of `usage.models` (in, out, cache read, cache write);
 - run time: from the first transcript entry's `ts` to now, or to the last entry's `ts` once the run is finished;
-- agents started: the count of foremen and members across `run.crews`;
+- agents started: the count of project managers and members across `run.crews`;
 - crews done: merged crews "n of m".
 
 There is no limit, budget, ceiling or "of $X" anywhere. The UI sets no spending limit (`live.check.ts:22` keeps none).
@@ -123,7 +123,7 @@ Amended by [ADR-0029](0029-real-data.md) section 4: run time with no transcript,
 | --- | --- | --- | --- |
 | `active` | Active | `running`, none of the below | any other state |
 | `done` | Done | `merged`, or `dropped` (the card adds "Dropped") | `reported` |
-| `waiting` | Waiting on you | `running` and the foreman's latest `detail` is `QUESTION`, `BLOCKED` or `PROPOSAL` | latest `detail` is one of those |
+| `waiting` | Waiting on you | `running` and the project manager's latest `detail` is `QUESTION`, `BLOCKED` or `PROPOSAL` | latest `detail` is one of those |
 | `stuck` | Stuck | `stuck` is non-null | `stalled` or `allowance-spent` |
 | `planned` | Planned | `planned`, or null with no members | — |
 

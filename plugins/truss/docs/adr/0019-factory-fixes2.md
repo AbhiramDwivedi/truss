@@ -1,6 +1,6 @@
 # ADR-0019: factory-fixes2: the plugin bugs this run logged, fixed and pinned
 
-Status: proposed, 2026-11-02. Written by the design crew `fixes2-design` (stage 0 of goal `factory-fixes2`). It becomes accepted when the PM merges this crew. The goal's approval is `auto` (plan-check ok, unproved none), and its plan is revision 2 (`plan-factory-fixes2.md` in the truss dir), which applied 8 PO rulings. The client's words: "Don't just log a plugin bug, fix it."
+Status: proposed, 2026-11-02. Written by the design crew `fixes2-design` (stage 0 of goal `factory-fixes2`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto` (plan-check ok, unproved none), and its plan is revision 2 (`plan-factory-fixes2.md` in the truss dir), which applied 8 PO rulings. The client's words: "Don't just log a plugin bug, fix it."
 
 Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 48 adds to item 12's answer routing. An answer whose `at` names a done task re-runs that task with the answer, and a tester task commits with `Truss-Role: test-writer`.
 

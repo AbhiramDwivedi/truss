@@ -3,22 +3,22 @@
 Status: accepted, 2026-10-28
 Accepted on the client's approval of the foundry run-3 plan (`plan.json` `approvedAt` 2026-10-28T00:31:42Z). Proposed by run 3's design crew (stage 0), for foundry 0.5.0. The effort-ladder principle itself (who runs at which effort) is recorded in the repo's [ADR-0011](claude-ops/0011-agents-pin-their-model.md) amendment; this ADR records what Truss's hooks, prompts and retro do about it.
 
-Amended 2026-10-28 by repo [ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), item 11, accepted with the run-4 plan (`approvedAt` 2026-10-28T15:11:50Z), for foundry 0.6.0: foremen merge the target into the crew branch instead of rebasing, so `<base>` (section 6) is the target head last merged in, and the patch-id carry applies across that merge. The passages that said "rebase" now say so; the context below still describes 0.4.3 as it was.
+Amended 2026-10-28 by repo [ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), item 11, accepted with the run-4 plan (`approvedAt` 2026-10-28T15:11:50Z), for foundry 0.6.0: project managers merge the target into the crew branch instead of rebasing, so `<base>` (section 6) is the target head last merged in, and the patch-id carry applies across that merge. The passages that said "rebase" now say so; the context below still describes 0.4.3 as it was.
 
 ## Context
 
 Run 3's goal items 2, 3 and 7 (`plan.json` `goal`) need four things foundry 0.4.3 can't express:
 
-- **Scope.** A foreman's report says what was checked, but nothing says what wasn't. A claim like "no other caller" or "every call site updated" passes the QC engineer with no record of where anyone looked.
-- **A bounded repair loop.** After a QC engineer FAIL the foreman starts `<crew>-qc-2`, `-3` and so on with no limit (`agents/foreman.md:101-105`). Nothing stops a crew from looping, and nothing records that it ran out of tries.
-- **The head a PASS belongs to.** The QC engineer states the SHA it ruled on somewhere in free text under `## Proof checked` (`agents/qc-engineer.md:72`, `agents/foreman.md:103`). No hook can read it. The PM (project manager) compares it by eye (`skills/run/SKILL.md:281`, `:288`). After a rebase the head always moves, so every rebase needs a fresh QC engineer (`agents/foreman.md:155`), even when the crew's change is byte-for-byte the same.
-- **Calls with no model or effort from the main session.** `agentVerdict` and `effortVerdict` (`hooks/register.ts:232`, `:243`) return early outside a crew, so the design engineer, checking engineer, foreman and integration QC engineer the PM starts get their frontmatter's effort unless the call sets one.
+- **Scope.** A project manager's report says what was checked, but nothing says what wasn't. A claim like "no other caller" or "every call site updated" passes the QC engineer with no record of where anyone looked.
+- **A bounded repair loop.** After a QC engineer FAIL the project manager starts `<crew>-qc-2`, `-3` and so on with no limit (`agents/project-manager.md:101-105`). Nothing stops a crew from looping, and nothing records that it ran out of tries.
+- **The head a PASS belongs to.** The QC engineer states the SHA it ruled on somewhere in free text under `## Proof checked` (`agents/qc-engineer.md:72`, `agents/project-manager.md:103`). No hook can read it. The program manager (PM) (program manager) compares it by eye (`skills/run/SKILL.md:281`, `:288`). After a rebase the head always moves, so every rebase needs a fresh QC engineer (`agents/project-manager.md:155`), even when the crew's change is byte-for-byte the same.
+- **Calls with no model or effort from the main session.** `agentVerdict` and `effortVerdict` (`hooks/register.ts:232`, `:243`) return early outside a crew, so the design engineer, checking engineer, project manager and integration QC engineer the PM starts get their frontmatter's effort unless the call sets one.
 
 The interfaces that can't take the work:
 
 - `plan.schema.json` is closed (`additionalProperties: false`) and pins `version` to `const: 1` (`:18-20`), so a plan can't carry a rework allowance.
 - The QC engineer's report has no fixed line a hook can parse for the head or the patch, which breaks repo P23 for any code that would read them.
-- The foreman's report format (`agents/foreman.md:158-185`) and the foreman stop gate (`foremanStopPasses`, `register.ts:373`) know only the six sections.
+- The project manager's report format (`agents/project-manager.md:158-185`) and the project manager stop gate (`projectManagerStopPasses`, `register.ts:373`) know only the six sections.
 - `.claude/truss.json` has no key for the allowance (`truss-config.schema.json`).
 - retro's top-level and per-run keys are a pinned contract (`tests/test_contract_retro.py:23-24`), and it has no count of spent allowances.
 
@@ -47,16 +47,16 @@ There's also a fact about run scope. In this repo's session dir `40816bb1`, `rep
 
 ### 3. The literals
 
-Each literal below is written once, here. The prompts (`agents/qc-engineer.md`, `agents/foreman.md`, `skills/run/SKILL.md`) and the hooks use exactly these strings. `tests/gates.check.ts` asserts the prompts carry them, and `tests/contract-gates.test.ts` asserts the hooks' constants equal them. The constant name is the export from `hooks/register.ts`.
+Each literal below is written once, here. The prompts (`agents/qc-engineer.md`, `agents/project-manager.md`, `skills/run/SKILL.md`) and the hooks use exactly these strings. `tests/gates.check.ts` asserts the prompts carry them, and `tests/contract-gates.test.ts` asserts the hooks' constants equal them. The constant name is the export from `hooks/register.ts`.
 
 | Constant | Literal | Who writes it, and where |
 | --- | --- | --- |
 | `HEAD_LINE` | `Head: ` | The QC engineer, under `## Proof checked`: one line, the literal and then the 40 lowercase hex digits of `git rev-parse <crew branch>` at the head it ruled on. |
 | `PATCH_LINE` | `Patch: ` | The QC engineer, under `## Proof checked`: one line, the literal and then the first field (40 lowercase hex digits) that `PATCH_COMMAND` prints. |
-| `EXAMINED` | `## Examined` | The foreman, as a heading of its final report: what the crew checked, each item with its scope. |
-| `NOT_EXAMINED` | `## Not examined` | The foreman, as a heading of its final report: what nobody checked, or `None.` |
+| `EXAMINED` | `## Examined` | The project manager, as a heading of its final report: what the crew checked, each item with its scope. |
+| `NOT_EXAMINED` | `## Not examined` | The project manager, as a heading of its final report: what nobody checked, or `None.` |
 | `UNSCOPED` | `- UNSCOPED: ` | The QC engineer, as a line under `## Findings`: an absence or completeness claim that states no scope. |
-| `ALLOWANCE_BLOCKED` | `BLOCKED: rework allowance spent` | The foreman: the start of its message to `main` (and of its report) when the crew's allowance is spent. It starts with `BLOCKED:`, so the 0.4.0 tag rules apply to it unchanged. |
+| `ALLOWANCE_BLOCKED` | `BLOCKED: rework allowance spent` | The project manager: the start of its message to `main` (and of its report) when the crew's allowance is spent. It starts with `BLOCKED:`, so the 0.4.0 tag rules apply to it unchanged. |
 | `ALLOWANCE_SPENT_EVENT` | `allowance-spent` | The hooks: the `event` value of the `events.jsonl` line that records a spent allowance (section 5). retro counts these lines. |
 
 `PATCH_COMMAND`, the one command both the QC engineer and the hooks use to compute a patch id:
@@ -65,19 +65,19 @@ Each literal below is written once, here. The prompts (`agents/qc-engineer.md`, 
 git diff --no-color --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ <base>...<head> | git patch-id --stable
 ```
 
-`<base>` is the commit the crew's change is measured from: the target head last merged in: the base commit in the foreman's brief until the foreman first runs `git merge <target>` into the crew branch, then the target head of its latest such merge (amended 2026-10-28 by repo [ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), item 11: foremen merge the target in and never rebase). Because the crew branch then contains `<base>`, `<base>...<head>` is the crew's net change on top of the target. The flags pin the diff text against the user's git config (colour, external diff tools, rename detection, `diff.noprefix`), so the QC engineer's shell and the hook's argv produce the same id. Each line is matched in full: the literal at column 0, then exactly 40 characters of `[0-9a-f]`, then nothing but spaces or tabs. A QC engineer that writes uppercase hex, a short SHA or a 64-digit SHA-256 id gets no match (section 6 says what follows).
+`<base>` is the commit the crew's change is measured from: the target head last merged in: the base commit in the project manager's brief until the project manager first runs `git merge <target>` into the crew branch, then the target head of its latest such merge (amended 2026-10-28 by repo [ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), item 11: project managers merge the target in and never rebase). Because the crew branch then contains `<base>`, `<base>...<head>` is the crew's net change on top of the target. The flags pin the diff text against the user's git config (colour, external diff tools, rename detection, `diff.noprefix`), so the QC engineer's shell and the hook's argv produce the same id. Each line is matched in full: the literal at column 0, then exactly 40 characters of `[0-9a-f]`, then nothing but spaces or tabs. A QC engineer that writes uppercase hex, a short SHA or a 64-digit SHA-256 id gets no match (section 6 says what follows).
 
 ### 4. Scope-bounded claims
 
-- **Foreman.** On a v2 or later plan, the foreman's final report has two more sections, `EXAMINED` and `NOT_EXAMINED`, after `## Checks run` and before `## Open questions`. Under the first, each line is `- <what>: <scope>`, where the scope names the paths or globs and the command or search that covered it (for example `` - callers of planVerdict: `grep -rn planVerdict plugins/` ``). Under the second goes what no one checked, or `None.`.
-- **QC engineer.** Every claim of absence or completeness ("no other caller", "all call sites updated", "nothing else reads it") in the foreman's report or a member's proof must state its scope, inside `EXAMINED` or beside the claim. One that doesn't gets a finding line made of `UNSCOPED`, then the claim and where it appears, and the verdict is FAIL. A PASS that carries such a finding is inconsistent, and the head guard (section 6) treats it as no PASS.
-- **Hook: yes, the foreman stop gate checks both headings.** On a v2 or later plan, a foreman's untagged stop text that would pass by its `## Proof` section is sent back unless it has both headings. A heading counts only at the start of a line, matched in full: the literal, then nothing but spaces or tabs. The gate checks that the headings are present, not their content or order. Tagged stops (`CHECKPOINT:`, `BLOCKED:`, `QUESTION:`, `PROPOSAL:`) are exempt, as before.
+- **Project manager.** On a v2 or later plan, the project manager's final report has two more sections, `EXAMINED` and `NOT_EXAMINED`, after `## Checks run` and before `## Open questions`. Under the first, each line is `- <what>: <scope>`, where the scope names the paths or globs and the command or search that covered it (for example `` - callers of planVerdict: `grep -rn planVerdict plugins/` ``). Under the second goes what no one checked, or `None.`.
+- **QC engineer.** Every claim of absence or completeness ("no other caller", "all call sites updated", "nothing else reads it") in the project manager's report or a member's proof must state its scope, inside `EXAMINED` or beside the claim. One that doesn't gets a finding line made of `UNSCOPED`, then the claim and where it appears, and the verdict is FAIL. A PASS that carries such a finding is inconsistent, and the head guard (section 6) treats it as no PASS.
+- **Hook: yes, the project manager stop gate checks both headings.** On a v2 or later plan, a project manager's untagged stop text that would pass by its `## Proof` section is sent back unless it has both headings. A heading counts only at the start of a line, matched in full: the literal, then nothing but spaces or tabs. The gate checks that the headings are present, not their content or order. Tagged stops (`CHECKPOINT:`, `BLOCKED:`, `QUESTION:`, `PROPOSAL:`) are exempt, as before.
 
 ### 5. The bounded repair loop
 
 **What the allowance counts.** `reworkAllowance` is the number of fresh QC engineers a crew may start after QC engineer FAILs. A crew's FAIL count is the number of its **this-run QC files** whose first non-empty line starts `VERDICT: FAIL` (`qcRuling`, which strips a BOM and `\r` and then applies `markerOf`). A this-run QC file is one that meets all of these:
 
-- it sits in `reports/<crew>/`, where `<crew>` is the hooks' crew name (the foreman's name, so a successor `auth-2` has its own folder and its own count);
+- it sits in `reports/<crew>/`, where `<crew>` is the hooks' crew name (the project manager's name, so a successor `auth-2` has its own folder and its own count);
 - it is a QC file by `isQcFile` and isn't an interim file;
 - its modification time is at or after the plan's `approvedAt` (`runStart`).
 
@@ -96,17 +96,17 @@ The allowance is **spent** when the FAIL count is greater than `reworkAllowance`
    ```
 
    The line carries those five keys and no others. `v` stays 1, because ADR-0003 bumps `v` only for a renamed or retyped field, and this is a new event kind. `events.schema.json` adds the value to `event`'s enum, with an `if`/`then` branch whose `additionalProperties: false` allows only the five keys. A crew may get the line more than once: a later FAIL past the allowance, or the same report saved twice, would add another. Readers count distinct crews, not lines. A failed append behaves as in ADR-0003, section 1.
-2. **The foreman's message to main.** Once the QC engineer's FAIL report leaves the allowance spent, the foreman starts no more QC engineers. It sends `main` a message that starts with `ALLOWANCE_BLOCKED`, followed by `: <crew>, <n> qc FAILs, reworkAllowance <b>`, then the last QC engineer's findings, and stops with the same text. The PM takes it to the client or re-plans (a successor foreman starts a fresh count, and the PM logs that decision). It never raises the QC engineer's effort to get past the limit.
+2. **The project manager's message to main.** Once the QC engineer's FAIL report leaves the allowance spent, the project manager starts no more QC engineers. It sends `main` a message that starts with `ALLOWANCE_BLOCKED`, followed by `: <crew>, <n> qc FAILs, reworkAllowance <b>`, then the last QC engineer's findings, and stops with the same text. The PM takes it to the client or re-plans (a successor project manager starts a fresh count, and the PM logs that decision). It never raises the QC engineer's effort to get past the limit.
 
 retro counts only the events line (section 7), because events lines hold no report text (repo P8).
 
 ### 6. The head guard and a patch-bound PASS
 
-**The QC engineer** writes `HEAD_LINE` and `PATCH_LINE` under `## Proof checked`, first in that section, on every ruling, in every merge mode, the integration QC engineer's included. `<base>` for `PATCH_COMMAND` comes from the foreman's brief. With an empty diff, `git patch-id` prints nothing, so there is no patch line, and the guard treats the ruling as having no head lines.
+**The QC engineer** writes `HEAD_LINE` and `PATCH_LINE` under `## Proof checked`, first in that section, on every ruling, in every merge mode, the integration QC engineer's included. `<base>` for `PATCH_COMMAND` comes from the project manager's brief. With an empty diff, `git patch-id` prints nothing, so there is no patch line, and the guard treats the ruling as having no head lines.
 
-**The foreman's Branch line.** The first non-empty line under `## Branch` keeps the 0.4.3 form, `<crew branch> at <commit>, based on <base commit>.`. Each of the three may be wrapped in single backticks. `<base commit>` is the target head last merged in: the brief's base until the foreman first merges the target into the crew branch, then the target head of its latest `git merge <target>` (repo ADR-0015, item 11; it was "the target head the branch was rebased onto" before foremen stopped rebasing). `branchOf` reads the branch and the base from it. Neither may start with `-`, so neither can reach git as an option.
+**The project manager's Branch line.** The first non-empty line under `## Branch` keeps the 0.4.3 form, `<crew branch> at <commit>, based on <base commit>.`. Each of the three may be wrapped in single backticks. `<base commit>` is the target head last merged in: the brief's base until the project manager first merges the target into the crew branch, then the target head of its latest `git merge <target>` (repo ADR-0015, item 11; it was "the target head the branch was rebased onto" before project managers stopped rebasing). `branchOf` reads the branch and the base from it. Neither may start with `-`, so neither can reach git as an option.
 
-**The guard**, in the foreman stop gate, applies on a v2 or later plan to an untagged stop text that would pass by its `## Proof` section and has both of section 4's headings. It reads the crew's **latest this-run QC file** (`latestQc`: the newest modification time at or after `runStart`, ties going to the higher `-qc-<k>`) and parses it with `qcRuling`. When `branchOf` reads the foreman's Branch line, the hook runs, with `cwd` the session's working directory and `timeoutMs: 15_000` on each call:
+**The guard**, in the project manager stop gate, applies on a v2 or later plan to an untagged stop text that would pass by its `## Proof` section and has both of section 4's headings. It reads the crew's **latest this-run QC file** (`latestQc`: the newest modification time at or after `runStart`, ties going to the higher `-qc-<k>`) and parses it with `qcRuling`. When `branchOf` reads the project manager's Branch line, the hook runs, with `cwd` the session's working directory and `timeoutMs: 15_000` on each call:
 
 - `git rev-parse --verify --quiet <branch>^{commit}` to get the head;
 - only when that head differs from the QC engineer's `HEAD_LINE` value, the two halves of `PATCH_COMMAND` with `<head>` set to `<branch>`: `git diff …` with its stdout passed as `stdin` to `git patch-id --stable`, with `patchIdOf` taking the id.
@@ -123,11 +123,11 @@ A non-zero exit, a timeout or an unparsable output gives `undefined`. The verdic
 | head moved, patch id equals the judged patch | goes through: the PASS survives the merge of the target |
 | head moved, patch id differs | sent back with `headMovedReason(judged head, head)` |
 
-These send-backs count in the same streak as `FOREMAN_STOP_REASON`, so after `FOREMAN_STOP_BLOCKS` (2) in a row the next stop goes through, as in 0.4.3. An unanswered tag doesn't excuse them: the text is a final report, not a question. If reading the QC engineer folder throws, or anything else in the step does, the step is skipped and the stop goes through (`safely`).
+These send-backs count in the same streak as `PROJECT_MANAGER_STOP_REASON`, so after `PROJECT_MANAGER_STOP_BLOCKS` (2) in a row the next stop goes through, as in 0.4.3. An unanswered tag doesn't excuse them: the text is a final report, not a question. If reading the QC engineer folder throws, or anything else in the step does, the step is skipped and the stop goes through (`safely`).
 
-**A patch-bound PASS across a merge of the target.** (Amended 2026-10-28 by repo ADR-0015, item 11: foremen make a branch ready with `git merge <target>` into the crew branch, a real merge, never a rebase or cherry-pick, and the PM still runs `git merge --ff-only`.) The patch-id carry stays. The QC engineer's `PATCH_LINE` is computed with `<base>` from the Branch line it was given; after the foreman merges the target in, the Branch line's `<base>` is the new target head, and `PATCH_COMMAND` measures the crew's net change against it. A merge that touched none of the crew's hunks gives the same id. A PASS stands for the merged head when `PATCH_COMMAND` gives the same id the QC engineer wrote, and the checks from the brief pass again on the merged head, listed under `## Checks run`. Then no fresh QC engineer is needed. Otherwise the merged head needs a fresh QC engineer, as in 0.4.3. The hook can see the patch id but can't run checks, so the foreman (section 12 of its prompt) and the PM's merge gate both require the re-run. **The PM's merge gate** (`skills/run/SKILL.md`, merge section) uses the same file and the same rule. The file is the crew's newest QC file modified at or after `approvedAt`, which replaces "highest-numbered" and closes ADR-0003's open item for the gate. The ruling must be a PASS with no `UNSCOPED` line. Its `HEAD_LINE` value must equal `git rev-parse <crew branch>`, or its `PATCH_LINE` value must equal `PATCH_COMMAND`'s id with the foreman's checks re-run green after the merge of the target.
+**A patch-bound PASS across a merge of the target.** (Amended 2026-10-28 by repo ADR-0015, item 11: project managers make a branch ready with `git merge <target>` into the crew branch, a real merge, never a rebase or cherry-pick, and the PM still runs `git merge --ff-only`.) The patch-id carry stays. The QC engineer's `PATCH_LINE` is computed with `<base>` from the Branch line it was given; after the project manager merges the target in, the Branch line's `<base>` is the new target head, and `PATCH_COMMAND` measures the crew's net change against it. A merge that touched none of the crew's hunks gives the same id. A PASS stands for the merged head when `PATCH_COMMAND` gives the same id the QC engineer wrote, and the checks from the brief pass again on the merged head, listed under `## Checks run`. Then no fresh QC engineer is needed. Otherwise the merged head needs a fresh QC engineer, as in 0.4.3. The hook can see the patch id but can't run checks, so the project manager (section 12 of its prompt) and the PM's merge gate both require the re-run. **The PM's merge gate** (`skills/run/SKILL.md`, merge section) uses the same file and the same rule. The file is the crew's newest QC file modified at or after `approvedAt`, which replaces "highest-numbered" and closes ADR-0003's open item for the gate. The ruling must be a PASS with no `UNSCOPED` line. Its `HEAD_LINE` value must equal `git rev-parse <crew branch>`, or its `PATCH_LINE` value must equal `PATCH_COMMAND`'s id with the project manager's checks re-run green after the merge of the target.
 
-**The hand-back path.** A foreman's hand-back is saved as its report only if it passes `foremanStopPasses` and `examinedVerdict`. The head guard runs only in the stop gate, since it calls git. A hand-back the guard then sends back stays in the report file until the foreman's next stop overwrites it.
+**The hand-back path.** A project manager's hand-back is saved as its report only if it passes `projectManagerStopPasses` and `examinedVerdict`. The head guard runs only in the stop gate, since it calls git. A hand-back the guard then sends back stays in the report file until the project manager's next stop overwrites it.
 
 ### 7. The hooks' half of the effort ladder
 
@@ -182,7 +182,7 @@ export function headMovedReason(judged: string, head: string): string
 export function mainCallVerdict(plan: Plan | undefined, callerId: string | undefined, type: unknown, model: unknown, effort: unknown): { deny: string } | undefined
 ```
 
-In `qcRuling`, a section heading line is matched after trailing spaces and tabs are trimmed. `examinedVerdict`'s untagged test is the same as `foremanStopPasses`'s tag list: the trimmed text starts with none of `CHECKPOINT:`, `BLOCKED:`, `QUESTION:`, `PROPOSAL:`. `branchOf`'s pattern, applied to the trimmed line:
+In `qcRuling`, a section heading line is matched after trailing spaces and tabs are trimmed. `examinedVerdict`'s untagged test is the same as `projectManagerStopPasses`'s tag list: the trimmed text starts with none of `CHECKPOINT:`, `BLOCKED:`, `QUESTION:`, `PROPOSAL:`. `branchOf`'s pattern, applied to the trimmed line:
 
 ```
 ^`?([^\s`-][^\s`]*)`? at `?[0-9a-f]{7,40}`?, based on `?([^\s`-][^\s`]*?)`?\.?$
@@ -220,16 +220,16 @@ The contract tests read only `tests/fixtures/contract-050/**` or data built inli
    - `headVerdict` covers every row of section 6's table.
    - `examinedVerdict` blocks a final report missing either heading and passes tagged stops.
    - `mainCallVerdict` refuses a `truss:qc-engineer` call with no model or no effort from the main session, and lets the same call from inside a crew, a non-`truss:` type, or a call with no plan go through.
-3. **Prompts**, in `tests/gates.check.ts`. `agents/qc-engineer.md` carries `HEAD_LINE`, `PATCH_LINE` and `UNSCOPED`. `agents/foreman.md` carries `EXAMINED`, `NOT_EXAMINED` and `ALLOWANCE_BLOCKED`. `skills/run/SKILL.md` carries the head and patch merge-gate rule. `agents/writer.md` pins a model and an effort of `low` or `medium`.
+3. **Prompts**, in `tests/gates.check.ts`. `agents/qc-engineer.md` carries `HEAD_LINE`, `PATCH_LINE` and `UNSCOPED`. `agents/project-manager.md` carries `EXAMINED`, `NOT_EXAMINED` and `ALLOWANCE_BLOCKED`. `skills/run/SKILL.md` carries the head and patch merge-gate rule. `agents/writer.md` pins a model and an effort of `low` or `medium`.
 4. **retro**, in `tests/test_contract_retro_050.py`, on a fixture under `contract-050/` that has a `## Run` heading and spent-allowance lines for two crews, one of them twice. Its `allowancesSpent` is 2. A run with events but no such line gives `"not recorded"`. `tests/test_contract_retro.py` adds `allowancesSpent` to `RUN_KEYS`, and `retro` stays 1.
 5. **Spawn line keys.** `tests/events.test.ts:67` is unchanged; this ADR adds no spawn key.
 
 ## Consequences
 
 - One merge of the target no longer costs one QC engineer when the crew's patch doesn't change. A merge that resolves a conflict in the crew's hunks changes the patch id and still needs a fresh QC engineer. (Written for rebases in run 3; amended for real merges by repo ADR-0015.)
-- A crew stops at `reworkAllowance + 1` FAILs and goes to the PM, instead of looping. A successor foreman gets a fresh count. The PM's decision to start one is the extra spend, and it is logged.
+- A crew stops at `reworkAllowance + 1` FAILs and goes to the PM, instead of looping. A successor project manager gets a fresh count. The PM's decision to start one is the extra spend, and it is logged.
 - The guard and the allowance trust file modification times against `approvedAt`. A re-approval that rewrites `approvedAt` mid-run resets every count. A clock that runs behind the file system would hide this run's files and fail open, not closed.
-- The QC engineer's file can't prove the patch line was computed from the right base. The guard only compares ids. A QC engineer that used the wrong base gets a mismatch, and the foreman a send-back, never a wrong merge.
-- Every main-session `truss:*` call on a v2 plan pays one `plan.json` read. A QC-named spawn inside a crew, and each foreman final report, pay one directory listing and the reads of this run's QC files. A foreman final report whose head moved also pays up to three git calls.
+- The QC engineer's file can't prove the patch line was computed from the right base. The guard only compares ids. A QC engineer that used the wrong base gets a mismatch, and the project manager a send-back, never a wrong merge.
+- Every main-session `truss:*` call on a v2 plan pays one `plan.json` read. A QC-named spawn inside a crew, and each project manager final report, pay one directory listing and the reads of this run's QC files. A project manager final report whose head moved also pays up to three git calls.
 - `events.jsonl` gains a new event kind with `v` still 1. A 0.4.x retro reading a 0.5.0 log ignores the event kind it doesn't know.
-- Open: hosts whose git uses SHA-256 object ids write 64-digit heads. The literals' 40-digit rule fails those, and the guard sends the foreman back twice and then lets it through. Not decided here.
+- Open: hosts whose git uses SHA-256 object ids write 64-digit heads. The literals' 40-digit rule fails those, and the guard sends the project manager back twice and then lets it through. Not decided here.
