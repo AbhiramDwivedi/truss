@@ -210,7 +210,7 @@ const crewRow = (slug: string, status: string, estAgents: number) => ({
   slug, stage: 0, verdict: 'build', modules: ['m'], owns: [`src/${slug}.ts`], acceptanceTest: 'npm test', acceptanceTestProved: true, estAgents, status,
 })
 const spawn = (ts: string, crew: string, agent: string) => ({
-  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:foreman' : 'kit:builder', model: 'opus', effort: 'high', by: 'main',
+  v: 1, ts, event: 'spawn', crew, agent, agentId: 'id-' + agent, type: agent === crew ? 'truss:project-manager' : 'kit:builder', model: 'opus', effort: 'high', by: 'main',
 })
 const stall = (ts: string, crew: string, agent: string, kind: string, minutes: number) => ({ v: 1, ts, event: 'stall', crew, agent, kind, minutes })
 
@@ -472,7 +472,7 @@ test('gap g: crew.stuck is {kind, since, minutes, detail} from the latest stall 
       spawn('2026-10-27T09:01:00.000Z', 'alpha', 'alpha-builder'),
       stall('2026-10-27T09:40:00.000Z', 'alpha', 'alpha-builder', 'agent', 15),
       spawn('2026-10-27T09:02:00.000Z', 'delta', 'delta'),
-      stall('2026-10-27T09:55:00.000Z', 'delta', 'delta', 'idle-foreman', 20),
+      stall('2026-10-27T09:55:00.000Z', 'delta', 'delta', 'idle-project-manager', 20),
       spawn('2026-10-27T09:03:00.000Z', 'epsilon', 'epsilon'),
     ]),
   })
