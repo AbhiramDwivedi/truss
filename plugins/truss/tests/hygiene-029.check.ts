@@ -67,17 +67,26 @@ test('every path:line citation in the plugin docs and skills resolves on this tr
 
 // ---- R-96: the whole inbox.check.ts file under CPU load ---------------------------------------------------------------
 const LOAD_RUNS = Number(process.env.TRUSS_HYGIENE_LOAD_RUNS ?? 0)
-test('inbox.check.ts passes 20 of 20 consecutive whole-file runs under artificial CPU load', { skip: LOAD_RUNS > 0 ? false : 'set TRUSS_HYGIENE_LOAD_RUNS=20 to run', timeout: 4 * 60 * 60 * 1000 }, () => {
+test('inbox.check.ts passes 20 of 20 consecutive whole-file runs under artificial CPU load', { skip: LOAD_RUNS > 0 ? false : 'set TRUSS_HYGIENE_LOAD_RUNS=20 to run', timeout: 4 * 60 * 60 * 1000 }, async () => {
   const busy = []
   try {
     for (let i = 0; i < os.cpus().length; i++) busy.push(spawn(process.execPath, ['-e', 'for(;;){}'], { stdio: 'ignore', windowsHide: true }))
     assert.ok(busy.every((c) => typeof c.pid === 'number'), 'the busy-loop children started')
     const env = { ...process.env }
     delete env.NODE_TEST_CONTEXT
-    for (let run = 1; run <= LOAD_RUNS; run++) {
-      const r = spawnSync(process.execPath, ['--test', path.join(PLUGIN, 'tests', 'inbox.check.ts')], { cwd: ROOT, env, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 })
-      const out = `${r.stdout}${r.stderr}`
-      assert.equal(r.status, 0, `inbox.check.ts failed on run ${run} of ${LOAD_RUNS} under load (status ${r.status}, signal ${r.signal}):\n${out.split('\n').slice(-60).join('\n')}`)
+    // One run is ~36 s on an idle host and the acceptance command is one call capped at 600 s, so the runs go in waves of WAVE
+    // concurrent whole-file runs: the load is the busy loops plus the other runs of the wave, heavier than one run alone.
+    const WAVE = 5
+    const runOnce = (run: number) => new Promise<void>((resolve, reject) => {
+      const c = spawn(process.execPath, ['--test', path.join(PLUGIN, 'tests', 'inbox.check.ts')], { cwd: ROOT, env, windowsHide: true })
+      let out = ''
+      c.stdout.on('data', (d) => { out += d })
+      c.stderr.on('data', (d) => { out += d })
+      c.on('error', reject)
+      c.on('close', (status, signal) => (status === 0 ? resolve() : reject(new Error(`inbox.check.ts failed on run ${run} of ${LOAD_RUNS} under load (status ${status}, signal ${signal}):\n${out.split('\n').slice(-60).join('\n')}`))))
+    })
+    for (let first = 1; first <= LOAD_RUNS; first += WAVE) {
+      await Promise.all(Array.from({ length: Math.min(WAVE, LOAD_RUNS - first + 1) }, (_, i) => runOnce(first + i)))
     }
   } finally {
     for (const c of busy) {

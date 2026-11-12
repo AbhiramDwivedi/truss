@@ -34,6 +34,9 @@ process.on('exit', () => {
     } catch {}
   }
 })
+// Every factory spawn re-compiles factory.ts; a per-run compile cache cuts a spawn from ~450 ms to ~110 ms, which the 20-run load case needs.
+process.env.NODE_COMPILE_CACHE = flat(realpathSync(mkdtempSync(path.join(os.tmpdir(), 'inbox-cc-'))))
+temps.push(process.env.NODE_COMPILE_CACHE)
 /** A fresh temp dir with symlinks resolved (macOS /var), forward slashes, removed at exit. */
 function mk(prefix: string): string {
   const d = flat(realpathSync(mkdtempSync(path.join(os.tmpdir(), prefix))))
