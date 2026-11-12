@@ -5,8 +5,8 @@ import {
   CHECKPOINT,
   DIR_NOTE,
   HEARTBEAT_MS,
-  FOREMAN_STOP_BLOCKS,
-  FOREMAN_TYPE,
+  PROJECT_MANAGER_STOP_BLOCKS,
+  PROJECT_MANAGER_TYPE,
   LIMIT_RESET,
   MODEL_REFUSAL,
   PROPOSAL,
@@ -27,7 +27,7 @@ test('exports the constants the contract names', () => {
   expect(STALL_MS).toBe(15 * MIN)
   expect(HEARTBEAT_MS).toBe(MIN)
   expect(RESET_GRACE_MS).toBe(2 * MIN)
-  expect(FOREMAN_STOP_BLOCKS).toBe(2)
+  expect(PROJECT_MANAGER_STOP_BLOCKS).toBe(2)
   expect(STALLED).toBe('[truss] stalled:')
   expect(LIMIT_RESET).toBe('[truss] limit reset:')
   expect(BLOCKED).toBe('BLOCKED:')
@@ -35,7 +35,7 @@ test('exports the constants the contract names', () => {
   expect(CHECKPOINT).toBe('CHECKPOINT:')
   expect(QUESTION).toBe('QUESTION:')
   expect(DIR_NOTE).toBe('[truss] dir:')
-  expect(FOREMAN_TYPE).toBe('truss:foreman')
+  expect(PROJECT_MANAGER_TYPE).toBe('truss:project-manager')
 })
 
 // ---------- 1. effort rules ----------
@@ -89,7 +89,7 @@ test('effort rules never touch the main thread, a non-crew agent or the checker'
 
 test('effortVerdict is pure: crew callers need a valid effort, others pass', () => {
   const agents = [
-    { id: 'L1', type: FOREMAN_TYPE, status: 'running', description: 'l', name: 'auth', label: 'auth', live: true, seq: 0 },
+    { id: 'L1', type: PROJECT_MANAGER_TYPE, status: 'running', description: 'l', name: 'auth', label: 'auth', live: true, seq: 0 },
     { id: 'A1', type: 'kit:builder', status: 'running', description: 'a', name: 'b', parentId: 'L1', label: 'b', live: true, seq: 1 },
     { id: 'X', type: 'general-purpose', status: 'running', description: 'x', name: 'x', label: 'x', live: true, seq: 2 },
   ] as never
@@ -115,7 +115,7 @@ test('flags a running crew member idle for STALL_MS once, with the exact prompt 
   expect(w.prompts.filter(p => p.startsWith(STALLED))).toEqual([])
   await w.clock.advance(HEARTBEAT_MS)
   expect(w.prompts.filter(p => p.startsWith(STALLED))).toEqual([
-    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.',
+    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth project manager. Read its transcript tail before you stop it; a resumed agent may be compacting.',
   ])
   expect(w.toasts.filter(t => t.includes('auth-builder')).length).toBe(1)
 })
@@ -127,16 +127,16 @@ test('reports whole minutes idle, rounded down', async ($, on) => {
   await w.activity('A1')
   await w.clock.advance(STALL_MS + HEARTBEAT_MS)
   expect(w.prompts.filter(p => p.startsWith(STALLED) && p.includes('auth-builder'))).toEqual([
-    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.',
+    '[truss] stalled: auth-builder in crew auth, no activity for 15m. Check /truss and message the auth project manager. Read its transcript tail before you stop it; a resumed agent may be compacting.',
   ])
 })
 
-test('flags a stalled foreman too', async ($, on) => {
+test('flags a stalled project manager too', async ($, on) => {
   const w = world($, on)
   await startSession($)
   await w.activity('L2')
   await w.clock.advance(STALL_MS + HEARTBEAT_MS)
-  expect(w.prompts).toContain('[truss] stalled: billing in crew billing, no activity for 15m. Check /truss and message the billing foreman. Read its transcript tail before you stop it; a resumed agent may be compacting.')
+  expect(w.prompts).toContain('[truss] stalled: billing in crew billing, no activity for 15m. Check /truss and message the billing project manager. Read its transcript tail before you stop it; a resumed agent may be compacting.')
 })
 
 test('does not re-flag a stalled agent until it has new activity, then flags again', async ($, on) => {
@@ -240,7 +240,7 @@ test('the harness\'s $.state counts versions: arming then firing a reset writes 
   expect(Math.max(...mine.map(([, v]) => v))).toBeGreaterThanOrEqual(2)
 })
 
-test('/truss lists a stalled agent under its crew and the foreman\'s last activity on the crew line', async ($, on) => {
+test('/truss lists a stalled agent under its crew and the project manager\'s last activity on the crew line', async ($, on) => {
   const w = world($, on)
   await startSession($)
   await w.activity('L1')
@@ -259,7 +259,7 @@ test('/truss lists a stalled agent under its crew and the foreman\'s last activi
   expect(lines[crew + 1]).toBe('  auth-builder: stalled 15m')
 })
 
-test('/truss omits last active when the foreman has no activity on record', async ($, on) => {
+test('/truss omits last active when the project manager has no activity on record', async ($, on) => {
   const w = world($, on)
   void w
   expect(await status($)).not.toContain('last active')
@@ -279,7 +279,7 @@ test('wakes the PM RESET_GRACE_MS after the five-hour window resets, with the ex
   await w.clock.advance(60 * MIN + RESET_GRACE_MS - 1000)
   expect(resets(w.prompts)).toEqual([])
   await w.clock.advance(1000)
-  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each foreman whose crew isn't done to resume.`])
+  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each project manager whose crew isn't done to resume.`])
 })
 
 test('arms once per resetsAt however often the limit is reported', async ($, on) => {
@@ -325,9 +325,9 @@ test('does nothing below 100 percent, for other windows, or without resetsAt', a
   expect(resets(w.prompts)).toEqual([])
 })
 
-test('does nothing without a live crew foreman', async ($, on) => {
+test('does nothing without a live crew project manager', async ($, on) => {
   const w = world($, on)
-  w.agents = w.agents.filter(a => a.type !== FOREMAN_TYPE).map(a => ({ ...a, parentId: undefined }))
+  w.agents = w.agents.filter(a => a.type !== PROJECT_MANAGER_TYPE).map(a => ({ ...a, parentId: undefined }))
   await startSession($)
   await measure($, limit(resetAt(30 * MIN)))
   await w.clock.advance(3 * 60 * MIN)
@@ -376,7 +376,7 @@ test('a rate_limit StopFailure reads the window from session usage and arms the 
   w.usageLimits = [{ kind: 'seven_day', percentUsed: 10, resetsAt: resetAt(9999 * MIN) }, ...limit(at)]
   await $.classic.StopFailure({ error: 'rate_limit' } as never)
   await w.clock.advance(45 * MIN + RESET_GRACE_MS)
-  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each foreman whose crew isn't done to resume.`])
+  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each project manager whose crew isn't done to resume.`])
 })
 
 test('a rate_limit StopFailure arms only when the five-hour window is at 100 percent', async ($, on) => {
@@ -390,7 +390,7 @@ test('a rate_limit StopFailure arms only when the five-hour window is at 100 per
   w.usageLimits = limit(at, 100)
   await $.classic.StopFailure({ error: 'rate_limit' } as never)
   await w.clock.advance(30 * MIN + RESET_GRACE_MS)
-  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each foreman whose crew isn't done to resume.`])
+  expect(resets(w.prompts)).toEqual([`[truss] limit reset: the five-hour usage window reset at ${at}. Check /truss and message each project manager whose crew isn't done to resume.`])
 })
 
 test('a StopFailure with another error arms nothing', async ($, on) => {
@@ -402,9 +402,9 @@ test('a StopFailure with another error arms nothing', async ($, on) => {
   expect(resets(w.prompts)).toEqual([])
 })
 
-test('a rate_limit StopFailure without a live foreman arms nothing', async ($, on) => {
+test('a rate_limit StopFailure without a live project manager arms nothing', async ($, on) => {
   const w = world($, on)
-  w.agents = w.agents.filter(a => a.type !== FOREMAN_TYPE)
+  w.agents = w.agents.filter(a => a.type !== PROJECT_MANAGER_TYPE)
   await startSession($)
   w.usageLimits = limit(resetAt(10 * MIN))
   await $.classic.StopFailure({ error: 'rate_limit' } as never)
@@ -412,9 +412,9 @@ test('a rate_limit StopFailure without a live foreman arms nothing', async ($, o
   expect(resets(w.prompts)).toEqual([])
 })
 
-// ---------- 4. foreman stop gate ----------
+// ---------- 4. project manager stop gate ----------
 
-test('blocks a foreman that stops without a report, with a [truss] reason naming the sections', async ($, on) => {
+test('blocks a project manager that stops without a report, with a [truss] reason naming the sections', async ($, on) => {
   const w = quiet(world($, on))
   const r = (await $.classic.SubagentStop(stop('L1', 'All done, merged everything.'))) as { block?: string }
   expect(r.block?.startsWith('[truss]')).toBe(true)
@@ -422,14 +422,14 @@ test('blocks a foreman that stops without a report, with a [truss] reason naming
   expect(w.files.size).toBe(0)
 })
 
-test('lets a foreman stop when its message starts with CHECKPOINT, BLOCKED or QUESTION, or has a Proof heading', async ($, on) => {
+test('lets a project manager stop when its message starts with CHECKPOINT, BLOCKED or QUESTION, or has a Proof heading', async ($, on) => {
   world($, on)
   for (const text of ['CHECKPOINT: half done', 'BLOCKED: need a key', 'QUESTION: keep v1?', '   \n  CHECKPOINT: indented', 'Summary: x\n\n## Proof\nran it', '## Proof\nx', '##   Proof']) {
     expect(((await $.classic.SubagentStop(stop('L1', text))) as { block?: string }).block).toBeUndefined()
   }
 })
 
-test('lets a foreman stop on a PROPOSAL, and /truss shows its tag', async ($, on) => {
+test('lets a project manager stop on a PROPOSAL, and /truss shows its tag', async ($, on) => {
   quiet(world($, on))
   expect(((await $.classic.SubagentStop(stop('L1', 'PROPOSAL: merge early\nwhile I wait'))) as { block?: string }).block).toBeUndefined()
   expect(await status($)).toContain('proposal: merge early')
@@ -467,7 +467,7 @@ test('stop_hook_active false starts a new streak; a stop that goes through ends 
   expect(await blocked(true)).toBe(false)
 })
 
-test('counts streaks per foreman', async ($, on) => {
+test('counts streaks per project manager', async ($, on) => {
   quiet(world($, on))
   const blocked = async (id: string, active: boolean) => ((await $.classic.SubagentStop(stop(id, 'chatter', active))) as { block?: string }).block !== undefined
   expect(await blocked('L1', false)).toBe(true)
@@ -491,11 +491,11 @@ test('never gates an agent outside every crew', async ($, on) => {
 
 test('a stopping agent not yet listed is gated by its event\'s agent_type', async ($, on) => {
   quiet(world($, on))
-  expect(((await $.classic.SubagentStop(stop('U1', 'chatter', false, undefined, FOREMAN_TYPE))) as { block?: string }).block?.startsWith('[truss]')).toBe(true)
+  expect(((await $.classic.SubagentStop(stop('U1', 'chatter', false, undefined, PROJECT_MANAGER_TYPE))) as { block?: string }).block?.startsWith('[truss]')).toBe(true)
   expect(((await $.classic.SubagentStop(stop('U2', 'chatter'))) as { block?: string }).block).toBeUndefined()
 })
 
-test('a foreman\'s hand-back the gate could send back is not written at hand-back time, only by the stop that goes through', async ($, on) => {
+test('a project manager\'s hand-back the gate could send back is not written at hand-back time, only by the stop that goes through', async ($, on) => {
   const w = world($, on)
   const path = `${ROOT}/reports/auth/auth.md`
   const interim = `${ROOT}/reports/auth/auth.interim.md`
@@ -508,17 +508,17 @@ test('a foreman\'s hand-back the gate could send back is not written at hand-bac
   expect(w.files.has(path)).toBe(false)
 })
 
-test('never gates a truss:foreman another agent started', async ($, on) => {
+test('never gates a truss:project-manager another agent started', async ($, on) => {
   const w = quiet(world($, on))
-  w.agents.push(agent('N1', FOREMAN_TYPE, 'side', 'X'))
-  expect(((await $.classic.SubagentStop(stop('N1', 'chatter', false, undefined, FOREMAN_TYPE))) as { block?: string }).block).toBeUndefined()
+  w.agents.push(agent('N1', PROJECT_MANAGER_TYPE, 'side', 'X'))
+  expect(((await $.classic.SubagentStop(stop('N1', 'chatter', false, undefined, PROJECT_MANAGER_TYPE))) as { block?: string }).block).toBeUndefined()
 })
 
-test('a truss:foreman a crew member started is a member: never gated, its hand-back captured', async ($, on) => {
+test('a truss:project-manager a crew member started is a member: never gated, its hand-back captured', async ($, on) => {
   const w = quiet(world($, on))
-  w.agents.push(agent('N2', FOREMAN_TYPE, 'sub', 'A1'))
+  w.agents.push(agent('N2', PROJECT_MANAGER_TYPE, 'sub', 'A1'))
   await handBack($, 'N2', 'just a note on progress so far, more to come later on')
-  expect(((await $.classic.SubagentStop(stop('N2', 'Done.', false, undefined, FOREMAN_TYPE))) as { block?: string }).block).toBeUndefined()
+  expect(((await $.classic.SubagentStop(stop('N2', 'Done.', false, undefined, PROJECT_MANAGER_TYPE))) as { block?: string }).block).toBeUndefined()
   expect(w.files.get(`${ROOT}/reports/auth/sub.md`)).toBe('just a note on progress so far, more to come later on')
 })
 
@@ -549,14 +549,14 @@ test('a blocked stop neither sets nor clears the waiting state', async ($, on) =
   expect(await status($)).toContain('waiting on you: Keep v1?')
 })
 
-test('checks the hand-back text, not the sign-off, when the foreman handed back', async ($, on) => {
+test('checks the hand-back text, not the sign-off, when the project manager handed back', async ($, on) => {
   const w = world($, on)
   await handBack($, 'L1', 'Summary: s\n## Proof\nran the checks, 131 pass and 0 fail')
   expect(((await $.classic.SubagentStop(stop('L1', 'Done.'))) as { block?: string }).block).toBeUndefined()
   expect(w.files.get(`${ROOT}/reports/auth/auth.md`)).toBe('Summary: s\n## Proof\nran the checks, 131 pass and 0 fail')
 })
 
-test('blocks a foreman whose hand-back lacks the report even if the sign-off has a Proof heading', async ($, on) => {
+test('blocks a project manager whose hand-back lacks the report even if the sign-off has a Proof heading', async ($, on) => {
   const w = quiet(world($, on))
   await handBack($, 'L1', 'just a note on progress so far, more to come later on')
   const r = (await $.classic.SubagentStop(stop('L1', '## Proof\nlooks fine'))) as { block?: string }
@@ -577,7 +577,7 @@ test('a hand-back report is not overwritten by the sign-off, and the next stop c
 
 // ---------- 5. tags ----------
 
-test('/truss shows blocked, proposal and waiting tags from a foreman\'s message to main', async ($, on) => {
+test('/truss shows blocked, proposal and waiting tags from a project manager\'s message to main', async ($, on) => {
   const w = world($, on)
   await w.send('L1', 'main', 'BLOCKED: no API key for staging\ndetails')
   expect(await status($)).toContain('- auth: running, 2 live members (unknown 2), blocked: no API key for staging')
@@ -587,7 +587,7 @@ test('/truss shows blocked, proposal and waiting tags from a foreman\'s message 
   expect(await status($)).toContain('- auth: running, 2 live members (unknown 2), waiting on you: Keep v1?')
 })
 
-test('a PM message to the foreman clears blocked and proposal', async ($, on) => {
+test('a PM message to the project manager clears blocked and proposal', async ($, on) => {
   const w = world($, on)
   await w.send('L1', 'main', 'BLOCKED: no key')
   await w.send(undefined, 'auth', 'Use the shared key.')
@@ -782,13 +782,13 @@ test('a throwing $.state never blocks, denies or throws', async ($, on) => {
   expect(typeof (await status($))).toBe('string')
 })
 
-test('a throwing file write never blocks a foreman\'s stop', async ($, on) => {
+test('a throwing file write never blocks a project manager\'s stop', async ($, on) => {
   quiet(world($, on, { writeFails: true }))
   expect(((await $.classic.SubagentStop(stop('L1', 'CHECKPOINT: x'))) as { block?: string }).block).toBeUndefined()
   expect(((await $.classic.SubagentStop(stop('L1', 'chatter'))) as { block?: string }).block?.startsWith('[truss]')).toBe(true)
 })
 
-// ---------- 4b. interim stops: a foreman with live descendants or its own background work ----------
+// ---------- 4b. interim stops: a project manager with live descendants or its own background work ----------
 
 const blockOf = async ($: Parameters<typeof status>[0], id: string, text: string, active: boolean, tasks?: Parameters<typeof stop>[3]) =>
   ((await $.classic.SubagentStop(stop(id, text, active, tasks))) as { block?: string }).block
@@ -797,7 +797,7 @@ const idle = (w: ReturnType<typeof world>, id: string) => {
 }
 const task = (id: string, status = 'running') => ({ id, type: 'local_agent', status, description: 'd' })
 
-test('a foreman with a live member may stop without a report', async ($, on) => {
+test('a project manager with a live member may stop without a report', async ($, on) => {
   world($, on)
   expect(await blockOf($, 'L1', 'waiting for the builder', false)).toBeUndefined()
   expect(await blockOf($, 'L1', 'still waiting', false)).toBeUndefined()
@@ -816,7 +816,7 @@ test('a live descendant at any depth, in any live status, allows the stop', asyn
   expect(await blockOf($, 'L1', 'chatter', false)).toBeDefined()
 })
 
-test('another crew\'s live members do not excuse a foreman', async ($, on) => {
+test('another crew\'s live members do not excuse a project manager', async ($, on) => {
   const w = world($, on)
   w.agents = w.agents.map(a => (a.id === 'A1' || a.id === 'A2' ? { ...a, status: 'completed' } : a))
   expect((await blockOf($, 'L1', 'chatter', false))?.startsWith('[truss]')).toBe(true)
@@ -864,14 +864,14 @@ test('one attributable task among unattributable ones allows the stop', async ($
   expect(await blockOf($, 'L1', 'chatter', false, [task('zzz'), task('B1'), task('A1')])).toBeUndefined()
 })
 
-test('/truss shows waiting on members for an idle foreman with live members', async ($, on) => {
+test('/truss shows waiting on members for an idle project manager with live members', async ($, on) => {
   const w = world($, on)
   idle(w, 'L1')
   await blockOf($, 'L1', 'waiting for the builder', false)
   expect(await status($)).toContain('- auth: idle, 2 live members (unknown 2), waiting on members')
 })
 
-test('/truss shows waiting on members for a pending or waiting foreman, and for one no longer listed', async ($, on) => {
+test('/truss shows waiting on members for a pending or waiting project manager, and for one no longer listed', async ($, on) => {
   const w = world($, on)
   w.agents = w.agents.map(a => (a.id === 'L1' ? { ...a, status: 'waiting' } : a))
   expect(await status($)).toContain('- auth: waiting, 2 live members (unknown 2), waiting on members')
@@ -881,7 +881,7 @@ test('/truss shows waiting on members for a pending or waiting foreman, and for 
   expect(await status($)).toContain('- auth: ended, 2 live members (unknown 2), waiting on members')
 })
 
-test('/truss keeps the report slot for a running foreman with running members', async ($, on) => {
+test('/truss keeps the report slot for a running project manager with running members', async ($, on) => {
   const w = world($, on)
   await blockOf($, 'L1', 'interim', false)
   const text = await status($)
@@ -890,7 +890,7 @@ test('/truss keeps the report slot for a running foreman with running members', 
   void w
 })
 
-test('/truss shows the report, not waiting on members, once the foreman has no live descendants', async ($, on) => {
+test('/truss shows the report, not waiting on members, once the project manager has no live descendants', async ($, on) => {
   const w = world($, on)
   idle(w, 'L1')
   expect(await status($)).toContain('waiting on members')
@@ -945,12 +945,12 @@ test('a running background task of another crew\'s live member does not allow th
   expect((await blockOf($, 'L2', 'chatter', false, [task('B1')])) ?? 'allowed').toBe('allowed')
 })
 
-// ---------- 3b. a foreman that is no longer live never gets a reset wake ----------
+// ---------- 3b. a project manager that is no longer live never gets a reset wake ----------
 
 for (const ended of ['completed', 'failed', 'killed'] as const) {
-  test(`a ${ended} foreman is not live: a five-hour 100 percent measure arms nothing`, async ($, on) => {
+  test(`a ${ended} project manager is not live: a five-hour 100 percent measure arms nothing`, async ($, on) => {
     const w = world($, on)
-    w.agents = w.agents.map(a => (a.type === FOREMAN_TYPE ? { ...a, status: ended } : a))
+    w.agents = w.agents.map(a => (a.type === PROJECT_MANAGER_TYPE ? { ...a, status: ended } : a))
     await startSession($)
     await measure($, limit(resetAt(30 * MIN)))
     await w.clock.advance(3 * 60 * MIN)
@@ -958,9 +958,9 @@ for (const ended of ['completed', 'failed', 'killed'] as const) {
     expect(JSON.stringify([...w.stateValues.entries()])).not.toContain(resetAt(30 * MIN))
   })
 
-  test(`a ${ended} foreman is not live: a rate_limit StopFailure arms nothing`, async ($, on) => {
+  test(`a ${ended} project manager is not live: a rate_limit StopFailure arms nothing`, async ($, on) => {
     const w = world($, on)
-    w.agents = w.agents.map(a => (a.type === FOREMAN_TYPE ? { ...a, status: ended } : a))
+    w.agents = w.agents.map(a => (a.type === PROJECT_MANAGER_TYPE ? { ...a, status: ended } : a))
     await startSession($)
     w.usageLimits = limit(resetAt(30 * MIN))
     await $.classic.StopFailure({ error: 'rate_limit' } as never)
