@@ -184,7 +184,7 @@ function registerTests(mod: any): void {
     assert.equal(rd.status, 'planned')
     assert.equal(rd.goal, null)
     assert.deepEqual(rd.owns, ['docs/architecture.md', 'docs/adr/0007-rate-limiting.md', 'tests/contract/quota-store.test.ts'])
-    assert.equal(rd.foreman, null)
+    assert.equal(rd.projectManager, null)
     assert.deepEqual(rd.members, [])
     assert.equal(rd.latest, null)
     assert.equal(rd.qc, null)
@@ -195,17 +195,17 @@ function registerTests(mod: any): void {
     assert.deepEqual(crew(s, 'gateway').owns, ['src/gateway/middleware/ratelimit.ts', 'tests/gateway/ratelimit.test.ts'])
   })
 
-  test('real fixtures: auth foreman and members with type, model, effort, state and detail', async () => {
+  test('real fixtures: auth project manager and members with type, model, effort, state and detail', async () => {
     const s = state(await ready(makeWorld()))
     const auth = crew(s, 'auth')
     assert.equal(auth.status, null)
     assert.equal(auth.stage, null)
-    assert.equal(auth.foreman.name, 'auth')
-    assert.equal(auth.foreman.type, 'truss:foreman')
-    assert.equal(auth.foreman.model, 'opus')
-    assert.equal(auth.foreman.effort, 'high')
-    assert.equal(auth.foreman.state, 'tagged')
-    assert.equal(auth.foreman.detail, 'QUESTION') // the v:2 PROPOSAL line after it is skipped
+    assert.equal(auth.projectManager.name, 'auth')
+    assert.equal(auth.projectManager.type, 'truss:project-manager')
+    assert.equal(auth.projectManager.model, 'opus')
+    assert.equal(auth.projectManager.effort, 'high')
+    assert.equal(auth.projectManager.state, 'tagged')
+    assert.equal(auth.projectManager.detail, 'QUESTION') // the v:2 PROPOSAL line after it is skipped
     assert.deepEqual(auth.members.map((m: any) => m.name), ['auth-builder', 'auth-tester', 'auth-qc', 'auth-qc-2', 'auth-stress'])
     const b = member(auth, 'auth-builder')
     assert.deepEqual([b.type, b.model, b.effort, b.state, b.detail], ['kit:builder', 'sonnet', 'medium', 'reported', 'VERDICT: PASS'])
@@ -222,17 +222,17 @@ function registerTests(mod: any): void {
   test('real fixtures: billing members from stall lines, docs members across the rolled file', async () => {
     const s = state(await ready(makeWorld()))
     const billing = crew(s, 'billing')
-    assert.equal(billing.foreman.state, 'tagged')
-    assert.equal(billing.foreman.detail, 'BLOCKED')
-    assert.equal(billing.foreman.effort, null)
+    assert.equal(billing.projectManager.state, 'tagged')
+    assert.equal(billing.projectManager.detail, 'BLOCKED')
+    assert.equal(billing.projectManager.effort, null)
     assert.deepEqual(billing.members.map((m: any) => m.name), ['billing-builder'])
     const bb = member(billing, 'billing-builder')
     assert.deepEqual([bb.type, bb.state, bb.detail], [null, 'stalled', '16 min'])
     const docs = crew(s, 'docs')
-    assert.equal(docs.foreman.name, 'docs')
-    assert.equal(docs.foreman.model, null)
-    assert.equal(docs.foreman.state, 'tagged')
-    assert.equal(docs.foreman.detail, 'PROPOSAL')
+    assert.equal(docs.projectManager.name, 'docs')
+    assert.equal(docs.projectManager.model, null)
+    assert.equal(docs.projectManager.state, 'tagged')
+    assert.equal(docs.projectManager.detail, 'PROPOSAL')
     assert.deepEqual(docs.members.map((m: any) => m.name), ['docs-writer', 'docs-qc']) // docs-writer is only in events.1.jsonl
     const w = member(docs, 'docs-writer')
     assert.deepEqual([w.type, w.model, w.effort, w.state], ['truss:writer', 'sonnet', 'low', 'spawned'])
@@ -306,15 +306,15 @@ function registerTests(mod: any): void {
       { file: 'events.jsonl', line: 10, reason: 'json' },
       { file: 'events.jsonl', line: 11, reason: 'version' },
     ])
-    // the v:2 line named crew auth with PROPOSAL; the auth foreman did not take it
-    assert.equal(crew(s, 'auth').foreman.detail, 'QUESTION')
+    // the v:2 line named crew auth with PROPOSAL; the auth project manager did not take it
+    assert.equal(crew(s, 'auth').projectManager.detail, 'QUESTION')
   })
 
   test('edge: a partial last line waits for its newline, is not skipped, then lands', async () => {
     const w = makeWorld()
     const store = await ready(w)
     const live = path.join(w.truss, 'events.jsonl')
-    const full = '{"v":1,"ts":"2026-10-27T15:00:00.000Z","event":"spawn","crew":"zeta-crew","agent":"zeta-crew","agentId":"z0","type":"truss:foreman","model":"opus","effort":"low","by":"main"}'
+    const full = '{"v":1,"ts":"2026-10-27T15:00:00.000Z","event":"spawn","crew":"zeta-crew","agent":"zeta-crew","agentId":"z0","type":"truss:project-manager","model":"opus","effort":"low","by":"main"}'
     const cut = full.indexOf('"event"')
     fs.appendFileSync(live, full.slice(0, cut))
     await new Promise((r) => setTimeout(r, 400)) // several 50 ms polls
@@ -324,7 +324,7 @@ function registerTests(mod: any): void {
     fs.appendFileSync(live, full.slice(cut) + '\n')
     await until(store, (st) => crew(st, 'zeta-crew') !== undefined, 2000, 'zeta-crew after its newline')
     s = state(store)
-    assert.equal(crew(s, 'zeta-crew').foreman.model, 'opus')
+    assert.equal(crew(s, 'zeta-crew').projectManager.model, 'opus')
     assert.equal(s.run.skipped.length, 2)
     assert.deepEqual(s.run.crews.map((c: any) => c.slug).slice(-1), ['zeta-crew'])
   })
@@ -351,7 +351,7 @@ function registerTests(mod: any): void {
     await until(store, (s) => member(crew(s, 'auth'), 'auth-late') !== undefined, 2000, 'auth-late after the roll')
     const s = state(store)
     assert.deepEqual(crew(s, 'auth').members.map((m: any) => m.name), ['auth-builder', 'auth-tester', 'auth-qc', 'auth-qc-2', 'auth-stress', 'auth-late'])
-    assert.equal(crew(s, 'auth').foreman.detail, 'QUESTION')
+    assert.equal(crew(s, 'auth').projectManager.detail, 'QUESTION')
     assert.equal(s.run.skipped.length, 2, 'the rolled copy was read from the live offset, not again')
   })
 

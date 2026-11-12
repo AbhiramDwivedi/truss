@@ -1,6 +1,6 @@
 # ADR-0016: plugin fixes: designer resumes refused, start warns and names a missing goal file, stricter env and test guards
 
-Status: proposed, 2026-10-31. Written by the design crew `plugin-fixes-design` (stage 0 of goal `plugin-fixes`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir), sent back once by checker-28.
+Status: proposed, 2026-10-31. Written by the design crew `plugin-fixes-design` (stage 0 of goal `plugin-fixes`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir), sent back once by checker-28.
 
 VERDICT: change. One module changes: the **factory CLI** (`bin/factory.ts`) gains a `warnings` key in `start`'s output, refuses a crew whose goal file is missing, and makes `envFailure` and `tests-check` stricter. The other modules extend: the **hooks** (`hooks/register.ts`) gain one SendMessage verdict, new refusal text and a JSON-string parse; **retro** (`retro/extract.ts`, `retro/cli.ts`, `retro/scrub.ts`) narrows three matches; **ui docs**, the **agents and skills**, the **stage workflow** and the **architecture doc** change text only. Item 5, members' own heavy commands, is left to a design slice in stage 2, ADR-0017.
 
@@ -18,7 +18,7 @@ The approved items, from `amend-brief-plugin-fixes.md` (cited as "brief :N"), wi
 4. **Design engineer validation** (brief :9). A design engineer ran a cached `ajv-cli` after the classifier refused `npx -y`. The prompt must say: validate with `factory.ts plan-check` only, and report a refused command, never retry it another way.
 5. **Members' own heavy commands** (brief :10). ADR-0015 queues only runner-run checks. Left to a design slice (Decision 8).
 6. **A role added mid-session** (brief :11). A role added to the plugin after the session loaded its agents, such as `truss:stress-engineer`, can't be spawned until restart. Today `start` (`bin/factory.ts:861-951`) reads no agent file, and its output (`stageOut`, `bin/factory.ts:740-745`) has no key that can carry a notice.
-7. **Missing goal file** (brief :12; approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory.ts:913-914`; `crewEntry` does the same at `:731`), so `engineOf` returns `the goal file has no ## Engine section` (`:707`) and the crew goes to the foreman path.
+7. **Missing goal file** (brief :12; approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory.ts:913-914`; `crewEntry` does the same at `:731`), so `engineOf` returns `the goal file has no ## Engine section` (`:707`) and the crew goes to the project manager path.
 8. **Stale stress-test references** (brief :16). Several files point at `agents/qc-engineer.md` "Stress-test mode", a section that is gone. They should point at `agents/stress-engineer.md`.
 9. **False env verdicts** (brief :17). `envFailure` (`bin/factory.ts:485-494`) tests each trimmed line against `ENV_PATTERNS` (`:459-464`) and the `Cannot find package` match anywhere on the line, so a failing test that echoes an env string inside JSON or assert text stops the crew as an env failure.
 10. **F-16** (brief :18). The planning engineer never assigns a report, summary or findings `.md` as a member deliverable.
@@ -86,7 +86,7 @@ That is the instant `ps` showed for `claude --continue --plugin-dir <plugin dir>
 
 ### Missing goal file
 
-A crew whose `<truss dir>/goals/<slug>.md` doesn't exist goes in `refused`, with a reason that names that path and says the goal file is missing. It gets no worktree, is not under `foremen`, and its status stays `planned`. The rest of the reason's wording is the factory-fixes crew's.
+A crew whose `<truss dir>/goals/<slug>.md` doesn't exist goes in `refused`, with a reason that names that path and says the goal file is missing. It gets no worktree, is not under `projectManagers`, and its status stays `planned`. The rest of the reason's wording is the factory-fixes crew's.
 
 ### `envFailure` skips quoted echoes
 
@@ -159,7 +159,7 @@ Every case that must fail on today's producers is named `pf <n>: ...`. Every cas
 | `MAIN_MODEL_REFUSAL` | `hooks/register.ts` | Names no model: it does not match `/opus\|sonnet/i`, and it says `model` must be set. `mainCallVerdict` accepts any non-empty model. The pins in `tests/contract-gates.test.ts` (:70-71, :321, :490) and in ADR-0004 (:204) carry the new text exactly. |
 | `workflowCallVerdict` | `hooks/register.ts` | A JSON-string `args` gets the same verdict as the parsed object, and an unparsable string is refused. |
 | `factory start` output | `bin/factory.ts` | Gains the key `warnings` (array of strings) in the full output, in the resume output and in the `--args-file` pointer (after `unfinished`), by the rule in Decision 1. The factory contract has a `pf` case for a start with no `TRUSS_SESSION_START`. Warnings never hold or refuse a crew. |
-| `factory start`, missing goal file | `bin/factory.ts` | A crew whose `<truss dir>/goals/<slug>.md` doesn't exist goes in `refused`, with a reason that names that path and says it is missing. It gets no worktree and is not under `foremen`, and its status stays `planned`. |
+| `factory start`, missing goal file | `bin/factory.ts` | A crew whose `<truss dir>/goals/<slug>.md` doesn't exist goes in `refused`, with a reason that names that path and says it is missing. It gets no worktree and is not under `projectManagers`, and its status stays `planned`. |
 | `envFailure` | `bin/factory.ts` | An `ENV_PATTERNS` match, or a `Cannot find package` match, counts only when no `"`, `'` or backtick comes before it on the trimmed line. A leading YAML `error:` key and its one opening quote don't count, so TAP's `error: "<msg>"` still counts. Controls: a TAP `error: \|-` block line, a TAP single-line `error: "browserType.launch: ..."`, a real loader line and a real Playwright line all still count. |
 | `factory tests-check` | `bin/factory.ts` | By "Amendment: tests-guard-fix": the guarded files are the test-writer files plus every existing repo-relative path the crew's `acceptanceTest` names that matches a test-file pattern. It reads `git log --cc --name-status -M`. A builder or resolver pure rename (`R100`) of a guarded file is no touch, and the guard follows the new path; a rename below `R100`, a later edit at the new path and a delete of a guarded path are touches. The output shape is unchanged. |
 

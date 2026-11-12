@@ -554,7 +554,7 @@ describe('retro/cli.ts findings: a finding with no cited line is dropped, a vali
     evidence: [{ file, line }],
     cost: `lost 2 turns on ${t}`,
     fix: `change the prompt for ${t}`,
-    target: 'agents/foreman.md',
+    target: 'agents/project-manager.md',
     signature: [`${t}: planted`],
     ...extra,
   })

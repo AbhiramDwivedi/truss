@@ -14,7 +14,7 @@
 ### Workflow calls (ADR-0009)
 ### Plan gates
 ### Report capture
-### The foreman stop gate
+### The project manager stop gate
 ### Rework allowance and head guard
 ### Seams
 ### Fetch gate
@@ -22,7 +22,7 @@
 ### retro's leftover details
 ### The self-improving retro (ADR-0012)
 ### Heartbeat and stalls
-### Idle foremen
+### Idle project managers
 ### Limit-reset wake
 ### Decision times
 ### `/truss`

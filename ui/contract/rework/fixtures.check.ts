@@ -81,7 +81,7 @@ const times = (v: any, out: number[] = []): number[] => {
   return out
 }
 const crews = (s: any): any[] => s.run?.crews ?? []
-const agents = (c: any): any[] => [...(c.foreman ? [c.foreman] : []), ...c.members]
+const agents = (c: any): any[] => [...(c.projectManager ? [c.projectManager] : []), ...c.members]
 const allAgents = (s: any): any[] => crews(s).flatMap(agents)
 
 test('the ADR names the twelve rework states', () => {
@@ -111,18 +111,18 @@ test('planning (F2): the goal is sent, the session is working, there is no plan.
   assert.equal(s.transcript.filter((e: any) => e.role === 'user' && e.intent === 'goal').length, 1)
 })
 
-test('live (F3): active, done, waiting, stuck and planned crews; one crew has foreman, builder and QC engineer with tasks; a flow entry to the active crew', () => {
+test('live (F3): active, done, waiting, stuck and planned crews; one crew has project manager, builder and QC engineer with tasks; a flow entry to the active crew', () => {
   const s = load('live')
   const by = Object.fromEntries(crews(s).map((c) => [c.slug, c]))
   assert.equal(crews(s).length, 5)
-  const active = crews(s).find((c) => c.status === 'running' && !c.stuck && !['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(c.foreman?.detail))
+  const active = crews(s).find((c) => c.status === 'running' && !c.stuck && !['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(c.projectManager?.detail))
   const done = crews(s).filter((c) => c.status === 'merged')
-  const waiting = crews(s).filter((c) => c.status === 'running' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(c.foreman?.detail))
+  const waiting = crews(s).filter((c) => c.status === 'running' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(c.projectManager?.detail))
   const stuck = crews(s).filter((c) => c.stuck !== null)
   const planned = crews(s).filter((c) => c.status === 'planned')
   assert.ok(active, 'an active crew')
   assert.deepEqual([done.length, waiting.length, stuck.length, planned.length], [1, 1, 1, 1])
-  assert.ok(active.foreman && active.members.length >= 2)
+  assert.ok(active.projectManager && active.members.length >= 2)
   assert.ok(active.members.some((m: any) => /qc-engineer$/.test(m.type)), 'a QC engineer')
   for (const a of agents(active).filter((m: any) => m.type !== 'truss:qc-engineer')) assert.ok(a.task, `${a.name} has a task`)
   for (const a of agents(active)) assert.ok(a.purpose, `${a.name} has a purpose`)

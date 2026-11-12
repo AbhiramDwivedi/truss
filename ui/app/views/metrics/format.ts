@@ -27,11 +27,11 @@ function headingStartMs(state: RunState): number | null {
   return Number.isNaN(t) ? null : t
 }
 
-/** Latest parseable ts across every crew's foreman and members, or null. */
+/** Latest parseable ts across every crew's project manager and members, or null. */
 function lastActivityMs(state: RunState): number | null {
   let latest: number | null = null
   for (const c of state.run?.crews ?? []) {
-    for (const m of c.foreman ? [c.foreman, ...c.members] : c.members) {
+    for (const m of c.projectManager ? [c.projectManager, ...c.members] : c.members) {
       const t = Date.parse(m.ts ?? '')
       if (!Number.isNaN(t) && (latest === null || t > latest)) latest = t
     }

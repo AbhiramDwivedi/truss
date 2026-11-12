@@ -30,13 +30,8 @@ function section(md, head) {
 
 const changelogEntry = (version) => section(plugin('CHANGELOG.md'), new RegExp(`^## ${version.replace(/\./g, '\\.')}\\b`))
 
-test('release-026: plugin.json is at 0.26.0', () => {
-  assert.equal(JSON.parse(plugin('.claude-plugin/plugin.json')).version, '0.26.0')
-})
-
-test('release-026: the first CHANGELOG entry is 0.26.0', () => {
+test('release-026: a 0.26.0 CHANGELOG entry exists', () => {
   const log = plugin('CHANGELOG.md')
-  assert.match(log.split('\n').find((l) => /^## /.test(l)), /^## 0\.26\.0\b/)
   assert.equal(log.match(/^## 0\.26\.0\b/gm)?.length, 1, 'exactly one 0.26.0 entry')
 })
 

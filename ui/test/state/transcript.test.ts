@@ -47,7 +47,7 @@ function addSpawn(env: Env, agentId: string, by: string, crew = 'docs-crew') {
 function tasksOf(store: any): Record<string, string | null> {
   const out: Record<string, string | null> = {}
   for (const c of store.snapshot().state.run.crews) {
-    for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) out[m.agentId] = m.task
+    for (const m of [...(c.projectManager ? [c.projectManager] : []), ...c.members]) out[m.agentId] = m.task
   }
   return out
 }
@@ -254,7 +254,7 @@ test("transcript: snapshot members carry exactly today's Member keys and no `by`
     const expected = ['activity', 'agentId', 'detail', 'effort', 'model', 'name', 'purpose', 'state', 'task', 'ts', 'type']
     let seen = 0
     for (const c of snap.state.run.crews) {
-      for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) {
+      for (const m of [...(c.projectManager ? [c.projectManager] : []), ...c.members]) {
         seen++
         assert.deepEqual(Object.keys(m).sort(), expected, m.name)
       }

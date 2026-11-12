@@ -1,4 +1,4 @@
-# ADR-0042: crews may share files; they merge in turn
+# ADR-0043: crews may share files; they merge in turn
 
 Status: accepted, 2026-11-11
 Decided by: client

@@ -47,9 +47,9 @@ export function readPurposes(pluginPath: string | undefined): Purposes {
   return out
 }
 
-// The agent file name for a member: workflow-crew and a crew's foreman are `foreman`; truss:<name> is <name>.
-export function purposeOf(purposes: Purposes, type: string | null, isForeman: boolean): string | null {
-  if (isForeman || type === 'workflow-crew') return purposes.get('foreman') ?? null
+// The agent file name for a member: workflow-crew and a crew's lead are `project-manager`; truss:<name> is <name>.
+export function purposeOf(purposes: Purposes, type: string | null, isProjectManager: boolean): string | null {
+  if (isProjectManager || type === 'workflow-crew') return purposes.get('project-manager') ?? null
   if (type === null || !type.startsWith('truss:')) return null
   return purposes.get(type.slice('truss:'.length)) ?? null
 }

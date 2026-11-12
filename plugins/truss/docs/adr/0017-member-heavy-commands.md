@@ -1,6 +1,6 @@
 # ADR-0017: members' own heavy commands go through `factory heavy` as one plain command
 
-Status: proposed, 2026-10-31. Written by the design crew `member-heavy-design` (stage 2 of goal `plugin-fixes`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir). This goal builds none of it: if the PM takes the decision, it amends a build crew (plan module verdict, `plan-plugin-fixes.md:18`).
+Status: proposed, 2026-10-31. Written by the design crew `member-heavy-design` (stage 2 of goal `plugin-fixes`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir). This goal builds none of it: if the PM takes the decision, it amends a build crew (plan module verdict, `plan-plugin-fixes.md:18`).
 
 VERDICT: change, decided here and built later. It picks a member-side heavy path. The **stage workflow** (`workflows/stage.js`) would give each member one literal `factory heavy` line. The **factory CLI** (`bin/factory.ts`) and the **resources** module (`resources/index.ts`) don't change. The **hooks** (`hooks/register.ts`) don't change, and neither does how they treat the worktree guard.
 
@@ -59,7 +59,7 @@ The path changes no hook. It doesn't change how hooks treat the worktree guard: 
 - Any change to `bin/factory.ts`, `resources/index.ts` or `hooks/register.ts`. `heavy` already takes any command after `--`.
 - A shell after `--`. `heavy` spawns with no shell (`bin/factory.ts:1174`). A member that needs a pipeline puts it in a script file and runs that.
 - Raising the one heavy slot, or a member-only slot. ADR-0015 Decision 3 keeps one slot (`0015-resource-aware.md:90`).
-- The foreman path (`agents/foreman.md`). ADR-0015 already leaves it out (`0015-resource-aware.md:194`).
+- The project manager path (`agents/project-manager.md`). ADR-0015 already leaves it out (`0015-resource-aware.md:194`).
 - macOS and Windows proof.
 
 ## Consequences

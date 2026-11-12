@@ -249,7 +249,7 @@ test('control 6: mark-merged with a truss-<slug> branch that is not an ancestor 
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// item 8, reversed by ADR-0042: plan-check reports no owns overlap between crews, of different goals or of one goal and stage
+// item 8, reversed by ADR-0043: plan-check reports no owns overlap between crews, of different goals or of one goal and stage
 
 const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-11-02T00:00:00Z', approval: 'auto', approvedAt: '2026-11-02T00:00:00Z' })
 const c3 = (slug: string, goal: string, stage: number, owns: string[], status: string) => ({ slug, goal, stage, verdict: 'extend', modules: ['m'], owns, acceptanceTest: 'false', acceptanceTestProved: true, estAgents: 1, status })

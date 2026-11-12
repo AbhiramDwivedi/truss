@@ -1,4 +1,4 @@
-// A foreman's fallback task (ADR-0029): the first non-empty line after the `# Goal:` heading of <truss dir>/goals/<slug>.md.
+// A project manager's fallback task (ADR-0029): the first non-empty line after the `# Goal:` heading of <truss dir>/goals/<slug>.md.
 // Read only: one open, at most 16 KiB. Never throws; any doubt gives null. Node built-ins only; erasable TypeScript.
 import fs from 'node:fs'
 import path from 'node:path'

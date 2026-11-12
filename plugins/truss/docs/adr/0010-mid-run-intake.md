@@ -1,8 +1,8 @@
 # ADR-0010: mid-run intake, several goals in one run
 
-Status: proposed, 2026-10-29. Written by the design crew `intake-design` (a mid-run design slice in stage 1), for the Truss release after 0.10.0. It becomes accepted when the PM (project manager) merges this crew. Not repo ADR-0010.
+Status: proposed, 2026-10-29. Written by the design crew `intake-design` (a mid-run design slice in stage 1), for the Truss release after 0.10.0. It becomes accepted when the program manager (PM) merges this crew. Not repo ADR-0010.
 
-Amended by [ADR-0042](0042-crews-share-files.md) (2026-11-11, client): an amendment's new crews may own paths an unmerged crew of another goal owns; the cross-goal owns check is gone.
+Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): an amendment's new crews may own paths an unmerged crew of another goal owns; the cross-goal owns check is gone.
 
 Amended 2026-10-30, for the client's ruling (decisions.md, 19:51): "Approvals are not a mandatory step. If there is a reason for human oversight, ask for approval only then". A goal's `approval` is `"client"` only when a client trigger of run/SKILL.md section 4 applies to it, and `"auto"` otherwise, whether or not the goal has a stage-0 crew. The schema row for `goals[].approval`, the amend refusal on `approval` against stage 0, and the first Client decision below are changed to match. The code has no such refusal (`hooks/intake.ts:41-42` checks only that `approval` is `auto` or `client`). The per-crew `after` field (gate 6) was not approved and is not built: `plan.schema.json` has no `after`, and `gateOf` (`hooks/register.ts:331`) has no gate for it. The `after` text below is the original design, not what shipped.
 
@@ -19,7 +19,7 @@ What happens today, checked against the code at `fa0fa9f`:
 1. **One plan per session.** `planPath(dir)` is `${dir}/plan.json` (`hooks/register.ts:287-289`), and `dir` is `<git common dir>/truss/<session id>` (`trussDir`, `:126-129`). The schema has a single `goal` string (`docs/plan.schema.json`, `properties.goal`). This run's `plan.json` still carries only the first goal: its `goal` field holds the anti-bloat text, and the three goals added at 17:35 appear only as crews and in `decisions.md`.
 2. **The plan-file route never writes over an approved plan.** `keepReason` (`:859-869`) returns `'it is approved'` unless `approvedAt === null`, and `routePlanFiles` (`:879-905`) then logs `plan-file route kept the existing plan: it is approved` and writes nothing. The claim is right, with one detail: the plan is kept for any `approvedAt` other than exactly `null`, including a missing one. So no plan design engineer can add a goal's crews once the run is approved.
 3. **`decisions.md` is per session, and retro splits it by `## Run`.** `isDecisionLog` (`:655-657`) matches `/truss/<session>/decisions.md`. `skills/run/SKILL.md:24` writes one `## Run <start> | <goal>` heading per run. `scripts/retro.py:47` (`HEADING`) and `read_decisions` (`:193-241`) split on that heading only, and `read_plan` (`:385-414`) counts crews for the whole plan, with no per-goal view.
-4. **The only ways to add crews are a mid-run design slice or a hand edit.** `skills/run/SKILL.md:274-288` (section 7, "Run a mid-run design slice") is written for a foreman's design `PROPOSAL:`. It covers adding a design crew, not a new goal. This run used it for client goals (decisions.md 17:35). At 16:42 the PM had first sent the new goals to their own sessions, because "one session holds one plan.json and one decisions.md". Then the PM hand-edited three design crews into stage 1 of `plan.json`. The goal-file claim is right.
+4. **The only ways to add crews are a mid-run design slice or a hand edit.** `skills/run/SKILL.md:274-288` (section 7, "Run a mid-run design slice") is written for a project manager's design `PROPOSAL:`. It covers adding a design crew, not a new goal. This run used it for client goals (decisions.md 17:35). At 16:42 the PM had first sent the new goals to their own sessions, because "one session holds one plan.json and one decisions.md". Then the PM hand-edited three design crews into stage 1 of `plan.json`. The goal-file claim is right.
 5. **The stage gate and cap are global.** `planVerdict` (`:327-348`): the stage gate refuses a crew while any other crew in a lower stage isn't `merged` or `dropped` (`:334-342`), whatever goal that crew serves. The cap counts every other crew whose `status` is `running` against `maxParallelCrews` (default `DEFAULT_CAP = 4`, `:285`, `:343-347`). In this run the effect shows: `prompt-rules` (stage 2) now waits on `intake-design`, `speed-design` and `interview-design` as well as on its own goal's `evals-build`, because the hand-edit put them in stage 1.
 6. **`/truss` shows no goals and no reasons.** `statusOf` (`:1261-1312`) puts `planLines` (`:356-367`) above the live-crew lines. `planLines` prints one line per crew, `- stage <w>: <slug>, <verdict>, <status>`. The only reason it ever gives is `, waits for the client's approval` (`:363`). It names no goal and doesn't say what a planned crew is waiting for.
 
@@ -28,7 +28,7 @@ What happens today, checked against the code at `fa0fa9f`:
 - **A. Amend mode: one plan per session, goals appended under the approved plan (chosen).** A new design engineer mode hands back one goal's crews. A new hook route appends them to `plan.json` and leaves every existing byte of meaning untouched. The gates become goal-aware.
 - **B. Several plans per session (`plan-<goal>.json`).** Rejected. The cap and cross-goal file ownership need every running crew. So `planVerdict`, `planCrewFor` and `planLines` would all read and merge N files, and slug uniqueness across files would go unchecked. `retro.py read_plan` reads one file, and `runStart` (`:443-448`) needs one `approvedAt`. It is more files and more readers for the same data.
 - **C. One session per goal (what 16:42 did).** Rejected. Two sessions on one repo can't see each other's `plan.json`. The cap stops being a cap (each session allows `maxParallelCrews`), nothing checks file ownership across them, and the client has two `/truss` views and two logs.
-- **D. Keep hand-editing `plan.json` (17:35).** Rejected. Nothing validates the edit, the added goal isn't recorded as a goal, and section 7's rules (meant for foreman proposals) get stretched over client goals.
+- **D. Keep hand-editing `plan.json` (17:35).** Rejected. Nothing validates the edit, the added goal isn't recorded as a goal, and section 7's rules (meant for project manager proposals) get stretched over client goals.
 - **E. Append the new goal's crews as stages after the last stage.** Rejected. Under the global stage gate the new goal waits for everything in flight, so the factory still "cant pick more work" in practice.
 
 ## Decision
@@ -99,16 +99,16 @@ A crew's goal is `goalOf(crew)`, exported from `intake.ts`: the crew's `goal` wh
 
 run/SKILL.md gains `### Take a new goal mid-run`, in section 7 after "Run a mid-run design slice". It is a new subsection; sections 1-6 are only referenced, not rewritten. The PM does this:
 
-1. **What counts as a new goal.** A client message asking for work that no crew in `plan.json` covers, sent after `approvedAt` is set. The client's request is the client's ruling on frozen scope, so no further scope question is asked. A change to an in-flight crew's work isn't a new goal; it takes the `PROPOSAL:` path. A foreman or the PM can't start a goal. The PM's own idea goes to a checking engineer and then the client, under "Build only approved scope" rule 2, and becomes a goal only on the client's yes. Before `approvedAt` is set, the PM folds the request into the plan with a fresh plan design engineer instead. The PM never tells the client to open another session.
+1. **What counts as a new goal.** A client message asking for work that no crew in `plan.json` covers, sent after `approvedAt` is set. The client's request is the client's ruling on frozen scope, so no further scope question is asked. A change to an in-flight crew's work isn't a new goal; it takes the `PROPOSAL:` path. A project manager or the PM can't start a goal. The PM's own idea goes to a checking engineer and then the client, under "Build only approved scope" rule 2, and becomes a goal only on the client's yes. Before `approvedAt` is set, the PM folds the request into the plan with a fresh plan design engineer instead. The PM never tells the client to open another session.
 2. **Acknowledge and log.** The PM tells the client in one line that it takes the request as goal `<id>` and that running crews continue. It logs `- HH:MM | [<id>] goal added: <goal on one line> | client request mid-run | none | followed`. It picks `<id>` from the goal's words, in the crew-slug pattern, unique among goal ids, never `run`.
 3. **Short altitude and depth pass** (sections 1-2), asking only what the goal leaves open.
 4. **Amend design engineer.** It starts `designer-amend-<id>` (`model: "opus"`, `effort: "medium"`, foreground, first line `Mode: amend`) with a fresh `mktemp` marker, as in section 4. After the hand-back it runs `find "<truss dir>/plan.json" "<truss dir>/plan-<id>.md" -newer "<marker>"`, then `rm` the marker. Both files must be listed; the debug log line `truss: plan-amend route ...` says why one is missing.
 5. **Check the amendment** against section 4's send-back list. It also checks that no new crew's `owns` overlaps an unmerged crew of another goal unless `after` names it.
 6. **Checking engineer.** A checking engineer reviews the new goal's verdicts and the cross-goal collisions, exactly as in "Have a checking engineer review the verdicts". A `REVIEW: disagree` does not send the goal back; a gameable acceptance test does. Then a fresh amend design engineer runs under the next unused name, with the same brief plus the findings, and the route replaces the still-unapproved goal (section 2). The client hears about a verdict only on the section-4 triggers.
 7. **Approve and freeze the goal's scope** with section 5's rules applied to the goal. For an `auto` goal, the PM sets `goals[i].approvedAt` to its log time and starts. For a `client` goal, it shows the goal's crews in the section-5 table, waits for the client, then sets `goals[i].approvedAt`. Merge mode and target are the run's and are never asked again. The top-level `approval` and `approvedAt` and the other goals' entries are never edited. "Build only approved scope" applies per goal, from that goal's `approvedAt`.
-8. **Start** per section 3 above. Goal files and foreman briefs are written as in section 6; a foreman's brief also names its goal id.
+8. **Start** per section 3 above. Goal files and project manager briefs are written as in section 6; a project manager's brief also names its goal id.
 
-Section 7's "Run a mid-run design slice" stays for a foreman's design `PROPOSAL:` within one goal. A slice joins the proposing crew's goal (its `goal` field set to that id).
+Section 7's "Run a mid-run design slice" stays for a project manager's design `PROPOSAL:` within one goal. A slice joins the proposing crew's goal (its `goal` field set to that id).
 
 ### 5. What the client sees in `/truss`
 
@@ -154,16 +154,16 @@ flowchart LR
   plan[("plan.json v3, plan-&lt;id&gt;.md<br/>[Truss dir]")]
   gate["gateOf / planVerdict<br/>[hook: tool.call on Agent]"]
   status["/truss<br/>[command: statusOf, planLines]"]
-  foreman["Foremen<br/>[agents: truss:foreman]"]
+  projmgr["Project managers<br/>[agents: truss:project-manager]"]
   client -->|"new goal mid-run"| PM
   PM -->|"Mode: amend brief: goal, in-flight crews"| arch
   arch -->|"plan-amend.json + plan.md blocks"| route
   route -->|"append goal + crews, approvedAt null"| plan
   PM -->|"verdicts, collisions"| checker
   PM -->|"goals[i].approvedAt, status"| plan
-  PM -->|"start ready foremen"| gate
+  PM -->|"start ready project managers"| gate
   plan -->|"read fresh"| gate
-  gate -->|"allow or refuse with reason"| foreman
+  gate -->|"allow or refuse with reason"| projmgr
   plan -->|"goals, crews, wait text"| status
   status -->|"every goal and what each crew waits on"| client
 ```
@@ -177,7 +177,7 @@ sequenceDiagram
   participant A as designer-amend-<id>
   participant H as Hooks
   participant C as Checking engineer
-  participant L as Foremen
+  participant L as Project managers
   O->>F: new goal while crews run
   F->>F: log "[<id>] goal added", short depth pass
   F->>A: Agent, first line "Mode: amend"
@@ -236,7 +236,7 @@ No principle is added or broken.
 
 **`after`.** Both crews wait for `prompt-rules`, which owns `skills/run/SKILL.md` and `skills/retro/SKILL.md` and edits the `tests/*.check.ts` wording checks. ADR-0008 (client brief) and ADR-0009 (speed) build crews will also want `register.ts`, `run/SKILL.md`, `design-engineer.md` or `plan.schema.json`. Their slugs don't exist yet, so the PM adds whichever of them shares a file with `intake-gates` to its `after` (or the reverse) when it turns the three ADRs into crews. `intake-retro` shares no file with them as far as this ADR can see. Both crews also wait for `arch-docs`, the PM's design crew for the architecture docs (see Files touched). `arch-docs` is the PM's slug for that crew; this ADR doesn't create it.
 
-**What the contract tests pin.** `tests/intake-gates.test.ts` imports only from `claude-code/testing`, `./harness` and names `../hooks/register` exports at `fa0fa9f` (such as `FOREMAN_TYPE`). It never imports `../hooks/intake`, so its run against `fa0fa9f`'s code fails on assertions, not on a missing module. Every Agent call in it sets `model` and `effort` (a v2+ plan refuses a main-session `truss:*` call without `effort`, `mainCallVerdict` `:567-571`). It pins, through the Agent `tool.call` entry, the design engineer hand-back and `command.run` `truss`:
+**What the contract tests pin.** `tests/intake-gates.test.ts` imports only from `claude-code/testing`, `./harness` and names `../hooks/register` exports at `fa0fa9f` (such as `PROJECT_MANAGER_TYPE`). It never imports `../hooks/intake`, so its run against `fa0fa9f`'s code fails on assertions, not on a missing module. Every Agent call in it sets `model` and `effort` (a v2+ plan refuses a main-session `truss:*` call without `effort`, `mainCallVerdict` `:567-571`). It pins, through the Agent `tool.call` entry, the design engineer hand-back and `command.run` `truss`:
 1. an added goal's stage-1 crew isn't held by the run goal's unmerged stage 0, and the run goal's own stage gate is unchanged;
 2. the `stage <n> of goal <id> isn't merged yet` text;
 3. gates 2, 3, 5 and 6, each refusal text exact;
@@ -255,7 +255,7 @@ No principle is added or broken.
 - the conditional for version 1 or 2 forbids top-level `goals` and crew `goal` and `after`;
 - the existing top-level and crew `required` lists and `additionalProperties: false` are unchanged.
 
-The check doesn't run the schema on instance plans. The hooks never validate `plan.json` against the schema; they read it with `parsePlan` and their own field checks, which items 3, 5 and 10 above pin. The design engineer validates its draft with ajv (`agents/design-engineer.md`, plan mode). The `intake-gates` foreman runs that ajv command once by hand on a valid v3 plan, a v2 plan, and a v2 plan carrying `goals`, and reports the three results. That is a proof step, not a gate, because it downloads ajv.
+The check doesn't run the schema on instance plans. The hooks never validate `plan.json` against the schema; they read it with `parsePlan` and their own field checks, which items 3, 5 and 10 above pin. The design engineer validates its draft with ajv (`agents/design-engineer.md`, plan mode). The `intake-gates` project manager runs that ajv command once by hand on a valid v3 plan, a v2 plan, and a v2 plan carrying `goals`, and reports the three results. That is a proof step, not a gate, because it downloads ajv.
 
 `tests/test_contract_retro_intake.py` (Python, like the other retro contract tests, such as `tests/test_contract_retro_080.py`; `retro.py` is Python and those tests run with `python -m unittest`) builds its fixtures in a tempdir and runs `retro.py` by subprocess. It pins the `goals` entries (`run` first, then counts per goal, `"not recorded"` `addedAt` for `run`), tagged-decision counting over the last run only, unknown tags counting to `run`, and the key's absence without `goals`.
 
@@ -266,7 +266,7 @@ The check doesn't run the schema on instance plans. The hooks never validate `pl
 - **Red at `fa0fa9f`.** Run from this worktree at HEAD `fa0fa9f`, both checks fail at their first step: `git ls-files --error-unmatch` exits 1 with `error: pathspec 'hooks/intake.ts' did not match any file(s) known to git`, and the same for `tests/test_contract_retro_intake.py`. At that HEAD `claude plugin test plugins/truss` gives 435 pass, 0 fail, and `python -m unittest discover -s tests -p "test_*.py"` gives 147 tests OK, so the full-suite steps aren't red for an unrelated reason.
 - **Green on a hand-made sample.** A throwaway clone in the scratchpad (`intake-sample/repo`), never pushed, had three sample changes. The first was a 5-line `hooks/intake.ts` (`goalOf`), a one-line goal filter in `planVerdict`'s stage gate, and a two-test `intake-gates.test.ts`. The second was a sample `read_goals` in `retro.py` and a two-test `test_contract_retro_intake.py`. Each was committed in the clone. In the clone, `git ls-files --error-unmatch` exited 0 for both checks, `claude plugin test plugins/truss` gave 437 pass, 0 fail, and the Python suite ran 149 tests, OK. **The revert step:** the `fa0fa9f` hooks, harness and plugin.json, or `scripts/`, with the sample test added, failed as required. `claude plugin test` gave 1 pass, 1 fail (`Expected: undefined`, `Received: "[truss] Refused: stage 0 isn't merged yet: a"`); unittest gave `FAILED (errors=1)` on `KeyError: 'goals'`. So `!` turns both green.
 - **The schema step** (added in this ADR's second revision). At `fa0fa9f`, the `intake-gates` check still fails at its first step, `git ls-files --error-unmatch`, on the missing `hooks/intake.ts`. A one-test sample `intake-schema.check.ts` (asserting `version.enum` includes 3 and `goals` is an array) was run with `node --test` in two scratch trees outside git. Against a sample schema it gave `# pass 1`, `# fail 0`, exit 0. Against `fa0fa9f`'s `plan.schema.json` it gave `not ok 1`, `error: 'no version 3'`, exit 1. So the negated step turns green. The check finds the schema relative to its own file, so it reads the archived copy in `$T`.
-- **What differs from the literal command.** The worktree-isolation guard refused git commands it couldn't verify, including running a check script inside the clone and `git archive -o` to a path outside the worktree. So the steps ran one by one, and the `fa0fa9f` tree came from `cp` out of this clean worktree at `fa0fa9f` instead of `git archive`. The archive-into-`mktemp -d`-then-`claude plugin test "$T/plugins/truss"` mechanism was itself run once from this worktree (with `git archive ... | tar -x`), on `status-judge.test.ts`: 5 pass, exit 0. The build crew's foreman runs each literal command once before members start.
+- **What differs from the literal command.** The worktree-isolation guard refused git commands it couldn't verify, including running a check script inside the clone and `git archive -o` to a path outside the worktree. So the steps ran one by one, and the `fa0fa9f` tree came from `cp` out of this clean worktree at `fa0fa9f` instead of `git archive`. The archive-into-`mktemp -d`-then-`claude plugin test "$T/plugins/truss"` mechanism was itself run once from this worktree (with `git archive ... | tar -x`), on `status-judge.test.ts`: 5 pass, exit 0. The build crew's project manager runs each literal command once before members start.
 
 ## Consequences
 

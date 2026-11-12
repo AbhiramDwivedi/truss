@@ -9,7 +9,7 @@ import { ROOT, startSession, handBack, test, world } from './harness'
 // WebFetch/WebSearch handler that logs a `fetch` line. Written before the producer exists. fetchVerdict is read off
 // the module namespace and asserted to be a function first, so on 0.7.1 each test fails on its own assertion and
 // the file still loads. Synthetic data only (P8).
-// Two groups are REGRESSION GUARDS that pass on 0.7.1 and must keep passing: foremanStopPasses with and without a
+// Two groups are REGRESSION GUARDS that pass on 0.7.1 and must keep passing: projectManagerStopPasses with and without a
 // `## Learned` section, and the plan route writing nothing for an UNCOVERED-only hand-back.
 
 type W = ReturnType<typeof world>
@@ -196,17 +196,17 @@ test('ADR-0005 a throwing fs.write never blocks the call, and the failure is log
 
 const REPORT = ['## Summary', 'x', '## Branch', 'b', '## Changes', 'c', '## Proof', 'p', '## Checks run', 'k', '## Open questions', 'none'].join('\n')
 
-test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses passes a report with ## Proof and no ## Learned', () => {
-  expect(mod.foremanStopPasses(REPORT)).toBe(true)
+test('ADR-0005 regression guard (passes on 0.7.1): projectManagerStopPasses passes a report with ## Proof and no ## Learned', () => {
+  expect(mod.projectManagerStopPasses(REPORT)).toBe(true)
 })
 
-test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses passes a report with ## Proof and a ## Learned section', () => {
+test('ADR-0005 regression guard (passes on 0.7.1): projectManagerStopPasses passes a report with ## Proof and a ## Learned section', () => {
   const learned = `${REPORT}\n## Learned\n- Convention: example item\n`
-  expect(mod.foremanStopPasses(learned)).toBe(true)
+  expect(mod.projectManagerStopPasses(learned)).toBe(true)
 })
 
-test('ADR-0005 regression guard (passes on 0.7.1): foremanStopPasses still refuses text with no Proof and no marker', () => {
-  expect(mod.foremanStopPasses('## Summary\nx\n## Learned\n- y')).toBe(false)
+test('ADR-0005 regression guard (passes on 0.7.1): projectManagerStopPasses still refuses text with no Proof and no marker', () => {
+  expect(mod.projectManagerStopPasses('## Summary\nx\n## Learned\n- y')).toBe(false)
 })
 
 const DIR = 'C:/r/.git/truss/S1'

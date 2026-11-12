@@ -60,8 +60,8 @@ test('f12 2b: start records the workflow-crew spawn with a model and an effort',
   assert.equal(typeof ev.effort, 'string')
 })
 
-// ADR-0042: crews may share files, so an overlap with a live crew of the same goal and stage passes too.
-test('f12 3: plan-check passes overlap with a merged crew or a live crew of the same goal and stage (ADR-0042)', () => {
+// ADR-0043: crews may share files, so an overlap with a live crew of the same goal and stage passes too.
+test('f12 3: plan-check passes overlap with a merged crew or a live crew of the same goal and stage (ADR-0043)', () => {
   const env = mkEnv({ config: CFG })
   writePlan(env.dir, planObj([crew('old', { owns: ['bin/x.ts'], status: 'merged' }), crew('new', { owns: ['bin/x.ts'] })]))
   const r = runEnv(env, 'plan-check', { repo: null })

@@ -6,7 +6,7 @@ Amends: ADR-0031 (adds a floor under the PM's per-task `process` call)
 
 ## Context
 
-ADR-0031 lets the PM size each crew `solo`, `lean` or `full`, and logs the call with a one-line reason. Nothing stops the PM, or the plan design engineer in plan mode, from sizing a bug fix or a schema migration as `solo`. In an attended run the client sees the plan and can object. In an unattended run (wave 2 of level-4 autonomy, contract-025) nobody reads the plan before the crews start, so a wrong size goes straight to merge with less proof than the change needs.
+ADR-0031 lets the program manager (PM) size each crew `solo`, `lean` or `full`, and logs the call with a one-line reason. Nothing stops the PM, or the plan design engineer in plan mode, from sizing a bug fix or a schema migration as `solo`. In an attended run the client sees the plan and can object. In an unattended run (wave 2 of level-4 autonomy, contract-025) nobody reads the plan before the crews start, so a wrong size goes straight to merge with less proof than the change needs.
 
 R-62 asks for a crew field that names the kind of work and sets the least process that kind may get. Its example (`docs/requirements.md:439`): a v4 plan with a crew `workType: "bugfix"` and `process: "solo"` fails `plan-check` with `<slug>: process solo is below the bugfix minimum lean`. The same plan without `workType` passes outside an unattended run and fails inside one with `workType is required in an unattended run`.
 

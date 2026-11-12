@@ -27,16 +27,16 @@ export interface CrewCardProps {
   checkRunsOpen?: boolean
 }
 
-/** The run's goals, so a foreman card can show its crew's goal text instead of the goal id. */
+/** The run's goals, so a project manager card can show its crew's goal text instead of the goal id. */
 export const GoalsContext = React.createContext<readonly { id: string; goal: string | null }[]>([])
 
 /** Agent cards shown before "Show n more agents". */
 export const FOLD = 6
 
 const ASKS: Record<string, string> = {
-  QUESTION: 'The foreman asked a question.',
-  BLOCKED: 'The foreman is blocked.',
-  PROPOSAL: 'The foreman proposed a change.',
+  QUESTION: 'The project manager asked a question.',
+  BLOCKED: 'The project manager is blocked.',
+  PROPOSAL: 'The project manager proposed a change.',
 }
 
 /** True while the hand-off is within the lit window of `now`, read on every render. */
@@ -79,17 +79,17 @@ export function CrewCard({ crew, now, handoff = null, trunkAnimated = false, tru
   const planned = status === 'planned'
 
   const agents: Member[] = []
-  if (crew.foreman) agents.push(crew.foreman)
-  for (const m of crew.members) if (!crew.foreman || m.name !== crew.foreman.name) agents.push(m)
-  // Foreman, then the named truss roles, then the rest; the runner and general-purpose check runs fold into one row.
+  if (crew.projectManager) agents.push(crew.projectManager)
+  for (const m of crew.members) if (!crew.projectManager || m.name !== crew.projectManager.name) agents.push(m)
+  // Project manager, then the named truss roles, then the rest; the runner and general-purpose check runs fold into one row.
   const checkRuns = agents.filter(isCheckRun)
-  const named = orderAgents(agents.filter((m) => !isCheckRun(m)), crew.foreman)
+  const named = orderAgents(agents.filter((m) => !isCheckRun(m)), crew.projectManager)
   const [runsOpen, setRunsOpen] = React.useState(checkRunsOpen)
   const runsId = `${slugId}-runs`
   const shown = expanded ? named : named.slice(0, FOLD)
   const hidden = named.length - FOLD
 
-  const ask = status === 'waiting' ? /^\s*(QUESTION|BLOCKED|PROPOSAL)\b/.exec(crew.foreman?.detail ?? '')?.[1] : undefined
+  const ask = status === 'waiting' ? /^\s*(QUESTION|BLOCKED|PROPOSAL)\b/.exec(crew.projectManager?.detail ?? '')?.[1] : undefined
   const partial = (crew.eventsUnread ?? 0) > 0
   const fromPm = handoff ? `From PM ${hhmm(handoff.at)}: ${handoff.summary}` : null
   const stage = crew.stage

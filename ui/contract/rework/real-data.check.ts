@@ -59,11 +59,11 @@ const EMPTY_SESSION = {
   plugin: null, usage: null, backgroundTasks: [], error: null, queue: [],
 }
 
-// agentId -> task, over every foreman and member of the snapshot's run
+// agentId -> task, over every project manager and member of the snapshot's run
 function tasksOf(store: any): Record<string, string | null> {
   const out: Record<string, string | null> = {}
   for (const c of store.snapshot().state.run.crews) {
-    for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) out[m.agentId] = m.task
+    for (const m of [...(c.projectManager ? [c.projectManager] : []), ...c.members]) out[m.agentId] = m.task
   }
   return out
 }
@@ -86,7 +86,7 @@ async function withStore<T>(opts: { claude: boolean }, fn: (store: any, env: Ret
 const snapshotTasks = (): Record<string, string | null> => {
   const snap = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'))
   const out: Record<string, string | null> = {}
-  for (const c of snap.run.crews) for (const m of [...(c.foreman ? [c.foreman] : []), ...c.members]) out[m.agentId] = m.task
+  for (const c of snap.run.crews) for (const m of [...(c.projectManager ? [c.projectManager] : []), ...c.members]) out[m.agentId] = m.task
   return out
 }
 

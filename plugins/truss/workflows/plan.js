@@ -5,7 +5,7 @@ export const meta = {
 
 // ADR-0009 Decision 3. Every agent() call goes through spawn(); the roles table comes from args.truss.roles.
 const F = args.truss
-const BAD_TYPES = ['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator']
+const BAD_TYPES = ['truss:project-manager', 'truss:commissioning-engineer', 'truss:integrator']
 
 function spawn(role, label, prompt, opts) {
   const r = F.roles && F.roles[role]

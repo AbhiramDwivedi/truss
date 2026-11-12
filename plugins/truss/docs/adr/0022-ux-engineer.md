@@ -1,6 +1,6 @@
 # ADR-0022: the UX engineer (`truss:ux-engineer`, role `ux`), plugin bugs 22 and 23, and the `## Members` refusal
 
-Status: proposed, 2026-11-02. Written by the design crew `ux-design` (stage 0 of goal `factory-ux`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-factory-ux.md` in the truss dir). Sources: amend brief items U1 to U7, and the send-back's PO rulings R1 to R6 and findings F1 to F5. Stage 1 crews ux-runtime and ux-agent build from this ADR; it changes no code itself. Line numbers are those of the crew base 032569a.
+Status: proposed, 2026-11-02. Written by the design crew `ux-design` (stage 0 of goal `factory-ux`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-factory-ux.md` in the truss dir). Sources: amend brief items U1 to U7, and the send-back's PO rulings R1 to R6 and findings F1 to F5. Stage 1 crews ux-runtime and ux-agent build from this ADR; it changes no code itself. Line numbers are those of the crew base 032569a.
 
 Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factory-fixes5`): item 50's `factory start --model <role>=<model>` sets both `roles.<role>.model` and `members.<role>.model`, over U6's `## Members` precedence. Without `--model`, U6 holds.
 
@@ -16,7 +16,7 @@ Two plugin bugs, item 22 and item 23, block the same goal:
 Constraints that bind the design:
 
 - ADR-0009 (line 9): "no Opus at high or xhigh". `ROLE_EFFORTS` is `['low', 'medium']` (`stage.js:10`), and `finish` audits `effort high or xhigh` on any labelled role (`bin/factory.ts:1380`).
-- ADR-0009 Decision 1 ("start, engine split"): a crew whose client raised a member to `high` or `xhigh` belongs on the foreman path, and the PM writes `## Engine` foreman for it. Nothing in `factory start` enforces that today.
+- ADR-0009 Decision 1 ("start, engine split"): a crew whose client raised a member to `high` or `xhigh` belongs on the project manager path, and the PM writes `## Engine` `project-manager` for it. Nothing in `factory start` enforces that today.
 - Goal ui-redesign owns `docs/architecture.md`, ADR-0011 and ADR-0018 while it is in flight (U7). The architecture text for this design therefore lives in this ADR.
 
 ## Decision
@@ -40,7 +40,7 @@ On any other first line it stops with `BLOCKED:` and writes no direction. It loa
 
 The effort is medium, on Opus, per ADR-0009's no-Opus-at-high ruling (R1). U2 asked for effort high. The PO overruled that, and the row then passes `spawn()` and the `finish` high audit unchanged.
 
-**The ux role has no `typeFromProject` (R6).** It never takes `--type ux=...`, so `rolesWithTypes` (`bin/factory.ts:306`) keeps refusing that with `--type: role ux does not take a project agent type` (`:320`), and the foreman-shape case at `tests/factory.check.ts:840` stays true with no exemption (F2).
+**The ux role has no `typeFromProject` (R6).** It never takes `--type ux=...`, so `rolesWithTypes` (`bin/factory.ts:306`) keeps refusing that with `--type: role ux does not take a project agent type` (`:320`), and the project-manager-shape case at `tests/factory.check.ts:840` stays true with no exemption (F2).
 
 `docs/truss-config.schema.json` `roles` (`:44-56`) gains `"ux": { "$ref": "#/$defs/agentType" }`. `rolesWithTypes` lays a non-empty `roles.ux` string on the ux row's `agentType` directly, not through the `typeFromProject` test that guards `build` and `test` (`:310-313`).
 
@@ -152,7 +152,7 @@ The object holds only what the result has of: the booleans `ok`, `merged` and `a
 
 **Use.** `spawn()` takes `crew.e.members[role]` over the roles row for builder and tester, and over the planner's task effort. The goal file is approved scope; the task effort is the planner's own call below it. Fix members and resolvers follow the builder value.
 
-**The refusal (R2), a rule new in ADR-0022.** `factory start` never lowers an effort silently. A counted line at effort `high` or `xhigh` makes `start` refuse that crew before `ensureWorktree` (`bin/factory.ts:1118`), and the crew stays `planned`. The `refused` entry (as at `:1115`) is `{"slug": "<slug>", "reason": "## Members asks for <n> <role> at effort <effort>; a workflow crew runs members at effort low or medium only (ADR-0009), and factory start never lowers an effort silently. Set ## Engine to foreman in <goal file> to run this crew on the foreman path."}`. A counted line with another model or effort, or two lines for one role that disagree, refuses the crew the same way and names the value. `engineOf` (`bin/factory.ts:796`) reads `## Engine` first, so a foreman crew never reaches the parse. The same check runs on the `--resume` paths before their entry is built.
+**The refusal (R2), a rule new in ADR-0022.** `factory start` never lowers an effort silently. A counted line at effort `high` or `xhigh` makes `start` refuse that crew before `ensureWorktree` (`bin/factory.ts:1118`), and the crew stays `planned`. The `refused` entry (as at `:1115`) is `{"slug": "<slug>", "reason": "## Members asks for <n> <role> at effort <effort>; a workflow crew runs members at effort low or medium only (ADR-0009), and factory start never lowers an effort silently. Set ## Engine to project manager in <goal file> to run this crew on the project manager path."}`. A counted line with another model or effort, or two lines for one role that disagree, refuses the crew the same way and names the value. `engineOf` (`bin/factory.ts:796`) reads `## Engine` first, so a project manager crew never reaches the parse. The same check runs on the `--resume` paths before their entry is built.
 
 **R5.** Opus builders from a goal file match architecture.md:131 ("Sonnet for mechanical work, Opus for judgment"), and they keep ADR-0009: the effort stays low or medium, and Opus never runs at high or xhigh inside a workflow crew.
 
@@ -164,7 +164,7 @@ Ux-agent drops the 0.17.0 "Stage workflow" `TODO:` (CHANGELOG.md:34) after check
 
 - A UX crew pays for at least two more Opus medium agents: one direction and one review per green.
 - A `UX: REWORK` uses the same allowance as a QC FAIL. With `reworkAllowance` 2 (the default, `bin/factory.ts:353`), a crew with two reworks stops at its first QC FAIL, because the spend is then 3.
-- Goal files that ask for a member at `high`, like web-app's (decisions.md 18:50), are now refused on the workflow engine. The PM must write `## Engine` foreman or lower the effort in the goal file.
+- Goal files that ask for a member at `high`, like web-app's (decisions.md 18:50), are now refused on the workflow engine. The PM must write `## Engine` `project-manager` or lower the effort in the goal file.
 - Every factory.ts command run with `--status-line` has a two-line stdout. Callers without the flag see no change.
 - `ENTRY_KEYS` (`tests/fixtures/workflow-run/start.cases.ts:44`) grows by `direction`, `members` and `ux`. `factory start` always writes all three (`null`, `{}`, `false` for a crew without them). stage.js still accepts an entry that lacks them, as missing means null, `{}` and false.
 - The PM still decides by hand which crews get `ux: true` or a `## UX` section. Teaching the planner and the run skill that rule is out of scope.
@@ -180,7 +180,7 @@ Ux-agent drops the 0.17.0 "Stage workflow" `TODO:` (CHANGELOG.md:34) after check
 | Labels | `stage.js` `nextLabel`, `bin/factory.ts` `parseLabel` | `<slug>-ux` for the direction, `<slug>-ux-<n>` for reviews, role `ux`. |
 | Crew entry | `crewEntry`, `stage.js`, `ENTRY_KEYS` | New keys `ux` (boolean), `direction` (`{label, text}` or null) and `members` (object). stage.js accepts an entry without them. |
 | Spend | `spentOf`, `stage.js` `qc()` | `UX: REWORK` costs one unit in a run (`crew.fails++`) and across a restart. |
-| `## Members` refusal | `factory start` | Effort high or xhigh refuses the crew with the reason above, which names `## Engine` foreman (R2). |
+| `## Members` refusal | `factory start` | Effort high or xhigh refuses the crew with the reason above, which names `## Engine` `project-manager` (R2). |
 | ux audit | `roleAudit` | Role `ux` must run as the ux row's `agentType`; Write or Edit gives a reason (R4). |
 | Crew result | `stage.js` `qc()` | The `ux` field is present only on a ux crew, shaped as above. |
 | runFactory | `runFactory`, factory.ts `--status-line` | Last stdout line `truss-status: <short JSON>`. `met` comes from it, never from a retyped long stdout (item 22). |
@@ -195,5 +195,5 @@ Goal ui-redesign owns `docs/architecture.md`, so this text waits here for the ne
 - **Agents table.** Add a row after the QC engineer: "UX engineer, `<crew>-ux`, then `-ux-<n>` | stage.js, for a crew with `ux` | Opus, `medium` (ADR-0022) | No; read-only tools, audited by `finish`."
 - **The stage chain.** For a ux crew it becomes: red, UX direction, split, members, green, UX review (with rework through green), stress test, scope, QC. The direction travels as a quoted block in the planner, member and QC briefs.
 - **On disk.** `reports/<slug>/<slug>-ux.md` holds the direction, and `<slug>-ux-<n>.md` the reviews. A restart reads both: the newest `UX: DIRECTION` report is reused, and each `UX: REWORK` report counts toward `spent`.
-- **Engine split.** `factory start` refuses a workflow crew whose `## Members` asks for effort high or xhigh. Its reason names `## Engine` foreman.
+- **Engine split.** `factory start` refuses a workflow crew whose `## Members` asks for effort high or xhigh. Its reason names `## Engine` `project-manager`.
 - **The runner.** factory.ts commands that stage.js runs end with a `truss-status:` line, and the workflow decides on that line.

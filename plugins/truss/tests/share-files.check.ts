@@ -1,4 +1,4 @@
-// R-84 / ADR-0042: crews may edit the same files and work in parallel; they merge one at a time on the program manager's go-ahead.
+// R-84 / ADR-0043: crews may edit the same files and work in parallel; they merge one at a time on the program manager's go-ahead.
 // plan-check and owns-extend no longer refuse overlapping owns, in one stage or across goals, and plan-check drops the rule that a
 // crew of each stage must own a matched rule file. owns stays each crew's own edit scope (owns-check still refuses outside it).
 import assert from 'node:assert/strict'

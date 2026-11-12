@@ -24,7 +24,7 @@
     "approval": "client",
     "approvedAt": "2026-11-02T11:05:00.000Z",
     "crews": [
-      { "slug": "quota-store", "stage": 0, "verdict": "change", "status": "running", "goal": null, "owns": ["server/quota/**"], "foreman": null, "members": [], "latest": null, "estAgents": 5, "stuck": null, "qc": null }
+      { "slug": "quota-store", "stage": 0, "verdict": "change", "status": "running", "goal": null, "owns": ["server/quota/**"], "projectManager": null, "members": [], "latest": null, "estAgents": 5, "stuck": null, "qc": null }
     ],
     "goals": [
       { "id": "run", "goal": "Add per-user quotas to the API.", "approval": "client", "approvedAt": "2026-11-02T11:05:00.000Z" }

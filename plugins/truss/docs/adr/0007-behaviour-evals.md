@@ -1,6 +1,6 @@
 # ADR-0007: behaviour evals for the QC engineer and checking engineer prompts
 
-Status: proposed, 2026-10-29. Written by the design crew `eval-design` (stage 0), for foundry 0.10.0. It becomes accepted when the PM (project manager) merges the stage-0 crew under the client-approved plan. Not repo ADR-0007, which is about plugin state.
+Status: proposed, 2026-10-29. Written by the design crew `eval-design` (stage 0), for foundry 0.10.0. It becomes accepted when the program manager (PM) merges the stage-0 crew under the client-approved plan. Not repo ADR-0007, which is about plugin state.
 
 ## Context
 
@@ -21,7 +21,7 @@ For Truss's QC engineer and checking engineer prompts only (`agents/qc-engineer.
 - **ai 2:** the eval set is checked in, as `evals/golden/*.json`, each case with its expected line. A fixed QC engineer or checking engineer failure adds a case whose `source` is the file that records the right ruling. Adding a case needs no model.
 - **ai 3:** the grader is deterministic code, `evals/score.ts`. It reads the `VERDICT:` or `RECOMMEND:` line. There is no model grader.
 
-Not adopted: **ai 1**, by the client's 16:08 ruling. No rule requires an eval run when a prompt changes, and no acceptance test or suite reads eval results. ai 2 and 3 stay dropped for every other prompt (the foreman, design engineer, writer, commissioning engineer, the skills, the catalog refresh).
+Not adopted: **ai 1**, by the client's 16:08 ruling. No rule requires an eval run when a prompt changes, and no acceptance test or suite reads eval results. ai 2 and 3 stay dropped for every other prompt (the project manager, design engineer, writer, commissioning engineer, the skills, the catalog refresh).
 
 P19 holds: the evals import only Node's standard library and Truss's own `hooks/register.ts`, with no ajv and no other package. P25 holds: no suite calls a model or needs a run dir.
 
@@ -39,7 +39,7 @@ One case per file, `evals/golden/<id>.json`, one JSON object, under [`evals/case
 
 A QC engineer case always has `keyword: "VERDICT"`; a checking engineer case always has `keyword: "RECOMMEND"`. The schema says so with two `allOf` conditionals.
 
-**`input` for a QC engineer case** is the brief the foreman would hand the QC engineer, rebuilt from the run dir: the crew's goal file (`goals/<crew>.md` in the same run dir, when it exists), the base and head SHAs and the acceptance test output that the QC file quotes, and the members' report paths it names. It never contains a line that starts with `VERDICT:`.
+**`input` for a QC engineer case** is the brief the project manager would hand the QC engineer, rebuilt from the run dir: the crew's goal file (`goals/<crew>.md` in the same run dir, when it exists), the base and head SHAs and the acceptance test output that the QC file quotes, and the members' report paths it names. It never contains a line that starts with `VERDICT:`.
 
 **`input` for a checking engineer case** is the item the PM gave the checking engineer, rebuilt from the `decisions.md` line: the decision text and the citation field, without the checking engineer field or the outcome. It never contains the word `RECOMMEND`.
 
@@ -93,7 +93,7 @@ export function score(report: string, expected: Expected): Score
 
 ### 5. The snippet runner, `evals/snippets.ts`
 
-The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/foreman.md:169`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
+The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/project-manager.md:199`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
 
 ```ts
 export type Where = 'root' | 'subdir' | 'worktree'
@@ -207,7 +207,7 @@ A check moves only when a suite check covers what it asserts. Two do. The qc-eng
 ## Snippets
 
 - agents/qc-engineer.md: `git diff --no-color` (fenced; placeholders: <base>=HEAD~1, <head>=HEAD)
-- agents/foreman.md: `git diff --no-color` (fenced; placeholders: <base>=HEAD~1, <head>=HEAD)
+- agents/project-manager.md: `git diff --no-color` (fenced; placeholders: <base>=HEAD~1, <head>=HEAD)
 - skills/run/SKILL.md: `git diff --no-color` (inline; placeholders: <base>=HEAD~1, <head>=HEAD)
 - agents/stress-engineer.md: `git rev-parse --path-format=absolute --git-dir` (inline; placeholders: none)
 - agents/stress-engineer.md: `git rev-parse --path-format=absolute --git-common-dir` (inline; placeholders: none)

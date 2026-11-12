@@ -1,8 +1,8 @@
 # ADR-0036: diff hygiene, the dependency rule and the debugging rule
 
 Status: accepted, 2026-11-09
-Decided by: PM and product owner, 2026-11-09 (review of an external list of agent coding rules against truss)
-Amends: core principle pack (adds rule 15, widens rule 13); the member prompts in `workflows/stage.js` and `agents/foreman.md`; QC engineer steps
+Decided by: program manager (PM) and product owner, 2026-11-09 (review of an external list of agent coding rules against truss)
+Amends: core principle pack (adds rule 15, widens rule 13); the member prompts in `workflows/stage.js` and `agents/project-manager.md`; QC engineer steps
 
 ## Context
 
@@ -15,8 +15,8 @@ An external list of coding rules for agents was checked item by item against tru
 ## Decision
 
 1. **Core rule 15:** a new dependency is added only when neither the language's standard library nor a dependency the project already has does the job, and the change says why. Its test: each package the diff adds to a manifest is named in the approved scope or has a `Why:` line in its commit message. Core rule 13 now reads "A behavior change or bug fix"; its test is unchanged.
-2. **DIFF** (builder, tester and resolver member prompts, and `agents/foreman.md`): change only the lines the task needs, match the file's style, add no covered dependency, and report an unscoped dependency as a proposal.
-3. **DEBUG** (builder prompts, `fixPrompt`, and `agents/foreman.md`): reproduce a bug with a failing test first, fix the cause, and say why an unexpected null, empty or error value occurs before guarding it.
+2. **DIFF** (builder, tester and resolver member prompts, and `agents/project-manager.md`): change only the lines the task needs, match the file's style, add no covered dependency, and report an unscoped dependency as a proposal.
+3. **DEBUG** (builder prompts, `fixPrompt`, and `agents/project-manager.md`): reproduce a bug with a failing test first, fix the cause, and say why an unexpected null, empty or error value occurs before guarding it.
 4. Neither text goes into QC, stress, writer, planning or judge prompts.
 5. **New QC step 10** (in `agents/qc-engineer.md` and `qcPrompt`, identical text): every hunk traces to the task; a pure reformat, rename or reorder is a finding unless the project's formatter or a hook produced it (compare `git diff <base>...<branch>` with `git diff -w`); each manifest addition is checked against rule 15; an unexplained guard or catch in a bug fix is a finding.
 6. **Persona Standards** (design engineer guidance) name the stack's built-ins that replace common packages (JS: `fetch`, `crypto.randomUUID`, `structuredClone`; Python: `pathlib`, `uuid`, `urllib.request`; Go: `net/http`, `log/slog`). Language-specific rules stay in the persona, not in core.

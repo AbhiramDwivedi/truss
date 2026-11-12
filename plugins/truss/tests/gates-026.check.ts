@@ -306,7 +306,7 @@ st('gates-026: competing processes with darwin and win32 platforms leave exactly
   }
 })
 
-// ---------------------------------------------------------------- item 9: owns-extend, and plan-check on rule files (ADR-0042)
+// ---------------------------------------------------------------- item 9: owns-extend, and plan-check on rule files (ADR-0043)
 
 function ownsWorld() {
   const env = mkEnv({ config: CFG, files: { 'a.txt': 'base\n' } })
@@ -343,7 +343,7 @@ st('gates-026: owns-check refuses a file then passes it after owns-extend with n
   assert.ok(line, `a decisions.md line holds the glob and the reason:\n${decisions}`)
 })
 
-st('gates-026: owns-extend adds a glob that overlaps another crew in the stage (ADR-0042)', () => {
+st('gates-026: owns-extend adds a glob that overlaps another crew in the stage (ADR-0043)', () => {
   const { env } = ownsWorld()
   const r = env.run('owns-extend', { slug: 's', glob: 'src/t/x.ts', reason: 'REASON-OVERLAP' })
   assert.equal(r.status, 0, say(r))
@@ -373,7 +373,7 @@ function ruleWorld() {
 }
 const planCheck = (w) => runCli(REAL_FACTORY, 'plan-check', ['--dir', w.dir, '--repo', w.repo], w.repo)
 
-// ADR-0042: the knowledge-owns rule is gone; a stage whose crews match a rule file no crew of the stage owns passes.
+// ADR-0043: the knowledge-owns rule is gone; a stage whose crews match a rule file no crew of the stage owns passes.
 st('gates-026: plan-check accepts a stage whose crews match a rule file no crew of that stage owns', () => {
   const w = ruleWorld()
   const r = planCheck(w)
@@ -530,7 +530,7 @@ st('gates-026: mark-merged does not drop an owns-extend that lands while it runs
   }
 })
 
-// ADR-0042: crews of two goals may both own a rule file or any other glob, with or without after, in plan-check and owns-extend.
+// ADR-0043: crews of two goals may both own a rule file or any other glob, with or without after, in plan-check and owns-extend.
 st('gates-026: plan-check and owns-extend let crews of two goals share a rule file and another glob, with no after', () => {
   const w = ruleWorld()
   const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-10-01T00:00:00.000Z', approval: 'auto', approvedAt: '2026-10-01T00:00:00.000Z' })
@@ -689,7 +689,7 @@ st('gates-026: holdOf escalates on the ref the budget verdict carries', () => {
 
 // Residual: no graded eval covers the knowledge-files rule in design-engineer.md. evals/case.schema.json:20 limits role to qc and
 // checker and evals/run-model.ts:13-18 has tools only for those, so the runner cannot exercise the design engineer; this prose pin is
-// the fallback. Since ADR-0042 crews may share files, so the step no longer says one crew per file per stage.
+// the fallback. Since ADR-0043 crews may share files, so the step no longer says one crew per file per stage.
 st('gates-026: design-engineer tells the planner to put each crew\'s knowledge files in owns', () => {
   const text = readFileSync(`${REAL_PLUGIN}/agents/design-engineer.md`, 'utf8')
   const at = text.indexOf('4. **Crews.**')

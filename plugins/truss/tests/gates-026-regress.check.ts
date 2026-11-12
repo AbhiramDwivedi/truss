@@ -1,5 +1,5 @@
 // Regression tests for the 0.26.0 gates fixes that shipped without one (R-71): `owns-extend` letting crews share a rule file
-// (its cross-goal refusal is gone since ADR-0042), the plan lock of `plan-write`, the fail-closed trailer check of `integrate`, and the stage.js stop on a
+// (its cross-goal refusal is gone since ADR-0043), the plan lock of `plan-write`, the fail-closed trailer check of `integrate`, and the stage.js stop on a
 // refusal that carries a `why` and no conflicts. Each case failed on the code before its fix.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
@@ -37,7 +37,7 @@ st('gates-026-regress: owns-extend lets a crew of another goal and stage own a r
   assert.deepEqual(readPlan(env.dir).crews.find((c) => c.slug === 'q').owns, ['src/q/**', RULE])
 })
 
-// ADR-0042 replaced the cross-goal and same-stage refusals: a crew may share a rule file or a plain file with any crew, with no after.
+// ADR-0043 replaced the cross-goal and same-stage refusals: a crew may share a rule file or a plain file with any crew, with no after.
 st('gates-026-regress: owns-extend lets a crew share a rule file or a plain file with another goal\'s crew or its own stage, with no after', () => {
   const env = goalsWorld([
     crew('p', { goal: 'g1', stage: 1, owns: [RULE, 'docs/z.md'], status: 'running' }),

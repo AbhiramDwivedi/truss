@@ -19,7 +19,7 @@ export function reportedSub(started: number, reported: number): string {
   const missing = started - reported
   return missing > 0 ? `${reported} reported, ${missing} ended without a report` : `${reported} reported`
 }
-const agentsOf = (c: Crew) => (c.foreman ? [c.foreman, ...c.members] : c.members)
+const agentsOf = (c: Crew) => (c.projectManager ? [c.projectManager, ...c.members] : c.members)
 
 export function RunMetrics({ state, now }: RunMetricsProps) {
   const usage = state?.session.usage

@@ -1,6 +1,6 @@
 # ADR-0015: resource-aware crews: a sampler, admission at each start, one heavy slot, group reaping and a Haiku monitor
 
-Status: proposed, 2026-10-31. Written by the design crew `resource-design` (stage 0 of goal `resource-aware`). It becomes accepted when the PM merges this crew. The goal's approval is `auto`. It is a PO fix under the client's 05:05 product-owner ruling, triaged by checker-20, and its plan is revision 4 (`plan-resource-aware.md` in the truss dir). This is truss's ADR-0015. It is not [claude-ops ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), the worktree-cleanup record that the architecture doc cites as "ADR-0015 item 9" and "item 11".
+Status: proposed, 2026-10-31. Written by the design crew `resource-design` (stage 0 of goal `resource-aware`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`. It is a PO fix under the client's 05:05 product-owner ruling, triaged by checker-20, and its plan is revision 4 (`plan-resource-aware.md` in the truss dir). This is truss's ADR-0015. It is not [claude-ops ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), the worktree-cleanup record that the architecture doc cites as "ADR-0015 item 9" and "item 11".
 
 Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): `admit` in `stage.js` fails closed, so a runner result that isn't JSON or has no boolean `admitted` stops the crew BLOCKED. G7 survives: a sampler error still admits with `freeMB: null`.
 
@@ -77,7 +77,7 @@ The PM writes the file (Decision 5). No factory command writes it.
 
 ### `start`
 
-`start` applies the same admission to each crew it would start, on both engines (workflow and foreman), after its existing slot check:
+`start` applies the same admission to each crew it would start, on both engines (workflow and project manager), after its existing slot check:
 
 1. The `maxParallelCrews` break at `bin/factory.ts:905` stays first, and stays silent, as today.
 2. Then admission runs for the crew. A held crew goes under a new top-level key, `held: [{ "slug", "why" }]`. It stays `planned`, gets no worktree and no spawn line, and takes no slot.
@@ -195,7 +195,7 @@ These are decided in Decision 3: a dead owner pid, or no owner file and an mtime
 
 - Raising parallelism above `maxParallelCrews`. That needs the client.
 - A detached UI server, or a `--detached` flag.
-- The foreman path (`agents/foreman.md`) is out of scope, and this ADR says so. Foreman crews get `start`'s admission (Decision 2) and nothing else.
+- The project manager path (`agents/project-manager.md`) is out of scope, and this ADR says so. Project manager crews get `start`'s admission (Decision 2) and nothing else.
 - macOS proof.
 - Queuing members' own heavy commands. This goes to the plugin fix goal as a proven gap, decided in [ADR-0017](0017-member-heavy-commands.md).
 - Carrying `resources/` under `plugins/truss` (C6, for the plugin-move goal).
