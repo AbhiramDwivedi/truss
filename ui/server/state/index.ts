@@ -259,11 +259,11 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     activityCache.set(key, next)
     return next === null ? null : next.value
   }
-  // `foremanOf` is the crew slug for a foreman, else null: a foreman with no other task falls back to its goal file.
-  function taskFor(m: Member, foremanOf: string | null): string | null {
+  // `projectManagerOf` is the crew slug for a project manager, else null: a project manager with no other task falls back to its goal file.
+  function taskFor(m: Member, projectManagerOf: string | null): string | null {
     const t = m.agentId === null ? null : (taskOf.get(m.agentId) ?? transcriptTask(m.agentId))
-    if (t !== null || foremanOf === null || trussDir === null) return t
-    return readGoalTask(trussDir, foremanOf)
+    if (t !== null || projectManagerOf === null || trussDir === null) return t
+    return readGoalTask(trussDir, projectManagerOf)
   }
 
   // A running crew's workflow members that the events log has not recorded yet (it records them when the stage ends),
@@ -312,10 +312,10 @@ export function createStore(opts: { repo: string; trussDir?: string; pluginPath?
     return value
   }
   function decorate(r: Run): Run {
-    const fill = (m: Member, foremanOf: string | null): Member => ({
+    const fill = (m: Member, projectManagerOf: string | null): Member => ({
       ...m,
-      purpose: purposeOf(purposes, m.type, foremanOf !== null),
-      task: taskFor(m, foremanOf),
+      purpose: purposeOf(purposes, m.type, projectManagerOf !== null),
+      task: taskFor(m, projectManagerOf),
       activity: activityFor(m),
     })
     return { ...r, crews: r.crews.map((c) => ({ ...c, foreman: c.foreman === null ? null : fill(c.foreman, c.slug), members: [...c.members.map((m) => fill(m, null)), ...liveMembers(c)] })) }
