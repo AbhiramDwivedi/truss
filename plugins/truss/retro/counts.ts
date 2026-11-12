@@ -418,7 +418,7 @@ type Run = {
   recommendations: { total: number; answer: number; defer: number; pass: number }
   messages: number
   spawns: { total: number; byModelEffort: Dict }
-  stalls: { agent: number; idleForeman: number }
+  stalls: { agent: number; idleProjectManager: number }
   esc: { QUESTION: number; BLOCKED: number; PROPOSAL: number }
   qcs: { pass: number; fail: number }
   allowanceCrews: Set<string>
@@ -437,7 +437,7 @@ const newRun = (started: string, goal: string, dt: bigint | null): Run => ({
   recommendations: { total: 0, answer: 0, defer: 0, pass: 0 },
   messages: 0,
   spawns: { total: 0, byModelEffort: new Map() },
-  stalls: { agent: 0, idleForeman: 0 },
+  stalls: { agent: 0, idleProjectManager: 0 },
   esc: { QUESTION: 0, BLOCKED: 0, PROPOSAL: 0 },
   qcs: { pass: 0, fail: 0 },
   allowanceCrews: new Set(),
@@ -589,7 +589,7 @@ const processEvents = (files: string[], runs: Run[]): { skipped: number; outside
       } else if (kind === 'stall') {
         const k = get(ev, 'kind')
         if (k === 'agent') run.stalls.agent++
-        else if (k === 'idle-foreman') run.stalls.idleForeman++
+        else if (k === 'idle-project-manager') run.stalls.idleProjectManager++
       } else if (kind === 'tag') {
         const tag = get(ev, 'tag')
         if (tag === 'QUESTION' || tag === 'BLOCKED' || tag === 'PROPOSAL') run.esc[tag]++
