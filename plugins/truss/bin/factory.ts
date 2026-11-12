@@ -701,7 +701,7 @@ function cmdApprove(f: Flags): Obj {
   const clientGoals = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
   if (plan.approvedAt !== null && plan.approvedAt !== undefined) {
     // ADR-0045: the client's typed approve of the run item already approved the plan; the first --by client call with that proof confirms it
-    if (by === 'client' && confirmApproval(repo, dir, str(f, 'item'), clientGoals)) return { approvedAt: plan.approvedAt }
+    if (by === 'client' && confirmApproval(repo, dir, str(f, 'item'))) return { approvedAt: plan.approvedAt }
     throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
   }
   // contract-025 section 3 (finding #17): auto never approves a goal that needs the client. ADR-0044: a stage-0 crew alone no longer
@@ -712,7 +712,7 @@ function cmdApprove(f: Flags): Obj {
   }
   // ADR-0045: approve --by client is the client's act; it passes only with the typed proof /truss:inbox resolve requires (ADR-0037).
   if (by === 'client') {
-    const why = approvalProof(repo, dir, str(f, 'item'), clientGoals)
+    const why = approvalProof(repo, dir, str(f, 'item'))
     if (why !== null) throw refuse({ error: `approve --by client: ${why}` })
   }
   const ltc = ltcPlanGate(repo, dir)
