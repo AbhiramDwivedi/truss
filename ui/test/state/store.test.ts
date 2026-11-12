@@ -365,7 +365,7 @@ function registerTests(mod: any): void {
     const store = await ready(w)
     const other = path.join(w.base, 'other')
     fs.mkdirSync(other)
-    fs.writeFileSync(path.join(other, 'events.jsonl'), spawnLine('2026-10-28T01:00:00.000Z', 'solo', 'solo', { type: 'truss:foreman' }))
+    fs.writeFileSync(path.join(other, 'events.jsonl'), spawnLine('2026-10-28T01:00:00.000Z', 'solo', 'solo', { type: 'truss:project-manager' }))
     store.setTrussDir(other)
     await until(store, (st) => st.run !== null && crew(st, 'solo') !== undefined, 2000, 'solo crew from the other dir')
     const s = store.snapshot().state

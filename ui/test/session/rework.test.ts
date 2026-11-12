@@ -76,7 +76,7 @@ const PLAN = JSON.stringify({
   crews: [{ slug: 'alpha', stage: 0, verdict: 'build', modules: ['m'], owns: ['src/alpha.ts'], acceptanceTest: 'npm test', acceptanceTestProved: true, estAgents: 2, status: 'planned' }],
 });
 const SPAWNS = jsonl([
-  { v: 1, ts: '2026-11-04T16:00:00Z', event: 'spawn', crew: 'alpha', agent: 'alpha', agentId: 'a0000000000000000', type: 'truss:foreman', model: 'opus', effort: 'high', by: 'main' },
+  { v: 1, ts: '2026-11-04T16:00:00Z', event: 'spawn', crew: 'alpha', agent: 'alpha', agentId: 'a0000000000000000', type: 'truss:project-manager', model: 'opus', effort: 'high', by: 'main' },
   { v: 1, ts: '2026-11-04T16:00:01Z', event: 'spawn', crew: 'alpha', agent: 'alpha-builder', agentId: NEWEST_TASK, type: 'kit:builder', model: 'opus', effort: 'high', by: 'main' },
 ]);
 
@@ -136,7 +136,7 @@ const pmCall = (n: number) => {
   const tool = ['Agent', 'SendMessage'][n % 2];
   const tag = `call ${String(n).padStart(4, '0')} ${slug} `;
   const text = tag + 'x'.repeat(300);
-  const input = tool === 'SendMessage' ? { to: slug, message: text + '\nsecond line' } : { description: text, prompt: `Work on ${slug}`, subagent_type: 'truss:foreman' };
+  const input = tool === 'SendMessage' ? { to: slug, message: text + '\nsecond line' } : { description: text, prompt: `Work on ${slug}`, subagent_type: 'truss:project-manager' };
   return {
     type: 'assistant', parent_tool_use_id: null,
     message: { id: `msg_${n}`, role: 'assistant', content: [{ type: 'tool_use', id: `toolu_${n}`, name: tool, input }], usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
