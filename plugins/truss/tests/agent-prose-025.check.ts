@@ -75,7 +75,7 @@ test('agent prose 025: checking-engineer carries the unattended eligibility list
   const want = [
     /outcome that can be checked/i,
     /fits one work ?type/i,
-    /no stage-0 crew/i,
+    /no design crew/i,
     /no external service and no stored data shape/i,
     /no production system/i,
   ]

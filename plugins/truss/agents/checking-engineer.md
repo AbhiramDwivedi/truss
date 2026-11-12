@@ -96,7 +96,7 @@ In an unattended run (`/truss:run --next`), the PM gives you one queued item, fe
 
 - it names an outcome that can be checked;
 - it fits one workType;
-- it needs no stage-0 crew;
+- it needs no design crew;
 - it adds no external service and no stored data shape;
 - it touches no production system.
 

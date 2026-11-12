@@ -69,7 +69,7 @@ Already flexible: the design engineer's `extend`/`change` verdict per module; an
 
 Still applied every time:
 
-- Any `change` verdict brings a whole stage-0 design crew (design engineer, probe, test-writers, QC engineer), even when the change is one ADR paragraph that a crew's own foreman could write.
+- Any `change` verdict brings a whole stage-0 design crew (design engineer, probe, test-writers, QC engineer), even when the change is one ADR paragraph that a crew's own project manager could write. Done in ADR-0042 (split by need): a design crew only for an open design question; a decided ADR goes with the crew that builds it.
 - Contract tests are always written up front by a separate crew, even for a small change a crew can test itself.
 - Plan time always chains design engineer, checking engineer, reconcile round, checking engineer.
 - Every crew gets the full set: test-writer, builder, QC engineer, repair QC engineer.

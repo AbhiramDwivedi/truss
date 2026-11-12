@@ -623,12 +623,15 @@ function cmdPlanCheck(f: Flags): Obj {
           if (g.approval !== 'auto' && g.approval !== 'client') errors.push(`plan: goals[${i}] (${id}) approval must be auto or client`)
           if (g.approvedAt !== null && typeof g.approvedAt !== 'string') errors.push(`plan: goals[${i}] (${id}) approvedAt must be a date-time string or null`)
           else if (g.approval === 'auto' && g.approvedAt === null) errors.push(`plan: goals[${i}] (${id}) approvedAt must be a string on an auto goal`)
+          if (Object.hasOwn(g, 'goalCheck') && (typeof g.goalCheck !== 'string' || g.goalCheck.trim() === '')) errors.push(`plan: goals[${i}] (${id}) goalCheck must be a non-empty string`)
         })
       }
     }
   }
-  const hasStage0 = crews.some((c) => c.stage === 0 && goalOf(c) === RUN_GOAL)
-  if ((plan.approval === 'client') !== hasStage0) errors.push(`plan: approval must be client exactly when a stage-0 crew exists (approval ${JSON.stringify(plan.approval)}, stage-0 crews ${hasStage0 ? 'exist' : 'do not'})`)
+  // ADR-0042: approval no longer follows stage 0; it is client when a client trigger, a long-term cost or the brief says so
+  if (plan.approval !== 'auto' && plan.approval !== 'client') errors.push('plan: approval must be auto or client')
+  // ADR-0042: the goal-wide check the program manager runs after the goal's last merge; optional at every version
+  if (Object.hasOwn(plan, 'goalCheck') && (typeof plan.goalCheck !== 'string' || plan.goalCheck.trim() === '')) errors.push('plan: goalCheck must be a non-empty string')
   for (const c of crews) {
     const s = name(c)
     if (typeof c.slug !== 'string' || !SLUG.test(c.slug)) errors.push(`${s}: slug does not match the slug pattern`)
@@ -655,7 +658,6 @@ function cmdPlanCheck(f: Flags): Obj {
         if (lean && est > 3) errors.push(`${s}: estAgents ${est} is above 3 for a lean crew`)
         else if (lean && est > 2 && c.qc !== true) errors.push(`${s}: estAgents ${est} is above 2 for a lean crew without qc`)
       }
-      if (c.stage === 0 && hasProc && c.process !== 'full') errors.push(`${s}: process must be full on a stage-0 design crew, not ${String(c.process)}`)
     } else {
       if (hasProc) errors.push(`${s}: process is version 4 only`)
       if (hasQc) errors.push(`${s}: qc is version 4 only`)
@@ -723,7 +725,42 @@ function cmdPlanCheck(f: Flags): Obj {
   }
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
-  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name) }
+  const warnings = stageWarnings(dirOf(f), crews)
+  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
+}
+
+// ADR-0042 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's
+// plan.md (plan-<id>.md for an added goal). A missing line is a warning, never an error: the plan still passes.
+function stageWarnings(dir: string, crews: Obj[]): string[] {
+  const out: string[] = []
+  const goals = [...new Set(crews.map(goalOf))]
+  for (const g of goals) {
+    const mine = crews.filter((c) => goalOf(c) === g && Number.isInteger(c.stage))
+    const stages = [...new Set(mine.map((c) => c.stage as number))].sort((a, b) => a - b)
+    if (stages.length < 2) continue
+    const file = g === RUN_GOAL ? 'plan.md' : `plan-${g}.md`
+    let md = ''
+    try {
+      md = readFileSync(`${dir}/${file}`, 'utf8')
+    } catch {
+      // no plan.md: every later stage lacks its Why line
+    }
+    const ownsOf = (c: Obj): string[] => (Array.isArray(c.owns) ? c.owns.filter((x: unknown): x is string => typeof x === 'string') : [])
+    for (let k = 1; k < stages.length; k++) {
+      const n = stages[k]
+      if (new RegExp(`^\\s*(?:[-*]\\s+)?Why stage ${n}:`, 'm').test(md)) continue
+      const here = mine.filter((c) => c.stage === n)
+      const earlier = mine.filter((c) => (c.stage as number) < n)
+      const linked = here.some((c) => (Array.isArray(c.after) && c.after.length > 0) || earlier.some((e) => ownsOf(c).some((a) => ownsOf(e).some((b) => globsOverlap(a, b)))))
+      const tag = g === RUN_GOAL ? '' : ` of goal ${g}`
+      out.push(
+        linked
+          ? `stage ${n}${tag}: no "Why stage ${n}:" line in ${file}; say which crew needs which earlier crew's merged work, or merge it into stage ${stages[k - 1]}`
+          : `stage ${n}${tag}: no "Why stage ${n}:" line in ${file}, and no crew of it owns a path of an earlier stage or has an after; merge it into stage ${stages[k - 1]} or add the Why line`,
+      )
+    }
+  }
+  return out
 }
 
 function cmdApprove(f: Flags): Obj {
@@ -733,12 +770,12 @@ function cmdApprove(f: Flags): Obj {
   const repo = repoOf(f)
   const plan = loadPlan(dir)
   if (plan.approvedAt !== null && plan.approvedAt !== undefined) throw refuse({ error: `the plan is already approved (${String(plan.approvedAt)})` })
-  // contract-025 section 3 (finding #17): auto never approves a goal that needs the client or a stage-0 design crew
+  // contract-025 section 3 (finding #17): auto never approves a goal that needs the client. ADR-0042: a stage-0 crew alone no longer
+  // needs the client; a plan whose own approval is client does.
   if (by === 'auto') {
+    if (plan.approval === 'client') throw refuse({ error: "approve --by auto: the plan's approval is client, so it needs the client's approval", goals: [RUN_GOAL] })
     const client = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
     if (client.length > 0) throw refuse({ error: `approve --by auto: ${client.length === 1 ? 'goal' : 'goals'} ${client.join(', ')} ${client.length === 1 ? 'needs' : 'need'} the client's approval`, goals: client })
-    const stage0 = plan.crews.filter((c: unknown) => isObj(c) && c.stage === 0).map((c: Obj) => String(c.slug))
-    if (stage0.length > 0) throw refuse({ error: `approve --by auto: stage-0 crew ${stage0.join(', ')} needs the client's approval`, crews: stage0 })
   }
   const ltc = ltcPlanGate(repo, dir)
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })

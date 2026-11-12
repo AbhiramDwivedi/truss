@@ -94,14 +94,21 @@ test('wiring 025: approve by auto refuses a client goal', () => {
   assert.equal(ok.run('approve', { by: 'auto' }).status, 0)
 })
 
-test('wiring 025: approve by auto refuses a stage-0 crew', () => {
+test('wiring 025: approve by auto refuses a plan whose approval is client, and approves an auto plan with a stage-0 crew (ADR-0042)', () => {
   const env = mkEnv()
   writePlan(env.dir, planObj([crew('design0', { stage: 0, verdict: 'design' }), crew('alpha', { stage: 1 })], { approvedAt: null, approval: 'client' }))
   const r = env.run('approve', { by: 'auto' })
   assert.equal(r.status, 1, `exit 1 expected: ${r.stdout} ${r.stderr}`)
+  assert.match(r.stdout, /approval is client/)
   assert.equal(readPlan(env.dir).approvedAt, null, 'the plan stays unapproved')
   // control: the client can approve the same plan
   assert.equal(env.run('approve', { by: 'client' }).status, 0)
+  // a stage-0 crew alone no longer needs the client
+  const auto = mkEnv()
+  writePlan(auto.dir, planObj([crew('design0', { stage: 0, verdict: 'design' }), crew('alpha', { stage: 1 })], { approvedAt: null, approval: 'auto' }))
+  const a = auto.run('approve', { by: 'auto' })
+  assert.equal(a.status, 0, `${a.stdout} ${a.stderr}`)
+  assert.equal(typeof readPlan(auto.dir).approvedAt, 'string')
 })
 
 test('wiring 025: admit holds on a stubbed blocking id', () => {
