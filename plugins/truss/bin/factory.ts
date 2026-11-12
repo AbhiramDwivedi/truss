@@ -667,7 +667,7 @@ function cmdPlanCheck(f: Flags): Obj {
 }
 
 // ADR-0044 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's
-// plan.md (plan-<id>.md for an added goal). A missing line is a warning, never an error: the plan still passes.
+// plan.md (plan-<id>.md for an added goal); bold (`**Why stage <n>:**`) and a table cell (`| Why stage <n>:`) count. A missing line warns only.
 function stageWarnings(dir: string, crews: Obj[]): string[] {
   const out: string[] = []
   const goals = [...new Set(crews.map(goalOf))]
@@ -684,7 +684,7 @@ function stageWarnings(dir: string, crews: Obj[]): string[] {
     }
     for (let k = 1; k < stages.length; k++) {
       const n = stages[k]
-      if (new RegExp(`^\\s*(?:[-*]\\s+)?Why stage ${n}:`, 'm').test(md)) continue
+      if (new RegExp(`(?:^\\s*(?:[-*]\\s+)?|\\|\\s*)(?:\\*\\*)?Why stage ${n}(?::|\\*\\*:)`, 'm').test(md)) continue
       const tag = g === RUN_GOAL ? '' : ` of goal ${g}`
       out.push(`stage ${n}${tag}: no "Why stage ${n}:" line in ${file}; say which crew needs which earlier crew's merged work, or merge it into stage ${stages[k - 1]}`)
     }

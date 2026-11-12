@@ -52,7 +52,7 @@ Every new ADR you write follows this template, in this order. Leave existing ADR
 # ADR-NNNN: <the decision, as a short verb phrase>
 
 Status: proposed | accepted | rejected | superseded by ADR-NNNN, YYYY-MM-DD
-Decided by: client | default | <named person or ruling>
+Decided by: client | default | program manager (auto) | <named person or ruling>
 Amends: ADR-NNNN
 
 ## Context
@@ -63,7 +63,7 @@ Amends: ADR-NNNN
 ```
 
 - **Status:** the line starts `Status: ` and then the status word, because tools read the word there. Add the date the status took effect.
-- **Decided by:** `client` when the client ruled, a named person or ruling when one did, and exactly `Decided by: default` when you took the default yourself, as for an extend-pass fork.
+- **Decided by:** `client` when the client ruled, a named person or ruling when one did, `program manager (auto)` plus what it rests on when an auto-approved plan settled it with no client ruling, and exactly `Decided by: default` when you took the default yourself, as for an extend-pass fork. Never write `client` for a decision the client did not make.
 - **Amends** or **Supersedes:** only when the ADR changes or replaces an earlier one; otherwise leave the line out.
 - **Context:** what forces the decision. Facts only, each traced to code (`path:line`), a command you ran, or an R-id.
 - **Decision Drivers:** optional. A bullet list of the criteria the options are judged on.
@@ -113,7 +113,7 @@ Amends: ADR-NNNN
 
 **Inputs.** The goal, the truss dir, the architecture doc's path, and the path of `requirements.md` and the R-ids this run accepted (when the client brief ran), and optionally the absolute path of `plan.schema.json`. Without one, the schema is at `<principles skill base dir>/../../docs/plan.schema.json`, which is the truss plugin's `docs/plan.schema.json`.
 
-**Staffing pass.** After the verdicts and before you finish the crews, map each crew's areas to the personas in your brief's inventory (project agents in `.claude/agents/`). A crew whose area has no persona is a gap; a crew that spans two personas' areas is split along them. For each gap, draft a persona file to `<your worktree>/.truss-scratch/personas/<name>.md` and hand it back in your report under a `PERSONA: <name>` line, each in its own four-backtick fenced block; `factory plan-write` writes it to `<truss dir>/personas/<name>.md`. Follow "Persona rules" below. Draft a read-only `product-owner` judge when the project has none (see "Persona rules"). Never draft a generic "builder", "tester" or "developer" persona: a persona names a stack and an area. Name each crew's personas in `plan.md`.
+**Staffing pass.** After the verdicts and before you finish the crews, map each crew's areas to the personas in your brief's inventory (project agents in `.claude/agents/`). A crew whose area has no persona is a gap. A crew may span several personas' areas: its members are staffed by persona, and a crew is split only for the context budget (crews rule 6). For each gap, draft a persona file to `<your worktree>/.truss-scratch/personas/<name>.md` and hand it back in your report under a `PERSONA: <name>` line, each in its own four-backtick fenced block; `factory plan-write` writes it to `<truss dir>/personas/<name>.md`. Follow "Persona rules" below. Draft a read-only `product-owner` judge when the project has none (see "Persona rules"). Never draft a generic "builder", "tester" or "developer" persona: a persona names a stack and an area. Name each crew's personas in `plan.md`.
 
 **Uncovered domains come first.** Before you draft, list the platforms, product types and tools the goal touches. A domain is uncovered when neither a pack you loaded nor a section of the architecture doc covers its expensive decisions (see "Reversal cost decides" under init mode); a generic pack's diff-level rules alone don't cover it. When any domain is uncovered, write no plan and no doc: report one `UNCOVERED: <domain> | <why the goal touches it>` line per domain (see Report) and stop. The PM runs an extend pass and then starts plan mode again.
 
@@ -170,7 +170,7 @@ A persona is a project agent file, `<repo>/.claude/agents/<name>.md`: frontmatte
 
 ## design mode
 
-**Who starts you.** A design crew's project manager. You are a member of that crew. Design mode runs in any stage: stage 0, or a mid-run design slice in a later stage.
+**Who starts you.** A design crew's project manager. You are a member of that crew. Design mode runs in any stage: the goal's first stage, or a mid-run design slice in a later stage.
 
 **Inputs.** The crew's goal, the `change` verdicts it covers, the architecture doc and ADR directory, and the files the crew owns.
 
@@ -214,7 +214,7 @@ Keep each diagram to at most about 12 nodes; split a bigger picture into several
 In `plan` mode, give one verdict for each module the goal touches. Modules get only `extend` or `change`; a crew's `verdict` in `plan.json` follows from what it does:
 
 - A `design` crew settles an open design question: one the brief, the client and the accepted ADRs leave open, which the crews that build on it need settled first. It writes the ADRs, the doc change and the contract tests, and may be `lean`. It is in the goal's first stage, or is a mid-run design slice.
-- A crew that builds on `change` modules is a `change` crew. When the client or an accepted ADR already decided the design, there is no design crew: the `change` crew writes the ADR itself (`Decided by: client`) and the doc change, in the same stage as its build. Only a `change` crew that needs a design crew's merged ADR sits in a later stage.
+- A crew that builds on `change` modules is a `change` crew. When the client or an accepted ADR already decided the design, there is no design crew: the `change` crew writes the ADR itself and the doc change, in the same stage as its build; put the ADR's path in its `owns`. Its `Decided by:` line records who actually decided: `client` only when the client ruled on the design or approves the plan (`approval: "client"`); otherwise `program manager (auto)` plus the brief line, requirement or accepted ADR the decision rests on. Only a `change` crew that needs a design crew's merged ADR sits in a later stage.
 - A crew with only `extend` modules is an `extend` crew.
 
 `plan.md` lists the per-module verdicts.
@@ -248,7 +248,7 @@ Split the goal once, on paper, along the module map, by the leaf test below. Nev
 
    Split only along the condition that fails.
 3. **Floor.** An item with no check that could fail for it alone is too small. Merge it into a sibling in the same module. When the module has no other item, the item rides with the crew of the module it serves most closely.
-4. **Crews.** Group items into crews, by module to start with. Two crews may edit the same file, in one stage or across goals (ADR-0043): each builds in its own worktree, and they merge one at a time, the later crew merging the target into its branch and resolving conflicts first. Prefer directories or exact file names in `owns`. Put each crew's knowledge files in its `owns` from the start: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. Split by need, not to keep files apart: crews that share a hot file (an index, registry or route table) cost a conflict resolution at merge, so when many crews would all edit one such file, a stage-0 crew may add an extension point so each crew adds its own file instead.
+4. **Crews.** Group items into crews, by module to start with. Two crews may edit the same file, in one stage or across goals (ADR-0043): each builds in its own worktree, and they merge one at a time, the later crew merging the target into its branch and resolving conflicts first. Prefer directories or exact file names in `owns`. Put each crew's knowledge files in its `owns` from the start: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. Split by need, not to keep files apart: crews that share a hot file (an index, registry or route table) cost a conflict resolution at merge, so when many crews would all edit one such file, an earlier-stage crew may add an extension point so each crew adds its own file instead.
 5. **Stages, from dependency only.**
    - Every crew that needs nothing merged first goes in the goal's first stage.
    - A crew goes in a later stage only when it needs another crew's merged work: its new interface, its ADR, its generated file. Write one line per later stage in `plan.md`: `Why stage <n>: <crew> needs <crew>'s merged <what>`.

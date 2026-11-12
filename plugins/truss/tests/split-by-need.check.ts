@@ -79,6 +79,18 @@ test(P + 'plan-check warns, never refuses, on a later stage with no Why stage li
   const why = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n- Why stage 2: gamma needs alpha\'s merged parser\n')
   accepted(why)
   assert.equal(why.json.warnings, undefined, say(why))
+  // a bold Why line, with the colon inside or outside the bold, and a table cell clear it too
+  for (const md of ['**Why stage 2:** gamma needs alpha\'s merged parser\n', '- **Why stage 2**: gamma needs alpha\'s parser\n', '| Stage | Why |\n| --- | --- |\n| 2 | Why stage 2: gamma needs alpha |\n', '| **Why stage 2:** gamma needs alpha |\n']) {
+    const r = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n' + md)
+    accepted(r)
+    assert.equal(r.json.warnings, undefined, `${JSON.stringify(md)}: ${say(r)}`)
+  }
+  // a Why line for another stage, or one buried mid-sentence, does not
+  for (const md of ['Why stage 12: gamma needs alpha\n', 'We say Why stage 2: inline only\n']) {
+    const r = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n' + md)
+    accepted(r)
+    assert.equal(r.json.warnings?.length, 1, `${JSON.stringify(md)}: ${say(r)}`)
+  }
   // an added goal's stages read its own plan-<id>.md
   const goal = { id: 'gtwo', goal: 'another goal', addedAt: NOW, approval: 'auto', approvedAt: NOW }
   const added = planObj([crew('alpha'), crew('ga', { goal: 'gtwo', stage: 0 }), crew('gb', { goal: 'gtwo', stage: 1 })], { version: 3, goals: [goal] })
@@ -100,6 +112,16 @@ test(P + 'approve --by auto approves an auto plan with a stage-0 crew and refuse
   const no = client.run('approve', { by: 'auto' })
   assert.equal(no.status, 1, say(no))
   assert.deepEqual(no.json.goals, ['run'])
+})
+
+test(P + 'a change crew\'s ADR records who actually decided, never client for an auto-approved plan', () => {
+  const read = (p: string) => readFileSync(`${REAL_PLUGIN}/${p}`, 'utf8').replace(/\r/g, '')
+  for (const [name, text] of [['design-engineer.md', read('agents/design-engineer.md')], ['ADR-0044', read('docs/adr/0044-split-by-need.md')]]) {
+    assert.doesNotMatch(text, /writes the ADR \(`Decided by: client`\)/, `${name} still has every change-crew ADR say client`)
+    assert.match(text, /`client` only when the client ruled on the design or approve[sd] the plan/, `${name}: client only when the client ruled or approved`)
+    assert.match(text, /`program manager \(auto\)`/, `${name}: no program manager (auto) case`)
+  }
+  assert.match(read('agents/design-engineer.md'), /^Decided by: client \| default \| program manager \(auto\) \|/m, 'the ADR format line lacks program manager (auto)')
 })
 
 test(P + 'an amend carries goal.goalCheck into its goals entry and refuses an empty one', () => {

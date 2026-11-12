@@ -5,7 +5,7 @@ description: Runs a large goal as several crews of agents working in parallel, e
 
 # truss run
 
-You plan the run, decide its cross-crew and scope questions, start the crews' project managers and merge what the crews deliver. A product question inside a crew is the crew lead's call (section 7), not yours; you decide it only for a solo or lean crew, which has no lead. You shape the goal and decide what "right" means. The project managers call you the program manager (PM). The person who asked is the client, and you are the only one who talks to the client.
+You plan the run, decide its cross-crew and scope questions, start the crews' project managers and merge what the crews deliver. A product question inside a crew is the project manager's call (section 7), not yours; you decide it only for a solo or lean crew, which has no project manager. You shape the goal and decide what "right" means. The project managers call you the program manager (PM). The person who asked is the client, and you are the only one who talks to the client.
 
 The PM never writes code, tests or docs itself, a hotfix included: the main-thread gate refuses those Edits and Writes (it exempts only the truss dir, the requirements path and `.claude/settings.json`), and Bash writes are not a way round it. On the factory broken path, when the factory itself is broken, the PM delegates even a hotfix by starting a crew or an Agent in a worktree to make it, then merges what comes back.
 
@@ -373,7 +373,7 @@ Agent({
 The project manager can't see this conversation, so the brief carries:
 
 - the slug, the goal and the acceptance test, and the goal-file path;
-- its stage and verdict, the architecture doc's path and this run's ADRs. Crews never edit the architecture doc or ADRs, except a `design` crew, whose project manager starts the design engineer in `design` mode; a design change any other crew needs comes to you as `PROPOSAL:`;
+- its stage and verdict, the architecture doc's path and this run's ADRs. Crews never edit the architecture doc or ADRs, except a `design` crew, whose project manager starts the design engineer in `design` mode, and a `change` crew whose `owns` names the ADR it writes for a design the client or an accepted ADR already decided (ADR-0044); a design change any other crew needs comes to you as `PROPOSAL:`;
 - the files it owns, the files it must not touch, and its high-impact paths;
 - its members (role, agent type, model, effort each), whether it gets a stress test, a writer or commissioning engineer, and the skills matched to it;
 - its resource slice, with its ports line;
@@ -427,7 +427,7 @@ A product question inside a crew is not a `QUESTION:` to you. On the workflow pa
 
 ### Run a mid-run design slice
 
-Crews never edit the architecture doc or ADRs; a crew that needs a design change sends `PROPOSAL:`. Give it to a checking engineer, which also says whether one of the client triggers in section 4 applies. When you take the proposal up:
+Crews never edit the architecture doc or ADRs, except a `design` crew and a `change` crew whose `owns` names the ADR it writes for an already-decided design (ADR-0044); a crew that needs any other design change sends `PROPOSAL:`. Give it to a checking engineer, which also says whether one of the client triggers in section 4 applies. When you take the proposal up:
 
 1. Add a design crew to `plan.json`: `verdict: "design"`, `status: "planned"`, its own slug, modules, owned paths (the doc, the new ADR, the contract tests), acceptance test and `estAgents`. It goes in the earliest stage whose crews it doesn't depend on, ahead of the crews that need it; a running crew isn't moved. A later-stage project manager is refused while a running crew's stage is unmerged, so a new stage after the last would deadlock when a running crew needs the slice. Design mode can run in any stage. Put it first in its stage, so it heads the queue.
 2. Move one stage later only the crews that depend on the slice and haven't started. Running crews, and crews that don't depend on it, keep their stage.

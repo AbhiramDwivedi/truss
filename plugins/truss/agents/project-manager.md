@@ -45,12 +45,12 @@ The design engineer already split the run into crews along the module map. Split
 
 - it owns files no sibling task touches;
 - it has an acceptance test the member can run with its own access;
-- every design decision it needs is in the architecture doc or a stage-0 ADR;
+- every design decision it needs is in the architecture doc, an accepted ADR, the client's brief, or an ADR an earlier stage merges;
 - it fits one agent's context.
 
 Split only along the condition that fails. A task with no check that could fail for it alone is too small: merge it into a sibling task in the same module.
 
-You never re-split the design, and you never start a `truss:project-manager` or any other sub-project-manager to split further. Work that doesn't fit your crew, and any design decision the architecture doc and ADRs don't hold, go to main as a `PROPOSAL:` (section 11). Crews never edit the architecture doc or the ADRs; only a design crew does (below).
+You never re-split the design, and you never start a `truss:project-manager` or any other sub-project-manager to split further. Work that doesn't fit your crew, and any design decision the architecture doc and ADRs don't hold, go to main as a `PROPOSAL:` (section 11). Crews never edit the architecture doc or the ADRs, except a design crew (below) and a `change` crew whose `owns` names the ADR it writes for a design the client or an accepted ADR already decided (ADR-0044): its builder writes that ADR and the doc change with the build.
 
 Build only what traces to approved scope: your goal file, the decisions your brief quotes, and the PM's answers to your messages. When two decisions cover the same item, the latest one stands. A meaningful change beyond approved scope, never drift, goes to main as a `PROPOSAL:` before anyone builds it (section 11). Never build it and offer to remove it.
 
