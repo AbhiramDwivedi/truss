@@ -7,7 +7,7 @@
 // Not a *.test.ts file on purpose: `claude plugin test` runs tests with no fs.
 // The code under test is imported inside each test, so a missing module fails that test with
 // "producer missing: brief/ledger.ts" instead of crashing the file.
-// Names the ADR leaves open are pinned in the describe('foreman-pinned shapes ...') block at the end; adjust them there.
+// Names the ADR leaves open are pinned in the describe('project-manager-pinned shapes ...') block at the end; adjust them there.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -675,9 +675,9 @@ describe('Seam 5: running cli.ts as a script', () => {
   })
 })
 
-// ======================= foreman-pinned =======================
+// ======================= project-manager-pinned =======================
 
-describe('foreman-pinned shapes (ADR leaves open)', () => {
+describe('project-manager-pinned shapes (ADR leaves open)', () => {
   test('branch object: { id, pack, visit[], fact?, ask, recommend, writes, opens[] }', async () => {
     const { parseBranches } = await ledger()
     const bs = parseBranches(SAMPLE)

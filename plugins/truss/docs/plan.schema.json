@@ -33,7 +33,7 @@
       "enum": ["auto", "client"]
     },
     "approvedAt": {
-      "description": "An RFC 3339 date-time with a time-zone offset (JSON Schema format date-time), for example 2026-10-26T14:03:00+01:00 or 2026-10-26T13:03:00Z. A date-time with no offset is invalid. The design engineer's draft sets it: an \"auto\" draft carries the time the design engineer wrote the plan, which the PM overwrites with the time it logged the plan; an \"client\" draft carries null, which the PM replaces with the time the client approved. The allOf rule requires a string when approval is \"auto\". Null only while a run waits for the client; while approval is \"client\" and this is null, the run-level approval gate refuses every foreman in the plan.",
+      "description": "An RFC 3339 date-time with a time-zone offset (JSON Schema format date-time), for example 2026-10-26T14:03:00+01:00 or 2026-10-26T13:03:00Z. A date-time with no offset is invalid. The design engineer's draft sets it: an \"auto\" draft carries the time the design engineer wrote the plan, which the PM overwrites with the time it logged the plan; an \"client\" draft carries null, which the PM replaces with the time the client approved. The allOf rule requires a string when approval is \"auto\". Null only while a run waits for the client; while approval is \"client\" and this is null, the run-level approval gate refuses every project manager in the plan.",
       "type": ["string", "null"],
       "format": "date-time"
     },
@@ -209,7 +209,7 @@
       ],
       "properties": {
         "slug": {
-          "description": "The crew's name, and the name of its truss:foreman: lowercase letters and digits in words joined by single hyphens, never ending in -<digits>. The -<digits> ending is reserved because a successor foreman is named <slug>-<n> and the hooks gate a successor as its base slug. safeName in hooks/register.ts leaves such a name of up to 100 characters unchanged, so report folders match the slug.",
+          "description": "The crew's name, and the name of its truss:project-manager: lowercase letters and digits in words joined by single hyphens, never ending in -<digits>. The -<digits> ending is reserved because a successor project manager is named <slug>-<n> and the hooks gate a successor as its base slug. safeName in hooks/register.ts leaves such a name of up to 100 characters unchanged, so report folders match the slug.",
           "type": "string",
           "maxLength": 100,
           "pattern": "^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -257,7 +257,7 @@
           "minimum": 1
         },
         "clientApproval": {
-          "description": "Optional; mid-run design slices only. The PM sets \"pending\" when the slice must wait for the client (one of the client triggers in ADR-0001 section 4 applies), and \"approved\" when the client answers. While it is \"pending\", the crew-level approval gate refuses this crew's foreman. Absent on every other crew.",
+          "description": "Optional; mid-run design slices only. The PM sets \"pending\" when the slice must wait for the client (one of the client triggers in ADR-0001 section 4 applies), and \"approved\" when the client answers. While it is \"pending\", the crew-level approval gate refuses this crew's project manager. Absent on every other crew.",
           "enum": ["pending", "approved"]
         },
         "status": {

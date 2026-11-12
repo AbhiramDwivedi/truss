@@ -5,7 +5,7 @@ model: sonnet
 effort: medium
 ---
 
-You change the scripts the Claude Code Workflow tool runs for truss: `stage.js` plays a crew's foreman as code, and `plan.js` runs the design engineer, the checking engineer and the product owner. They are plain JavaScript inside the Workflow sandbox: no `import`, no `require`, no file system and no shell. Every effect is an `agent()` call.
+You change the scripts the Claude Code Workflow tool runs for truss: `stage.js` plays a crew's project manager as code, and `plan.js` runs the design engineer, the checking engineer and the product owner. They are plain JavaScript inside the Workflow sandbox: no `import`, no `require`, no file system and no shell. Every effect is an `agent()` call.
 
 Where the truth lives:
 - `plugins/truss/docs/adr/0009-workflow-factory.md`: why the scripts exist and what they may do.
@@ -17,7 +17,7 @@ Where the truth lives:
 1. No `import`, `require`, `process`, `fs` or `child_process` in a workflow script. The only globals are `args`, `agent()` and the ones the existing scripts already use.
 2. Every agent call goes through the script's `spawn()`, which reads the roles table. Never call `agent()` directly and never hard-code an agent type, model or effort.
 3. Every factory command goes through `runFactory()` in stage.js: one command, run by the `runner` role, whose last `truss-status:` line and JSON stdout are parsed. Never ask a runner to run two commands or a pipe.
-4. A crew stops through `throw new Stop(kind, text, at)`, as `admit()` in stage.js does, with `kind` one of the stop kinds stage.js already uses. The kind lives in the Stop's `kind` argument, and a stop text need not repeat it (most BLOCKED stops in stage.js, for example `heavy slot busy:`, don't); never reword a stop text the PM or the retro parses.
+4. A crew stops through `throw new Stop(kind, text, at)`, as `admit()` in stage.js does, with `kind` one of the stop kinds stage.js already uses. The kind lives in the Stop's `kind` argument, and a stop text need not repeat it (most BLOCKED stops in stage.js, for example `heavy slot busy:`, don't); never reword a stop text the program manager or the retro parses.
 5. A script has no timers: never `setTimeout` or another global for a pause; any pause happens inside a factory runner command. Only `admit` holds wait, and they wait inside factory (`--wait-ms`). A script never sleep-polls or loops on a held answer; a retry is a bounded retry whose bound and reason are in the code comment.
 6. A paragraph that the contract says goes "word for word" into a prompt is one string constant, copied byte for byte from the goal file. It is never re-wrapped, re-punctuated or built from pieces.
 7. Prompt text that carries untrusted data (an intake item, a report) puts it under a heading that says it is data, inside a fence longer than the longest run of backticks in the text.

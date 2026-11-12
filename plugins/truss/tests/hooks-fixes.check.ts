@@ -78,18 +78,18 @@ test('item 1: designerResumeVerdict is wired into the SendMessage main-session b
 })
 
 const AGENTS = [
-  { id: 'f1', name: 'foreman-y', type: 'truss:foreman', status: 'running' },
+  { id: 'f1', name: 'project-manager-y', type: 'truss:project-manager', status: 'running' },
   { id: 'q1', name: 'qc-engineer-z', type: 'truss:qc-engineer', status: 'running' },
   { id: 'd1', name: 'designer-amend-x', type: 'truss:design-engineer', status: 'completed' },
 ]
 
-test('control: designerResumeVerdict lets a message to a live foreman, a QC engineer, or an unlisted designer-named agent through', async () => {
+test('control: designerResumeVerdict lets a message to a live project manager, a QC engineer, or an unlisted designer-named agent through', async () => {
   const d = await exportOf('designerResumeVerdict')
   assert.equal(typeof d, 'function', 'designerResumeVerdict is not a function')
   const none = new Map()
   const listed = new Map([['other-id', 'plan']])
-  assert.equal(d('foreman-y', AGENTS, listed), undefined, 'live foreman')
-  assert.equal(d('f1', AGENTS, listed), undefined, 'live foreman by id')
+  assert.equal(d('project-manager-y', AGENTS, listed), undefined, 'live project manager')
+  assert.equal(d('f1', AGENTS, listed), undefined, 'live project manager by id')
   assert.equal(d('qc-engineer-z', AGENTS, listed), undefined, 'qc engineer')
   assert.equal(d('q1', AGENTS, listed), undefined, 'qc engineer by id')
   assert.equal(d('designer-amend-x', AGENTS, none), undefined, 'designer-named agent absent from planDesigners')

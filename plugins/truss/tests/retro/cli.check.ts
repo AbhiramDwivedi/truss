@@ -156,7 +156,7 @@ const judged = (title: string, file: string, line: number, extra: any = {}) => (
   evidence: [{ file, line }],
   cost: `lost two turns to ${title}`,
   fix: `change the prompt for ${title}`,
-  target: 'agents/foreman.md',
+  target: 'agents/project-manager.md',
   signature: [`${title}: planted`],
   ...extra,
 })

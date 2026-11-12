@@ -831,7 +831,7 @@ test('roles.json: passes the real workflowRoleVerdict', () => {
   assert.equal(workflowRoleVerdict(rolesJson()), undefined)
 })
 
-test('roles.json: matches the Decision 2 table exactly, no foreman, commissioning or integrator', () => {
+test('roles.json: matches the Decision 2 table exactly, no project manager, commissioning or integrator', () => {
   const roles = rolesJson()
   assert.deepEqual(Object.keys(roles).sort(), Object.keys(TABLE).sort())
   for (const [key, [agentType, model, effort, isolation]] of Object.entries(TABLE)) {
@@ -841,11 +841,11 @@ test('roles.json: matches the Decision 2 table exactly, no foreman, commissionin
     assert.equal(r.effort, effort, `${key}.effort`)
     assert.equal(r.isolation, isolation, `${key}.isolation`)
   }
-  for (const banned of ['foreman', 'commissioning', 'integrator']) assert.ok(!(banned in roles))
-  for (const r of Object.values(roles)) assert.ok(!['truss:foreman', 'truss:commissioning-engineer', 'truss:integrator'].includes(r.agentType))
+  for (const banned of ['project-manager', 'commissioning', 'integrator']) assert.ok(!(banned in roles))
+  for (const r of Object.values(roles)) assert.ok(!['truss:project-manager', 'truss:commissioning-engineer', 'truss:integrator'].includes(r.agentType))
 })
 
-test('roles.json: the foreman\'s shape - typeFromProject on tester and builder, "builder" on resolver, nowhere else', () => {
+test('roles.json: the project manager\'s shape - typeFromProject on tester and builder, "builder" on resolver, nowhere else', () => {
   const roles = rolesJson()
   assert.equal(roles.tester.typeFromProject, true)
   assert.equal(roles.builder.typeFromProject, true)
@@ -994,7 +994,7 @@ test('schema: the existing event kinds still validate', () => {
     { v: 1, ts: TS, event: 'allowance-spent', crew: 's', agent: 's-qc-3' },
     { v: 1, ts: TS, event: 'fetch', crew: 's', agent: 's-x', tool: 'WebFetch', url: 'https://example.com/a' },
     { v: 1, ts: TS, event: 'fetch', crew: 'main', agent: 'main', tool: 'WebSearch', query: 'truss' },
-    { v: 1, ts: TS, event: 'spawn', crew: 's', agent: 's', agentId: 'a1', type: 'truss:foreman', model: 'opus', effort: 'medium', by: 'main' },
+    { v: 1, ts: TS, event: 'spawn', crew: 's', agent: 's', agentId: 'a1', type: 'truss:project-manager', model: 'opus', effort: 'medium', by: 'main' },
   ]
   for (const l of lines) assert.deepEqual(validateEvent(l), [], JSON.stringify(l))
 })
@@ -1025,7 +1025,7 @@ test('schema: every line start appends validates (the factory spawn line)', () =
 // ---------------------------------------------------------------------------------------------------------------
 // finish in single merge mode
 
-test('finish: merge single exits 2 with exactly {"error":"single merge mode runs on the foreman path"}', () => {
+test('finish: merge single exits 2 with exactly {"error":"single merge mode runs on the project manager path"}', () => {
   const env = mkEnv({ config: { merge: 'single' } })
   writePlan(env.dir, planObj([crew('s', { status: 'running' })]))
   const { dir: t } = mkRun(env.transcripts, 'wf_one', [])
@@ -1034,7 +1034,7 @@ test('finish: merge single exits 2 with exactly {"error":"single merge mode runs
   for (const extra of [{ result }, {}]) {
     const res = env.run('finish', { transcript: t, ...extra })
     assert.equal(res.status, 2)
-    assert.equal(res.stdout, '{"error":"single merge mode runs on the foreman path"}\n')
+    assert.equal(res.stdout, '{"error":"single merge mode runs on the project manager path"}\n')
   }
 })
 
