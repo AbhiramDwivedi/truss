@@ -46,7 +46,7 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 
 `stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-425). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2381-2398). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:1956, 2033).
 
-`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1356, `stageOut`).
+`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1371-1378, `stageOut`).
 
 ## Cost meter (`bin/cost.ts`)
 
