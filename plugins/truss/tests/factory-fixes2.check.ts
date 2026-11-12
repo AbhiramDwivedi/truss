@@ -249,7 +249,7 @@ test('control 6: mark-merged with a truss-<slug> branch that is not an ancestor 
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// item 8: plan-check and an owns overlap between crews of different goals
+// item 8, reversed by ADR-0042: plan-check reports no owns overlap between crews, of different goals or of one goal and stage
 
 const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-11-02T00:00:00Z', approval: 'auto', approvedAt: '2026-11-02T00:00:00Z' })
 const c3 = (slug: string, goal: string, stage: number, owns: string[], status: string) => ({ slug, goal, stage, verdict: 'extend', modules: ['m'], owns, acceptanceTest: 'false', acceptanceTestProved: true, estAgents: 1, status })
@@ -258,44 +258,19 @@ function planCheck(crews: any[], goals = ['ga', 'gb']) {
   writeFileSync(`${env.dir}/plan.json`, JSON.stringify({ version: 3, goal: 'g', architecture: 'docs/architecture.md', approval: 'auto', approvedAt: '2026-11-02T00:00:00Z', maxParallelCrews: 4, reworkAllowance: 2, goals: goals.map(goalRow), crews }))
   return env.run('plan-check')
 }
-const word = (text: string, w: string): boolean => new RegExp(`(^|[^A-Za-z0-9_])${w}($|[^A-Za-z0-9_])`).test(text)
 
-test('i8 1: plan-check refuses unmerged crews of two goals that own the same path, names both, and never a merged crew', () => {
-  const r = planCheck([
-    c3('crewalpha', 'ga', 1, ['x/**'], 'planned'),
-    c3('crewbeta', 'gb', 1, ['x/y.ts'], 'running'),
-    c3('crewgamma', 'gb', 2, ['x/z.ts'], 'merged'),
-  ])
-  const out = `${r.stdout} ${r.stderr}`
-  assert.notEqual(r.status, 0, `plan-check must refuse a cross-goal overlap: ${say(r)}`)
-  assert.ok(word(out, 'crewalpha') && word(out, 'crewbeta'), `the error names both crews: ${say(r)}`)
-  assert.ok(!word(out, 'crewgamma'), `the merged crew is not named: ${say(r)}`)
-})
-
-test('i8 2: different stages of different goals still overlap (no later-stage exemption)', () => {
-  const r = planCheck([c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'gb', 2, ['x/y.ts'], 'planned')])
-  assert.notEqual(r.status, 0, say(r))
-  assert.ok(word(`${r.stdout} ${r.stderr}`, 'crewalpha') && word(`${r.stdout} ${r.stderr}`, 'crewbeta'), say(r))
-})
-
-test('i8 3: a goal that is not running yet is no exemption either (two planned crews of two goals)', () => {
-  const r = planCheck([c3('crewalpha', 'ga', 1, ['docs/**'], 'planned'), c3('crewbeta', 'gb', 1, ['docs/a.md'], 'planned')])
-  assert.notEqual(r.status, 0, say(r))
-})
-
-test('control 7: plan-check passes once the overlapping crew of the other goal is merged, or dropped', () => {
-  const merged = planCheck([c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'gb', 1, ['x/y.ts'], 'merged'), c3('crewgamma', 'gb', 2, ['x/z.ts'], 'merged')])
-  assert.equal(merged.status, 0, say(merged))
-  const dropped = planCheck([c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'gb', 1, ['x/y.ts'], 'dropped')])
-  assert.equal(dropped.status, 0, say(dropped))
-})
-
-test('control 8: plan-check still refuses an overlap between two crews of one goal in one stage, and allows it across stages', () => {
-  const same = planCheck([c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'ga', 1, ['x/y.ts'], 'planned')])
-  assert.notEqual(same.status, 0, say(same))
-  assert.ok(word(`${same.stdout} ${same.stderr}`, 'crewalpha') && word(`${same.stdout} ${same.stderr}`, 'crewbeta'), say(same))
-  const later = planCheck([c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'ga', 2, ['x/y.ts'], 'planned')])
-  assert.equal(later.status, 0, say(later))
+test('i8 1: plan-check passes crews that own the same path, across goals and stages or in one goal and stage', () => {
+  const cases = [
+    [c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'gb', 1, ['x/y.ts'], 'running'), c3('crewgamma', 'gb', 2, ['x/z.ts'], 'merged')],
+    [c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'gb', 2, ['x/y.ts'], 'planned')],
+    [c3('crewalpha', 'ga', 1, ['docs/**'], 'planned'), c3('crewbeta', 'gb', 1, ['docs/a.md'], 'planned')],
+    [c3('crewalpha', 'ga', 1, ['x/**'], 'planned'), c3('crewbeta', 'ga', 1, ['x/y.ts'], 'planned')],
+  ]
+  for (const crews of cases) {
+    const r = planCheck(crews)
+    assert.equal(r.status, 0, say(r))
+    assert.ok(!`${r.stdout}`.includes('overlaps'), say(r))
+  }
 })
 
 // ---------------------------------------------------------------------------------------------------------------

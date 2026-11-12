@@ -306,7 +306,7 @@ st('gates-026: competing processes with darwin and win32 platforms leave exactly
   }
 })
 
-// ---------------------------------------------------------------- item 9: owns-extend, and the knowledge-owns rule of plan-check
+// ---------------------------------------------------------------- item 9: owns-extend, and plan-check on rule files (ADR-0042)
 
 function ownsWorld() {
   const env = mkEnv({ config: CFG, files: { 'a.txt': 'base\n' } })
@@ -343,23 +343,15 @@ st('gates-026: owns-check refuses a file then passes it after owns-extend with n
   assert.ok(line, `a decisions.md line holds the glob and the reason:\n${decisions}`)
 })
 
-st('gates-026: owns-extend refuses a glob that overlaps another crew in the stage', () => {
+st('gates-026: owns-extend adds a glob that overlaps another crew in the stage (ADR-0042)', () => {
   const { env } = ownsWorld()
-  const before = readFileSync(`${env.dir}/plan.json`, 'utf8')
   const r = env.run('owns-extend', { slug: 's', glob: 'src/t/x.ts', reason: 'REASON-OVERLAP' })
-  assert.equal(r.status, 1, say(r))
+  assert.equal(r.status, 0, say(r))
   const j = assertOneLine(r)
-  assert.equal(j.ok, false)
-  assert.equal(j.slug, 's')
-  assert.equal(j.glob, 'src/t/x.ts')
-  assert.ok(Array.isArray(j.overlaps) && j.overlaps.length > 0, say(r))
-  const named = JSON.stringify(j.overlaps)
-  assert.ok(named.includes('src/t/**'), `the overlap names the other crew's glob: ${named}`)
-  assert.ok(/"t"|\bt:|\bt\b/.test(named), `the overlap names crew t: ${named}`)
-  assert.equal(typeof j.why, 'string')
-  assert.ok(j.why.length > 0)
-  assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), before, 'a refused extension changes nothing')
-  assert.ok(!readFileSync(`${env.dir}/decisions.md`, 'utf8').includes('REASON-OVERLAP'), 'a refused extension logs no decision')
+  assert.equal(j.ok, true)
+  assert.deepEqual(j.owns, ['src/s/**', 'src/t/x.ts'])
+  assert.equal(j.overlaps, undefined, say(r))
+  assert.ok(readFileSync(`${env.dir}/decisions.md`, 'utf8').includes('REASON-OVERLAP'), 'the extension logs a decision')
 })
 
 const RULE = '.claude/rules/plugin-tests.md'
@@ -381,31 +373,14 @@ function ruleWorld() {
 }
 const planCheck = (w) => runCli(REAL_FACTORY, 'plan-check', ['--dir', w.dir, '--repo', w.repo], w.repo)
 
-st('gates-026: plan-check refuses a stage whose crews match a rule file no crew owns', () => {
+// ADR-0042: the knowledge-owns rule is gone; a stage whose crews match a rule file no crew of the stage owns passes.
+st('gates-026: plan-check accepts a stage whose crews match a rule file no crew of that stage owns', () => {
   const w = ruleWorld()
   const r = planCheck(w)
-  assert.equal(r.status, 1, `plan-check must refuse: ${say(r)}`)
+  assert.equal(r.status, 0, say(r))
   const j = assertOneLine(r)
-  assert.equal(j.ok, false)
-  const hits = j.errors.filter((e) => e.includes(RULE))
-  assert.equal(hits.length, 1, `one error names the rule file: ${JSON.stringify(j.errors)}`)
-  const e = hits[0]
-  assert.ok(e.includes('stage 2'), `it names the stage: ${e}`)
-  assert.ok(!e.includes('stage 1'), `stage 1 owns the rule file and is not named: ${e}`)
-  assert.ok(e.includes('tests-a') && e.includes('tests-b'), `it names both crews: ${e}`)
-  assert.ok(e.includes(`add ${RULE} to the owns of one crew of stage 2`), `it states the one-line fix: ${e}`)
-})
-
-st('gates-026: plan-check accepts that stage once one crew owns the rule file', () => {
-  const w = ruleWorld()
-  // the refusal comes first, so this case fails on a plan-check without the rule
-  const before = planCheck(w)
-  assert.equal(before.status, 1, `precondition: the stage is refused before the fix: ${say(before)}`)
-  w.crews[1].owns.push(RULE)
-  writePlan(w.dir, planObj(w.crews))
-  const after = planCheck(w)
-  assert.equal(after.status, 0, say(after))
-  assert.equal(assertOneLine(after).ok, true)
+  assert.equal(j.ok, true)
+  assert.ok(!JSON.stringify(j).includes(RULE), `no error names the rule file: ${say(r)}`)
 })
 
 // ---------------------------------------------------------------- item 10: the merge gate
@@ -555,54 +530,27 @@ st('gates-026: mark-merged does not drop an owns-extend that lands while it runs
   }
 })
 
-st('gates-026: plan-check does not call one rule file in two goals\' stages an overlap, but still refuses another shared glob', () => {
+// ADR-0042: crews of two goals may both own a rule file or any other glob, with or without after, in plan-check and owns-extend.
+st('gates-026: plan-check and owns-extend let crews of two goals share a rule file and another glob, with no after', () => {
   const w = ruleWorld()
   const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-10-01T00:00:00.000Z', approval: 'auto', approvedAt: '2026-10-01T00:00:00.000Z' })
-  const v3 = (cs) => planObj(cs, { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] })
+  const goals = { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] }
   const crews = [
     crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'plugins/truss/tests/one.check.ts', 'shared/**'] }),
-    crew('g2', { stage: 2, goal: 'goal-two', owns: [RULE, 'plugins/truss/tests/two.check.ts'], after: ['g1'] }),
+    crew('g2', { stage: 2, goal: 'goal-two', owns: [RULE, 'plugins/truss/tests/two.check.ts', 'shared/**'] }),
   ]
-  // ruling: the exemption holds only when one crew's after names the other; without after the same plan is an overlap
-  const noAfter = structuredClone(crews)
-  delete noAfter[1].after
-  writePlan(w.dir, v3(noAfter))
-  const unordered = planCheck(w)
-  assert.equal(unordered.status, 1, `the rule file in two unordered crews is an overlap: ${say(unordered)}`)
-  assert.ok(assertOneLine(unordered).errors.some((e) => e.includes(RULE) && e.includes('another goal')), say(unordered))
-  writePlan(w.dir, v3(crews))
-  const ok = planCheck(w)
-  assert.equal(ok.status, 0, `the one rule file shared across stages by crews ordered by after is no overlap: ${say(ok)}`)
-  crews[1].owns.push('shared/**')
-  writePlan(w.dir, v3(crews))
-  const bad = planCheck(w)
-  assert.equal(bad.status, 1, say(bad))
-  assert.ok(assertOneLine(bad).errors.some((e) => e.includes('shared/**') && e.includes('another goal')), say(bad))
-})
-
-// R-71 regression (3fe1b7d): owns-extend exempts a rule file another goal's crew of another stage owns, as plan-check does.
-st('gates-026: owns-extend lets a crew of another goal and stage own a rule file, but refuses another shared glob', () => {
-  const w = ruleWorld()
-  const goalRow = (id: string) => ({ id, goal: id, addedAt: '2026-10-01T00:00:00.000Z', approval: 'auto', approvedAt: '2026-10-01T00:00:00.000Z' })
-  const crews = [
-    crew('g1', { stage: 1, goal: 'goal-one', owns: [RULE, 'shared/**'] }),
-    crew('g2', { stage: 2, goal: 'goal-two', owns: ['plugins/truss/tests/two.check.ts'] }),
-  ]
-  const goals = { version: 3, goals: [goalRow('goal-one'), goalRow('goal-two')] }
+  writePlan(w.dir, planObj(crews, goals))
+  const shared = planCheck(w)
+  assert.equal(shared.status, 0, say(shared))
+  assert.equal(assertOneLine(shared).ok, true)
+  crews[1].owns = ['plugins/truss/tests/two.check.ts']
   writePlan(w.dir, planObj(crews, goals))
   const ext = (glob: string) => runCli(REAL_FACTORY, 'owns-extend', ['--dir', w.dir, '--repo', w.repo, '--slug', 'g2', '--glob', glob, '--reason', 'R'], w.repo)
-  const bad = ext('shared/**')
-  assert.equal(bad.status, 1, say(bad))
-  assert.ok(assertOneLine(bad).overlaps.some((o) => o.glob === 'shared/**'), say(bad))
-  // ruling: without after between the two crews the rule file is an overlap too
-  const unordered = ext(RULE)
-  assert.equal(unordered.status, 1, `unordered crews may not both own the rule file: ${say(unordered)}`)
-  assert.ok(assertOneLine(unordered).overlaps.some((o) => o.glob === RULE), say(unordered))
-  crews[1].after = ['g1']
-  writePlan(w.dir, planObj(crews, goals))
-  const ok = ext(RULE)
-  assert.equal(ok.status, 0, say(ok))
-  assert.ok(assertOneLine(ok).owns.includes(RULE), say(ok))
+  const a = ext('shared/**')
+  assert.equal(a.status, 0, say(a))
+  const b = ext(RULE)
+  assert.equal(b.status, 0, say(b))
+  assert.deepEqual(assertOneLine(b).owns, ['plugins/truss/tests/two.check.ts', 'shared/**', RULE], say(b))
 })
 
 // R-71 regression (3fe1b7d): plan-write re-checks the existing plan under the plan lock. An approve that lands while it waits must not be overwritten.
@@ -739,16 +687,17 @@ st('gates-026: holdOf escalates on the ref the budget verdict carries', () => {
 
 // ---------------------------------------------------------------- the design engineer's rule (PO 9)
 
-// Residual: no graded eval covers the knowledge-owns rule in design-engineer.md. evals/case.schema.json:20 limits role to qc and
+// Residual: no graded eval covers the knowledge-files rule in design-engineer.md. evals/case.schema.json:20 limits role to qc and
 // checker and evals/run-model.ts:13-18 has tools only for those, so the runner cannot exercise the design engineer; this prose pin is
-// the fallback, and plan-check (the plan-check cases above) enforces the rule in code.
+// the fallback. Since ADR-0042 crews may share files, so the step no longer says one crew per file per stage.
 st('gates-026: design-engineer tells the planner to put each crew\'s knowledge files in owns', () => {
   const text = readFileSync(`${REAL_PLUGIN}/agents/design-engineer.md`, 'utf8')
   const at = text.indexOf('4. **Crews.**')
   assert.ok(at >= 0, 'step 4 Crews exists')
   const next = text.indexOf('5. **Stages.**', at)
   const step = text.slice(at, next > at ? next : at + 3000)
-  for (const needle of ['knowledge files', 'owns', 'one crew per file per stage']) assert.ok(step.includes(needle), `step 4 Crews contains "${needle}":\n${step}`)
+  for (const needle of ['knowledge files', 'owns', 'Two crews may edit the same file']) assert.ok(step.includes(needle), `step 4 Crews contains "${needle}":\n${step}`)
+  for (const gone of ['one crew per file per stage', 'No two crews may edit the same file']) assert.ok(!step.includes(gone), `step 4 Crews no longer says "${gone}":\n${step}`)
 })
 
 // ---------------------------------------------------------------- item 14: a test run reads nothing from .claude/worktrees

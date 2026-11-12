@@ -2,6 +2,8 @@
 
 Status: accepted (stage 0 of foundry 0.3.0). Date: 2026-10-26. Decided by: Ram (client), with the PM (project manager).
 
+Amended by [ADR-0042](0042-crews-share-files.md) (2026-11-11, client): two crews may edit the same file; they build in parallel and merge in turn.
+
 ## Context
 
 The intel run on 2026-10-26 took about six hours for three crews. Two of them merged with 10 and 12 agent reports. The third, gateway, needed 32: 8 builders, 9 testers, 7 writers, 4 QC engineers and 4 stress tests. Its decision log shows the cause. There was no gateway design, so the design happened inside the build:

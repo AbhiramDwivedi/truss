@@ -190,7 +190,7 @@ You don't write the contract tests; the test-writer does.
 **Rules.** Apply plan mode's verdict and breakdown rules (verdicts, crews and stages, acceptance tests proved, `estAgents`, the leaf test) to the new goal only. Stages are numbered per goal: the new goal's first stage is its stage 0, and a stage-0 crew is a `design` crew. On top of that:
 
 - Never edit or reorder an existing crew, and don't touch the top-level fields.
-- No new crew's `owns` may match a path owned by a crew of another goal whose status isn't `merged` or `dropped`. Work that needs such a path goes in another stage of the new goal, or is left out and named in the report's `Client:` line.
+- A new crew's `owns` may match a path an unmerged crew of another goal owns (ADR-0042); the two build in parallel and merge in turn, the later one merging the target in first.
 - The goal id is the one the brief gives, in the crew-slug pattern, and never `run`.
 - Set `goal.approval` to `"auto"`, unless the brief says a client trigger applies; then set `"client"`. A design crew doesn't change this.
 - Every crew's `slug` follows the slug rule in plan mode and differs from every slug in the brief's in-flight crews. The hook sets each crew's `goal` and `status`, so leave them to it.
@@ -247,7 +247,7 @@ Split the goal once, on paper, along the module map, by the leaf test below. Nev
 
    Split only along the condition that fails.
 3. **Floor.** An item with no check that could fail for it alone is too small. Merge it into a sibling in the same module. When the module has no other item, the item rides with the crew of the module it serves most closely.
-4. **Crews.** Group items into crews, by module to start with. No two crews may edit the same file: in one stage, no two crews' `owns` globs may match a common path. Prefer directories or exact file names, and check for overlap before you write `plan.json`. Put each crew's knowledge files in its `owns` from the start, one crew per file per stage: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. `plan-check` refuses a stage whose crews match a rule file no crew of that stage owns. Only this rule holds the feature map and `docs/knowledge/*`, because nothing in the code maps a crew to them. A shared file inside a module (an index, registry or route table) goes to exactly one crew, or a stage-0 crew adds an extension point so each crew adds its own file instead.
+4. **Crews.** Group items into crews, by module to start with. Two crews may edit the same file, in one stage or across goals (ADR-0042): each builds in its own worktree, and they merge one at a time, the later crew merging the target into its branch and resolving conflicts first. Prefer directories or exact file names in `owns`. Put each crew's knowledge files in its `owns` from the start: the `.claude/rules/<area>.md` files whose `paths` match the crew's `owns`, the feature map and `docs/knowledge/*`. Split by need, not to keep files apart: crews that share a hot file (an index, registry or route table) cost a conflict resolution at merge, so when many crews would all edit one such file, a stage-0 crew may add an extension point so each crew adds its own file instead.
 5. **Stages.**
    - Stage 0 holds the `change` work: the ADRs, the architecture-doc change and the contract tests. It merges before any other stage starts.
    - A crew that needs another crew's new interface goes in a later stage, unless a stage-0 contract test pins that interface.
@@ -255,7 +255,7 @@ Split the goal once, on paper, along the module map, by the leaf test below. Nev
 6. **Parallelism.**
    - Each module the goal touches gets its own crew, so they run in parallel within a stage.
    - Two modules share a crew only when one of them can't clear the floor alone.
-   - A large module can split across crews whose parts own disjoint files, when one crew couldn't hold the module's work.
+   - A large module can split across crews, even crews whose `owns` share files, when one crew couldn't hold the module's work.
    - When the parts are small enough for one foreman to coordinate, keep one crew and let its members run in parallel. A second crew adds a foreman, a QC engineer, and a merge of the target with a possible QC re-run before it lands.
    - Within a stage, the order of the `crews` array is the queue order. At most `maxParallelCrews` crews run at once; the rest start in that order as running ones merge.
 7. **Budget.** Give each crew an `estAgents` count, and show the total in `plan.md`.

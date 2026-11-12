@@ -1,5 +1,5 @@
-// Regression tests for the 0.26.0 gates fixes that shipped without one (R-71): the rule-file exemption and cross-goal refusal of
-// `owns-extend`, the plan lock of `plan-write`, the fail-closed trailer check of `integrate`, and the stage.js stop on a
+// Regression tests for the 0.26.0 gates fixes that shipped without one (R-71): `owns-extend` letting crews share a rule file
+// (its cross-goal refusal is gone since ADR-0042), the plan lock of `plan-write`, the fail-closed trailer check of `integrate`, and the stage.js stop on a
 // refusal that carries a `why` and no conflicts. Each case failed on the code before its fix.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
@@ -37,30 +37,21 @@ st('gates-026-regress: owns-extend lets a crew of another goal and stage own a r
   assert.deepEqual(readPlan(env.dir).crews.find((c) => c.slug === 'q').owns, ['src/q/**', RULE])
 })
 
-st('gates-026-regress: owns-extend refuses a rule file for a later-stage crew not ordered after the owner', () => {
-  const env = goalsWorld([
-    crew('p', { goal: 'g1', stage: 1, owns: [RULE], status: 'running' }),
-    crew('q', { goal: 'g2', stage: 2, owns: ['src/q/**'], status: 'running' }),
-  ])
-  const r = env.run('owns-extend', { slug: 'q', glob: RULE, reason: 'REASON-NO-AFTER' })
-  assert.equal(r.status, 1, say(r))
-  assert.equal(assertOneLine(r).ok, false)
-})
-
-st('gates-026-regress: owns-extend refuses another goal\'s crew for a plain file, and a rule file in the same stage', () => {
+// ADR-0042 replaced the cross-goal and same-stage refusals: a crew may share a rule file or a plain file with any crew, with no after.
+st('gates-026-regress: owns-extend lets a crew share a rule file or a plain file with another goal\'s crew or its own stage, with no after', () => {
   const env = goalsWorld([
     crew('p', { goal: 'g1', stage: 1, owns: [RULE, 'docs/z.md'], status: 'running' }),
     crew('q', { goal: 'g2', stage: 2, owns: ['src/q/**'], status: 'running' }),
     crew('r', { goal: 'g2', stage: 1, owns: ['src/r/**'], status: 'running' }),
   ])
-  const before = readFileSync(`${env.dir}/plan.json`, 'utf8')
-  const plain = env.run('owns-extend', { slug: 'q', glob: 'docs/z.md', reason: 'REASON-PLAIN' })
-  assert.equal(plain.status, 1, `another goal's crew owns a plain file: ${say(plain)}`)
-  assert.equal(assertOneLine(plain).ok, false)
-  // r is in stage 1 beside p: the same stage never gets the exemption
-  const sameStage = env.run('owns-extend', { slug: 'r', glob: RULE, reason: 'REASON-SAME-STAGE' })
-  assert.equal(sameStage.status, 1, `a rule file in the same stage is refused: ${say(sameStage)}`)
-  assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), before, 'a refusal changes nothing')
+  for (const [slug, glob] of [['q', RULE], ['q', 'docs/z.md'], ['r', RULE]]) {
+    const r = env.run('owns-extend', { slug, glob, reason: 'REASON-SHARED' })
+    assert.equal(r.status, 0, `${slug} ${glob}: ${say(r)}`)
+    assert.equal(assertOneLine(r).ok, true)
+  }
+  const plan = readPlan(env.dir)
+  assert.deepEqual(plan.crews.find((c) => c.slug === 'q').owns, ['src/q/**', RULE, 'docs/z.md'])
+  assert.deepEqual(plan.crews.find((c) => c.slug === 'r').owns, ['src/r/**', RULE])
 })
 
 // ---------------------------------------------------------------- plan-write: the plan lock re-checks the existing plan

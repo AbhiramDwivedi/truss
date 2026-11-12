@@ -378,24 +378,13 @@ test('plan-check: on an unapproved plan every crew status must be planned', () =
   assert.equal(approved.res.status, 0)
 })
 
-test('plan-check: two crews of one stage owning a common path are refused (equal globs, prefix of the literal part)', () => {
-  const equal = checkPlan(planObj([crew('alpha', { owns: ['src/x/**'] }), crew('beta', { owns: ['src/x/**'] })]))
-  assert.equal(equal.res.status, 1)
-  assert.ok(equal.json.errors.some((e) => /^(alpha|beta): /.test(e)))
-
-  const prefix = checkPlan(planObj([crew('alpha', { owns: ['src/x/**'] }), crew('beta', { owns: ['src/x/y/z.ts'] })]))
-  assert.equal(prefix.res.status, 1)
-  assert.ok(prefix.json.errors.length >= 1)
-
-  // the literal part before the first * is a prefix of the other's: "src/a" is a prefix of "src/ab/"
-  const star = checkPlan(planObj([crew('alpha', { owns: ['src/a*'] }), crew('beta', { owns: ['src/ab/**'] })]))
-  assert.equal(star.res.status, 1)
-
-  const qmark = checkPlan(planObj([crew('alpha', { owns: ['src/a?/**'] }), crew('beta', { owns: ['src/ab/c.ts'] })]))
-  assert.equal(qmark.res.status, 1)
-
-  const bracket = checkPlan(planObj([crew('alpha', { owns: ['src/[ab]/**'] }), crew('beta', { owns: ['src/'] })]))
-  assert.equal(bracket.res.status, 1)
+// ADR-0042: crews may share files, so two crews of one stage owning a common path pass (equal globs, prefix of the literal part).
+test('plan-check: two crews of one stage owning a common path pass (equal globs, prefix of the literal part)', () => {
+  for (const [a, b] of [['src/x/**', 'src/x/**'], ['src/x/**', 'src/x/y/z.ts'], ['src/a*', 'src/ab/**'], ['src/a?/**', 'src/ab/c.ts'], ['src/[ab]/**', 'src/']]) {
+    const r = checkPlan(planObj([crew('alpha', { owns: [a] }), crew('beta', { owns: [b] })]))
+    assert.equal(r.res.status, 0, `${a} and ${b}: ${r.res.stdout}`)
+    assert.equal(r.json.ok, true)
+  }
 })
 
 test('plan-check: disjoint globs in one stage, and equal globs in different stages, pass', () => {
@@ -1105,15 +1094,14 @@ test('plan-check: v3 owns overlap is checked per goal, not across goals sharing 
   assert.equal(r.json.ok, true, JSON.stringify(r.json.errors))
 })
 
-test('plan-check: v3 owns overlap between two crews of the same goal and stage is still refused', () => {
+test('plan-check: v3 owns overlap between two crews of the same goal and stage passes (ADR-0042)', () => {
   const plan = planObj(
     [crew('a', { goal: 'gtwo', owns: ['bin/x.ts'] }), crew('fix', { goal: 'gtwo', owns: ['bin/x.ts'] })],
     { version: 3, goals: [goalsEntry('gtwo')] },
   )
   const r = checkPlan(plan)
-  assert.equal(r.res.status, 1)
-  assert.equal(r.json.ok, false)
-  assert.ok(r.json.errors.some((e) => /overlaps/.test(e)), JSON.stringify(r.json.errors))
+  assert.equal(r.res.status, 0, r.res.stdout + r.res.stderr)
+  assert.equal(r.json.ok, true, JSON.stringify(r.json.errors))
 })
 
 test('start --stage next: a client goal\'s crew is not started before approval and is started after; the run crew starts meanwhile', () => {
