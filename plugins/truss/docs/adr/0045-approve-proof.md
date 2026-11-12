@@ -7,7 +7,7 @@ Amends: ADR-0037 (a typed approve of the plan's `client-trigger` item now approv
 ## Context
 
 - R-85 (`docs/requirements.md`): an agent cannot approve a plan or goal as the client.
-- Before this change `factory.ts approve --by client` took no proof: `cmdApprove` checked only that `--by` was `client` or `auto` and that the plan was unapproved, then set `approvedAt`. The run skill (`skills/run/SKILL.md` section 5) told the program manager to "run `--by client` only after the client's yes", so the client's approval was whatever the program manager said it was.
+- Before this change `factory.ts approve --by client` took no proof: `cmdApprove` checked only that `--by` was `client` or `auto` and that the plan was unapproved, then set `approvedAt`. The run skill (`skills/run/SKILL.md` section 5) told the program manager (PM) to "run `--by client` only after the client's yes", so the client's approval was whatever the program manager said it was.
 - ADR-0037 already has a typed proof: `resolve --by client` stores a resolve only when a line the human typed in the session's main transcript holds the decision, the item id and its code (`typedProof`, `bin/inbox.ts:434`), and `verifiedItems` (`bin/inbox.ts:235`) re-proves every `by: client` row at each read, so a row written without that line counts as absent.
 - The program manager's 07:22 ruling: the client-typed `/truss:inbox approve` of a plan-approval or client-trigger item performs the approval itself; the program manager never runs `approve --by client`; the attended and `--next` paths open the item and show its code.
 
