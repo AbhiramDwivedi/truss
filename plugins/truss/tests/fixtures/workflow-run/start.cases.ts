@@ -40,7 +40,7 @@ const norm = (p: string): string => {
 }
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'personas', 'platform', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
-const OUTPUT_KEYS = ['projectManagers', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
+const OUTPUT_KEYS = ['held', 'projectManagers', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
 const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'head', 'highImpact', 'labelFrom', 'livePage', 'members', 'ownTests', 'owns', 'prior', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
@@ -218,7 +218,7 @@ test('start cap: free slots = maxParallelCrews minus running crews (any engine),
 })
 
 test('start cap: a running project manager crew counts against the cap like any other', () => {
-  const env = world([crew('project-manager1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { project-manager1: { engine: 'project-manager commissioning member' } } })
+  const env = world([crew('project-manager1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { 'project-manager1': { engine: 'project-manager commissioning member' } } })
   const j = assertOneLine(start(env, 'next', { transcript: anchorRun(env).dir }))
   assert.deepEqual(slugsOf(j.truss.crews), ['a'], 'one slot free')
   assert.equal(statusOf(env, 'b'), 'planned')
