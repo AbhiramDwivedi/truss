@@ -96,7 +96,7 @@ describe('run/SKILL.md wiring', () => {
     has(s, /R-<n>:\s*<title>|R-\d+:\s*<?title/i, 'section 6 does not give the `- R-<n>: <title>` line form')
   })
 
-  test('section 6: the pm runs the brief cli trace before the first foreman', () => {
+  test('section 6: the pm runs the brief cli trace before the first project manager', () => {
     const s = runSection(6)
     has(s, /brief\/cli\.ts\s+trace\b/, 'section 6 does not run `brief/cli.ts trace`')
     has(s, /brief\.json/, 'section 6 trace call omits brief.json')

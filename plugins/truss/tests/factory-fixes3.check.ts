@@ -146,8 +146,8 @@ test('i24 3: a missing agent file and an unreadable session start both warn, for
 test('i24 4: tester and builder warn only when their agentType is truss:*', () => {
   const now = Date.now()
   const w = startWorld([crew('p')])
-  const ws = warningsOf(startAt(w, pluginAges({ foreman: now }), { TRUSS_SESSION_START: String(now - HOUR) }, ['--type', 'builder=truss:foreman']))
-  const mine = about(ws, 'truss:foreman')
+  const ws = warningsOf(startAt(w, pluginAges({ 'project-manager': now }), { TRUSS_SESSION_START: String(now - HOUR) }, ['--type', 'builder=truss:project-manager']))
+  const mine = about(ws, 'truss:project-manager')
   assert.ok(mine.length > 0, `a truss:* builder type warns: ${JSON.stringify(ws)}`)
   assert.ok(mine.join(' ').includes('roles.builder.agentType'), mine.join(' | '))
   assert.ok(!ws.some((x) => x.includes('roles.tester.agentType')), `the general-purpose tester does not warn: ${JSON.stringify(ws)}`)
@@ -334,7 +334,7 @@ test('control 4: a DONE merged task is still done; a never-merged branch is not,
 // item 29 (factory half): workflowArgs for an --args-file inside the truss dir
 
 const startArgsFile = (env: any, p: string) => env.run('start', { stage: 'next', 'args-file': p })
-const SHORT_KEYS = ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished', 'warnings']
+const SHORT_KEYS = ['argsFile', 'scriptPath', 'crews', 'held', 'projectManagers', 'refused', 'stale', 'unfinished', 'warnings']
 
 test('i29 1: --args-file inside the truss dir adds workflowArgs {"trussFile": P} to the short output, and the file holds the whole output', () => {
   const env = mkEnv({ config: CFG })

@@ -15,7 +15,7 @@
 //   `highImpact` contains the goal file's section text;
 // - the stage.js copy made by --scripts-dir is `<S>/truss-stage.js` (plan-args writes `truss-plan.js` the same way);
 // - a task in `done` is a task name (string) or a task object with a `name`; `tasks` are the planner's task objects;
-// - `since` (stale list) is a non-empty string; a foreman's reason for a missing `## Engine` section is a string.
+// - `since` (stale list) is a non-empty string; a project manager's reason for a missing `## Engine` section is a string.
 
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync,realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
@@ -40,7 +40,7 @@ const norm = (p: string): string => {
 }
 
 const TRUSS_KEYS = ['crews', 'dir', 'kind', 'personas', 'platform', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
-const OUTPUT_KEYS = ['foremen', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
+const OUTPUT_KEYS = ['projectManagers', 'held', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
 const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'head', 'highImpact', 'labelFrom', 'livePage', 'members', 'ownTests', 'owns', 'prior', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
 /** A test world: env with plan.json (crews, `plan` overrides) and one goal file per crew (`goals[slug]` section overrides). */
@@ -109,8 +109,8 @@ function assertTasks(e: any, expected: any[], msg?: string): void {
 // ---------------------------------------------------------------------------------------------------------------
 // engine split
 
-test('start engine split: a goal with `## Engine` workflow goes to truss.crews, the others to foremen with their reason', () => {
-  const env = world([crew('wf'), crew('ld'), crew('nosec')], { goals: { ld: { engine: 'foreman has a commissioning member' } } })
+test('start engine split: a goal with `## Engine` workflow goes to truss.crews, the others to project managers with their reason', () => {
+  const env = world([crew('wf'), crew('ld'), crew('nosec')], { goals: { ld: { engine: 'project-manager has a commissioning member' } } })
   // a goal file with no ## Engine section at all
   const text = readFileSync(`${env.dir}/goals/nosec.md`, 'utf8').replace(/\n## Engine[\s\S]*$/, '\n')
   assert.ok(!text.includes('## Engine'))
@@ -119,42 +119,42 @@ test('start engine split: a goal with `## Engine` workflow goes to truss.crews, 
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
   assert.deepEqual(slugsOf(j.truss.crews), ['wf'])
-  assert.deepEqual(slugsOf(j.foremen).sort(), ['ld', 'nosec'])
-  const ld = j.foremen.find((l: any) => l.slug === 'ld')
+  assert.deepEqual(slugsOf(j.projectManagers).sort(), ['ld', 'nosec'])
+  const ld = j.projectManagers.find((l: any) => l.slug === 'ld')
   assert.match(ld.reason, /commissioning member/)
-  assert.equal(typeof j.foremen.find((l: any) => l.slug === 'nosec').reason, 'string')
+  assert.equal(typeof j.projectManagers.find((l: any) => l.slug === 'nosec').reason, 'string')
 })
 
-test('start engine split: a foreman crew stays planned, gets no worktree and no spawn line, and a second start returns it again', () => {
-  const env = world([crew('ld')], { goals: { ld: { engine: 'foreman client raised a member to high' } } })
+test('start engine split: a project manager crew stays planned, gets no worktree and no spawn line, and a second start returns it again', () => {
+  const env = world([crew('ld')], { goals: { ld: { engine: 'project-manager client raised a member to high' } } })
   const a = start(env)
   const ja = assertOneLine(a)
   assert.equal(a.status, 0, a.stderr)
-  assert.deepEqual(slugsOf(ja.foremen), ['ld'])
+  assert.deepEqual(slugsOf(ja.projectManagers), ['ld'])
   assert.deepEqual(ja.truss.crews, [])
   assert.equal(statusOf(env, 'ld'), 'planned')
-  assert.ok(!existsSync(wtPath(env, 'ld')), 'no worktree for a foreman crew')
-  assert.equal(git(env.repo, ['branch', '--list', 'truss-ld']), '', 'no branch for a foreman crew')
+  assert.ok(!existsSync(wtPath(env, 'ld')), 'no worktree for a project manager crew')
+  assert.equal(git(env.repo, ['branch', '--list', 'truss-ld']), '', 'no branch for a project manager crew')
   assert.equal(readEvents(env.dir).filter((e) => e.event === 'spawn').length, 0)
   const b = start(env)
   assert.equal(b.stdout, a.stdout, 'idempotent: same output')
   assert.equal(statusOf(env, 'ld'), 'planned')
 })
 
-test('start engine split: `merge: single` forces every crew to foreman', () => {
+test('start engine split: `merge: single` forces every crew to project manager', () => {
   const env = world([crew('a'), crew('b')], { config: { merge: 'single', target: 'main' } })
   const j = assertOneLine(start(env))
   assert.deepEqual(j.truss.crews, [])
-  assert.deepEqual(slugsOf(j.foremen).sort(), ['a', 'b'])
+  assert.deepEqual(slugsOf(j.projectManagers).sort(), ['a', 'b'])
   assert.equal(statusOf(env, 'a'), 'planned')
   assert.equal(readEvents(env.dir).filter((e) => e.event === 'spawn').length, 0)
 })
 
-test('start engine split: --no-workflow forces every crew to foreman', () => {
+test('start engine split: --no-workflow forces every crew to project manager', () => {
   const env = world([crew('a'), crew('b')])
   const j = assertOneLine(start(env, 'next', { 'no-workflow': true }))
   assert.deepEqual(j.truss.crews, [])
-  assert.deepEqual(slugsOf(j.foremen).sort(), ['a', 'b'])
+  assert.deepEqual(slugsOf(j.projectManagers).sort(), ['a', 'b'])
   assert.ok(!existsSync(wtPath(env, 'a')))
   assert.equal(statusOf(env, 'b'), 'planned')
 })
@@ -186,7 +186,7 @@ test('start --stage next: a stage whose only crews are running is still the stag
   const j = assertOneLine(res)
   assert.equal(res.status, 0, res.stderr)
   assert.deepEqual(j.truss.crews, [], 'a running crew is never in a plain --stage result')
-  assert.deepEqual(j.foremen, [])
+  assert.deepEqual(j.projectManagers, [])
   assert.equal(statusOf(env, 'p'), 'planned', 'stage 2 waits for stage 1')
   const later = start(env, 2, { transcript: anchor.dir })
   assert.equal(later.status, 1)
@@ -217,18 +217,18 @@ test('start cap: free slots = maxParallelCrews minus running crews (any engine),
   assert.ok(!j.refused.some((r: any) => r.slug === 'mid'), 'a crew left for lack of a slot is not refused')
 })
 
-test('start cap: a running foreman crew counts against the cap like any other', () => {
-  const env = world([crew('foreman1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { foreman1: { engine: 'foreman commissioning member' } } })
+test('start cap: a running project manager crew counts against the cap like any other', () => {
+  const env = world([crew('project-manager1', { status: 'running' }), crew('a'), crew('b')], { plan: { maxParallelCrews: 2 }, goals: { project-manager1: { engine: 'project-manager commissioning member' } } })
   const j = assertOneLine(start(env, 'next', { transcript: anchorRun(env).dir }))
   assert.deepEqual(slugsOf(j.truss.crews), ['a'], 'one slot free')
   assert.equal(statusOf(env, 'b'), 'planned')
 })
 
-test('start cap: each returned foreman crew takes one of the call\'s slots', () => {
-  const env = world([crew('ld'), crew('w1'), crew('w2')], { plan: { maxParallelCrews: 2 }, goals: { ld: { engine: 'foreman commissioning member' } } })
+test('start cap: each returned project manager crew takes one of the call\'s slots', () => {
+  const env = world([crew('ld'), crew('w1'), crew('w2')], { plan: { maxParallelCrews: 2 }, goals: { ld: { engine: 'project-manager commissioning member' } } })
   const j = assertOneLine(start(env))
-  assert.deepEqual(slugsOf(j.foremen), ['ld'])
-  assert.deepEqual(slugsOf(j.truss.crews), ['w1'], 'two slots: the foreman took one')
+  assert.deepEqual(slugsOf(j.projectManagers), ['ld'])
+  assert.deepEqual(slugsOf(j.truss.crews), ['w1'], 'two slots: the project manager took one')
   assert.equal(statusOf(env, 'w2'), 'planned')
   assert.equal(statusOf(env, 'ld'), 'planned')
 })
@@ -308,7 +308,7 @@ test('start output: top-level keys, truss keys and crew entry keys are exactly t
   assert.equal(j.truss.reworkAllowance, 3)
   assert.equal(flat(j.truss.scriptPath), `${flat(j.truss.plugin)}/workflows/stage.js`)
   assert.equal(workflowRoleVerdict(j.truss.roles), undefined)
-  assert.deepEqual(j.foremen, [])
+  assert.deepEqual(j.projectManagers, [])
   assert.deepEqual(j.refused, [])
   assert.deepEqual(j.stale, [])
   assert.deepEqual(j.unfinished, [])
@@ -368,7 +368,7 @@ test('start --args-file P writes the whole output to P and prints a short pointe
   const env = world([crew('x'), crew('y')])
   const p = `${tmp('fcli-args-')}/sub/stage-args.json`
   const j = assertOneLine(start(env, 'next', { 'args-file': p }))
-  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'held', 'foremen', 'refused', 'stale', 'unfinished', 'warnings'])
+  assert.deepEqual(Object.keys(j), ['argsFile', 'scriptPath', 'crews', 'held', 'projectManagers', 'refused', 'stale', 'unfinished', 'warnings'])
   assert.deepEqual(j.held, [])
   assert.equal(j.argsFile, flat(p))
   assert.deepEqual(j.crews, ['x', 'y'])
@@ -401,7 +401,7 @@ test('start is idempotent: a second run adds no spawn line and does not return t
 })
 
 test('start: every line it appends validates against events.schema.json', () => {
-  const env = world([crew('a'), crew('b'), crew('l')], { goals: { l: { engine: 'foreman commissioning member' } } })
+  const env = world([crew('a'), crew('b'), crew('l')], { goals: { l: { engine: 'project-manager commissioning member' } } })
   assertOneLine(start(env))
   const lines = readEvents(env.dir)
   assert.ok(lines.length >= 2)
@@ -594,7 +594,7 @@ test('pf resume: a resume of a stress-no crew carries warnings: [] and a session
   assert.deepEqual(b.warnings, [])
 })
 
-test('pf missing goal: a crew with no goal file is refused naming the path as missing, not routed to foremen, and stays planned', () => {
+test('pf missing goal: a crew with no goal file is refused naming the path as missing, not routed to project managers, and stays planned', () => {
   const env = world([crew('has'), crew('gone')])
   rmSync(`${env.dir}/goals/gone.md`)
   const res = start(env)
@@ -605,7 +605,7 @@ test('pf missing goal: a crew with no goal file is refused naming the path as mi
   assert.ok(flat(String(r.reason)).includes(`${flat(env.dir)}/goals/gone.md`), String(r.reason))
   assert.match(String(r.reason), /missing/i)
   assert.ok(!/Engine/.test(String(r.reason)), 'not the old "no ## Engine section" reason')
-  assert.deepEqual(slugsOf(j.foremen), [])
+  assert.deepEqual(slugsOf(j.projectManagers), [])
   assert.deepEqual(slugsOf(j.truss.crews), ['has'])
   assert.ok(!existsSync(wtPath(env, 'gone')), 'no worktree')
   assert.equal(statusOf(env, 'gone'), 'planned')
