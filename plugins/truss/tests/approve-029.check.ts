@@ -53,13 +53,21 @@ test('approve --by client with no typed client proof is refused and approvedAt s
 
 test('approve --by client backed by a typed client resolve of the approval item sets approvedAt', () => {
   const w = clientWorld()
-  const id = openItem(w, 'g1')
+  const id = openItem(w, 'run')
   assertRefused(w, approveItem(w), decisionsOf(w)) // the bare call is the wave-3 hole; the proof is what opens it
   clientResolves(w, id, 'approve')
   const r = approveItem(w, id)
   assert.equal(r.status, 0, say(r))
   assert.deepEqual(Object.keys(r.json), ['approvedAt'])
   assert.equal(approvedAt(w), r.json.approvedAt)
+})
+
+test('a client-resolved goal-ref (g1) item does not approve the plan; only a run-ref proof does', () => {
+  const w = clientWorld()
+  const id = openItem(w, 'g1')
+  clientResolves(w, id, 'approve')
+  const r = approveItem(w, id)
+  assertRefused(w, r, decisionsOf(w))
 })
 
 test('a forged resolve row for the approval item does not let approve --by client pass', () => {
@@ -140,7 +148,7 @@ function planMtime(w, sec: number): void {
 
 test('a proof resolved before the plan was re-planned does not approve the re-written plan', () => {
   const w = clientWorld()
-  const id = openItem(w, 'g1')
+  const id = openItem(w, 'run')
   planMtime(w, -60)
   clientResolves(w, id, 'approve') // the client approved the plan as it stood
   writePlan(w.dir, planObj([crew('alpha'), crew('beta')], { approval: 'client', approvedAt: null, goals: [{ id: 'g1', approval: 'client' }, { id: 'g2', approval: 'client' }] }))
@@ -156,7 +164,7 @@ test('a proof resolved before the plan was re-planned does not approve the re-wr
 
 test('a proof resolved before plan.json existed does not approve the plan written later', () => {
   const w = mkWorld()
-  const id = openItem(w, 'g1')
+  const id = openItem(w, 'run')
   clientResolves(w, id, 'approve') // no plan.json yet
   writePlan(w.dir, planObj([crew('alpha')], { approval: 'client', approvedAt: null, goals: [{ id: 'g1', approval: 'client' }] }))
   planMtime(w, 60)
