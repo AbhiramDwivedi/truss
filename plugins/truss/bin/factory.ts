@@ -983,6 +983,12 @@ function mergeIn(wt: string, args: string[]): Obj {
 }
 function cmdSync(f: Flags): Obj {
   const c = crewCtx(f)
+  // ADR-0026 item 58: an unconcluded operation (the resolver's merge) is the resolver's to conclude, so sync refuses before any merge
+  const inProgress = operationInProgress(c.wt)
+  if (inProgress !== undefined) {
+    const conflicts = run(c.wt, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+    throw refuse({ merged: false, conflicts, inProgress, why: `a ${inProgress} is in progress in ${c.wt}; conclude or abort it before syncing ${c.target}` })
+  }
   return mergeIn(c.wt, [c.target])
 }
 // Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
@@ -2044,7 +2050,11 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     const wt = ensureWorktree(c.repo, slug, c.settings.target)
     // R-90: the target goes into the crew branch as cmdSync does; a conflict is aborted (the worktree stays clean) and stage.js re-syncs it to the resolver
     let syncConflicts: string[] | undefined
-    try {
+    // ADR-0026 item 58: an operation left unconcluded in the worktree (the resolver's merge, partly or fully resolved) is never merged
+    // into or aborted; its unmerged paths (none when all are staged) go to the resolver as the sync conflicts, which concludes it
+    const pending = operationInProgress(wt)
+    if (pending !== undefined) syncConflicts = run(wt, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+    else try {
       mergeIn(wt, [c.settings.target])
     } catch (e) {
       if (!(e instanceof CliError) || e.code !== 1 || !Array.isArray(e.body.conflicts)) throw e
@@ -3061,7 +3071,7 @@ type Outcome ={ merged?: true; left?: { path: string; branch: string; why: strin
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 // `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
 // `runId` names the run in the retire event of the crew's own branch (land has none: 'land').
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }, runId = 'land'): Outcome {
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }, runId = 'land', leaseToken?: string): Outcome {
   const needRed = gates?.red ?? true
   const needQc = gates?.qc ?? true
   const slug: string = crew.slug
@@ -3123,6 +3133,9 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
       return { rework: 'reqc' }
     }
   }
+  // R-89: the acceptance test above can outlast LEASE_STALE_MS, and a blocked thread refreshes nothing, so a second finisher may have
+  // taken the lease and merged. A finisher that no longer holds its lease never moves the target.
+  if (leaseToken !== undefined && !refreshLease(dir, `finisher-${slug}`, leaseToken)) return { refused: 'finisher lease lost' }
   // step 4: fast-forward the target
   const onTarget = worktreesOf(repo).find((w) => w.branch === target)
   if (onTarget !== undefined) {
@@ -3350,7 +3363,7 @@ function finishRun(f: Flags, held: Map<string, string>): Obj {
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id)
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id, held.get(String(c.slug)))
     if (r.merged) {
       out.merged.push(c.slug)
       out.leftWorktrees.push(...(r.left ?? []))
