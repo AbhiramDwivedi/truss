@@ -5,7 +5,7 @@
 // Real factory CLI as child processes through the ltc harness; the typed line is a fixture transcript. Node built-ins only.
 
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, utimesSync } from 'node:fs'
 import test from 'node:test'
 import { clientResolves, cli, crew, decisionsOf, mkWorld, planObj, say } from './fixtures/ltc/harness.ts'
 import { writePlan } from './fixtures/workflow-run/harness.ts'
@@ -130,4 +130,49 @@ test('approve --by auto still refuses a client plan', () => {
   const w = clientWorld()
   const before = decisionsOf(w)
   assertRefused(w, approveItem(w, undefined, 'auto'), before)
+})
+
+/** Sets plan.json's mtime `sec` seconds from now (negative: the past); no sleep decides the order. */
+function planMtime(w, sec: number): void {
+  const t = new Date(Date.now() + sec * 1000)
+  utimesSync(`${w.dir}/plan.json`, t, t)
+}
+
+test('a proof resolved before the plan was re-planned does not approve the re-written plan', () => {
+  const w = clientWorld()
+  const id = openItem(w, 'g1')
+  planMtime(w, -60)
+  clientResolves(w, id, 'approve') // the client approved the plan as it stood
+  writePlan(w.dir, planObj([crew('alpha'), crew('beta')], { approval: 'client', approvedAt: null, goals: [{ id: 'g1', approval: 'client' }, { id: 'g2', approval: 'client' }] }))
+  planMtime(w, 60) // re-plan after the resolve
+  const r = approveItem(w, id)
+  assertRefused(w, r, decisionsOf(w))
+  assert.match(String(r.json.error), /before the current plan was written/)
+  planMtime(w, -60) // control: the same proof against a plan older than the resolve passes
+  const ok = approveItem(w, id)
+  assert.equal(ok.status, 0, say(ok))
+  assert.equal(approvedAt(w), ok.json.approvedAt)
+})
+
+test('a proof resolved before plan.json existed does not approve the plan written later', () => {
+  const w = mkWorld()
+  const id = openItem(w, 'g1')
+  clientResolves(w, id, 'approve') // no plan.json yet
+  writePlan(w.dir, planObj([crew('alpha')], { approval: 'client', approvedAt: null, goals: [{ id: 'g1', approval: 'client' }] }))
+  planMtime(w, 60)
+  const r = approveItem(w, id)
+  assertRefused(w, r, decisionsOf(w))
+  assert.match(String(r.json.error), /before the current plan was written/)
+})
+
+test('an already approved plan is confirmed once by the same proof even though approving rewrote plan.json', () => {
+  const w = clientWorld()
+  const id = openItem(w, 'run')
+  clientResolves(w, id, 'approve') // approves the plan itself
+  assert.notEqual(approvedAt(w), null)
+  planMtime(w, 60) // approving rewrote plan.json after the resolve
+  const first = approveItem(w, id)
+  assert.equal(first.status, 0, say(first))
+  assert.equal(first.json.approvedAt, approvedAt(w))
+  assert.equal(approveItem(w, id).status, 1, 'a second call with the same proof finds it applied')
 })
