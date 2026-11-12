@@ -276,7 +276,8 @@ test('BuildNetwork: no stock palette classes in the network', async () => {
 
 // ---- BuildNetwork: agent cards in the network ------------------------------------------------------------
 test('BuildNetwork: rework-network lists the foreman first, then the builder, then the QC engineer, each a list item', async () => {
-  const art = articleOf(region(await network(rx('live'))), 'rework-network')
+  // the recorded lead has the retired type; ADR-0042 reads the new type only, so set it first
+  const art = articleOf(region(await network(mutate(rx('live'), 'rework-network', (c) => { c.foreman.type = 'truss:project-manager' }))), 'rework-network')
   const cards = agentCards(art)
   assert.equal(cards.length, 3)
   const t = cards.map((c) => tidy(text(c)))
@@ -377,7 +378,7 @@ test('BuildNetwork: a crew with 7 named agents says Show 1 more agent', async ()
 test('orderAgents: foreman first, then builder, tester, ux, qc, stress, planning, writer, resolver, then the rest', async () => {
   const { orderAgents } = await r.load('views/crews/format.ts')
   const m = (name: string, type: string | null) => member({ name, type })
-  const fm = m('c', 'truss:foreman')
+  const fm = m('c', 'truss:project-manager')
   const list = [m('c-x', 'general-purpose'), m('c-writer', 'truss:writer'), m('c-qc', 'truss:qc-engineer'), m('c-builder', 'general-purpose'), fm, m('c-tester', 'general-purpose'), m('c-ux', 'truss:ux-engineer'), m('c-resolver', 'truss:resolver')]
   assert.deepEqual(orderAgents(list, fm).map((x: any) => x.name), ['c', 'c-builder', 'c-tester', 'c-ux', 'c-qc', 'c-writer', 'c-resolver', 'c-x'])
 })
@@ -394,7 +395,7 @@ test('typed agents: kit:builder reads Builder and is not a check run; untyped ru
   assert.equal(isCheckRun({ type: null, name: 'crew-runner-2' }), true)
   assert.equal(isCheckRun({ type: 'general-purpose', name: 'crew-agent-3' }), true)
   assert.equal(roleWord({ type: 'general-purpose', name: 'crew-agent-3' }), 'General purpose')
-  const fm = { name: 'c', type: 'truss:foreman' }
+  const fm = { name: 'c', type: 'truss:project-manager' }
   const list = [fm, { name: 'c-x', type: 'Explore' }, { name: 'c-m1', type: 'kit:test-writer' }, { name: 'c-m2', type: 'kit:builder' }]
   assert.deepEqual(orderAgents(list as any, fm as any).map((x: any) => x.name), ['c', 'c-m2', 'c-m1', 'c-x'])
 })
@@ -402,7 +403,7 @@ test('isCheckRun and the runner purpose: runners and unnamed general-purpose age
   const { isCheckRun, RUNNER_PURPOSE } = await r.load('views/crews/format.ts')
   assert.equal(isCheckRun({ type: 'general-purpose', name: 'build-crew-runner' }), true)
   assert.equal(isCheckRun({ type: 'general-purpose', name: 'build-crew-builder' }), false)
-  assert.equal(isCheckRun({ type: 'truss:foreman', name: 'build-crew' }), false)
+  assert.equal(isCheckRun({ type: 'truss:project-manager', name: 'build-crew' }), false)
   assert.equal(RUNNER_PURPOSE, 'Runs one check command for the crew.')
   const v = await card({ member: member({ name: 'c-runner', purpose: null }), role: 'Runner', task: 'x', status: 'active', step: 2 })
   assert.ok(tidy(text(v)).includes(RUNNER_PURPOSE))
@@ -563,7 +564,7 @@ test('AgentCard helpers: roleWord names the foreman, QC engineer, other truss ty
   const { roleWord } = await fmt()
   assert.equal(typeof roleWord, 'function', 'format.ts exports roleWord')
   const w = (type: string | null, name = 'x') => roleWord(member({ type, name }))
-  assert.equal(w('truss:foreman'), 'Foreman')
+  assert.equal(w('truss:project-manager'), 'Foreman')
   assert.equal(w('workflow-crew'), 'Foreman')
   assert.equal(w('truss:qc-engineer'), 'QC engineer')
   assert.equal(w('truss:design-engineer'), 'Design engineer')
@@ -576,7 +577,7 @@ test('AgentCard helpers: roleWord names the foreman, QC engineer, other truss ty
 test('AgentCard helpers: taskLine picks the task, then the foreman goal, then a real detail, else null', async () => {
   const { taskLine } = await fmt()
   assert.equal(typeof taskLine, 'function', 'format.ts exports taskLine')
-  const fm = member({ type: 'truss:foreman', name: 'c', task: null, detail: null })
+  const fm = member({ type: 'truss:project-manager', name: 'c', task: null, detail: null })
   const crew = { slug: 'c', goal: 'Ship the thing.', foreman: fm, members: [] }
   assert.equal(taskLine(member({ task: 'Do T.', detail: 'working' }), crew), 'Do T.')
   assert.equal(taskLine(fm, crew), 'Ship the thing.')
@@ -674,7 +675,7 @@ const mergedWithStalled = () => {
 
 test('taskLine: a detail with text after its marker shows whole, a bare marker never shows (any case, padded)', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   const line = (detail: string) => taskLine(member({ task: null, state: 'tagged', detail }), crew)
   assert.equal(line('BLOCKED: need the API key'), 'BLOCKED: need the API key')
   assert.equal(line('QUESTION: which port?'), 'QUESTION: which port?')
@@ -692,19 +693,19 @@ test('taskLine: a foreman with no task shows the crew goal, never its raw BLOCKE
 })
 test('taskLine: a reported agent with a bare-marker detail and no task reads exactly "Reported: DONE"', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE' }), crew), 'Reported: DONE')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'done' }), crew), 'Reported: DONE')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: ' DONE ' }), crew), 'Reported: DONE')
 })
 test('taskLine: a reported agent with no task and no detail reads exactly "Reported"', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: null }), crew), 'Reported')
 })
 test('taskLine: a reported agent keeps its task, and a reported detail that carries text shows whole, over Reported', async () => {
   const { taskLine } = await fmt()
-  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:foreman' }), members: [] }
+  const crew = { slug: 'c', goal: null, foreman: member({ name: 'c', type: 'truss:project-manager' }), members: [] }
   assert.equal(taskLine(member({ state: 'reported', task: 'Write the note.', detail: 'DONE' }), crew), 'Write the note.')
   assert.equal(taskLine(member({ state: 'reported', task: null, detail: 'DONE: all green' }), crew), 'DONE: all green')
 })

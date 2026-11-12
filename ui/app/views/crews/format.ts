@@ -110,8 +110,9 @@ function typeRole(type: string | null | undefined): string | null {
 /** The agent card's role word (ADR-0028 section 6). */
 export function roleWord(m: Pick<Member, 'type' | 'name'>): string {
   const type = m.type ?? ''
-  if (type === 'truss:foreman' || type === 'workflow-crew') return 'Foreman'
+  if (type === 'truss:project-manager' || type === 'workflow-crew') return 'Foreman'
   if (type === 'truss:qc-engineer') return 'QC engineer'
+  if (type === 'truss:foreman') return 'General purpose' // ADR-0042: the retired type is no longer read as a crew lead
   if (type.startsWith('truss:')) return sentence(type.slice(6).replace(/-/g, ' '))
   const typed = typeRole(m.type)
   if (typed !== null) return sentence(typed)
@@ -142,7 +143,7 @@ const ROLE_ORDER = ['builder', 'tester', 'ux', 'qc', 'stress', 'planning', 'writ
 export function orderAgents(agents: readonly Member[], foreman: Member | null): Member[] {
   const rank = (m: Member): number => {
     if (foreman ? m === foreman || m.name === foreman.name : false) return 0
-    if (m.type === 'truss:foreman' || m.type === 'workflow-crew') return 0
+    if (m.type === 'truss:project-manager' || m.type === 'workflow-crew') return 0
     const key = (m.type ?? '').startsWith('truss:') ? m.type!.slice(6).split('-')[0]! : (typeRole(m.type) ?? nameRole(m.name) ?? '')
     const i = ROLE_ORDER.indexOf(key)
     return i >= 0 ? i + 1 : ROLE_ORDER.length + 1
@@ -173,7 +174,7 @@ export function crewGoalText(crew: Pick<Crew, 'goal'>, goals: readonly { id: str
  */
 export function taskLine(m: Member, crew: Pick<Crew, 'goal' | 'foreman'>, goals: readonly { id: string; goal: string | null }[] = []): string | null {
   if (m.task) return m.task
-  const isForeman = m.type === 'truss:foreman' || m.type === 'workflow-crew' || crew.foreman === m
+  const isForeman = m.type === 'truss:project-manager' || m.type === 'workflow-crew' || crew.foreman === m
   if (isForeman) {
     const g = crewGoalText(crew, goals)
     if (g) return g
