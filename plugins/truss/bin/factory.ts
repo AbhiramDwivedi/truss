@@ -708,8 +708,7 @@ function cmdApprove(f: Flags): Obj {
   // needs the client; a plan whose own approval is client does.
   if (by === 'auto') {
     if (plan.approval === 'client') throw refuse({ error: "approve --by auto: the plan's approval is client, so it needs the client's approval", goals: [RUN_GOAL] })
-    const client = (Array.isArray(plan.goals) ? plan.goals : []).filter((g: unknown) => isObj(g) && g.approval === 'client').map((g: Obj) => String(g.id))
-    if (client.length > 0) throw refuse({ error: `approve --by auto: ${client.length === 1 ? 'goal' : 'goals'} ${client.join(', ')} ${client.length === 1 ? 'needs' : 'need'} the client's approval`, goals: client })
+    if (clientGoals.length > 0) throw refuse({ error: `approve --by auto: ${clientGoals.length === 1 ? 'goal' : 'goals'} ${clientGoals.join(', ')} ${clientGoals.length === 1 ? 'needs' : 'need'} the client's approval`, goals: clientGoals })
   }
   // ADR-0045: approve --by client is the client's act; it passes only with the typed proof /truss:inbox resolve requires (ADR-0037).
   if (by === 'client') {
