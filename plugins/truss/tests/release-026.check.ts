@@ -153,7 +153,7 @@ const ABOUT = {
 }
 
 // Failures of every `path:line` citation in one doc: the file or line is missing, or the cited lines hold none of the names the citation is about.
-function citationFailures(docName, doc, about = ABOUT) {
+export function citationFailures(docName, doc, about = ABOUT) {
   const fails = []
   doc.split('\n').forEach((line, i) => {
     for (const m of line.matchAll(CITE_RE)) {
