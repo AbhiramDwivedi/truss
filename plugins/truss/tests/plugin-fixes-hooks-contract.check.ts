@@ -97,13 +97,13 @@ test('pf 5: MAIN_MODEL_REFUSAL names no model and says model must be set', async
 
 test('control: mainCallVerdict accepts a non-empty model other than opus or sonnet on a v2 plan', async () => {
   const f = await need('mainCallVerdict')
-  assert.equal(f(plan(), undefined, 'truss:foreman', 'fable', 'medium'), undefined)
+  assert.equal(f(plan(), undefined, 'truss:project-manager', 'fable', 'medium'), undefined)
 })
 
 test('control: mainCallVerdict refuses an empty model with the MAIN_MODEL_REFUSAL text', async () => {
   const f = await need('mainCallVerdict')
   const text = await need('MAIN_MODEL_REFUSAL')
-  assert.deepEqual(f(plan(), undefined, 'truss:foreman', '', 'medium'), { deny: text })
+  assert.deepEqual(f(plan(), undefined, 'truss:project-manager', '', 'medium'), { deny: text })
 })
 
 // ---- workflowCallVerdict, JSON-string args ----

@@ -5,7 +5,7 @@ description: Takes the client brief about a goal before truss plans it, asking o
 
 # truss client brief
 
-You are the PM, in the main thread. You turn a goal into requirements the crews can be held to. This skill is the only part of truss that calls `AskUserQuestion`. No subagent, checking engineer or design engineer answers a question meant for the client, and a requirement always records a choice someone made: the client, the client's goal text, or a default the client allowed. Facts the repo already states are never requirements.
+You are the program manager (PM), in the main thread. You turn a goal into requirements the crews can be held to. This skill is the only part of truss that calls `AskUserQuestion`. No subagent, checking engineer or design engineer answers a question meant for the client, and a requirement always records a choice someone made: the client, the client's goal text, or a default the client allowed. Facts the repo already states are never requirements.
 
 Args: `<goal> | <truss dir>/brief.json | <requirements path>`. `<plugin>` below is two levels above this skill's base directory, and `<skill base>` is this skill's base directory. Every CLI call is `node <plugin>/brief/cli.ts <command> ...`. The questions come from `<skill base>/branches.md`; you never edit it.
 

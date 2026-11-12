@@ -148,7 +148,7 @@ describe('0.4.0 dir: two headings and an event log', () => {
   })
 
   test('stalls per run', () => {
-    assert.deepEqual(out(NEW).runs.map((r) => r.stalls), [NR, { agent: 2, idleForeman: 1 }, { agent: 0, idleForeman: 0 }])
+    assert.deepEqual(out(NEW).runs.map((r) => r.stalls), [NR, { agent: 2, idleProjectManager: 1 }, { agent: 0, idleProjectManager: 0 }])
   })
 
   test('escalations per run', () => {

@@ -27,11 +27,11 @@ For the counts, read only the JSON it prints. Section 3 adds a few bounded reads
 
 Per run (`runs`), then the dir-wide keys. Be brief; a table or short list per run.
 
-- **Escalations** (`escalations`): QUESTION, BLOCKED, PROPOSAL. A foreman crew's come from its tagged messages to the PM; a Workflow crew's from the stops `factory.ts finish --result` records from the stage result, one per crew and run (ADR-0009 "finish, escalation lines"). A Workflow run that never went through `finish --result` records none.
+- **Escalations** (`escalations`): QUESTION, BLOCKED, PROPOSAL. A project manager crew's come from its tagged messages to the program manager (PM); a Workflow crew's from the stops `factory.ts finish --result` records from the stage result, one per crew and run (ADR-0009 "finish, escalation lines"). A Workflow run that never went through `finish --result` records none.
 - **Checking engineer** (`recommendations`): answer, defer, pass. With `decisions.overruled`, say how often the PM overruled.
-- **Stalls** (`stalls`): agent and idle-foreman.
+- **Stalls** (`stalls`): agent and idle-project-manager.
 - **Spawns** (`spawns`): total, and `byModelEffort`. `unset` means the call named no model or effort.
-- **Client interruptions**: `escalations.QUESTION` and `escalations.BLOCKED` are what foremen sent the PM that could reach the client; the PM took only some to the client, so call these an upper bound. `messages` counts foreman-to-foreman messages, not client interruptions; report it separately as crew collisions.
+- **Client interruptions**: `escalations.QUESTION` and `escalations.BLOCKED` are what project managers sent the program manager that could reach the client; the program manager took only some to the client, so call these an upper bound. `messages` counts messages between project managers, not client interruptions; report it separately as crew collisions.
 - **QC rejections**: `qcs.fail` per run, and `qcFiles` for the whole dir (its files can't be split by run).
 - **Spent allowances** (`allowancesSpent`, per run): how many distinct crews spent their rework allowance. `"not recorded"` means the log can't back a number, as on a pre-0.5.0 log or a run that spent none; say so and never write 0. `retro` stays 1.
 - **Optional learning** (`knowledge`, per run): `crews` (the Workflow crews that recorded it), `items` (the learned items their members reported) and `ran` against `skipped` (crews whose knowledge step ran, and crews whose step was skipped), from the `knowledge` lines `factory.ts finish --result` writes, one per crew and run. A step runs when a member reported an item, a product call was made, or the diff added, renamed or deleted source files. Many crews with no items and no step run means members aren't reporting what they learn. `"not recorded"` means the run is not placed in the event log or no crew recorded the line, as on a pre-0.23.0 log; say so and never write 0.
@@ -61,7 +61,7 @@ Give each anomaly one line, exactly `CAUSE: <anomaly> | <evidence> | <fix locati
 
 - `leftover`: each `leftoverDetails` entry.
 - `QC engineer fail`: each QC engineer file (`reports/<crew>/<name>-qc.md` or `<name>-qc-<n>.md` in the truss dir) whose first line starts `VERDICT: FAIL`.
-- `stall`: per run, a non-zero `stalls.agent` or `stalls.idleForeman`.
+- `stall`: per run, a non-zero `stalls.agent` or `stalls.idleProjectManager`.
 - `overrule`: per run, a non-zero `decisions.overruled`.
 - `spent allowance`: per run, a non-zero `allowancesSpent`.
 - `refusal`: per run, each `refusals.byCategory` entry of 3 or more, named by its key, for example `refusal worktree-guard: is too complex to verify that it stays inside the worktree`.
@@ -89,7 +89,7 @@ When the fix belongs in a file of the truss plugin, not of the project, start `<
 Propose a change only when a count or a section 3 `CAUSE:` line supports it, and say which. Each proposal names a file and a key or path, the current value (read the file; it is the client's config, not a log), the new value, and why.
 
 - `.claude/truss.json`: `roles` (a job's agent type, for example a job whose QC engineer rejections or stalls cluster on one model), `deploy`, `writingSkill`, `promptOverrides`. Keep to keys the schema declares (`truss-config.schema.json`).
-- `.claude/truss/prompts/<role>.md` for the roles `foreman`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`: a line a role keeps missing, and the `promptOverrides` entry that points to the file. A prompt file adds to the role's prompt; it never replaces it.
+- `.claude/truss/prompts/<role>.md` for the roles `project-manager`, `qc-engineer`, `checking-engineer`, `writer`, `commissioning-engineer`, `design-engineer`: a line a role keeps missing, and the `promptOverrides` entry that points to the file. A prompt file adds to the role's prompt; it never replaces it.
 - `.claude/settings.json` `permissions.allow`: an allow rule for a `refusal` line whose source is `permission`, or `classifier: no verdict`, on a command the project runs every time. Each rule is narrow: a program and its subcommand, such as `Bash(npm --prefix ui test:*)`, `Bash(node --test:*)` or `Bash(git log:*)`. Never propose a wildcard over anything that runs code it is handed: no `Bash(*)`, `Bash(node:*)`, `Bash(python3:*)`, `Bash(bash:*)`, `Bash(sh:*)`, `Bash(npx:*)`, `Bash(env:*)`, `Bash(xargs:*)`, `Bash(git:*)` or the like. Never a rule for a `worktree-guard` refusal (no rule reaches the guard) or for a named classifier category. The rules go in `.claude/settings.json`, the project's committed file: `.claude/settings.local.json` is not checked in, so it never reaches the agents' worktrees. A fix goal may edit `.claude/settings.json`. Truss writes the approved rules into `.claude/settings.json`; when Claude Code's classifier refuses that write, truss shows the refusal and the client writes the rules, and the refusal is never worked around.
 
 Retro may propose removing a rule, and each proposed rule names the rule it replaces, or says `none`. A removal needs a count or `CAUSE:` line like any other proposal.

@@ -192,7 +192,7 @@ test('pf 7: a crew with no goal file is refused with a reason naming the path an
   assert.ok(flat(String(refused.reason)).includes(path), `the reason names ${path}: ${refused.reason}`)
   assert.match(String(refused.reason), /missing/i)
   assert.ok(!existsSync(`${w.repo}/.claude/worktrees/truss-gone`), 'no worktree for the refused crew')
-  assert.ok(!(r.json.foremen ?? []).some((x: any) => x.slug === 'gone'), 'not under foremen')
+  assert.ok(!(r.json.projectManagers ?? []).some((x: any) => x.slug === 'gone'), 'not under projectManagers')
   assert.ok(!(r.json.truss?.crews ?? []).some((x: any) => x.slug === 'gone'), 'not a workflow crew either')
   assert.equal(readPlan(w.dir).crews.find((c: any) => c.slug === 'gone').status, 'planned')
 })
