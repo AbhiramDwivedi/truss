@@ -18,7 +18,7 @@ What the code allows today:
 - The hooks gate only `truss:*` Agent calls (`hooks/register.ts` `mainCallVerdict`), so a `general-purpose` fact-finder started before any plan exists is not refused.
 - The checking engineer rules on items only once the plan is approved (`skills/run/SKILL.md` section "The cynic"). The client brief runs before the plan, so no checking engineer sees its questions or answers them.
 - `tests/packs.check.ts` test "principles: the directory holds only SKILL.md and the seven packs as.md files" pins that `skills/principles/` holds only `SKILL.md` and the seven packs, and each pack's form is rules paired with tests (`packs.check.ts` test "principles: ${name} has a ## Rules section"). Client brief questions are a different kind of thing from reviewer rules.
-- The QC engineer already treats the goal file as approved scope (`agents/qc-engineer.md:18`), so a requirement quoted in a goal file is something the QC engineer checks the diff against without any change to `qc-engineer.md`.
+- The QC engineer already treats the goal file as approved scope (`agents/qc-engineer.md`, the "You get:" list), so a requirement quoted in a goal file is something the QC engineer checks the diff against without any change to `qc-engineer.md`.
 - A crew diff that edits the architecture doc is a finding unless the crew is a design crew (`agents/qc-engineer.md` section "How to QC engineer"). The doc amendment below is therefore its own design crew.
 
 ## Decision
@@ -172,7 +172,7 @@ New requirements take ids from the highest in the file plus one. The ids this ru
 - **Plan.** Section 4's design engineer brief gets one more bullet: the requirements path and this run's R-ids. In `agents/design-engineer.md` plan mode, the inputs name both, and `plan.md`'s crew table (`design-engineer.md` section "plan mode") gains a `Requirements` column: the R-ids the crew serves, comma-separated, or `none`. Every run R-id is served by at least one crew. One that no crew can serve goes under an `Unserved:` line in `plan.md` with a reason. `plan.json` and `plan.schema.json` don't change.
 - **Plan check.** The PM sends a plan back (section 4's list) when a run R-id is neither served nor under `Unserved:`. Section 5 lists each `Unserved:` id and each `Source: default` requirement under the plan table; dropping an unserved id is the client's ruling, recorded by `Status: dropped`. The client-approval table gets a `Requirements` column.
 - **Goal files.** Section 6's goal file gets a `## Requirements` section, one line per R-id the crew serves, `- R-<n>: <title>` with the title copied exactly. Before the first project manager starts, the PM runs `node <plugin>/brief/cli.ts trace <requirements path> <truss dir>/brief.json <truss dir>/goals` and fixes the goal files until it prints `OK:`.
-- **QC engineers.** No change to `qc-engineer.md`. The goal file is already approved scope (`qc-engineer.md:18`), so the QC engineer checks the diff against the quoted R-n lines, and work outside them is the usual `QUESTION: outside approved scope`.
+- **QC engineers.** No change to `qc-engineer.md`. The goal file is already approved scope (`qc-engineer.md`, the "You get:" list), so the QC engineer checks the diff against the quoted R-n lines, and work outside them is the usual `QUESTION: outside approved scope`.
 
 ```mermaid
 sequenceDiagram

@@ -32,7 +32,7 @@ Gap a: fill. A message carries an intent and an id.
 Gap b: fill. `session` gains `queue`: an array, oldest first, of `{id, text, intent, at}`.
 
 - It lists every accepted message the SDK has not yet taken. That is the messages held in `queue` while a turn runs (`ui/server/session/session.ts` `enqueue`) and those in `outbox` waiting for the input generator (`input`, `dispatch`).
-- An item leaves `queue` when the input generator yields it (`:58`).
+- An item leaves `queue` when the input generator (`input`) yields it.
 - `id` and `intent` are the message's, as in gap a. `text` is the text as typed. `at` is the server clock when the POST was accepted, RFC 3339 UTC.
 - An idle session has `queue: []`.
 
@@ -78,16 +78,16 @@ Gap h: ship without. There are no crew control or pause endpoints.
   - `Ask Claude`: `Crew <slug> is stuck: <detail>. What is happening, and what do you suggest?`
 - For a crew whose `stuck.kind` is `idle-project-manager`, the primary button is `Start a successor project manager` in place of `Restart <role>`, followed by `Re-plan crew` and `Ask Claude`. It also sends an ordinary message with no intent, with the text:
   - `Start a successor project manager`: `Crew <slug> is stuck: <detail>. Start a successor project manager for it.`
-- Superseded by [ADR-0029](0029-real-data.md) section 5: `Pause build` and its Hint are removed. Before: the `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html:484`).
+- Superseded by [ADR-0029](0029-real-data.md) section 5: `Pause build` and its Hint are removed. Before: the `Pause build` button is `aria-disabled="true"` and described by D2's tip "Pausing needs a server endpoint that doesn't exist yet." (`direction-d2.html`).
 
 ### 2. The design system: tokens, type and icons
 
 `ui/contract/redesign/tokens.json` is the contract artifact. It is committed, and this ADR describes it without changing it. Its shape is `{colors: {<key>: {light, dark}}, radius, text, shadow: {<key>: {light, dark}}, font: {sans, mono}, shadcn: {"--<var>": "<colour key>"}}`.
 
-- **Colours.** 26 keys, with the light and dark hex values of `direction-d2.html:32-37` and `:43-48`: `bg`, `surface`, `sunken`, `border`, `border-strong`, `fg`, `muted`, `subtle`, `brand`, `brand-strong`, `brand-soft`, `brand-line`, `move`, `move-fg`, `move-muted`, `move-line`, `signal`, `signal-soft`, `signal-text`, `ok`, `ok-soft`, `fail`, `fail-soft`, `fail-text`, `opus`, `sonnet`. There is no 27th key.
+- **Colours.** 26 keys, with the light and dark hex values of `direction-d2.html`: `bg`, `surface`, `sunken`, `border`, `border-strong`, `fg`, `muted`, `subtle`, `brand`, `brand-strong`, `brand-soft`, `brand-line`, `move`, `move-fg`, `move-muted`, `move-line`, `signal`, `signal-soft`, `signal-text`, `ok`, `ok-soft`, `fail`, `fail-soft`, `fail-text`, `opus`, `sonnet`. There is no 27th key.
 - **Radius.** `chip` 6 px, `ctl` 8 px, `card` 12 px, `panel` 16 px, `hero` 20 px.
 - **Text sizes.** `micro` 11, `meta` 12, `ui` 13, `body` 14, `lead` 16, `title` 18, `h1` 22, `ask` 24 px.
-- **Shadows.** `e1`, `e2` and `e-hero`, light and dark, exactly as `direction-d2.html:38-40` and `:49-51` give them.
+- **Shadows.** `e1`, `e2` and `e-hero`, light and dark, exactly as `direction-d2.html` give them.
 - **Fonts.** `sans` is `Geist, ui-sans-serif, system-ui` and `mono` is `Geist Mono, ui-monospace, monospace`.
 - **shadcn map.** 18 shadcn variables, each mapped to a D2 key. It stays as it is:
 
@@ -109,7 +109,7 @@ Gap h: ship without. There are no crew control or pause endpoints.
 
 A shadcn variable whose name is a D2 key maps to that same key. `--muted` is D2's text colour, so shadcn's muted surface goes on `--secondary`. `--primary` is `move`, not `brand`: `move-fg` on `move` is 6.70:1 in both themes, but `move-fg` on dark `brand` is 3.68:1 and fails.
 
-The built CSS holds every colour key in the light `:root` block and in the `.dark` block, as D2's own sheet does (`direction-d2.html:31-52`). `ui/contract/redesign/tokens.check.ts` checks this against the built `ui/web/assets/*.css`, with hex lowercased and `#fff` expanded to `#ffffff` before comparing.
+The built CSS holds every colour key in the light `:root` block and in the `.dark` block, as D2's own sheet does (`direction-d2.html`). `ui/contract/redesign/tokens.check.ts` checks this against the built `ui/web/assets/*.css`, with hex lowercased and `#fff` expanded to `#ffffff` before comparing.
 
 **Icons.** `ui/contract/redesign/icon.svg` and `ui/contract/redesign/icon-favicon.svg` are byte copies of the approved king-post truss mark, `design/icon.svg` and `design/icon-favicon.svg` in the truss dir. floor-shell serves the favicon. The icon is saved to no developer portal or external service. Other icons are lucide.
 
@@ -138,17 +138,17 @@ The rules:
 
 - `subtle` is never text on `sunken`.
 - `ok`, `sonnet` and `signal` are never text. They mark dots, bars, icons, badge borders and edges.
-- Focus is a 2 px `brand` outline, offset 2 px (`direction-d2.html:56`), replacing ADR-0018's `patina` ring. Inside Your move, focus is a `move-fg` outline.
+- Focus is a 2 px `brand` outline, offset 2 px (`direction-d2.html`), replacing ADR-0018's `patina` ring. Inside Your move, focus is a `move-fg` outline.
 - State is never carried by colour alone. A stuck crew shows the word "Stuck" and an icon, and a stuck link in the network gets a still marker.
 - Targets are at least 24 by 24 px. The 6 px source dots are decorative and are not targets.
 
 D2 draws four controls with raw hex or with pairs that fail the table above. These rules replace D2's drawing, and no 27th key is added for any of them:
 
-- **The Your move pill** (`direction-d2.html:527`) is a `signal-soft` background with `signal-text` text and a `signal` dot (6.37:1 light, 10.24:1 dark). D2's `bg-signal` and raw `text-[#3B2604]` go: `signal-text` on `signal` is 3.30:1.
-- **The selected answer option** (`:535`, `:539`) is a `move-fg` background with `move` text, for both its label and its description (6.70:1 in both themes). D2's `bg-white`, `dark:bg-white`, `text-fg`, `dark:text-[#0F172A]` and `text-[#475569]` go: dark `fg` and dark `muted` on white fail. Unselected options keep D2's `move-line` border with `move-fg` text and `move-muted` descriptions.
-- **The `Recommended` chip** (`:538`) is a `move` background with `move-fg` text. D2's `bg-brand-soft` and `dark:bg-[#EFF6FF]` go.
-- **The composer send button** (`:627`) is shadcn's `--primary`: a `move` background with `move-fg` text (6.70:1 in both themes). D2's `bg-brand text-white` goes: `move-fg` on dark `brand` is 3.68:1.
-- **The stuck card's primary button** (`:408`) is a `fail` background with `surface` text (4.70:1 light, 6.63:1 dark). D2's `text-white dark:text-[#2A0E17]` goes, and so does the same pair on the stuck band (`:424`) and the stage's `1 stuck` chip (`:656`), which take `surface` on `fail` too.
+- **The Your move pill** (`direction-d2.html`) is a `signal-soft` background with `signal-text` text and a `signal` dot (6.37:1 light, 10.24:1 dark). D2's `bg-signal` and raw `text-[#3B2604]` go: `signal-text` on `signal` is 3.30:1.
+- **The selected answer option** is a `move-fg` background with `move` text, for both its label and its description (6.70:1 in both themes). D2's `bg-white`, `dark:bg-white`, `text-fg`, `dark:text-[#0F172A]` and `text-[#475569]` go: dark `fg` and dark `muted` on white fail. Unselected options keep D2's `move-line` border with `move-fg` text and `move-muted` descriptions.
+- **The `Recommended` chip** is a `move` background with `move-fg` text. D2's `bg-brand-soft` and `dark:bg-[#EFF6FF]` go.
+- **The composer send button** is shadcn's `--primary`: a `move` background with `move-fg` text (6.70:1 in both themes). D2's `bg-brand text-white` goes: `move-fg` on dark `brand` is 3.68:1.
+- **The stuck card's primary button** is a `fail` background with `surface` text (4.70:1 light, 6.63:1 dark). D2's `text-white dark:text-[#2A0E17]` goes, and so does the same pair on the stuck band and the stage's `1 stuck` chip, which take `surface` on `fail` too.
 
 ### 4. The page, its states and their copy
 
@@ -188,7 +188,7 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 
 **follow-up.**
 - The `Follow-ups` region lists the `user` transcript entries and `session.queue` items, newest first. Each row shows its intent label (`New goal`, `Add to current goal`), the text (truncated to one line, with the full text in `title`, in its accessible name and on focus) and a time.
-- The intent label is sentence case, with no `text-transform: uppercase`. D2's `uppercase tracking-wide` (`direction-d2.html:639`) goes: it breaks the copy rules, and a screen reader spells it out.
+- The intent label is sentence case, with no `text-transform: uppercase`. D2's `uppercase tracking-wide` (`direction-d2.html`) goes: it breaks the copy rules, and a screen reader spells it out.
 - With no entries, the region reads "Nothing sent yet." and holds no list.
 - Each row has one status chip. A row in `session.queue` reads `Queued`. A row in the transcript and not in the queue reads `Sent HH:MM`. There is no "In the plan" or "plan revision" status (gap c).
 - The radiogroup offers `New goal` and `Add to current goal`, and `Answer the question` only while a question is open.
@@ -219,8 +219,8 @@ Each state is a fixture (section 6) and has one spec block that asserts it by ro
 - At phone and tablet width, activating an item opens the `Deliverable` dialog. Focus moves into it, Escape closes it, and focus returns to the item.
 
 **live-counter.**
-- Elapsed reads "since you approved, <day HH:MM>", from `run.goals[0].approvedAt` (goal id `run`, gap d). `<day>` is the short English weekday (D2's `Thu 22:37`, `direction-d2.html:591`) and `HH:MM` the 24-hour time, both in the viewer's time zone. The sub-line holds that text and nothing more.
-- Tokens shows the total and the rate, and "as of HH:MM" from `usage.live.at` (gap e). The rate reads `<n>/min` (D2's `2.1k/min`, `direction-d2.html:592`). It shows only once the client has seen two `live` stamps; until then the sub-line holds no `/min` text and never a made-up rate. When that stamp is more than 2 minutes old, the sub-line reads "as of HH:MM, not updating" in `signal-text`.
+- Elapsed reads "since you approved, <day HH:MM>", from `run.goals[0].approvedAt` (goal id `run`, gap d). `<day>` is the short English weekday (D2's `Thu 22:37`, `direction-d2.html`) and `HH:MM` the 24-hour time, both in the viewer's time zone. The sub-line holds that text and nothing more.
+- Tokens shows the total and the rate, and "as of HH:MM" from `usage.live.at` (gap e). The rate reads `<n>/min` (D2's `2.1k/min`, `direction-d2.html`). It shows only once the client has seen two `live` stamps; until then the sub-line holds no `/min` text and never a made-up rate. When that stamp is more than 2 minutes old, the sub-line reads "as of HH:MM, not updating" in `signal-text`.
 - Spend reads "as of turn end HH:MM", from `usage.at`.
 - Tasks done shows a count with no denominator (gap f).
 - D2's "from events today / needs a server change" legend and its hollow dots are not product copy; the page has neither.
@@ -248,14 +248,14 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 360 px is narrower than D2's 390 px drawing, on purpose, to catch overflow. 768 px exercises the stacked layout below 1024 px. 1440 px gets the six-column metrics.
 
 - **1024 px and up.** A left rail (the idea, Pause, the ADR timeline) and a main column. The main column runs metrics (sticky), Your move, composer, tabs, deliverables and transcript, in that order.
-- **Below 1024 px.** The order is banner, Your move, composer, metrics, crews, deliverables, transcript, as D2's `max-lg:order-*` classes give it (`direction-d2.html:456`, `:466`, `:522`, `:580`, `:619`, `:817`, `:859`). The preview becomes a sheet (the `Deliverable` dialog).
+- **Below 1024 px.** The order is banner, Your move, composer, metrics, crews, deliverables, transcript, as D2's `max-lg:order-*` classes give it (`direction-d2.html`). The preview becomes a sheet (the `Deliverable` dialog).
 - **Metrics.** Six columns at 1280 px and up, three below 1280 px, two below 1024 px. The sticky metrics bar never changes height, so nothing shifts under the pointer.
 - **Overflow.** At each width, `scrollWidth <= clientWidth`. The type filter and the intent group scroll sideways inside themselves, never the page.
 - **200% zoom.** Emulated as a 720 px viewport (200% of 360 px). With the question card and the stuck card shown, the page still has no horizontal scroll.
 - **Hierarchy.** The eye lands first on Your move, then the metrics chips, then stuck crews. Spacing uses a 4 px base. Each view has one primary action: the move card's submit, or the composer's send when there is no card.
 - **Keyboard.** The skip link comes first and jumps to Your move, then the composer. Radios move by arrow keys. Dialogs trap focus and return it. Async updates go through `status` and `log` regions.
 
-**Motion.** From `direction-d2.html:57-64`: `arrive` 360 ms, `tick-up` 420 ms, and the `ping`, `dash`, `scan`, `sheen` and `stuck-glow` loops. Every one stops under `prefers-reduced-motion: reduce` (`direction-d2.html:65`). The specs assert this with `page.emulateMedia({ reducedMotion: 'reduce' })` and a computed `animation-name` of `none` on the `stuck-glow` and `ping` elements.
+**Motion.** From `direction-d2.html`: `arrive` 360 ms, `tick-up` 420 ms, and the `ping`, `dash`, `scan`, `sheen` and `stuck-glow` loops. Every one stops under `prefers-reduced-motion: reduce` (`direction-d2.html`). The specs assert this with `page.emulateMedia({ reducedMotion: 'reduce' })` and a computed `animation-name` of `none` on the `stuck-glow` and `ping` elements.
 
 ### 6. Fixtures
 

@@ -1,10 +1,10 @@
 # ADR-0017: members' own heavy commands go through `factory heavy` as one plain command
 
-Status: proposed, 2026-10-31. Written by the design crew `member-heavy-design` (stage 2 of goal `plugin-fixes`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir). This goal builds none of it: if the PM takes the decision, it amends a build crew (plan module verdict, `plan-plugin-fixes.md:18`).
+Status: proposed, 2026-10-31. Written by the design crew `member-heavy-design` (stage 2 of goal `plugin-fixes`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`, and its plan is revision 2 (`plan-plugin-fixes.md` in the truss dir). This goal builds none of it: if the PM takes the decision, it amends a build crew (plan module verdict, `plan-plugin-fixes.md`).
 
 VERDICT: change, decided here and built later. It picks a member-side heavy path. The **stage workflow** (`workflows/stage.js`) would give each member one literal `factory heavy` line. The **factory CLI** (`bin/factory.ts`) and the **resources** module (`resources/index.ts`) don't change. The **hooks** (`hooks/register.ts`) don't change, and neither does how they treat the worktree guard.
 
-Decided by: amend brief item 5 (`amend-brief-plugin-fixes.md:10`), the plan's module verdict for item 5 (`plan-plugin-fixes.md:18`), [ADR-0016](0016-plugin-fixes.md) Decision 8, and the probe below.
+Decided by: amend brief item 5 (`amend-brief-plugin-fixes.md`), the plan's module verdict for item 5 (`plan-plugin-fixes.md`), [ADR-0016](0016-plugin-fixes.md) Decision 8, and the probe below.
 
 ## Context
 
@@ -16,7 +16,7 @@ The gap is still there in the code:
 - No member prompt holds the plugin path or the truss dir. `stage.js` reads `F.plugin`, `F.dir` and `F.repo` only for runner lines (`runFactory`, `heavyLine`) and for QC report paths (`path`). So a member can't call `factory heavy` today without guessing the paths.
 - `reap` after each member (`workflows-src/stage/crew.js`) kills only recorded groups with label `<slug>-check` (`bin/factory/resources.ts` `admission`). A member's own processes are never recorded (`0015-resource-aware.md` section "Reap: its own runner call").
 
-The plan says the worktree guard "refuses the multi-part shell a member would need to call `factory heavy` itself" (`plan-plugin-fixes.md:18`). The worktree guard is Claude Code's own, not a truss hook (`workflows-src/stage/texts.js` `SHELL`). The member brief's `SHELL` rule (`workflows-src/stage/texts.js`) lists the shapes it refuses: heredoc writes, `&&`, `;`, `cd`, for-loops, `$VAR` arguments, and inline scripts that name git. truss's hooks only classify a guard refusal by its text, through `refusalOf` and `WORKTREE_GUARD` (ADR-0012, `0012-self-improving-retro.md` section "2. The extractor"). The open question was whether the guard lets through the one shape a member actually needs: a single plain command whose absolute paths (the plugin's `bin/factory.ts` and the truss dir) lie outside the worktree.
+The plan says the worktree guard "refuses the multi-part shell a member would need to call `factory heavy` itself" (`plan-plugin-fixes.md`). The worktree guard is Claude Code's own, not a truss hook (`workflows-src/stage/texts.js` `SHELL`). The member brief's `SHELL` rule (`workflows-src/stage/texts.js`) lists the shapes it refuses: heredoc writes, `&&`, `;`, `cd`, for-loops, `$VAR` arguments, and inline scripts that name git. truss's hooks only classify a guard refusal by its text, through `refusalOf` and `WORKTREE_GUARD` (ADR-0012, `0012-self-improving-retro.md` section "2. The extractor"). The open question was whether the guard lets through the one shape a member actually needs: a single plain command whose absolute paths (the plugin's `bin/factory.ts` and the truss dir) lie outside the worktree.
 
 ### The shape a member would run
 
@@ -27,9 +27,9 @@ node <plugin>/bin/factory.ts heavy --dir D --repo R --slug S --label L --cwd W -
 ```
 
 - `heavy` splits its argv at the first `--` and parses flags only before it (`bin/factory/resources.ts` `cmdReap`). It needs `--dir`, `--slug`, `--label` and `--cwd` (`heavyMain`), and a command after `--` (`heavyMain`).
-- It runs the command with `spawn(cmd[0], cmd.slice(1), { cwd, detached: true })`, with no shell (`:1174`). A spawn error gives exit 127 (`:1175`).
-- It records the group under `D/resources/groups/<pgid>.json` (`:1178-1179`) and deletes the record once the group is empty (`:1186`).
-- A JSON stdout passes through with a `heavy` key added (`:1195`). Any other output comes back as `tail`, the last 40 lines of stdout then stderr (`:1196-1198`).
+- It runs the command with `spawn(cmd[0], cmd.slice(1), { cwd, detached: true })`, with no shell (`heavyMain`). A spawn error gives exit 127.
+- It records the group under `D/resources/groups/<pgid>.json` (`GROUPS`) and deletes the record once the group is empty.
+- A JSON stdout passes through with a `heavy` key added. Any other output comes back as `tail`, the last 40 lines of stdout then stderr.
 - It waits for the slot up to `HEAVY_WAIT_MS` = 240000 (`bin/factory/resources.ts`, `heavyMain`), then prints `ran: false` and exits 1.
 - `heavy` is the one async command. `main` refuses it (`bin/factory.ts`), and the entry point sends it to `heavyMain`.
 
@@ -51,11 +51,11 @@ What a build crew would change, and nothing else:
    - the line holds no `$`, `&&`, `;` or `cd`.
 3. **Docs.** ADR-0015's Decision 6 and Out of scope, and the architecture doc's "Heavy slots" bullet, then say that member runs share the slot.
 
-The path changes no hook. It doesn't change how hooks treat the worktree guard: the guard is Claude Code's, `refusalOf` keeps classifying its text as before, and the probe ran with the hooks as they are. So checker-28's trigger ("recheck client triggers if member-heavy-design changes worktree-guard hook handling", `plan-plugin-fixes.md:92`) does not fire.
+The path changes no hook. It doesn't change how hooks treat the worktree guard: the guard is Claude Code's, `refusalOf` keeps classifying its text as before, and the probe ran with the hooks as they are. So checker-28's trigger ("recheck client triggers if member-heavy-design changes worktree-guard hook handling", `plan-plugin-fixes.md`) does not fire.
 
 ## Out of scope
 
-- Building any of it. This goal decides; the PM amends a build crew if it takes the decision (`plan-plugin-fixes.md:18`).
+- Building any of it. This goal decides; the PM amends a build crew if it takes the decision (`plan-plugin-fixes.md`).
 - Any change to `bin/factory.ts`, `resources/index.ts` or `hooks/register.ts`. `heavy` already takes any command after `--`.
 - A shell after `--`. `heavy` spawns with no shell (`bin/factory/heavy.ts` `heavyMain`). A member that needs a pipeline puts it in a script file and runs that.
 - Raising the one heavy slot, or a member-only slot. ADR-0015 Decision 3 keeps one slot (`0015-resource-aware.md` section "Decision 3: one heavy slot, `factory heavy`").

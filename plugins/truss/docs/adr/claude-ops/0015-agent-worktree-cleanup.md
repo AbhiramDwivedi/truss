@@ -7,7 +7,7 @@ Amends: [ADR-0014](0014-worktrees-declared-read-only-agents.md) (where the main 
 
 ## Context
 
-Run 3 left 89 `worktree-agent-*` branches on origin and 100 registered worktrees, though every crew merged. worktrees' self-clean (`selfClean`, `plugins/worktrees/hooks/register.ts:966`) removed almost none of them, for four reasons this ADR fixes:
+Run 3 left 89 `worktree-agent-*` branches on origin and 100 registered worktrees, though every crew merged. worktrees' self-clean (`selfClean`, `plugins/worktrees/hooks/register.ts`) removed almost none of them, for four reasons this ADR fixes:
 
 - it only looks at the worktrees this session's `WorktreeCreate` put in the in-memory `tracked` map (`register.ts` `appendLine`, `1351`), so a resumed or restarted session sweeps nothing;
 - it keeps any worktree whose `slots.json` `active` entry is under 24 hours old (`isActive`, `register.ts` `gateOf`), and `active` is only cleared from `SubagentStop` (`cleanWorktree`, `register.ts` `State`), which did not run for most agents;
@@ -62,9 +62,9 @@ worktrees keeps its own `classic.PostToolUse` merge detection (`register.ts` `st
 
 ### 4. The project dir, not the process cwd
 
-The hook input has no project-dir field. `BaseHookInput` carries `session_id`, `transcript_path`, `cwd`, and optional `agent_id`, `agent_type` (probe section (b), from the bundled `claude-code.d.ts:853`); a grep for `CLAUDE_PROJECT_DIR` and `project_dir` over the plugin-authoring types finds nothing.
+The hook input has no project-dir field. `BaseHookInput` carries `session_id`, `transcript_path`, `cwd`, and optional `agent_id`, `agent_type` (probe section (b), from the bundled `claude-code.d.ts`); a grep for `CLAUDE_PROJECT_DIR` and `project_dir` over the plugin-authoring types finds nothing.
 
-**Decision.** The isolation decision (`classic.PreToolUse` on `Agent`, `register.ts:1298`) and the sweep resolve the repo the same way, trying in order:
+**Decision.** The isolation decision (`classic.PreToolUse` on `Agent`, `register.ts`) and the sweep resolve the repo the same way, trying in order:
 
 1. `await $.env.get('CLAUDE_PROJECT_DIR')`, when it returns a non-empty string. Whether Claude Code sets it for mods is not confirmed (TODO: no probe saw it set or unset in the mod process), so it is only the first try;
 2. the event's `cwd`;
@@ -122,7 +122,7 @@ foundry-protocol's crew changes `agents/architect.md` and the run skill to match
 
 ### 10. Foundry-dir writes: Claude Code's guard, which no plugin can widen
 
-The guard that refused worktree agents' writes in run 3 is Claude Code's own worktree confinement, not a plugin, user hook or setting (probe section (e)): its text, `This agent is isolated in the worktree <path>, but this command names git in a form too complex to verify ...`, appears in no file under `plugins/`, `~/.claude/hooks` or `~/.claude/settings.json`, and worktrees registers no `PreToolUse` handler except the one on `Agent`. The Write-tool refusal for `.git/foundry` is recorded only as a paraphrase in `reports/foundry-init/foundry-init-acceptance.md:70`; its exact wording is not recorded (the probe's follow-up note). No plugin can widen the guard. The fix is item 7 (judges and cynics run in the main checkout, outside the guard; they write no foundry-dir files anyway, since the hook writes their reports) and item 9 (the architect's plan reaches the foundry dir through the hook).
+The guard that refused worktree agents' writes in run 3 is Claude Code's own worktree confinement, not a plugin, user hook or setting (probe section (e)): its text, `This agent is isolated in the worktree <path>, but this command names git in a form too complex to verify ...`, appears in no file under `plugins/`, `~/.claude/hooks` or `~/.claude/settings.json`, and worktrees registers no `PreToolUse` handler except the one on `Agent`. The Write-tool refusal for `.git/foundry` is recorded only as a paraphrase in `reports/foundry-init/foundry-init-acceptance.md`; its exact wording is not recorded (the probe's follow-up note). No plugin can widen the guard. The fix is item 7 (judges and cynics run in the main checkout, outside the guard; they write no foundry-dir files anyway, since the hook writes their reports) and item 9 (the architect's plan reaches the foundry dir through the hook).
 
 ### 11. The merge contract
 

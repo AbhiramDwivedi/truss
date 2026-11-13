@@ -42,7 +42,7 @@ The effort is medium, on Opus, per ADR-0009's no-Opus-at-high ruling (R1). U2 as
 
 **The ux role has no `typeFromProject` (R6).** It never takes `--type ux=...`, so `rolesWithTypes` (`bin/factory/shared.ts`) keeps refusing that with `--type: role ux does not take a project agent type`, and the project-manager-shape case at `tests/factory.check.ts` test "roles.json: the foreman\" stays true with no exemption (F2).
 
-`docs/truss-config.schema.json` `roles` (key `properties.roles`) gains `"ux": { "$ref": "#/$defs/agentType" }`. `rolesWithTypes` lays a non-empty `roles.ux` string on the ux row's `agentType` directly, not through the `typeFromProject` test that guards `build` and `test` (`:310-313`).
+`docs/truss-config.schema.json` `roles` (key `properties.roles`) gains `"ux": { "$ref": "#/$defs/agentType" }`. `rolesWithTypes` lays a non-empty `roles.ux` string on the ux row's `agentType` directly, not through the `typeFromProject` test that guards `build` and `test`.
 
 ### U3. Which crews get a UX engineer
 
@@ -132,7 +132,7 @@ The direction's label is `<slug>-ux`, and the reviews' labels are `<slug>-ux-<n>
 
 ### R4. The ux audit
 
-`roleAudit` (`bin/factory/audit.ts`) treats role `ux` like `qc`. The agent type must be the run's ux row `agentType`: `truss:ux-engineer`, or the type truss.json `roles.ux` maps. `finish` builds that table with `rolesWithTypes(PLUGIN, [], configOf(repo).roles)`, in place of its `readRoles` (`:1650`). The reasons are `ux ran as <type>, not <ux agentType>` and `a UX engineer used Write or Edit`.
+`roleAudit` (`bin/factory/audit.ts`) treats role `ux` like `qc`. The agent type must be the run's ux row `agentType`: `truss:ux-engineer`, or the type truss.json `roles.ux` maps. `finish` builds that table with `rolesWithTypes(PLUGIN, [], configOf(repo).roles)`, in place of its `readRoles` call. The reasons are `ux ran as <type>, not <ux agentType>` and `a UX engineer used Write or Edit`.
 
 ### U5. Item 22: `met` without a retyped stdout
 

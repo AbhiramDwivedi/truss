@@ -46,7 +46,7 @@ verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
 ## hygiene: 5.5 prices and the inbox flake
 
 - Pricing: `pricing` in `.claude/truss.json` holds the three 5.5 ids. Cache write is 1.25x input (5m) and 2x input (1h), cache read 0.05x for Opus and Sonnet 5.5 (claude-api skill, `shared/prompt-caching.md`). Haiku 5.5 is priced from the claude-api skill pricing page read 2026-11-12, including its long-context tier (`longContext {abovePromptTokens: 100000, ...}`, priced in `bin/cost.ts` `ratesFor`; see features.md, Long-context price tier).
-- Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the `:442` flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
+- Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
 - Decided by: crew hygiene (hygiene-tester, hygiene-builder items).
 
 ## crew-decisions: who answers a crew product call
