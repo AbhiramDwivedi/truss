@@ -39,4 +39,4 @@ verified: 9439b62de2d708c960a6a7cb59a745ca1ab83f95
 - Decision: the lease `<truss dir>/locks/finisher-<slug>.lease` holds `{pid, host, since, refreshed, token}`. On the same host a live pid keeps its lease however old (the finisher blocks in spawnSync during the acceptance test and cannot refresh); another host's lease goes stale after 5 minutes without a refresh.
 - Reason: R-89 (one finisher per crew) must hold while a long acceptance test runs; a timer cannot refresh a blocked thread.
 - Cost: other tools and older plugin versions must agree on the format, and cross-host judgement relies on agreeing clocks. Reversal is cheap.
-- Decided by: builder, ADR-0047 (crew resume-guard).
+- Decided by: builder, ADR-0048 (crew resume-guard).

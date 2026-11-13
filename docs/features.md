@@ -114,7 +114,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: `finish` and `start --resume` hold a lease `finisher-<slug>` (`store.ts` `takeLease`/`refreshLease`/`releaseLease`) so two finishers never run one crew; a held live lease refuses the second (a live pid on the same host keeps its lease however long the acceptance test runs; only another host's lease goes stale, after 300 s). `finish` takes it per crew before writing, refreshes it before each merge and releases it in a `finally`. `start --resume` takes it before `ensureWorktree`, merges the target via `mergeIn`, and on a conflict runs `git merge --abort` and records `syncConflicts: [paths]` on the crew entry instead of refusing.
 - Entry points: `plugins/truss/bin/store.ts` (`takeLease`), `plugins/truss/bin/factory.ts` (`cmdStartResume`, `cmdFinish`, `finishRun`, `mergeIn`), `plugins/truss/tests/resume-029.check.ts`.
 - Owner: `truss-plugin-node`.
-- Docs: [ADR-0047](../plugins/truss/docs/adr/0047-resume-guard.md), [store notes](knowledge/store.md).
+- Docs: [ADR-0048](../plugins/truss/docs/adr/0048-resume-guard.md), [store notes](knowledge/store.md).
 
 ## Resume answers carry forward
 

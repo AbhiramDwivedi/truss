@@ -1,4 +1,4 @@
-# ADR-0047: resume guard
+# ADR-0048: resume guard
 
 Status: accepted, 2026-11-12
 Decided by: program manager (auto): the approved plan (decisions.md 07:28, "plan approved (auto) ... scope frozen"), resting on goal-029.md items 5 and 6 and requirements R-89 and R-90
