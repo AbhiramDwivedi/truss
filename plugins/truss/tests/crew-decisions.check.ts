@@ -168,10 +168,11 @@ t('cd 8: decisions lists every crew decision with its reply status; --open keeps
 })
 
 t('cd 9: help text says crew lead and main session, never the old crew-lead name or PM', () => {
-  const src = readFileSync(`${PLUGIN}/bin/factory.ts`, 'utf8')
+  // 0.31.0 item 5: the crew decisions section is bin/factory/decisions.ts, from its section mark to the end
+  const src = readFileSync(`${PLUGIN}/bin/factory/decisions.ts`, 'utf8')
   const from = src.indexOf('// ==== crew decisions ====')
   assert.ok(from > 0, 'a crew decisions section')
-  const section = src.slice(from, src.indexOf('// ==== main ====', from))
+  const section = src.slice(from)
   // the old crew-lead name is built from pieces so this file never holds it
   assert.doesNotMatch(section, new RegExp('fore' + '(man|men)|\\bPM\\b', 'i'))
 })

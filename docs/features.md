@@ -12,14 +12,14 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Admission holds (awaiting client, budget)
 
 - What: `factory.ts admit` and `start` hold a crew while the inbox blocks it or the budget is spent; `stage.js` turns the hold into `BLOCKED: awaiting client: ...` or `BLOCKED: budget: ...` and retries once on `store busy`. `start` reports held crews in `held`, with `why`.
-- Entry points: `plugins/truss/bin/factory.ts` (`admission`, `holdOf`, `stageOut`), `plugins/truss/workflows/stage.js` (`admit`).
+- Entry points: `plugins/truss/bin/factory/resources.ts` (`admission`, `holdOf`, `stageOut`), `plugins/truss/workflows/stage.js` (`admit`).
 - Owner: `truss-plugin-node`, `truss-workflow-scripts`.
 - Docs: [store](knowledge/store.md).
 
 ## Client inbox (escalate, resolve, notify)
 
 - What: escalations land in the shared `inbox.jsonl`; `escalate`, `resolve`, `mark-applied`, `inbox` (with `--dir`) and `cost` refuse a relative `--dir` with exit 2 (`absDirOf`, `inbox.ts`), as `queue` and `factory` already did; `factory resolve --by client` needs a human-typed `/truss:inbox <decision> <E-id> <code>` line in the session transcript, and `verifiedItems` proves that line again at every read, so a `resolve` row without it counts as absent (the proof also refuses a row without `raiseUsd` when the typed line carries `raise <usd>`, and a typed row whose `cwd` is an existing directory of another repo) and the item stays open with `reopened` in the listing (a deleted or rotated transcript does the same). The proof root is the OS user's home `.claude/projects`, so a non-default `CLAUDE_CONFIG_DIR` fails closed. The `/truss:inbox` skill (model invocation disabled) lists open items with no arguments. `notify-run.ts` runs the client's `notify` command for each new item, with a 10 s limit. The inbox file holds only `codeHash`; the code goes to the PM's message and the notify stdin, and a mode 0600 sidecar in the session dir keeps it until the item resolves, for `inbox --recover-codes` (no `--dir`) after a crash. `inbox --unapplied --session <sid>` filters by the session that opened the item. `factory approve --by client --item <E-id>` passes only on `approvalProof()` (`inbox.ts`): a client-trigger item of this dir's session (ref `run` only; any other ref is refused) whose verified resolve is `approve` and was typed in this same session (a resolve typed in another session is refused), no later open row of the same kind, session and ref, and a resolve not older than the plan (`plan.md`, else `plan.json`, mtime): a resolve from before the plan was written is refused with "resolved before the current plan was written", so a proof cannot be replayed onto a re-planned plan. Once the plan is approved, `confirmApproval` passes `approved` and skips that staleness check. The typed approve of the run item approves the plan through an approver `factory.ts` registers with `onPlanApprove()`; a refusal rides in the resolve output as `approveRefused`. The first later `approve --by client --item` returns the existing `approvedAt` and marks the item applied; the next refuses as already approved (ADR-0045).
-- Entry points: `plugins/truss/bin/inbox.ts`, `plugins/truss/bin/factory.ts` (`cmdApprove`, `onPlanApprove` registration), `plugins/truss/bin/notify-run.ts`, `plugins/truss/skills/inbox/SKILL.md`; tests `plugins/truss/tests/approve-029.check.ts`, `plugins/truss/tests/inbox.check.ts`, `plugins/truss/tests/trust-026.check.ts`.
+- Entry points: `plugins/truss/bin/inbox.ts`, `plugins/truss/bin/factory/plan.ts` (`cmdApprove`, `onPlanApprove` registration), `plugins/truss/bin/notify-run.ts`, `plugins/truss/skills/inbox/SKILL.md`; tests `plugins/truss/tests/approve-029.check.ts`, `plugins/truss/tests/inbox.check.ts`, `plugins/truss/tests/trust-026.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Inbox transcript proof"), `plugins/truss/docs/adr/0037-shared-store-and-inbox.md`, `plugins/truss/docs/adr/0045-approve-proof.md`.
 - Note: the skill passes the note via `--note-file`; `textOf` in `inbox.ts` reads it for `--note` and `--title`, and `resolve` refuses a passed note that differs from the typed text (an absent flag stores an empty note). Listings show an item's code token in a quote as `[code]` (`maskCode`, `inbox.ts:203`); `resolve`'s own output and the row keep the typed text. Gap: a slash line with no note leaves the code glued to `</command-args>`, so it is not masked (ADR-0037). Without a typed line the skill asks the human to type the decision line.
@@ -84,7 +84,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Plan work type
 
 - What: version-4 plans may give a crew a `workType`; `plan-check` rejects it on older versions or with a bad value, and requires `unattended` where needed. The schema forbids it below version 4; the message text comes from code. A `bugfix` crew needs `red: true` only at lean process; a full (or absent) process counts as red (`plugins/truss/bin/worktypes.ts:63`).
-- Entry points: `plugins/truss/docs/plan.schema.json`, `plugins/truss/bin/factory.ts` (`cmdPlanCheck`, `WORK_TYPES`), `plugins/truss/bin/worktypes.ts`, `plugins/truss/tests/plan-worktype.check.ts`, `plugins/truss/tests/worktypes.check.ts`.
+- Entry points: `plugins/truss/docs/plan.schema.json`, `plugins/truss/bin/factory/plan.ts` (`cmdPlanCheck`, `WORK_TYPES`), `plugins/truss/bin/worktypes.ts`, `plugins/truss/tests/plan-worktype.check.ts`, `plugins/truss/tests/worktypes.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [store](knowledge/store.md) ("Stored row shapes"), [ADR-0041](../plugins/truss/docs/adr/0041-work-types.md).
 
@@ -97,14 +97,14 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Owns extension
 
 - What: `factory owns-extend --slug S --glob G --reason R` adds the glob to the crew's `owns` in `plan.json` under the `plan` lock (once; a glob already there is not added twice), whatever other crews own, and appends a decision line; it replaces hand-editing owns. Crews may share files ([ADR-0043](../plugins/truss/docs/adr/0043-crews-share-files.md)): `plan-check` compares no crew's owns with another's and has no rule-file ownership rule; `owns-check` still refuses a crew diff outside the crew's own `owns`, except `.md` doc paths any non-merge crew commit changed (ADR-0046 item 0: the crew owns the docs of its change). A bare-directory entry (`dir/`) means `dir/**` in `owns-check` (nested and dot files match, a sibling prefix `dir2/` does not, `\` separators are normalised); `plan-check` stays ok and warns on each such entry. `plan-write` takes the report's fenced `plan.md` block when the `planMd` field is a stub (shorter than the block and with no table); a full field still wins. `check --expect green` first runs `npm ci` (`installMissingDeps`, through one `npm ci` shell string on win32) in each directory with a tracked `package-lock.json` and no `node_modules` (a linked one counts as present); a failed install goes into the check text. Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically.
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdOwnsExtend`, `cmdOwnsCheck`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
+- Entry points: `plugins/truss/bin/factory/crew.ts` (`cmdOwnsExtend`, `cmdOwnsCheck`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers").
 
 ## Merge gates and heavy slot bounds
 
 - What: `integrate` refuses a non-merge member commit with no Truss trailers unless the target already holds it, and fails closed (a `why` saying trailers are unchecked) when `git log` cannot read the range; `stage.js` `integrateNow` stops BLOCKED on a refusal with a `why` and no `conflicts`, and sends an `inProgress` refusal to the resolver. A `truss-status: {}` line with no fields falls back to the stdout JSON for `met`. The merge gate refuses a non-local target branch with the fix. `check()` in `stage.js` re-waits a busy heavy slot 3 rounds (about 27 min), then stops BLOCKED; `releaseHeavySlot` retries on win32.
-- Entry points: `plugins/truss/bin/factory.ts` (`untrailered`, `mergeCrew`), `plugins/truss/workflows/stage.js` (`check`, `HEAVY_WAIT_ROUNDS`), `plugins/truss/resources/index.ts`, `plugins/truss/tests/gates-026.check.ts`.
+- Entry points: `plugins/truss/bin/factory/crew.ts` (`untrailered`), `plugins/truss/bin/factory/finish.ts` (`mergeCrew`), `plugins/truss/workflows/stage.js` (`check`, `HEAVY_WAIT_ROUNDS`), `plugins/truss/resources/index.ts`, `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node` (bin, resources), `truss-workflow-scripts` (stage.js).
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "Heavy slots").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
@@ -112,21 +112,21 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Finisher lease (resume guard)
 
 - What: `finish` and `start --resume` hold a lease `finisher-<slug>` (`store.ts` `takeLease`/`refreshLease`/`releaseLease`) so two finishers never run one crew; a held live lease refuses the second (a live pid on the same host keeps its lease however long the acceptance test runs; only another host's lease goes stale, after 300 s). `finish` takes it per crew before writing, refreshes it before each merge and releases it in a `finally`. `start --resume` takes it before `ensureWorktree`, merges the target via `mergeIn`, and on a conflict runs `git merge --abort` and records `syncConflicts: [paths]` on the crew entry instead of refusing.
-- Entry points: `plugins/truss/bin/store.ts` (`takeLease`), `plugins/truss/bin/factory.ts` (`cmdStartResume`, `cmdFinish`, `finishRun`, `mergeIn`), `plugins/truss/tests/resume-029.check.ts`.
+- Entry points: `plugins/truss/bin/store.ts` (`takeLease`), `plugins/truss/bin/factory/start.ts` (`cmdStartResume`, `cmdFinish`, `finishRun`, `mergeIn`), `plugins/truss/tests/resume-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0048](../plugins/truss/docs/adr/0048-resume-guard.md), [store notes](knowledge/store.md).
 
 ## Resume answers carry forward
 
 - What: every crew resume (`start --slug S --resume answers|stale|merge-ready`) merges the crew's earlier rulings into `entry.answers`, so a PM's new `--answers` file never drops one. The store is `<truss dir>/crews/<slug>/answers.json`, rows `{at, text, after, ts}` (`after` is the id of the crew's newest Workflow run when the ruling was given). The new answers come first, then each stored one not repeated. A stored answer at a task name drops once a run after `after` finished that task (it is built; re-sending it would re-run the task); until then it rides along and keeps the task out of `done`. An answer at a step name (red, split, green, qc, stress, UX) always rides along. The refused-resume checks (red record) look only at the new answers.
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdStartResume`, `carriedAnswers`, `saveAnswers`, `storedAnswers`); tests `plugins/truss/tests/throughput-029.check.ts` (`i5 *`).
+- Entry points: `plugins/truss/bin/factory/start.ts` (`cmdStartResume`, `carriedAnswers`, `saveAnswers`, `storedAnswers`); tests `plugins/truss/tests/throughput-029.check.ts` (`i5 *`).
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
 
 ## A ruling at QC is built on resume
 
 - What: `start --resume` puts the count of the PM's new answers on the entry as `freshAnswers` (the carried ones follow them). Before green, a resumed `stage.js` crew first integrates every earlier fix member's stopped branch (`entry.prior` at `fix, <what>`), so commits made before a PROPOSAL or BLOCKED stop reach the crew branch or the merge stops the crew naming the branch. Then, on an answers resume where every saved task was done (no task member ran to carry it), a new answer at `qc` goes to a fix builder (`Task: fix, the program manager ruling at qc`), whose branch is integrated before green, so green and QC see it. A carried ruling at `qc` spawns no builder, since an earlier run had it. A ruling at `qc` that orders no change belongs on a `merge-ready` resume.
-- Entry points: `plugins/truss/workflows/stage.js` (`rulingStep`, `freshAnswers`, `priorOf`, `chain`), `plugins/truss/bin/factory.ts` (`cmdStartResume`); tests `plugins/truss/tests/ruling-031.check.ts`.
+- Entry points: `plugins/truss/workflows/stage.js` (`rulingStep`, `freshAnswers`, `priorOf`, `chain`), `plugins/truss/bin/factory/start.ts` (`cmdStartResume`); tests `plugins/truss/tests/ruling-031.check.ts`.
 - Owner: `truss-workflow-scripts`.
 - Docs: [goal 0.31.0-speed](../plugins/truss/docs/goals/0.31.0-speed.md) item 6, [architecture](../plugins/truss/docs/architecture.md) "Resume".
 
@@ -140,7 +140,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Crews own their docs; QC converges
 
 - What: every builder prompt says to update the docs the change makes stale in the same change (feature map, knowledge docs with `verified`, architecture and ADR citations by symbol, skill and agent prose); only the pre-written acceptance test is read-only. `owns-check` exempts `.md` free docs (feature map, architecture doc, ADR dir, knowledge dir; no README, CHANGELOG or other `.md`) that any crew commit changed, and prompt files (skills, agents and personas, rules dir, agents index, product decisions file) only when the knowledge commit alone changed them and they are no judge's agent file; frontmatter never, a knowledge doc's `verified` and `sources` excepted. Each stress finding and each QC `bug` or `risk` finding (whole word) goes to a tester for a failing regression case before the fix builder runs; a stress-fix round that changed no test file, or left the head unmoved, gets one more fix builder with the findings, then stops BLOCKED at green. Test files are truss's built-in names plus the `testGlobs` key of `.claude/truss.json`, which `truss init` proposes from the project's test layout; when no tracked file is a test file by either, the crew gets a `warning: green check:` line, not a stop. QC never fails for a stale `verified` stamp or a moved line citation, only for a wrong statement; from round 2 it gets its previous report and the fix diff; a known defect on a trust or money path fails even when an ADR permits it; a logged PM ruling turns a guarded-file touch into a QUESTION; fix builders fix a nit only when the fix changes no behaviour.
-- Entry points: `plugins/truss/workflows/stage.js` (`docsLines`, `NIT_LINE`, `fixFindings`, `regressionDetail`, `DEFECT_RE`, `green`, `noTestText`, `stressTest`, `lintLines`, `isStamp`, `DOC_DRIFT_LINE`, `knowledgePrompt`, `TRUST_PATH_LINE`, `reQcLines`, `qc`), `plugins/truss/bin/factory.ts` (`knowledgeDocs`, `testsSinceOf`), `plugins/truss/agents/qc-engineer.md` (steps 7, 8, 11, Knowledge scope); `plugins/truss/skills/init/SKILL.md` (`testGlobs`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`q*`), `plugins/truss/tests/knowledge-scope.check.ts` (`scope 1`-`scope 6`, `diff 3`-`diff 3c`).
+- Entry points: `plugins/truss/workflows/stage.js` (`docsLines`, `NIT_LINE`, `fixFindings`, `regressionDetail`, `DEFECT_RE`, `green`, `noTestText`, `stressTest`, `lintLines`, `isStamp`, `DOC_DRIFT_LINE`, `knowledgePrompt`, `TRUST_PATH_LINE`, `reQcLines`, `qc`), `plugins/truss/bin/factory/crew.ts` (`knowledgeDocs`, `testsSinceOf`), `plugins/truss/agents/qc-engineer.md` (steps 7, 8, 11, Knowledge scope); `plugins/truss/skills/init/SKILL.md` (`testGlobs`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`q*`), `plugins/truss/tests/knowledge-scope.check.ts` (`scope 1`-`scope 6`, `diff 3`-`diff 3c`).
 - Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) items 0, 2, 3, 8-13, [ADR-0033](../plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md) (Scope, amended).
 
@@ -155,21 +155,21 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Configurable heavy slot count
 
 - What: up to `heavySlots` red and green checks (`factory heavy`) run at once across the session. The count is the `.claude/truss.json` key `heavySlots` (1-16), else `TRUSS_HEAVY_SLOTS`, else `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` from the host. Slot 1 is `resources/heavy.lock/`, slot n is `resources/heavy-<n>.lock/`; `heavy` takes the first free slot and prints the count as `heavy.slots`. Since 0.31.0 this repo's `.claude/truss.json` sets no `heavySlots`, so it runs at the host default, and the slot wait scales with the measured suite time (`slotWaitMs`: twice the longest of the last 10 slot runs, 540 s to 2 hours).
-- Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavySlotsOf`), `plugins/truss/resources/index.ts` (`defaultHeavySlots`, `takeHeavySlot`, `releaseHeavySlot`), `plugins/truss/docs/truss-config.schema.json` (`heavySlots`); tests `plugins/truss/tests/throughput-029.check.ts` (`i4 *`).
+- Entry points: `plugins/truss/bin/factory/heavy.ts` (`heavyMain`), `plugins/truss/bin/factory/resources.ts` (`heavySlotsOf`), `plugins/truss/resources/index.ts` (`defaultHeavySlots`, `takeHeavySlot`, `releaseHeavySlot`), `plugins/truss/docs/truss-config.schema.json` (`heavySlots`); tests `plugins/truss/tests/throughput-029.check.ts` (`i4 *`).
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 4, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 3, [architecture](../plugins/truss/docs/architecture.md) ("Heavy slots").
 
 ## Background heavy jobs (0.31.0)
 
 - What: `factory heavy` starts a detached `factory heavy-job` wrapper that owns the slot for exactly the command's lifetime and releases it when the command exits, so a runner Bash call killed at 600 s no longer frees a slot while its suite still runs. The caller waits up to 540 s (`HEAVY_ATTACH_MS`, env `TRUSS_HEAVY_ATTACH_MS`), then prints `{heavy: {pending: true}}` with exit 1; running the same line again attaches to the same job. `stage.js` `check()` re-runs a pending line up to `HEAVY_POLLS = 8` times, then stops the crew BLOCKED with `heavy run still going`. The wrapper takes no slot for `factory check`, which takes it itself only for a full suite.
-- Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavyJobMain`, `jobKey`, `startJob`, `slotWaitMs`, `recordHeavyTime`), `plugins/truss/workflows/stage.js` (`check`, `pendingOf`, `HEAVY_POLLS`); tests `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`.
+- Entry points: `plugins/truss/bin/factory/heavy.ts` (`heavyMain`, `heavyJobMain`, `jobKey`, `startJob`, `slotWaitMs`, `recordHeavyTime`), `plugins/truss/workflows/stage.js` (`check`, `pendingOf`, `HEAVY_POLLS`); tests `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`.
 - Owner: `truss-plugin-node` (factory.ts), `truss-workflow-scripts` (stage.js).
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Background heavy jobs").
 
 ## Targeted tests (0.31.0)
 
 - What: a green check runs the acceptance test with any trailing whole-suite step cut (`stripBlanketSuite`), then the tests the crew's diff reaches through imports and test-side string literals (`selectTests`), plus `targetedTests.map` entries for whole-repo checks and non-JS stacks. It runs the full suite instead when reach is unclear, and says why. Targeted runs take no heavy slot. After a QC PASS the stage runs `check --full` once, unless green already ran the full suite on that head. QC gets green's record and does not re-run a suite green on the same head. `plan-check` warns about an acceptance test that ends in `npm test`, and init proposes `targetedTests` for a non-JS stack.
-- Entry points: `plugins/truss/bin/testmap.ts` (`selectTests`, `selectForCheckout`, `stripBlanketSuite`), `plugins/truss/bin/factory.ts` (`checkTests`, `cmdCheck`), `plugins/truss/workflows/stage.js` (`noteTests`, `fullSuite`, `greenResultLines`), `plugins/truss/docs/truss-config.schema.json` (`targetedTests`); tests `plugins/truss/tests/testmap-031.check.ts`, `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`, `plugins/truss/tests/speed-031.check.ts`.
+- Entry points: `plugins/truss/bin/testmap.ts` (`selectTests`, `selectForCheckout`, `stripBlanketSuite`), `plugins/truss/bin/factory/check.ts` (`checkTests`, `cmdCheck`), `plugins/truss/workflows/stage.js` (`noteTests`, `fullSuite`, `greenResultLines`), `plugins/truss/docs/truss-config.schema.json` (`targetedTests`); tests `plugins/truss/tests/testmap-031.check.ts`, `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`, `plugins/truss/tests/speed-031.check.ts`.
 - Owner: `truss-plugin-node` (testmap.ts, factory.ts), `truss-workflow-scripts` (stage.js).
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Targeted tests"), [testing](knowledge/testing.md) ("Targeted tests").
 
@@ -183,7 +183,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
-- Entry points: plugins/truss/workflows/plan.js (lines 203-204), plugins/truss/bin/factory.ts (sessionAudit).
+- Entry points: plugins/truss/workflows/plan.js (lines 203-204), plugins/truss/bin/factory/audit.ts (sessionAudit).
 - Owner: truss-workflow-scripts.
 
 ## Crew product calls reach the program manager
@@ -195,28 +195,28 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Decision log line (decide)
 
-- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3563`).
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
+- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `bin/factory/decide.ts`).
+- Entry points: `plugins/truss/bin/factory/decide.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
 
 ## Goal check (goal-check)
 
 - What: `factory goal-check --dir D --repo R [--goal ID]` runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, removed after the check, never in the main checkout. It prints one JSON line with the head sha and the output tail (exit 1 when the check fails), logs one decision line either way, and never pushes or moves a branch. A plan or goal with no `goalCheck` is a usage error (`cmdGoalCheck`). It checks only the head of `settingsOf(repo).target` and has no flag for another ref, so a single-mode integration branch check stays a hand-run in the integrator's worktree.
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdGoalCheck`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Entry points: `plugins/truss/bin/factory/decide.ts` (`cmdGoalCheck`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` section 9 ("Goal check"); [architecture](../plugins/truss/docs/architecture.md) ("Goal check (step 9)").
 
 ## Second run in one truss dir
 
 - What: `plan-write` over an approved plan renames `plan.json` and `plan.md` to `plan-<stamp>.json` and `.md` (`<stamp>`: the first 20 letters and digits of `approvedAt`, `-<n>` added on a clash) and writes the new plan; it refuses, writing nothing, while a crew of the earlier plan is `running` or still `planned` (a planned crew counts as a live run). An unapproved plan is still overwritten. `decisions.md` and `usage.jsonl` stay shared.
-- Entry points: `plugins/truss/bin/factory.ts` (`cmdPlanWrite`, `keepExisting`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Entry points: `plugins/truss/bin/factory/plan.ts` (`cmdPlanWrite`, `keepExisting`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` section 4 ("Draft the plan", step 4); [architecture](../plugins/truss/docs/architecture.md) ("Plan (step 4)").
 
 ## Session scripts dir default
 
 - What: `plan-args` and `start` copy `plan.js` or `stage.js` to `<dir of the session transcript>/<session id>/workflows/scripts/truss-<script>` and print that as `scriptPath`, so the Workflow tool accepts it; the session id is the path segment under `<git common dir>/truss/` of the truss dir. `--scripts-dir` overrides; with no session found, `scriptPath` stays the plugin's own file.
-- Entry points: `plugins/truss/bin/factory.ts` (`sessionScriptsDir`, `scriptPathFor`, `cmdPlanArgs`, `cmdStart`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Entry points: `plugins/truss/bin/factory/shared.ts` (`sessionScriptsDir`, `scriptPathFor`, `cmdPlanArgs`, `cmdStart`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` sections 4 and 6; [architecture](../plugins/truss/docs/architecture.md) ("Workflow calls (ADR-0009)").
 
@@ -230,6 +230,6 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Gate grades: no stops on obvious calls (0.31.0)
 
 - What: every gate is graded by risk. Production, money, secrets and permissions, untrusted input, force-push, deleting delivered work, frozen scope and the plan approval stay client-only. The session audit passes over `<synthetic>` (outage, no-work) transcripts and another workflow's agent still in progress, logging `audit passed over <label> | <why>`; a standing entry is the program manager's to waive with `audit waived: <run id> | <evidence>`. An `allowance-spent` item is resolved `--by pm` with evidence in `--note`. The program manager and project manager prompts say the role is brave, empowered and accountable, and that gates stay gates.
-- Entry points: `plugins/truss/bin/factory.ts` (`transcriptFacts`, `SYNTHETIC_MODEL`, `sessionAudit`, `recordRun`, `logPassed`, the waiver regex in `cmdFinish`); `plugins/truss/bin/inbox.ts` (`KINDS`, `resolveItem`); `plugins/truss/skills/run/SKILL.md`; `plugins/truss/agents/project-manager.md`. Tests: `plugins/truss/tests/obvious-calls-031.check.ts`, the "session audit" cases in `plugins/truss/tests/fixtures/workflow-run/finish.cases.ts`.
+- Entry points: `plugins/truss/bin/factory/runs.ts` (`transcriptFacts`, `SYNTHETIC_MODEL`, `sessionAudit`, `recordRun`, `logPassed`, the waiver regex in `cmdFinish`); `plugins/truss/bin/inbox.ts` (`KINDS`, `resolveItem`); `plugins/truss/skills/run/SKILL.md`; `plugins/truss/agents/project-manager.md`. Tests: `plugins/truss/tests/obvious-calls-031.check.ts`, the "session audit" cases in `plugins/truss/tests/fixtures/workflow-run/finish.cases.ts`.
 - Docs: `plugins/truss/docs/architecture.md` ("Gate grades (0.31.0)"); ADR-0009 "finish, session audit" (amended 2026-11-13).
 - Owner: `truss-plugin-node`.

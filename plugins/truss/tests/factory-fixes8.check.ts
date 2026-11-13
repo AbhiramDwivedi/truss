@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../hooks/register.ts'
 import { ARCHIVE_PREFIX, worktreeChanges } from '../bin/factory.ts'
@@ -198,7 +198,9 @@ t('r3: processes inside member worktrees, the run\'s own and anyone else\'s, kee
 t('r4: factory exports no process scan or stopper and reads no other process\'s cwd or environment', () => {
   assert.equal(factory.processesIn, undefined)
   assert.equal(factory.stopPid, undefined)
-  const src = readFileSync(new URL('../bin/factory.ts', import.meta.url), 'utf8')
+  // 0.31.0 item 5: the factory code is bin/factory.ts plus its command modules in bin/factory/
+  const mods = new URL('../bin/factory/', import.meta.url)
+  const src = [readFileSync(new URL('../bin/factory.ts', import.meta.url), 'utf8'), ...readdirSync(mods).filter((n) => n.endsWith('.ts')).map((n) => readFileSync(new URL(n, mods), 'utf8'))].join('\n')
   assert.doesNotMatch(src, /\/cwd`|\/environ`|\bps -A|lsof|Win32_Process|taskkill/)
 })
 
