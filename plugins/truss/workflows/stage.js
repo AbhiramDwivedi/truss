@@ -1237,6 +1237,8 @@ async function pendingCall(crew, role, makePrompt, opts, at) {
   // decision stands for this item when its logged question names the item id (takeCall puts it there)
   const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => String(d.question).includes(`(inbox item ${row.id})`)))
   if (got.resume) return got.resume
+  // a resolve with no note holds no answer, but the program manager's answers resume does: the member starts with that answer (answersFor)
+  if ((crew.e.answers || []).some((a) => a && a.at === at)) return null
   throw new Stop('QUESTION', `${oneLine(row.title)}\n\n${got.escalate}`, at)
 }
 
