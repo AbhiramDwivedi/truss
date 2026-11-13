@@ -6,7 +6,7 @@ Amends: ADR-0033 section B (product calls at crew level: what an escalated call 
 
 ## Context
 
-ADR-0033 section B sends a crew's product question to the `product-owner` persona, which replies `PO: DECIDE` or `PO: ESCALATE`, and says the crew "tells the main session each call as it makes it, and never waits" (`docs/adr/0033-crew-knowledge-and-product-calls.md:74-80`). On the workflow path an escalation opened nothing: `productCall` returned `{escalate}`, and the member's `QUESTION:` stopped the crew with the reason appended (`productCall`, `workflows-src/stage/calls.js`). No item reached the inbox of the program manager (PM). The 0.29.0 goal records this as "Crew decisions auto-accept without reaching the program manager" and asks that a crew decision that needs the program manager "reach the PM's inbox and wait" (R-86).
+ADR-0033 section B sends a crew's product question to the `product-owner` persona, which replies `PO: DECIDE` or `PO: ESCALATE`, and says the crew "tells the main session each call as it makes it, and never waits" (`docs/adr/0033-crew-knowledge-and-product-calls.md` section "A. Per-crew knowledge capture, in the crew branch"). On the workflow path an escalation opened nothing: `productCall` returned `{escalate}`, and the member's `QUESTION:` stopped the crew with the reason appended (`productCall`, `workflows-src/stage/calls.js`). No item reached the inbox of the program manager (PM). The 0.29.0 goal records this as "Crew decisions auto-accept without reaching the program manager" and asks that a crew decision that needs the program manager "reach the PM's inbox and wait" (R-86).
 
 Two rulings shape the fix:
 

@@ -7,7 +7,7 @@ Decided by: program manager (PM) and product owner (review of contract-025 revis
 
 truss 0.25.0 wave 2 lets a run go on without the client watching (R-55). It stops only on a fixed list of exceptions, and each one has to wait somewhere the client can find it, from any session of the repo. Three facts force the shape of that place.
 
-- **Session dirs are private.** Each session writes to `D = <common>/truss/<sid>/`, where `<common>` is `git rev-parse --path-format=absolute --git-common-dir` run in `--repo` (`bin/store.ts:125-131`). An inbox, a merge ledger and a work queue must outlive the session that wrote them, so they can't live in D.
+- **Session dirs are private.** Each session writes to `D = <common>/truss/<sid>/`, where `<common>` is `git rev-parse --path-format=absolute --git-common-dir` run in `--repo` (`bin/store.ts` `commonDir`). An inbox, a merge ledger and a work queue must outlive the session that wrote them, so they can't live in D.
 - **Several processes write at once.** Crews, the PM and the intake hook run in parallel, on Linux, macOS and Windows (R-64). truss uses no npm dependency, so locking and atomic writes must come from Node built-ins.
 - **Approvals could be forged.** Before this ADR an agent could resolve a client question by typing one flag. R-56 says an agent can't forge a client approval.
 
@@ -49,19 +49,19 @@ We will keep two roots. D, the session dir, holds what belongs to one session: `
 | `S/queue/items/<Q-id>.json` | one queue item | intake, queue-next, queue-set | create with `createExclusive`, update with `writeJsonAtomic` under lock `queue` |
 | `S/locks/<name>.lock/owner.json` | `{pid, host, token, since}` | `store.ts` | mkdir lock |
 
-Outside a git repo every command that needs `<common>` exits 2 with `needs a git repo` (`bin/store.ts:127`).
+Outside a git repo every command that needs `<common>` exits 2 with `needs a git repo` (`bin/store.ts` `commonDir`).
 
 `bin/store.ts` is the only code that locks files, writes shared state or sets a transcript root; `proofMain` in `bin/inbox.ts` walks the project dirs under the proof root (see the amendment). No new module imports `factory.ts`, because its top-level `await` would make an import cycle; `factory.ts` re-exports the helpers that moved to `store.ts`.
 
-**The lock.** `withLock(dir, name, fn, {waitMs = 5000})` (`bin/store.ts:231`) makes `<dir>/locks/<name>.lock` with `mkdirSync`, writes `owner.json`, runs `fn`, and removes the lock only if its token is still its own. A busy lock is retried every 25 ms. After `waitMs` it throws `StoreBusy`, exit 2 with `{error: "store busy: <name>"}` (`bin/store.ts:149`). A lock is stale when its owner pid is dead on the same host, when it has no readable owner file after 10 s, or when it is older than 120 s (`bin/store.ts:155-156`). A process never takes a second lock while it holds one.
+**The lock.** `withLock(dir, name, fn, {waitMs = 5000})` (`bin/store.ts` `withLock`) makes `<dir>/locks/<name>.lock` with `mkdirSync`, writes `owner.json`, runs `fn`, and removes the lock only if its token is still its own. A busy lock is retried every 25 ms. After `waitMs` it throws `StoreBusy`, exit 2 with `{error: "store busy: <name>"}` (`bin/store.ts`). A lock is stale when its owner pid is dead on the same host, when it has no readable owner file after 10 s, or when it is older than 120 s (`bin/store.ts` `STALE_AGE_MS`). A process never takes a second lock while it holds one.
 
 The contract said to rename a stale lock aside. The code doesn't: a rename can move a lock that has just turned live. Instead one breaker at a time holds a `<name>.lock.break` mutex, re-reads the owner, and removes the lock only if it still carries the token judged stale (`bin/store.ts:179-188`). The cost is the age rule: a live owner that holds a lock past 120 s can lose it.
 
-**Atomic writes.** `writeJsonAtomic` writes a tmp file and renames it over the target, retrying a rename refused with EPERM, EBUSY or EACCES 10 times, 20 ms apart (`bin/store.ts:293-296`); Windows refuses a rename while a scanner holds the file.
+**Atomic writes.** `writeJsonAtomic` writes a tmp file and renames it over the target, retrying a rename refused with EPERM, EBUSY or EACCES 10 times, 20 ms apart (`bin/store.ts` `RETRY_RENAME`); Windows refuses a rename while a scanner holds the file.
 
-**Exclusive create.** `createExclusive` writes a tmp file and hard-links it to the target, so the target appears whole or not at all; EEXIST returns false. A filesystem without hard links (EPERM, ENOTSUP) falls back to an exclusive open, and a reader treats an item it can't parse as absent (`bin/store.ts:321-333`).
+**Exclusive create.** `createExclusive` writes a tmp file and hard-links it to the target, so the target appears whole or not at all; EEXIST returns false. A filesystem without hard links (EPERM, ENOTSUP) falls back to an exclusive open, and a reader treats an item it can't parse as absent (`bin/store.ts`).
 
-**Append-only rows.** `appendJsonl` makes one `appendFileSync` call under the lock (`bin/store.ts:359-361`). `readJsonl` returns the rows and a count of bad lines, tolerates CRLF and a BOM, and skips a torn last line (`bin/store.ts:364-366`).
+**Append-only rows.** `appendJsonl` makes one `appendFileSync` call under the lock (`bin/store.ts`). `readJsonl` returns the rows and a count of bad lines, tolerates CRLF and a BOM, and skips a torn last line (`bin/store.ts`).
 
 **Cross-platform rules**, for every piece of wave 2:
 
@@ -100,19 +100,19 @@ A crew is the pair (session, slug), so `crews` is always read with the op's `ses
 - `factory resolve <id> --decision d --by client|pm --code c [--note-file f | --note t] [--raise-usd n]`. Untrusted note text goes through `--note-file`.
 - `factory mark-applied <id>`.
 
-**Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts:638`).
+**Dedupe.** When `ref` is not null and an open item with the same kind and ref exists, escalate appends a `link` instead of a second `open`, returns `deduped: true` with `code: null`, and sends no notify. The linked crew gets no new code; the client resolves with the code of the first `open`. A null ref never dedupes. Eight concurrent escalates with one ref leave one `open` and seven `link` rows (`tests/inbox.check.ts` test "inbox: 8 concurrent escalates with one kind and ref leave one open op and 7 links").
 
 **The code.** Escalate makes a 6-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which leaves out the look-alikes 0, O, 1, I and L. It prints the code once and stores `codeHash = sha256(id + code)` in the inbox file; the plain code stays only in a sidecar file until the item resolves (see the amendment). The code reaches the client in the PM's message and in the notify row. `factory inbox` shows no code of an open item, and only `--recover-codes` prints the code of one. In a resolved item's `quote`, `maskCode` in `bin/inbox.ts` replaces each whitespace-separated token that hashes to the item's code with `[code]`, because a resolve row that later stops counting makes that spent code live again. Known gap: a `/truss:inbox` slash line with no note ends `CODE</command-args>`, that token doesn't hash to the code, and the listing shows the code. The mask covers the listing only: the output of `resolve` and the row in `S/inbox.jsonl` keep the typed line. With a `budget` key and no `notify`, the budget hold's `why` (the held entry of `start`, the output of `admit`) carries the id and code for the PM to relay (`factory.ts` `holdOf`).
 
 **Refusals.** `resolve` exits 1 on an item already resolved, on `--by pm` for a client kind, on `--raise-usd` for any kind but budget, on a wrong code, and on `--by client` with no human-typed proof (below) or with a note that differs from what the client typed after the code. `budgetRaises(repo, session)` returns the approved budget raises; `blockingFor(repo, session, slug)` returns the ids that hold a crew, and start and admit refuse it with `awaiting client: E-…`.
 
-**Events carry ids and kinds only.** The `escalate`, `resolve` and `notify-error` events hold `id`, `kind`, `blocking`, `decision`, `by`, and an error text of at most 200 characters (`docs/events.schema.json:22-52`). The title, detail, note, quote and code stay in the inbox file. `tests/inbox.check.ts:211` pins this.
+**Events carry ids and kinds only.** The `escalate`, `resolve` and `notify-error` events hold `id`, `kind`, `blocking`, `decision`, `by`, and an error text of at most 200 characters (`docs/events.schema.json` key `allOf.if`). The title, detail, note, quote and code stay in the inbox file. `tests/inbox.check.ts` test "inbox: events.jsonl carries ids and kinds only, never the quote, title, detail or note" pins this.
 
 **Notify.** When the `notify` key of `.claude/truss.json` is set, a new `open` fires it once, after the lock is released:
 
-1. factory runs `bin/notify-run.ts` with `spawnSync`, a 15 s timeout and `{repo, row}` on stdin (`tests/inbox.check.ts:384`).
+1. factory runs `bin/notify-run.ts` with `spawnSync`, a 15 s timeout and `{repo, row}` on stdin (`tests/inbox.check.ts` `runNotify`).
 2. notify-run starts the client's command with `spawn(cfg.notify, {shell: true, detached: true, windowsHide})`, writes the open row plus the code to its stdin, and waits up to 10 s.
-3. On timeout it kills the whole process tree: a negative-pid SIGKILL of the group on POSIX, `taskkill /T /F /PID <pid>` on win32. The platform is a parameter (`tests/inbox.check.ts:468`), and a grandchild that sleeps dies within 11 s (`tests/inbox.check.ts:426`).
+3. On timeout it kills the whole process tree: a negative-pid SIGKILL of the group on POSIX, `taskkill /T /F /PID <pid>` on win32. The platform is a parameter (`tests/inbox.check.ts` test "inbox: the notify tree kill takes the platform as a parameter, taskkill on win32 and a group kill on darwin"), and a grandchild that sleeps dies within 11 s (`tests/inbox.check.ts` test "inbox: a notify grandchild that sleeps is killed within 11 s").
    - **Amendment 2026-11-11 (0.26.0).** A `setsid` descendant leaves the group, so the group kill alone misses it. On POSIX the kill first walks the descendants (from `/proc/<pid>/task/*/children` on linux, `pgrep -P` on macOS and other POSIX, through the `Ops` seam) and SIGKILLs each, then the group. A missing walk tool gives what was found so far; win32 is unchanged.
 4. The command gets `TRUSS_INBOX_ID`, `TRUSS_INBOX_KIND` and `TRUSS_INBOX_REPO`. `TRUSS_INBOX_TITLE` is set only off win32, because cmd.exe expands `%VAR%` before it parses the line, so a title could inject a command.
 5. Notify fails open. Any failure gives `notified: false` and a `notify-error` event, and the escalation still succeeds. With no `notify` key, `notified` is null.
@@ -148,7 +148,7 @@ Known limit: a `promptSource` other than `typed` is refused, so a plain-text `ap
 <command-args>approve E-… CODE go ahead</command-args>
 ```
 
-That line holds the id, the decision word and the code, so it qualifies. The lines that follow it don't: the skill body arrives as an `isMeta` line with an `ARGUMENTS:` line, a tool result is a `tool_result` block, and the fixture's sidechain and meta copies of the plain command text are excluded by their flags. `tests/inbox.check.ts:351` refuses those lines alone and accepts the set once the slash-command line is in it. When a future Claude Code drops the arguments from that line, the skill asks the human to type the decision line as a plain prompt, which qualifies on its own.
+That line holds the id, the decision word and the code, so it qualifies. The lines that follow it don't: the skill body arrives as an `isMeta` line with an `ARGUMENTS:` line, a tool result is a `tool_result` block, and the fixture's sidechain and meta copies of the plain command text are excluded by their flags. `tests/inbox.check.ts` test "inbox: the probed slash-command shape qualifies as a typed prompt" refuses those lines alone and accepts the set once the slash-command line is in it. When a future Claude Code drops the arguments from that line, the skill asks the human to type the decision line as a plain prompt, which qualifies on its own.
 
 **The live check runs after release.** The fixture's shape comes from other truss slash commands in real transcripts (for example `<command-name>/truss:run</command-name>` lines in this repo's main transcripts), with the name changed to `/truss:inbox`. `/truss:inbox` itself exists only once this plugin version is installed, so the live `/truss:inbox` check can only run after release. The first real resolve after release confirms the shape still matches.
 

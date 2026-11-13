@@ -25,13 +25,13 @@ Gap a: fill. A message carries an intent and an id.
 - With an intent, the session prepends one fixed line, then a blank line, then the text as typed. The fixed lines are, exactly:
   - `goal`: `[Truss UI: new goal] Plan this as a new goal for the run.`
   - `add`: `[Truss UI: detail] Add this to the current goal.`
-- Text with no intent (null or absent) goes to the session unchanged, as today (`ui/server/session/session.ts:157-162`).
+- Text with no intent (null or absent) goes to the session unchanged, as today (`ui/server/session/session.ts` `send`).
 - The transcript entry's `text` is the text as typed, without the fixed line. The fixed line goes only into the session's streaming input.
 - Answers still use `POST /api/requests/<id>/answer`. The composer's `Answer the question` intent posts there, with the body the card's `Submit answers` sends, and never to `/api/message`. A reply card answered with a message makes a `user` entry with `intent: null`.
 
 Gap b: fill. `session` gains `queue`: an array, oldest first, of `{id, text, intent, at}`.
 
-- It lists every accepted message the SDK has not yet taken. That is the messages held in `queue` while a turn runs (`ui/server/session/session.ts:76-78`) and those in `outbox` waiting for the input generator (`:58`, `:65`).
+- It lists every accepted message the SDK has not yet taken. That is the messages held in `queue` while a turn runs (`ui/server/session/session.ts` `enqueue`) and those in `outbox` waiting for the input generator (`input`, `dispatch`).
 - An item leaves `queue` when the input generator yields it (`:58`).
 - `id` and `intent` are the message's, as in gap a. `text` is the text as typed. `at` is the server clock when the POST was accepted, RFC 3339 UTC.
 - An idle session has `queue: []`.
@@ -41,7 +41,7 @@ Gap c: ship without. `run.version` keeps its meaning, the plan.json schema versi
 Gap d: fill. run.goals lists every goal from plan.json, the run's first goal first as id run.
 
 - `run` gains `goals`: an array of `{id, goal, approval, approvedAt}`.
-- The first item is `{id: "run", goal, approval, approvedAt}`, built from plan.json's top-level `goal`, `approval` and `approvedAt`. plan.schema.json says the first goal's id is the reserved word `run` and is not in `goals` (`plugins/truss/docs/plan.schema.json:50-51`).
+- The first item is `{id: "run", goal, approval, approvedAt}`, built from plan.json's top-level `goal`, `approval` and `approvedAt`. plan.schema.json says the first goal's id is the reserved word `run` and is not in `goals` (`plugins/truss/docs/plan.schema.json` key `properties.goals`).
 - Then come plan.json's `goals` entries in file order, each with its `id`, `goal`, `approval` and `approvedAt`. `addedAt` is not carried.
 - Without a readable plan.json, `goals` is `[]`.
 
@@ -57,16 +57,16 @@ Gap e: fill. `usage` gains `live`, a running estimate of the session's tokens: `
 
 Gap f: fill. crew.estAgents comes from plan.json; there is no task total, so the tasks tile shows no denominator.
 
-- `crew` gains `estAgents`: plan.json's crew `estAgents` (an integer, at least 1, `plugins/truss/docs/plan.schema.json:234-238`), or null for a crew not in plan.json.
+- `crew` gains `estAgents`: plan.json's crew `estAgents` (an integer, at least 1, `plugins/truss/docs/plan.schema.json` key `$defs.crew.properties.estAgents`), or null for a crew not in plan.json.
 - The Tasks done tile shows a count with no `/` and no total.
 
 Gap g: fill. `crew` gains `stuck`: null, or `{kind, since, minutes, detail}`, derived from the crew's events.
 
-- The source is the crew's latest `stall` event in `events.jsonl` and its rolled files, the line ui-state already parses (`ui/server/state/reduce.ts:160-165`). Its fields are `kind` (`agent` or `idle-project-manager`) and `minutes` (`plugins/truss/docs/events.schema.json:80-90`). Today the reducer drops `kind`.
+- The source is the crew's latest `stall` event in `events.jsonl` and its rolled files, the line ui-state already parses (`ui/server/state/reduce.ts` `event`). Its fields are `kind` (`agent` or `idle-project-manager`) and `minutes` (`plugins/truss/docs/events.schema.json` key `allOf.if`). Today the reducer drops `kind`.
 - `kind` is `"stalled"` when the event's kind is `agent`, and `"idle-project-manager"` when it is `idle-project-manager`.
 - `minutes` is the event's `minutes`.
 - `since` is the event's `ts` minus `minutes` minutes, RFC 3339 UTC: when the agent went quiet.
-- `detail` is the text the reducer already builds for the event, `<agent> stalled <minutes> min` (`ui/server/state/reduce.ts:165`).
+- `detail` is the text the reducer already builds for the event, `<agent> stalled <minutes> min` (`ui/server/state/reduce.ts` `event`).
 - `stuck` is null when the crew has no stall event, when the stalled agent has a later event in that crew (its member `state` is no longer `stalled`), or when the crew's `status` is not `running`.
 
 Gap h: ship without. There are no crew control or pause endpoints.
@@ -266,7 +266,7 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 - `stuck-crew/` also holds `idle-project-manager.json`: the same state, with the stuck crew's `stuck.kind` `idle-project-manager` and its project manager the stalled agent.
 - `artifacts/` also holds `no-images.json`: the same state, with `design.images: []`, so the `Images` filter matches nothing.
 - The stuck-crew and artifacts fixtures hold an 80-character slug and a 300-character follow-up.
-- The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`, `:264`). Session fields go through `setSession` (`:242`, `:341`). Requests go through the interface's `question()`, `permission()` and `reply()` (`:244-248`), so the page can answer them.
+- The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`). Session fields go through `setSession` (`Iface`). Requests go through the interface's `question`, `permission` and `reply` (`Iface`), so the page can answer them.
 - The existing root files `ui/contract/fixtures/run/plan.json`, `events.jsonl` and `decisions.md` stay unchanged.
 - The specs never write a fixture in place. They copy what they change to an `mkdtemp` dir.
 
@@ -363,7 +363,7 @@ Every `[ui]` and `[contract]` test title is kept as it is, so the table has no `
 
 ## Consequences
 
-- `ui/contract/redesign/support.ts` reads the `Screenshot states:` and `Screenshot widths:` lines from this ADR, not ADR-0018 (`support.ts:14` reads this file). The screenshot set is 10 states, 3 widths and 2 themes: 60 files at `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, at `deviceScaleFactor: 1`.
+- `ui/contract/redesign/support.ts` reads the `Screenshot states:` and `Screenshot widths:` lines from this ADR, not ADR-0018 (`support.ts` `adrFile` reads this file). The screenshot set is 10 states, 3 widths and 2 themes: 60 files at `ui/screens/<state>-<phone|tablet|desktop>-<light|dark>.png`, at `deviceScaleFactor: 1`.
 - The schema gains optional fields only. A client that ignores them still works, and the existing contract checks stay green.
 - The live counter shows nothing live during the first turn of a session, because `session.usage` is null until the first `result` (gap e).
 - ADR-0018's "Light and dark follow the OS only" no longer holds: the `Dark theme` toggle overrides the OS for the page's life.

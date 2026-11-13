@@ -20,9 +20,9 @@ The plan maps them to requirements: defect 1 to `R-44` and `R-42` (the status an
 
 Three facts of the real dir cause them:
 
-- `workflow-crew` project managers `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts:224-226`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts:38-43`).
+- `workflow-crew` project managers `tag` BLOCKED and never `report`. The reducer keeps the tag as the member's `detail` (`ui/server/state/reduce.ts`), and the client's `agentStatus` reads that as `waiting` (`ui/app/views/status/status.ts`).
 - Members started inside a Workflow crew carry an `agentId` but no session task, because their task descriptions never reach the PM's stream. ADR-0028 section 6 left this as a `TODO:`. Claude Code writes each such agent's transcript to `~/.claude/projects/<projectKey>/<session id>/subagents/workflows/<wf id>/agent-<agentId>.jsonl`, next to a `.meta.json`.
-- A truss dir watched with no hosted session has no transcript and no usage. Run time reads the transcript (`ui/app/views/metrics/RunMetrics.tsx:25-26`), and Cost reads `usage.costUsd` and otherwise says "No usage yet" (`RunMetrics.tsx:48-49`).
+- A truss dir watched with no hosted session has no transcript and no usage. Run time reads the transcript (`ui/app/views/metrics/RunMetrics.tsx` `RunMetrics`), and Cost reads `usage.costUsd` and otherwise says "No usage yet" (`RunMetrics.tsx` `RunMetrics`).
 
 Reading the transcripts goes past what the architecture doc allowed: the UI showed the run "from Truss's own files" and never changed the plugin (`R-9`). checker-8 flagged that, and the client ruled at 09:45 that the UI may read them, read-only, first brief line only, under a `--claude-dir` flag.
 
@@ -31,9 +31,9 @@ Reading the transcripts goes past what the architecture doc allowed: the UI show
 ### 1. Status (defect 1; R-44, R-42)
 
 - An agent of a crew whose `status` is `merged` or `dropped` is `done`, whatever its last `tag`.
-- The rule lives in the client's `agentStatus` (`ui/app/views/status/status.ts:38`), not in the reducer, so the event log still shows the tag.
+- The rule lives in the client's `agentStatus` (`ui/app/views/status/status.ts`), not in the reducer, so the event log still shows the tag.
 - An agent of a running crew that tagged BLOCKED still reads Waiting on you.
-- A null model shows no model badge. `modelKey`'s `model unknown` (`ui/app/views/crews/format.ts:89`) goes.
+- A null model shows no model badge. `modelKey`'s `model unknown` (`ui/app/views/crews/format.ts`) goes.
 
 This amends ADR-0028 section 9's agent column.
 
@@ -46,7 +46,7 @@ When the session has no task for an `agentId`, ui-state fills `Member.task` from
 - **What.** The task is the first non-empty line of the brief after the `[Workflow harness — computed task]` preamble, which ends `The computed task text follows:`. That line is dedented and cut to 200 characters.
 - **Bounds.** Only the first line of the file is read, with a byte cap. The result is cached per `agentId`. Nothing is ever written. No read reaches outside `<claudeDir>/projects/<projectKey>/<session id>/`.
 - **Absence.** A missing file gives null. The session's task wins over the transcript's.
-- **Config.** `ui/server/main.ts` gains `--claude-dir <path>`, defaulting to `CLAUDE_CONFIG_DIR` and then `~/.claude`. Only `main.ts` resolves the default. `createStore` (`ui/server/state/index.ts:73`) gains an optional `claudeDir` and reads no transcripts when it gets none (core rule 10), so a test that leaves it out never reads the host's `~/.claude`. Today `main.ts` takes `--repo`, `--plugin`, `--truss-dir` and `--port` and exits 2 on any other flag (`ui/server/main.ts:6`, `:22`).
+- **Config.** `ui/server/main.ts` gains `--claude-dir <path>`, defaulting to `CLAUDE_CONFIG_DIR` and then `~/.claude`. Only `main.ts` resolves the default. `createStore` (`ui/server/state/index.ts`) gains an optional `claudeDir` and reads no transcripts when it gets none (core rule 10), so a test that leaves it out never reads the host's `~/.claude`. Today `main.ts` takes `--repo`, `--plugin`, `--truss-dir` and `--port` and exits 2 on any other flag (`ui/server/main.ts` `USAGE`, `parseArgs`).
 - **`by` stays internal to ui-state.** ui-state reads it from the spawn line inside the server and does not add it to the snapshot, so `ui/app/store/types.ts` and `ui/contract/state.schema.json` don't change.
 
 **How R-9 reads now.** The UI reads the files the plugin writes, plus this run's Claude Code workflow transcripts, read-only, first brief line only, bounded. It still never changes the plugin and never writes to the truss dir, the repo or the Claude dir. The architecture doc's "Local web UI" intro, ui-state row, ui-server row, UI Seams and the service-pack config row say so.
@@ -76,7 +76,7 @@ This amends ADR-0028 section 8's run-time and cost bullets. Still no limit, budg
 
 ### 5. Pause (defect 4)
 
-`Pause build` and its Hint go from the Run region (`ui/app/views/rail/RunContext.tsx:43-55`). This supersedes ADR-0023 gap h's `Pause build` bullet (`0023-factory-floor-ui.md:81`). No pause endpoint is added.
+`Pause build` and its Hint go from the Run region (`ui/app/views/rail/RunContext.tsx` `RunContext`). This supersedes ADR-0023 gap h's `Pause build` bullet (`0023-factory-floor-ui.md` section "1. Server gap rulings"). No pause endpoint is added.
 
 ### 6. Architecture doc (defect 5; R-39)
 

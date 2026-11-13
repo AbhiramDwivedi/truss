@@ -54,7 +54,7 @@ Refused read-only types: general-purpose, kit:builder, kit:test-writer, foundry:
 
 - `declaredReadOnly(text)` never puts a refused type in `types`. An entry is refused when its `name` (one the schema pattern allows, with `readOnly: true`), folded with the existing `asciiLower`, equals a list name. The match is full-name only: `Foundry:Lead` and `GENERAL-PURPOSE` are refused, `lead` and `plugin:general-purpose` are not.
 - Its return type becomes `{ types: Set<string>; refused: string[]; error?: string }`. `refused` is always present: the `name` of each refused entry as written in the file, in file order, and `[]` when there are none or when `error` is set. The constant is exported as `REFUSED_READ_ONLY_TYPES`, the seven names in the list's order, lower-case.
-- An unset or empty `subagent_type` is `general-purpose`, as today (`register.ts:58`), so it gets a worktree even when the manifest declares `general-purpose` read-only. So does `General-Purpose`.
+- An unset or empty `subagent_type` is `general-purpose`, as today (`register.ts` `isLead`), so it gets a worktree even when the manifest declares `general-purpose` read-only. So does `General-Purpose`.
 - Other declarations still count: a manifest that declares `foundry:judge` and a refused type gives `foundry:judge` no worktree.
 - When `refused` is non-empty, the handler writes one line to the debug log (P7), exactly:
 

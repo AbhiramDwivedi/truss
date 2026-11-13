@@ -37,7 +37,7 @@ Claude Code exposes no spend API to a plugin. What it does write is transcripts.
 
 `sweep(dir)` in `bin/cost.ts` reads every transcript of the session under the lock `D/locks/usage`, where `D` is the session's truss dir, and returns `{rows, files, bad, found}`.
 
-- `transcriptsOf` (`bin/store.ts:400`) finds the main transcript and walks `<sid>/subagents` for every `agent-*.jsonl`, Workflow agents included, reading each `.meta.json` beside it.
+- `transcriptsOf` (`bin/store.ts`) finds the main transcript and walks `<sid>/subagents` for every `agent-*.jsonl`, Workflow agents included, reading each `.meta.json` beside it.
 - Each file is read from its cursor offset in 4 MiB chunks, and each chunk is cut at its last newline (`CHUNK` and the read loop in `sweep`, `cost.ts`). A torn last line stays unread until it is whole. The offsets live in `D/usage-cursor.json`, keyed by path; on win32 the keys are lowercased (`keyOf` in `sweep`). A file shorter than its cursor is read again from the start (`sweep`).
 - Only `type: "assistant"` lines with `message.usage` become rows. A row whose token fields are all zero is skipped, which drops `<synthetic>` lines (`rowOf`, `cost.ts`). A line that doesn't parse adds to `bad`.
 - **Dedupe.** The sweep loads every `msgId` already in `D/usage.jsonl` once, before it reads, and skips any row whose id it has seen (`sweep`, `cost.ts`). Because the check is against the usage file, not the cursor, a deleted cursor or a path-case mismatch can't add a row twice. The sweep appends rows first and writes the cursor second, so a crash between the two is repaired by the same id set (the append and `writeJsonAtomic` of the cursor at the end of `sweep`).
@@ -69,7 +69,7 @@ Prices come only from `pricing` in the client's `.claude/truss.json`. Each entry
 - (0.29.0, ADR-0046) An entry may hold `longContext` with `abovePromptTokens` and the five rates. A standard-speed request whose prompt (input, cache read and both cache writes) is over that count is priced wholly at the `longContext` rates; a fast row ignores it (`cost.ts` `ratesFor`).
 - **No price means `usd: null`, never 0.** If any row in a sum has no price, the whole sum is `null` and the model is listed in `unpriced`, with `(fast)` appended for a fast row (`sumOf`, `cost.ts`).
 - `out` is priced alone; thinking is assumed to be inside it. `think` and `web` are counted in `tokens` but not priced (`sumOf`).
-- No price is written in plugin code, prose or fixtures. `tests/cost.check.ts:404` scans `bin/cost.ts`, `tests/fixtures/cost/**` and this ADR for price literals, after it has caught a planted example of each kind.
+- No price is written in plugin code, prose or fixtures. `tests/cost.check.ts` test "cost: no committed price literal in cost.ts, the cost fixtures or the prose, and a planted price table is caught" scans `bin/cost.ts`, `tests/fixtures/cost/**` and this ADR for price literals, after it has caught a planted example of each kind.
 
 ### 4. `factory cost`
 
@@ -98,7 +98,7 @@ The checks, in order, first hold wins:
 2. `runUsd`, against run spend, only when the plan has `approvedAt`.
 3. The crew check: the lower of `crewUsd` and `workTypes[<the crew's workType>].crewUsd`. The scope is `workType` when the work-type limit is the lower one, and `crew` otherwise.
 
-Each limit is the configured value plus the sum of `raiseUsd` from `budgetRaises(repo, sid)` (`bin/inbox.ts:21`) whose `ref` is `budget:<sid>:<scope>:<slug|run|session>`. A client raise of 3 on a crew limit of 5 gives a limit of 8.
+Each limit is the configured value plus the sum of `raiseUsd` from `budgetRaises(repo, sid)` (`bin/inbox.ts` `budgetRaises`) whose `ref` is `budget:<sid>:<scope>:<slug|run|session>`. A client raise of 3 on a crew limit of 5 gives a limit of 8.
 
 The verdict holds when:
 
@@ -112,7 +112,7 @@ Every `why` starts with `budget:`.
 
 ### 6. The merge ledger
 
-`ledgerAppend(repo, row)` (`bin/ledger.ts:9`) appends one JSON line to `<git common dir>/truss/shared/ledger.jsonl` (`store.ts:131`) under the store lock `ledger`, through `appendJsonl` (`store.ts:360`). There is no update and no delete: no `track` command and no `settleDays`. Earlier rows are never rewritten.
+`ledgerAppend(repo, row)` (`bin/ledger.ts` `ledgerAppend`) appends one JSON line to `<git common dir>/truss/shared/ledger.jsonl` (`store.ts` `sharedDir`) under the store lock `ledger`, through `appendJsonl` (`store.ts`). There is no update and no delete: no `track` command and no `settleDays`. Earlier rows are never rewritten.
 
 `mergeCrew` writes one row per merge, through `finish` or `land`, after the merge is final (`factory/finish.ts`):
 

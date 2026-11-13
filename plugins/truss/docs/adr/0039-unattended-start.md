@@ -8,9 +8,9 @@ Amends: ADR-0008 (the client brief gains an unattended path that fills defaults 
 
 R-60 asks for `/truss:run --next`: take one queued item and run it with no human present. Today every run assumes someone answers:
 
-- The client brief asks its questions through `AskUserQuestion` (`skills/brief/SKILL.md:8`, `:64`). In a session with no one at the keyboard, that call waits forever.
-- An all-solo goal skips plan.js and writes no plan (`skills/run/SKILL.md:161-165`), so the plan and main-edit hooks never engage. An unattended run would then have no approved plan for the gates to check against (contract-025 finding #5).
-- Truss already has a per-session root, `rootOf` (`hooks/register.ts:1279`), and a tool-call gate for fetches (`hooks/register.ts:2462`) whose failure path is `failOpen` (`hooks/register.ts:1208`). A new gate can follow the same pattern.
+- The client brief asks its questions through `AskUserQuestion` (`skills/brief/SKILL.md` section "truss client brief", section "Ask the client"). In a session with no one at the keyboard, that call waits forever.
+- An all-solo goal skips plan.js and writes no plan (`skills/run/SKILL.md` section "Size each task"), so the plan and main-edit hooks never engage. An unattended run would then have no approved plan for the gates to check against (contract-025 finding #5).
+- Truss already has a per-session root, `rootOf` (`hooks/register.ts`), and a tool-call gate for fetches (`hooks/register.ts` the `tool.call` handler for `WebFetch`, `WebSearch`) whose failure path is `failOpen` (`hooks/register.ts`). A new gate can follow the same pattern.
 - The inbox (ADR-0037) gives the PM a place to leave a question for the client and carry on. A `link` with `blocking: true` holds exactly the crews it names at `start` and `admit` (contract-025 section 3).
 - R-64: the flow must work on Linux, macOS and Windows. A daemon, `flock` or `fs.watch` would not.
 

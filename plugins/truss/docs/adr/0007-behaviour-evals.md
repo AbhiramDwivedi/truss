@@ -71,11 +71,11 @@ These ids are required, with these sources and kinds. `evals-build` adds the res
 | `cynic-defer-log-promise` | checking engineer | `.git/foundry/70917104-1578-48f5-8ac2-f9e48814b8cc/decisions.md` (the 08:41 checker-5 "rejecting $.ui.log promise" line) | `RECOMMEND` `defer` |
 | `cynic-pass-seam-route` | checking engineer | `.git/foundry/40816bb1-1ec8-4755-8d97-0d12599e1e84/decisions.md` (the 09:50 checker-1 "seam route" line) | `RECOMMEND` `pass` |
 
-Checked at design time, from each listed QC file's first line: `roles-judge.md` to `roles-judge-7.md` and `foundry-protocol-judge.md` start `VERDICT: FAIL`; `redteam-reset-judge.md` and `foundry-protocol-judge-2.md` start `VERDICT: PASS`. `foundry-protocol-judge.md` is the catch on `gates.check.ts:88-102` (its finding at line 52). `judge-redteam-reset` is the PASS that took the stress test's worktree premise on trust, the gap `897528e` and `4e43d5c` then closed. It records the accepted ruling. A prompt change that makes the QC engineer FAIL it is a difference for the client to read, not a regression by itself.
+Checked at design time, from each listed QC file's first line: `roles-judge.md` to `roles-judge-7.md` and `foundry-protocol-judge.md` start `VERDICT: FAIL`; `redteam-reset-judge.md` and `foundry-protocol-judge-2.md` start `VERDICT: PASS`. `foundry-protocol-judge.md` is the catch on `gates.check.ts` `judgeRuling` (its finding at line 52). `judge-redteam-reset` is the PASS that took the stress test's worktree premise on trust, the gap `897528e` and `4e43d5c` then closed. It records the accepted ruling. A prompt change that makes the QC engineer FAIL it is a difference for the client to read, not a regression by itself.
 
 ### 4. The scorer, `evals/score.ts`
 
-Deterministic, no I/O. It imports `qcRuling` from `../hooks/register.ts`, the hooks module's entry file, as `tests/gates.check.ts:90` already does under `node`. So the evals rule a `VERDICT:` line exactly as the merge gate does.
+Deterministic, no I/O. It imports `qcRuling` from `../hooks/register.ts`, the hooks module's entry file, as `tests/gates.check.ts` `judgeRuling` already does under `node`. So the evals rule a `VERDICT:` line exactly as the merge gate does.
 
 ```ts
 export type Expected =
@@ -86,14 +86,14 @@ export type Score = { ok: boolean; got: Kind | undefined }
 export function score(report: string, expected: Expected): Score
 ```
 
-- `keyword: 'VERDICT'`: `got` is `qcRuling(report).verdict`. That is the marker on the report's first non-empty line, after a BOM and `\r` are dropped: `PASS` when the line starts with `VERDICT: PASS`, `FAIL` when it starts with `VERDICT: FAIL`, else `undefined` (`register.ts:205-212`, `:506-530`). So `VERDICT:PASS` with no space scores `got: undefined`, never `PASS`, the way the gate rules it.
+- `keyword: 'VERDICT'`: `got` is `qcRuling(report).verdict`. That is the marker on the report's first non-empty line, after a BOM and `\r` are dropped: `PASS` when the line starts with `VERDICT: PASS`, `FAIL` when it starts with `VERDICT: FAIL`, else `undefined` (`register.ts` `MARKERS`, `judgeRuling`). So `VERDICT:PASS` with no space scores `got: undefined`, never `PASS`, the way the gate rules it.
 - `keyword: 'RECOMMEND'`: `got` is the kind on the first line of the report that matches `^\s*(?:checker-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b`, after `\r` is dropped; else `undefined`. This is `retro.py`'s `CHECKER_FIELD` (`scripts/retro.py:44-45`) with leading space allowed and the `(xN)` count ignored. `RECOMMEND: drop` scores `got: undefined`.
 - `ok` is `got === expected.kind`.
 - An `expected` that pairs a keyword with a kind outside its list, or names another keyword, throws a `TypeError` (core 6).
 
 ### 5. The snippet runner, `evals/snippets.ts`
 
-The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/project-manager.md:199`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
+The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md` section "Head and patch lines", `agents/project-manager.md` section "12. When the PM asks you to make your branch ready", `skills/retro/SKILL.md` section "1. Find the dir and run the script"), so the list picks the snippets, not a tag.
 
 ```ts
 export type Where = 'root' | 'subdir' | 'worktree'
@@ -173,7 +173,7 @@ flowchart LR
   tests -->|"calls"| snip
 ```
 
-*The evals area and what it reads; `run-model.ts` sits outside every suite.* Traces to: this ADR; `hooks/register.ts:205-212`, `:506`; `tests/gates.check.ts:90`; `tests/e2e/cleanup.e2e.ts:42-53`; `scripts/catalog-refresh/run.sh:8`.
+*The evals area and what it reads; `run-model.ts` sits outside every suite.* Traces to: this ADR; `hooks/register.ts` `MARKERS`, `judgeRuling`; `tests/gates.check.ts:90`; `tests/e2e/cleanup.e2e.ts:42-53`; `scripts/catalog-refresh/run.sh:8`.
 
 ```mermaid
 sequenceDiagram
@@ -202,7 +202,7 @@ sequenceDiagram
 
 Stage 2 (`prompt-rules`) deletes the wording checks in `## Checks replaced`; `tests/contract-replaced.check.ts` pins that. `tests/packs.check.ts` stays: it checks the packs' form, which is not QC engineer or checking engineer behaviour, so P12 and the entry-points table keep naming it.
 
-A check moves only when a suite check covers what it asserts. Two do. The qc-engineer.md and SKILL.md patch-command checks assert `git patch-id --stable` is in the file; the snippet check runs that command and compares its id with `PATCH_COMMAND`'s (`register.ts:422`). The checking engineer Items check in `deferred-sweep.check.ts` stays: in the suite the checking engineer cases only score their own recorded `expected` lines and nothing reads `checking-engineer.md`, so no suite check covers it. Most wording checks pin a report literal or a section's order, which no case scores, so they stay too.
+A check moves only when a suite check covers what it asserts. Two do. The qc-engineer.md and SKILL.md patch-command checks assert `git patch-id --stable` is in the file; the snippet check runs that command and compares its id with `PATCH_COMMAND`'s (`register.ts`). The checking engineer Items check in `deferred-sweep.check.ts` stays: in the suite the checking engineer cases only score their own recorded `expected` lines and nothing reads `checking-engineer.md`, so no suite check covers it. Most wording checks pin a report literal or a section's order, which no case scores, so they stay too.
 
 ## Snippets
 

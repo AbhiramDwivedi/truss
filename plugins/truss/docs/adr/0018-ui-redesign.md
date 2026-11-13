@@ -14,7 +14,7 @@ The client reads the Truss UI as a run's control room: what Claude asks, what ea
 
 What stays fixed:
 
-- **The server contract.** Routes, SSE events, the Host, Origin and token guard, and the cookie don't change (PM decision 2). The page CSP is `default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` (`ui/server/http/static.ts:8`). The wire is `ui/contract/state.schema.json`: a `snapshot` (`type`, `instance`, `seq`, `state`) and a `delta` (`type`, `seq`, optional `set` and `append`).
+- **The server contract.** Routes, SSE events, the Host, Origin and token guard, and the cookie don't change (PM decision 2). The page CSP is `default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` (`ui/server/http/static.ts` `PAGE_CSP`). The wire is `ui/contract/state.schema.json`: a `snapshot` (`type`, `instance`, `seq`, `state`) and a `delta` (`type`, `seq`, optional `set` and `append`).
 - **Every behaviour a user has today.** Answer brief questions, approve or deny tool use and replies, send messages, see crews and their members, decisions, ADRs, the design and the retro stage, and get desktop notifications (PM decision 5). The 83 `ui` and `contract` Playwright tests pin these by role and accessible name.
 - **The quality floor.** axe clean at WCAG 2.2 AA in light and dark, phone to desktop widths, keyboard use throughout (PM decisions 3 and 5).
 
@@ -53,11 +53,11 @@ The start path stays one documented line: `npm --prefix ui ci`, then `npm --pref
 
 ### 3. The missing-build behaviour (ui-server, `extend`)
 
-`main.ts` already serves `join(uiDir, 'web')` (`ui/server/main.ts:69`). Today a missing `ui/web/index.html` gives `GET /` a `404 {"error":"notfound"}` (`ui/server/http/static.ts:30-33`, `:54-56`). ui-serve changes this, and only this:
+`main.ts` already serves `join(uiDir, 'web')` (`ui/server/main.ts` `server`). Today a missing `ui/web/index.html` gives `GET /` a `404 {"error":"notfound"}` (`ui/server/http/static.ts` `notFound`, `serveStatic`). ui-serve changes this, and only this:
 
-1. **Startup.** When `<uiDir>/web/index.html` doesn't exist, `main.ts` writes one line to stderr, `truss-ui: no client build at <uiDir>/web/index.html; run: npm --prefix ui run build`, and goes on starting. It doesn't exit, and stdout still carries only `truss-ui listening on <url>` (`ui/server/main.ts:105`). `ui/test/startup/shutdown.test.ts` waits for that stdout line and fails only on an early exit (`:56-58`); `ancestors.test.ts` waits for the same line (`:232`). Neither reads stderr for silence, so both stay green with no build.
+1. **Startup.** When `<uiDir>/web/index.html` doesn't exist, `main.ts` writes one line to stderr, `truss-ui: no client build at <uiDir>/web/index.html; run: npm --prefix ui run build`, and goes on starting. It doesn't exit, and stdout still carries only `truss-ui listening on <url>` (`ui/server/main.ts:105`). `ui/test/startup/shutdown.test.ts` waits for that stdout line and fails only on an early exit (`start`); `ancestors.test.ts` waits for the same line (`readPid`). Neither reads stderr for silence, so both stay green with no build.
 2. **The page.** While `ui/web/index.html` is missing, `GET /` and `GET /index.html` (after the guard, as now) answer `503` with `Content-Type: text/html; charset=utf-8`, the same page CSP, and a static page: an `<h1>` "Truss needs a client build" and the command `npm --prefix ui run build` in a `<code>` element. It has no inline style or script. Every other missing static path stays `404 {"error":"notfound"}`.
-3. **Types.** `TYPES` (`ui/server/http/static.ts:11-26`) gains `'.woff2': 'font/woff2'`. It has no font type today, so a woff2 file is served as `application/octet-stream` (`:50`).
+3. **Types.** `TYPES` (`ui/server/http/static.ts`) gains `'.woff2': 'font/woff2'`. It has no font type today, so a woff2 file is served as `application/octet-stream` (`serveStatic`).
 
 The route table of ADR-0011 Decision 6 stays true: `/` and static files from `ui/web/`, `/vendor/marked.js`, `/api/events`, the two POST routes and `/api/image`. `/vendor/marked.js` stays a route even though the new client bundles `marked` (Decision 9 below). `ui/contract/build.check.ts` pins this section.
 
