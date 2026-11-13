@@ -134,6 +134,8 @@ function usedBy(tracked: string[], read: (p: string) => string | null): Map<stri
 type Edge = { node: string; at: number }
 const WRITE_TARGET = /\b(?:writeFileSync|writeFile|appendFileSync|rmSync|unlinkSync)\(\s*$/
 const LITERALS = /'([^'\n]{1,300})'|"([^"\n]{1,300})"|`([^`\n]{1,300})`/g
+/** a literal tested against text (`cmd.includes('factory.ts')`, `x === 'factory.ts'`): it matches the name, it never runs the file */
+const COMPARED = /(?:\.(?:includes|startsWith|endsWith|indexOf)\(\s*|[!=]==?\s*)$/
 
 /** What each test depends on, at symbol level. Nodes:
  * - `W|F` the whole file F: F and everything it imports, by the names it imports.
@@ -219,8 +221,9 @@ export function symbolGraph(tracked: string[], read: (p: string) => string | nul
       for (const b of byName.get(name) ?? []) {
         if (b === a || !(tail === name || b === tail || b.endsWith(`/${tail}`))) continue
         // a source module's file names are data paths, except the dispatcher's: a module that names it runs its CLI
-        if (isDispatcher(b)) out.other.push({ node: testSide && loads(fa, b) ? `W|${b}` : `C|${b}`, at })
-        else if (testSide) out.other.push({ node: `W|${b}`, at })
+        if (isDispatcher(b)) {
+          if (!COMPARED.test(text.slice(Math.max(0, at - 40), at))) out.other.push({ node: testSide && loads(fa, b) ? `W|${b}` : `C|${b}`, at })
+        } else if (testSide) out.other.push({ node: `W|${b}`, at })
       }
     }
     return out
@@ -478,7 +481,8 @@ export function symbolGraph(tracked: string[], read: (p: string) => string | nul
         let want = named(seen, d)
         // a CLI run with no command named in what leads to it runs some command the scanner can't see: all of them
         if (want.size === 0) want = new Set(all)
-        for (const k of [...want]) for (const r of runsAny(d, k) ?? []) want.add(r)        const fresh = [...want].filter((k) => !done.has(k))
+        for (const k of [...want]) for (const r of runsAny(d, k) ?? []) want.add(r)
+        const fresh = [...want].filter((k) => !done.has(k))
         if (fresh.length === 0) continue
         changed = true
         for (const k of fresh) done.add(k)
