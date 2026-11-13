@@ -11,16 +11,16 @@ Run 3's goal items 2, 3 and 7 (`plan.json` `goal`) need four things foundry 0.4.
 
 - **Scope.** A project manager's report says what was checked, but nothing says what wasn't. A claim like "no other caller" or "every call site updated" passes the QC engineer with no record of where anyone looked.
 - **A bounded repair loop.** After a QC engineer FAIL the project manager starts `<crew>-qc-2`, `-3` and so on with no limit (the 0.x project-manager prompt). Nothing stops a crew from looping, and nothing records that it ran out of tries.
-- **The head a PASS belongs to.** The QC engineer states the SHA it ruled on somewhere in free text under `## Proof checked` (`agents/qc-engineer.md:72`, `agents/project-manager.md:135`). No hook can read it. The program manager (PM) compares it by eye (`skills/run/SKILL.md:281`, `:288`). After a rebase the head always moves, so every rebase needs a fresh QC engineer (`agents/project-manager.md:162`), even when the crew's change is byte-for-byte the same.
-- **Calls with no model or effort from the main session.** `agentVerdict` and `effortVerdict` (`hooks/register.ts:232`, `:243`) return early outside a crew, so the design engineer, checking engineer, project manager and integration QC engineer the PM starts get their frontmatter's effort unless the call sets one.
+- **The head a PASS belongs to.** The QC engineer states the SHA it ruled on somewhere in free text under `## Proof checked` (`agents/qc-engineer.md` section "Verdict", `agents/project-manager.md` section "6. Knowledge step, then QC engineer"). No hook can read it. The program manager (PM) compares it by eye (`skills/run/SKILL.md` section "9. Merge", section "9. Merge"). After a rebase the head always moves, so every rebase needs a fresh QC engineer (`agents/project-manager.md` section "9. Integrate"), even when the crew's change is byte-for-byte the same.
+- **Calls with no model or effort from the main session.** `agentVerdict` and `effortVerdict` (`hooks/register.ts`) return early outside a crew, so the design engineer, checking engineer, project manager and integration QC engineer the PM starts get their frontmatter's effort unless the call sets one.
 
 The interfaces that can't take the work:
 
-- `plan.schema.json` is closed (`additionalProperties: false`) and pins `version` to `const: 1` (`:18-20`), so a plan can't carry a rework allowance.
+- `plan.schema.json` is closed (`additionalProperties: false`) and pins `version` to `const: 1` (key `properties.version`), so a plan can't carry a rework allowance.
 - The QC engineer's report has no fixed line a hook can parse for the head or the patch, which breaks repo P23 for any code that would read them.
-- The project manager's report format (`agents/project-manager.md:204-240`) and the project manager stop gate (`projectManagerStopPasses`, `register.ts:541`) know only the six sections.
+- The project manager's report format (`agents/project-manager.md` section "13. Final report") and the project manager stop gate (`projectManagerStopPasses`, `register.ts`) know only the six sections.
 - `.claude/truss.json` has no key for the allowance (`truss-config.schema.json`).
-- retro's top-level and per-run keys are a pinned contract (`tests/test_contract_retro.py:23-24`), and it has no count of spent allowances.
+- retro's top-level and per-run keys are a pinned contract (`tests/test_contract_retro.py` `TOP_KEYS` and `RUN_KEYS`), and it has no count of spent allowances.
 
 There's also a fact about run scope. In this repo's session dir `40816bb1`, `reports/design/` holds `design-judge.md` to `design-judge-7.md`, and `reports/protocol/` holds `protocol-judge.md` to `-4.md`, all from earlier runs that used the same crew names (`ls` of that dir, 2026-10-27). Counting a crew's QC files by name alone would start run 3's `design` and `protocol` crews with their budgets already spent. "The highest-numbered QC file" would also name a stale file. ADR-0003 flagged this as open.
 
@@ -39,7 +39,7 @@ There's also a fact about run scope. In this repo's session dir `40816bb1`, `rep
 - **No per-crew override.** Nothing in this run sets different allowances per crew, so a crew field would have no caller (repo P11). The allowance is the same for every crew. A per-crew allowance, like readiness, waits for a later version.
 - From 0.5.0 the design engineer writes `version: 2` with `reworkAllowance`. `plan.example.json` becomes a v2 plan with `"reworkAllowance": 2`. `tests/fixtures/contract-050/plan-v1.json` is a byte copy of `git show edeb6ef:docs/plan.example.json`.
 
-**What the hooks read.** `Plan` (`register.ts:250`) gains two fields, `version: unknown` and `reworkAllowance: unknown`. `parsePlan` copies both unchecked from the parsed object, as it does the other fields. It accepts every value of `version`, missing included: v1, v2, v3 or a string. Every rule this ADR adds asks `planAtLeastV2` first (section 8). That helper is true only when `version` is an integer of 2 or more, so it holds for v3 plans, and v1 plans, plans with no version and plans with a non-integer version fail open to 0.4.3 behaviour. The 0.3.0 plan gates don't look at `version` at all.
+**What the hooks read.** `Plan` (`register.ts`) gains two fields, `version: unknown` and `reworkAllowance: unknown`. `parsePlan` copies both unchecked from the parsed object, as it does the other fields. It accepts every value of `version`, missing included: v1, v2, v3 or a string. Every rule this ADR adds asks `planAtLeastV2` first (section 8). That helper is true only when `version` is an integer of 2 or more, so it holds for v3 plans, and v1 plans, plans with no version and plans with a non-integer version fail open to 0.4.3 behaviour. The 0.3.0 plan gates don't look at `version` at all.
 
 ### 2. `.claude/truss.json` gains `reworkAllowance`
 
@@ -137,7 +137,7 @@ On a v2 or later plan, an `Agent` call from the main session (`callerId` undefin
 
 - **`allowancesSpent`**, a new **per-run** key in `runs[]`, after `qcs`. Its value is the number of distinct `crew` values among the run's spent-allowance events (section 5), assigned to runs by `ts` like every other event. It is `"not recorded"` when the run's event-derived categories are `"not recorded"` (no `## Run` heading, or no `events*.jsonl`), and also when the run has no such line. A 0.4.x log and a 0.5.0 run that spent no allowance look the same in the log, so retro never claims a zero the log can't back up. It is never 0.
 - **`retro` stays 1.** Adding a key isn't a rename or a retype; the same rule as events' `v`.
-- **Event lines.** Spawn lines gain no keys. They stay `agent, agentId, by, crew, effort, event, model, ts, type, v` (`tests/events.test.ts:67`). The only new line is section 5's, with the keys `agent, crew, event, ts, v`.
+- **Event lines.** Spawn lines gain no keys. They stay `agent, agentId, by, crew, effort, event, model, ts, type, v` (`tests/events.test.ts` test "a lead started by the main session appends a spawn line with by main and the lead as its own crew"). The only new line is section 5's, with the keys `agent, crew, event, ts, v`.
 - **Target share.** The retro skill computes the share of the run's spawns that ran on Opus at `high` or `xhigh`. The numerator is the sum of the `byModelEffort` counts whose model part contains `opus` (case-folded) and whose effort part is `high` or `xhigh`. The denominator is `spawns.total`. The target is 0, unless a decision line in `decisions.md` records the client's call for `high` or `xhigh`. The skill reports any other non-zero share as over target. retro's output gains no key for it.
 
 ### 9. Exported functions and constants
@@ -222,7 +222,7 @@ The contract tests read only `tests/fixtures/contract-050/**` or data built inli
    - `mainCallVerdict` refuses a `truss:qc-engineer` call with no model or no effort from the main session, and lets the same call from inside a crew, a non-`truss:` type, or a call with no plan go through.
 3. **Prompts**, in `tests/gates.check.ts`. `agents/qc-engineer.md` carries `HEAD_LINE`, `PATCH_LINE` and `UNSCOPED`. `agents/project-manager.md` carries `EXAMINED`, `NOT_EXAMINED` and `ALLOWANCE_BLOCKED`. `skills/run/SKILL.md` carries the head and patch merge-gate rule. `agents/writer.md` pins a model and an effort of `low` or `medium`.
 4. **retro**, in `tests/test_contract_retro_050.py`, on a fixture under `contract-050/` that has a `## Run` heading and spent-allowance lines for two crews, one of them twice. Its `allowancesSpent` is 2. A run with events but no such line gives `"not recorded"`. `tests/test_contract_retro.py` adds `allowancesSpent` to `RUN_KEYS`, and `retro` stays 1.
-5. **Spawn line keys.** `tests/events.test.ts:67` is unchanged; this ADR adds no spawn key.
+5. **Spawn line keys.** `tests/events.test.ts` test "a lead started by the main session appends a spawn line with by main and the lead as its own crew" is unchanged; this ADR adds no spawn key.
 
 ## Consequences
 

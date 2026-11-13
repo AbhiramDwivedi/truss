@@ -9,11 +9,11 @@ Amended by: ADR-0041 (a crew's work type sets the least process the program mana
 
 Every crew pays for the full process today, whatever the task.
 
-- `mergeCrew` refuses a crew with no red record: `bin/factory.ts:2368-2369`. The resume path refuses the same way: `bin/factory.ts:1455`.
-- `finish` merges a crew only on a QC PASS with no UNSCOPED finding (`bin/factory.ts:2553-2555`), and `mergeHeadVerdict` refuses anything else (`bin/factory.ts:1918-1922`).
-- `plan-check` accepts only plan versions 2 and 3: `bin/factory.ts:470`.
-- `$defs/crew` is `additionalProperties: false` (`docs/plan.schema.json:178`), so a crew has nowhere to record a process size or the PM's proof choices.
-- The run skill's crew without a project manager, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md:263`).
+- `mergeCrew` refuses a crew with no red record: `bin/factory/finish.ts`. The resume path refuses the same way: `bin/factory/start.ts` `cmdStartResume`.
+- `finish` merges a crew only on a QC PASS with no UNSCOPED finding (`bin/factory/finish.ts` `cmdFinish`), and `mergeHeadVerdict` refuses anything else (`bin/factory/finish.ts`).
+- `plan-check` accepts only plan versions 2 and 3: `bin/factory/plan.ts` `cmdPlanCheck`.
+- `$defs/crew` is `additionalProperties: false` (`docs/plan.schema.json` key `$defs.crew.additionalProperties`), so a crew has nowhere to record a process size or the PM's proof choices.
+- The run skill's crew without a project manager, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage").
 
 A docs fix and a new factory feature get the same planner, red-then-green test and QC engineer. The client ruled on 2026-11-08 that this changes:
 
@@ -28,15 +28,15 @@ The `docs/requirements.md` non-goals (lines 389-390) also bind this ADR. There i
 
 Two facts constrain the shape:
 
-- ADR-0008 (`docs/adr/0008-owner-interview.md:62-68`) sizes the goal's brief as `small`, `standard` or `large`. It says "nothing else here reads it", and that "whether process size ... follows the same size is ADR-0009's call".
-- The hooks already let a sized crew through. `gateOf` checks approval, goal, stage and the parallel cap, and never reads a crew's process (`hooks/register.ts:433-466`). `mainEditVerdict` is inactive with no plan, or with no crew that isn't merged or dropped (`hooks/register.ts:1070-1074`).
+- ADR-0008 (`docs/adr/0008-owner-interview.md` section "3. Classification: one size sets the depth") sizes the goal's brief as `small`, `standard` or `large`. It says "nothing else here reads it", and that "whether process size... follows the same size is ADR-0009's call".
+- The hooks already let a sized crew through. `gateOf` checks approval, goal, stage and the parallel cap, and never reads a crew's process (`hooks/register.ts`). `mainEditVerdict` is inactive with no plan, or with no crew that isn't merged or dropped (`hooks/register.ts`).
 
 ## Decision Drivers
 
 - Spend agents only where the task needs them (R-49, R-50).
 - Keep the gates mechanical. A merge gate follows a recorded choice, not the PM's memory (R-51).
 - A reader that predates this ADR must fail closed.
-- Keep full crews exactly as they are (`docs/requirements.md:390`).
+- Keep full crews exactly as they are (`docs/requirements.md` section "Non-goals").
 - Keep the tests cheap and portable (R-53, R-54).
 
 ## Considered Options
@@ -45,11 +45,11 @@ Two facts constrain the shape:
 | --- | --- | --- |
 | Process size follows the brief size (`small` gives a small crew) | Rejected | The brief size measures how deep the client brief goes. A `small` goal can hold a feature that needs a full crew, and a `large` goal can hold one-line fixes. |
 | One per-crew field, `process`, set per task by the PM | Kept | It sits where the gates read. Each size has one default, and only the middle size is a choice. |
-| Name the sizes `small`, `standard`, `large` | Rejected | The names collide with the brief sizes (`docs/architecture.md:453`). |
+| Name the sizes `small`, `standard`, `large` | Rejected | The names collide with the brief sizes (`docs/architecture.md` section "On disk"). |
 | Let a `lean` crew carry free-text proof | Rejected | A merge gate can't read prose. Two booleans, `qc` and `red`, can be read. |
 | Let the design engineer size an all-solo goal | Rejected | That starts the agent R-52 exists to save. It also loads a 292-line prompt (`agents/design-engineer.md`) for a one-screen answer. |
-| A new read-only sizing agent | Kept | This reuses an existing pattern, the read-only advisor `agents/resource-monitor.md:1-8`: "You recommend; the PM decides". |
-| Teach `finish` to merge solo and lean crews | Rejected | `finish` reads a `stage.js` run's results and transcript (`bin/factory.ts:2459-2583`). A solo or lean crew has neither. |
+| A new read-only sizing agent | Kept | This reuses an existing pattern, the read-only advisor `agents/resource-monitor.md`: "You recommend; the PM decides". |
+| Teach `finish` to merge solo and lean crews | Rejected | `finish` reads a `stage.js` run's results and transcript (`bin/factory/finish.ts` `cmdFinish`). A solo or lean crew has neither. |
 | A new `land --slug` merge gate | Kept | It reuses `mergeCrew`'s steps and leaves `finish` unchanged. |
 
 ## Decision
@@ -72,16 +72,16 @@ For ADR-0009 Decision 3: a goal whose tasks are all `solo` never runs `workflows
 
 ### 3. Plan version 4
 
-A plan version goes up when an added field "changes what a reader must refuse" (`docs/architecture.md:523`). `process` changes what the merge gates refuse, so we will raise the plan `version` to 4.
+A plan version goes up when an added field "changes what a reader must refuse" (`docs/architecture.md` section "`plan.json`"). `process` changes what the merge gates refuse, so we will raise the plan `version` to 4.
 
 - `process`, `qc` and `red` are valid only at version 4 or above.
-- Readers keep gating on `version >= 2` (`docs/plan.schema.json:18`). A version-3 rule applies at version 4 too: `plan-check` changes its `plan.version === 3` tests (`bin/factory.ts:472`, `:502`) to `>= 3`.
+- Readers keep gating on `version >= 2` (`docs/plan.schema.json` key `properties.version.description`). A version-3 rule applies at version 4 too: `plan-check` changes its `plan.version === 3` tests (`bin/factory/plan.ts` `cmdPlanCheck`) to `>= 3`.
 - A plan with no `process` field may stay at version 2 or 3.
-- A 0.20.1 reader fails closed on a version-4 plan. Its `plan-check` refuses the version (`bin/factory.ts:470`), and its merge gate still asks for a red record and a QC PASS.
+- A 0.20.1 reader fails closed on a version-4 plan. Its `plan-check` refuses the version (`bin/factory/plan.ts` `cmdPlanCheck`), and its merge gate still asks for a red record and a QC PASS.
 
 ### 4. Record each size
 
-The PM logs every size with `factory.ts decide --line`, whose four fields `cmdDecide` requires (`bin/factory.ts:2608-2611`):
+The PM logs every size with `factory.ts decide --line`, whose four fields `cmdDecide` requires (`bin/factory/decide.ts`):
 
 ```
 factory.ts decide --dir D --line 'size <task> <process>[ qc <true|false> red <true|false>] | <one-line reason>; sizing-engineer <solo|lean|full|none> | none | <followed|overruled>'
@@ -99,21 +99,21 @@ An all-solo goal never writes `plan.json`. The PM:
 4. merges the task branch into the target under the run's merge mode;
 5. logs the merge with `decide --line`.
 
-With no plan, `gateOf` and `mainEditVerdict` are inactive (`hooks/register.ts:434`, `:1070`), so no hook refuses this path.
+With no plan, `gateOf` and `mainEditVerdict` are inactive (`hooks/register.ts`), so no hook refuses this path.
 
 ### 6. Mixed goals: `start` and `land`
 
-**`start`.** `factory.ts start` (`bin/factory.ts:1492-1617`) treats a planned `solo` or `lean` crew that starts now as a direct crew. It applies the same goal-file check, `admission` and `planVerdict` as it does to a workflow crew. It skips the engine split and the `## Members` check. Then it:
+**`start`.** `factory.ts start` (`bin/factory/start.ts` `cmdStart`) treats a planned `solo` or `lean` crew that starts now as a direct crew. It applies the same goal-file check, `admission` and `planVerdict` as it does to a workflow crew. It skips the engine split and the `## Members` check. Then it:
 
 - makes the worktree `.claude/worktrees/truss-<slug>` on branch `truss-<slug>` (`ensureWorktree`);
 - sets the crew's `status` to `running` and saves `plan.json`;
 - appends the decision line `started direct crew <slug> (process <p>) in stage <n> | worktree truss-<slug> from <target>`;
-- appends no `by: "factory"` spawn line, so `finish`'s `factorySpawned` filter (`bin/factory.ts:2477`) never picks the crew up;
+- appends no `by: "factory"` spawn line, so `finish`'s `factorySpawned` filter (`bin/factory/runs.ts`) never picks the crew up;
 - counts the crew against `maxParallelCrews`, like project manager crews.
 
-The output gains a top-level key `direct`, beside `held`, `projectManagers` and `refused`. It is an array of `{ "slug", "process", "qc", "red", "worktree", "branch" }`, where `qc` and `red` are `false` on a `solo` crew. A direct crew never appears in `truss.crews`, the object the PM passes as the Workflow args (`bin/factory.ts:1052`). `--args-file` writes the same body. The PM runs each direct crew itself, naming its agents `<slug>-builder`, `<slug>-tester` and `<slug>-qc`.
+The output gains a top-level key `direct`, beside `held`, `projectManagers` and `refused`. It is an array of `{ "slug", "process", "qc", "red", "worktree", "branch" }`, where `qc` and `red` are `false` on a `solo` crew. A direct crew never appears in `truss.crews`, the object the PM passes as the Workflow args (`bin/factory/start.ts` `stageOut`). `--args-file` writes the same body. The PM runs each direct crew itself, naming its agents `<slug>-builder`, `<slug>-tester` and `<slug>-qc`.
 
-`start --slug S --resume ...` refuses a `solo` or `lean` crew with exit 1 and `why: "<slug> is a <process> crew; it runs direct, so merge it with land"`. This keeps the resume path's red-record check at `bin/factory.ts:1455` for full crews only.
+`start --slug S --resume ...` refuses a `solo` or `lean` crew with exit 1 and `why: "<slug> is a <process> crew; it runs direct, so merge it with land"`. This keeps the resume path's red-record check at `bin/factory/start.ts` `cmdStartResume` for full crews only.
 
 **`land`.** We will add the merge gate for direct crews:
 
@@ -125,14 +125,14 @@ factory.ts land --dir D --repo R --slug S
 | --- | --- | --- |
 | 0 | `{ "merged": true, "slug", "process", "qc", "red", "head" }` | Merged and recorded |
 | 1 | `{ "merged": false, "slug", "why" }` | A gate refused. The crew stays `running` and nothing is written. |
-| 2 | `{ "error" }` | Usage: `--slug` is missing, no such crew is in the plan, or `merge` is `single` (as `finish`, `bin/factory.ts:2463`) |
+| 2 | `{ "error" }` | Usage: `--slug` is missing, no such crew is in the plan, or `merge` is `single` (as `finish`, `bin/factory/finish.ts` `cmdFinish`) |
 
-`land` runs `mergeCrew`'s steps (`bin/factory.ts:2353-2417`), with the red and QC gates switched on by the crew's booleans. A `solo` crew runs with both off.
+`land` runs `mergeCrew`'s steps (`bin/factory/finish.ts`), with the red and QC gates switched on by the crew's booleans. A `solo` crew runs with both off.
 
 1. A crew that isn't `running` is refused. So is a crew whose `process` is absent or `full`, with `why` naming `process`; it merges through `finish`.
 2. The crew worktree must exist and be on `truss-<slug>`. `owns-check` must pass.
-3. When `red` is true, the red record must exist with a non-zero integer `exit`, as at `bin/factory.ts:2369`.
-4. When `qc` is true, the newest QC file under `reports/<slug>/` from this run must be a PASS with no UNSCOPED finding. The PM saves the QC hand-back there, as `skills/run/SKILL.md:263` already says. `qcFails` must not exceed `reworkAllowance`.
+3. When `red` is true, the red record must exist with a non-zero integer `exit`, as at `bin/factory/finish.ts` `mergeCrew`.
+4. When `qc` is true, the newest QC file under `reports/<slug>/` from this run must be a PASS with no UNSCOPED finding. The PM saves the QC hand-back there, as `skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage" already says. `qcFails` must not exceed `reworkAllowance`.
 5. `land` merges the resolved target into the crew branch, never by rebase. A conflict aborts the merge and refuses with `why: "conflict"`.
 6. When `qc` is true, the merged head must pass `mergeHeadVerdict`. When `red` is true, or `qc` is true and the head moved past the QC engineer's `Head:`, `check --expect green` must pass on the merged head.
 7. `land` fast-forwards the target, with the same dirty-target and target-moved refusals as `mergeCrew`.
@@ -148,7 +148,7 @@ Under merge mode `single`, a `solo` or `lean` crew takes the project manager pat
 
 ### 7. plan-check rules
 
-`plan-check` (`bin/factory.ts:465-531`) accepts versions 2, 3 and 4. Every new refusal goes into `errors` as `<slug>: <rule> ...`, so it names the crew's slug and the field it breaks: `process`, `estAgents`, `qc` or `red`.
+`plan-check` (`bin/factory/plan.ts` `cmdPlanCheck`) accepts versions 2, 3 and 4. Every new refusal goes into `errors` as `<slug>: <rule> ...`, so it names the crew's slug and the field it breaks: `process`, `estAgents`, `qc` or `red`.
 
 - `<slug>: process must be solo, lean or full`
 - `<slug>: process is version 4 only`, and the same for `qc` and `red`
@@ -212,7 +212,7 @@ Stage 0 pins these seams. The test-writer builds them on fixture git repos and t
 **Neutral**
 
 - The hooks don't change. Guard 11 pins that.
-- The project-manager-less crew of `skills/run/SKILL.md:256` and `:263` is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
+- The project-manager-less crew of `skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage" is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
 
 **Reversing it** touches:
 

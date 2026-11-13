@@ -46,9 +46,9 @@ We will give the same paragraph, word for word, to every agent that judges a pla
 
 It lives in five places: the `LONG_TERM_COST` constants of `workflows/stage.js` (the QC prompt) and `workflows/plan.js` (the checker prompt), and `agents/design-engineer.md`, `agents/checking-engineer.md` and `agents/qc-engineer.md`. `tests/ltc-paragraph.check.ts` fails when any copy differs by a byte.
 
-`ltcLines(text)` (`bin/guard.ts:20-38`) reads the lines that start, after any bullet, number, quote, bold, italic or code markup, with the case-sensitive marker `LONG-TERM-COST:` (`LINE_RE`, `bin/guard.ts:16`; `ltcLinesOf` in `workflows/stage.js` holds the same regex). A line whose whole body is a none-word (`none`, `n/a` or `-`, with markdown or a trailing `.` around it) is no cost and is skipped. A bare marker with an empty body is kept and blocks, as `(unnamed cost)`. It splits each on `|`: the first field is `what`, and the fields starting `later:` and `reversal:` fill the rest. A line with no valid reversal (not `cheap`, `costly` or `irreversible`) counts as `costly` (`bin/guard.ts:34`), so a sloppy line blocks rather than slips through. A line with an empty `what` is kept, with `what` set to `(unnamed cost)`: dropping it would let a costly or irreversible cost merge unseen.
+`ltcLines(text)` (`bin/guard.ts` `ltcLines`) reads the lines that start, after any bullet, number, quote, bold, italic or code markup, with the case-sensitive marker `LONG-TERM-COST:` (`LINE_RE`, `bin/guard.ts`; `ltcLinesOf` in `workflows-src/stage/qc.js` holds the same regex). A line whose whole body is a none-word (`none`, `n/a` or `-`, with markdown or a trailing `.` around it) is no cost and is skipped. A bare marker with an empty body is kept and blocks, as `(unnamed cost)`. It splits each on `|`: the first field is `what`, and the fields starting `later:` and `reversal:` fill the rest. A line with no valid reversal (not `cheap`, `costly` or `irreversible`) counts as `costly` (`bin/guard.ts` `ltcLines`), so a sloppy line blocks rather than slips through. A line with an empty `what` is kept, with `what` set to `(unnamed cost)`: dropping it would let a costly or irreversible cost merge unseen.
 
-`stage.js` `qc()` copies a passing QC's lines into its result as `longTermCosts` (`workflows/stage.js:2003`).
+`workflows-src/stage/qc.js` `qc()` copies a passing QC's lines into its result as `longTermCosts` (`workflows-src/stage/qc.js`).
 
 ### The deterministic triggers
 
@@ -62,17 +62,17 @@ It lives in five places: the `LONG_TERM_COST` constants of `workflows/stage.js` 
 
 A new file counts once, under the first rule it matches, in the order above. Only added files trigger, except `package.json`, which also triggers when modified. No triggers is never the answer to a diff that could not be read: a failed `git diff` throws a refusal that names the range, and output over the 1 MB buffer of `git()` in `bin/store.ts` throws a refusal that names the limit. `ltcCrewGate` catches those refusals and returns them as `refused`, so the merge step refuses instead of crashing. The merge step also refuses when it can't resolve `base` or `head` (below).
 
-The contract named `declares()` for the dependency rule. The code reads the four dependency lists directly instead, because `declares()` (`bin/store.ts:101-115`) answers "does the nearest `package.json` declare this name", not "which names did this diff add". The effect is the same for `package.json`. Other ecosystems' manifests (`requirements.txt`, `go.mod`, `Cargo.toml` and the like) are not triggers in this version.
+The contract named `declares()` for the dependency rule. The code reads the four dependency lists directly instead, because `declares()` (`bin/store.ts` `declares`) answers "does the nearest `package.json` declare this name", not "which names did this diff add". The effect is the same for `package.json`. Other ecosystems' manifests (`requirements.txt`, `go.mod`, `Cargo.toml` and the like) are not triggers in this version.
 
 ### The plan gate
 
-`factory plan-write` collects the results of every `truss-designer*` and `truss-checker*` agent in the plan run and calls `ltcPlan` before it writes `plan.json`, so a guard that throws leaves no plan for `approve` to pass (`bin/factory.ts:454-462`). The revision `rev` is `sha12` of the designer's result text (`bin/factory.ts:428`, `462`). plan-write adds `longTermCosts: ids` to its output (`bin/factory.ts:467`).
+`factory plan-write` collects the results of every `truss-designer*` and `truss-checker*` agent in the plan run and calls `ltcPlan` before it writes `plan.json`, so a guard that throws leaves no plan for `approve` to pass (`bin/factory/plan.ts` `cmdPlanWrite`). The revision `rev` is `sha12` of the designer's result text (`bin/factory/plan.ts` `cmdPlanWrite`, `462`). plan-write adds `longTermCosts: ids` to its output (`bin/factory/plan.ts` `cmdPlanWrite`).
 
-`ltcPlan(repo, dir, texts, rev)` (`bin/guard.ts:118-136`):
+`ltcPlan(repo, dir, texts, rev)` (`bin/guard.ts` `ltcPlan`):
 
-1. Logs each `cheap` line once, as a line in `D/decisions.md` (`bin/guard.ts:124-128`). It writes the line itself (`bin/guard.ts:109-115`), because `appendDecisionLine` lives in `factory.ts` and no new module imports `factory.ts` (ADR-0037).
-2. Escalates each `costly` and `irreversible` line as a blocking `long-term-cost` inbox item, with ref `ltc:<sid>:plan:<rev>:<sha12(what)>` (`bin/guard.ts:130`).
-3. Writes `D/ltc-plan.json` as `{rev, ids}` (`bin/guard.ts:134`).
+1. Logs each `cheap` line once, as a line in `D/decisions.md` (`bin/guard.ts` `ltcPlan`). It writes the line itself (`bin/guard.ts` `decisionLine`), because `appendDecisionLine` lives in `factory.ts` and no new module imports `factory.ts` (ADR-0037).
+2. Escalates each `costly` and `irreversible` line as a blocking `long-term-cost` inbox item, with ref `ltc:<sid>:plan:<rev>:<sha12(what)>` (`bin/guard.ts` `ltcPlan`).
+3. Writes `D/ltc-plan.json` as `{rev, ids}` (`bin/guard.ts` `ltcPlan`).
 
 `ltcPlanGate(repo, dir)` in `bin/guard.ts` returns the ids in `D/ltc-plan.json` whose item is open, rejected, or not in the inbox at all. It reads each item through the verified fold of ADR-0037, so a forged approve leaves the item open. A missing, corrupt or non-array `ltc-plan.json` throws a refusal that points at `plan-write`. `factory approve` refuses with `{error: "long-term cost awaiting the client", ids}` while the gate returns any id. That check runs for both approvers, `--by client` and `--by auto`.
 
@@ -80,25 +80,25 @@ Because `rev` changes when the designer's result changes, a re-plan escalates un
 
 ### The crew gate
 
-`mergeCrew` runs the crew gate in step 1, for every crew it merges, through both `factory land` (`bin/factory.ts:3105`) and `factory finish` (`bin/factory.ts:3208`), at `bin/factory.ts:2965-2972`. It passes:
+`mergeCrew` runs the crew gate in step 1, for every crew it merges, through both `factory land` (`bin/factory/finish.ts`) and `factory finish` (`bin/factory/finish.ts`), at `bin/factory/finish.ts`. It passes:
 
 - `qcText`: the newest QC report of the crew since the run started, or `null` when there is none;
 - `base`: `git merge-base refs/heads/<target> refs/heads/truss-<slug>`;
 - `head`: `git rev-parse --verify refs/heads/truss-<slug>`.
 
-When either git call fails or prints nothing, the merge is refused with `long-term cost gate: git … failed` (`bin/factory.ts:2967-2970`), rather than handing the gate an empty range and no triggers.
+When either git call fails or prints nothing, the merge is refused with `long-term cost gate: git … failed` (`bin/factory/finish.ts` `mergeCrew`), rather than handing the gate an empty range and no triggers.
 
-`ltcCrewGate(repo, dir, slug, {qcText, base, head})` (`bin/guard.ts:156-166`) takes the QC's `costly` and `irreversible` lines plus every trigger, and escalates each as a blocking item linked to the crew, with ref `ltc:<sid>:<slug>:<sha12(what)>`. It returns `{refused: "long-term-cost: E-…, E-…"}` until every one of those items is resolved `approve`, and `{}` after that. The merge step returns the refusal as the crew's outcome (`bin/factory.ts:2972`). A `cheap` QC line is dropped here: it neither blocks nor logs (case "a cheap QC line does not block").
+`ltcCrewGate(repo, dir, slug, {qcText, base, head})` (`bin/guard.ts` `ltcCrewGate`) takes the QC's `costly` and `irreversible` lines plus every trigger, and escalates each as a blocking item linked to the crew, with ref `ltc:<sid>:<slug>:<sha12(what)>`. It returns `{refused: "long-term-cost: E-…, E-…"}` until every one of those items is resolved `approve`, and `{}` after that. The merge step returns the refusal as the crew's outcome (`bin/factory/finish.ts` `mergeCrew`). A `cheap` QC line is dropped here: it neither blocks nor logs (case "a cheap QC line does not block").
 
 ### Reuse of an existing item
 
-Both gates find their item through one helper, `raise` (`bin/guard.ts:100-107`), which looks for `long-term-cost` items with the same ref:
+Both gates find their item through one helper, `raise` (`bin/guard.ts`), which looks for `long-term-cost` items with the same ref:
 
 1. An approved item wins: the gate reuses its id and passes.
 2. A rejected item is reused: the gate keeps refusing.
 3. Otherwise it calls `escalate`. When an open item with the same ref exists, the inbox dedupes to it (ADR-0037), so a repeat gate call opens no second item (case "a repeat gate call opens no second inbox item").
 
-A crew whose cost was rejected stays refused for as long as the same `what` comes back. It clears when the cost leaves the diff or the QC report, because the `what`, and so the ref, changes. For a trigger the `what` names the path or the dependency (`bin/guard.ts:68-75`).
+A crew whose cost was rejected stays refused for as long as the same `what` comes back. It clears when the cost leaves the diff or the QC report, because the `what`, and so the ref, changes. For a trigger the `what` names the path or the dependency (`bin/guard.ts` `ltcTriggers`).
 
 ### The flood check
 

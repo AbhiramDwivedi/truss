@@ -4,7 +4,7 @@ Status: proposed, 2026-10-29. Written by the mid-run design slice `interview-des
 
 Amended by [ADR-0043](0043-crews-share-files.md) (2026-11-11, client): the "disjoint ownership" gate named in the gates paragraph no longer holds; two crews may own the same file and merge in turn.
 
-VERDICT: change. The interface that can't take the work is the path from the client's goal to the plan design engineer's brief (`skills/run/SKILL.md` sections 1 to 4, lines 77-127). The PM asks the client one altitude question (line 79), answers four depth-pass questions itself (lines 81-90), and hands the goal and those answers to the design engineer (lines 121-127). Nothing in that path asks the client about requirements, nothing records the answers, and nothing carries a requirement from one run to the next. The design engineer can't fill the gap: it has no `AskUserQuestion` (`agents/design-engineer.md:6`), and in init mode it works only from code (`agents/design-engineer.md:49`), so an empty repo gives it nothing to design from. The change adds a new module (the client brief skill and its ledger code), a new stored data shape (`requirements.md`) and new seams into the run skill and the design engineer.
+VERDICT: change. The interface that can't take the work is the path from the client's goal to the plan design engineer's brief (`skills/run/SKILL.md` sections 1 to 4, lines 77-127). The PM asks the client one altitude question (line 79), answers four depth-pass questions itself (lines 81-90), and hands the goal and those answers to the design engineer (lines 121-127). Nothing in that path asks the client about requirements, nothing records the answers, and nothing carries a requirement from one run to the next. The design engineer can't fill the gap: it has no `AskUserQuestion` (`agents/design-engineer.md` frontmatter `tools`), and in init mode it works only from code (`agents/design-engineer.md` section "init mode"), so an empty repo gives it nothing to design from. The change adds a new module (the client brief skill and its ledger code), a new stored data shape (`requirements.md`) and new seams into the run skill and the design engineer.
 
 ## Context
 
@@ -14,12 +14,12 @@ The prior discussion the client pointed at (gate 2, "An intent ledger that reads
 
 What the code allows today:
 
-- Only the main thread talks to the client (`skills/run/SKILL.md:8`). Subagents can't ask the client anything, so the client brief has to be a skill the PM follows, with subagents only for facts.
-- The hooks gate only `truss:*` Agent calls (`hooks/register.ts:568`), so a `general-purpose` fact-finder started before any plan exists is not refused.
-- The checking engineer rules on items only once the plan is approved (`skills/run/SKILL.md:39`). The client brief runs before the plan, so no checking engineer sees its questions or answers them.
-- `tests/packs.check.ts:96` pins that `skills/principles/` holds only `SKILL.md` and the seven packs, and each pack's form is rules paired with tests (`packs.check.ts:110-125`). Client brief questions are a different kind of thing from reviewer rules.
-- The QC engineer already treats the goal file as approved scope (`agents/qc-engineer.md:18`), so a requirement quoted in a goal file is something the QC engineer checks the diff against without any change to `qc-engineer.md`.
-- A crew diff that edits the architecture doc is a finding unless the crew is a design crew (`agents/qc-engineer.md:47`). The doc amendment below is therefore its own design crew.
+- Only the main thread talks to the client (`skills/run/SKILL.md` section "foundry run"). Subagents can't ask the client anything, so the client brief has to be a skill the PM follows, with subagents only for facts.
+- The hooks gate only `truss:*` Agent calls (`hooks/register.ts` `mainCallVerdict`), so a `general-purpose` fact-finder started before any plan exists is not refused.
+- The checking engineer rules on items only once the plan is approved (`skills/run/SKILL.md` section "The cynic"). The client brief runs before the plan, so no checking engineer sees its questions or answers them.
+- `tests/packs.check.ts` test "principles: the directory holds only SKILL.md and the seven packs as.md files" pins that `skills/principles/` holds only `SKILL.md` and the seven packs, and each pack's form is rules paired with tests (`packs.check.ts` test "principles: ${name} has a ## Rules section"). Client brief questions are a different kind of thing from reviewer rules.
+- The QC engineer already treats the goal file as approved scope (`agents/qc-engineer.md`, the "You get:" list), so a requirement quoted in a goal file is something the QC engineer checks the diff against without any change to `qc-engineer.md`.
+- A crew diff that edits the architecture doc is a finding unless the crew is a design crew (`agents/qc-engineer.md` section "How to QC engineer"). The doc amendment below is therefore its own design crew.
 
 ## Decision
 
@@ -27,7 +27,7 @@ What the code allows today:
 
 A new skill, `truss:brief` (`skills/brief/SKILL.md`), followed by the PM in the main thread. It is the only part of Truss that calls `AskUserQuestion`. It starts at most one subagent, the fact-finder (section 4), which reads the repo and reports facts. No subagent, no checking engineer and no design engineer answers a question meant for the client. A fact-finder line that recommends a decision is ignored.
 
-Deterministic steps run as one CLI, `brief/cli.ts`, built on `brief/ledger.ts` (section 7). The skill and the run skill call it with `node <plugin>/brief/cli.ts <command> ...`, where `<plugin>` is two levels above the skill's base directory, as in `skills/run/SKILL.md:125`.
+Deterministic steps run as one CLI, `brief/cli.ts`, built on `brief/ledger.ts` (section 7). The skill and the run skill call it with `node <plugin>/brief/cli.ts <command>...`, where `<plugin>` is two levels above the skill's base directory, as in `skills/run/SKILL.md` section "4. Have the architect draft the plan".
 
 ```mermaid
 flowchart LR
@@ -49,7 +49,7 @@ flowchart LR
   fore -- "quotes R-n lines" --> goals
 ```
 
-Caption: the client brief's parts as this ADR designs them. Traces to `skills/run/SKILL.md:8` (only the PM talks to the client) and `:119-127` (the design engineer brief); the rest is new.
+Caption: the client brief's parts as this ADR designs them. Traces to `skills/run/SKILL.md` section "foundry run" (only the PM talks to the client) and section "4. Have the architect draft the plan" (the design engineer brief); the rest is new.
 
 ### 2. When it runs: the hook point
 
@@ -106,7 +106,7 @@ The questions come from `skills/brief/branches.md`, one `## <id>` section per br
 | `Writes` | yes | `functional`, `nfr`, `constraint` or `non-goal` |
 | `Opens` | no | comma-and-space list of branch ids an answer can make relevant |
 
-The branches live in the client brief skill, not in the pack files: packs are reviewer rules with a test each, and `packs.check.ts:96` keeps their directory to the seven packs. A pack contributes branches by its `Pack:` value.
+The branches live in the client brief skill, not in the pack files: packs are reviewer rules with a test each, and `packs.check.ts` test "principles: the directory holds only SKILL.md and the seven packs as.md files" keeps their directory to the seven packs. A pack contributes branches by its `Pack:` value.
 
 The file holds at least these ids. Core, always candidates: `outcome`, `users`, `acceptance`, `non-goals`, `hosting`, `environments`, `integrations`, `auth`, `secrets`, `data-sensitivity`, `scale`, `latency`, `availability`, `cost`, `compliance`. Pack branches: service `authz`, `idempotency`, `rate-limits`, `webhooks`; frontend `browsers`, `accessibility`, `i18n`; data `retention`, `backfill`, `lineage`; ai `model-choice`, `eval-set`, `model-cost`; infra `iac`, `regions`, `ci-cd`; library `consumers`, `versioning`. `hosting` opens `environments` and `cost`; `integrations` opens `webhooks` and `secrets`; `auth` opens `authz`; `data-sensitivity` opens `compliance` and `retention`. Every branch whose only `Visit` value is `opened` is named in some other branch's `Opens`.
 
@@ -163,16 +163,16 @@ Rules `parseRequirements` enforces (BOM and `\r` dropped first):
 
 Error strings, exactly: `R-<n>: missing <Field>`, `R-<n>: bad <Field>: <value>`, `R-<n>: functional needs an Example`, `R-<n>: nfr needs a Measure with a number`, `R-<n>: duplicate id`, `R-<n>: id out of order`, `R-<n>: replaced by unknown R-<k>`, `line <i>: unexpected: <text>` (1-based), `missing ## Non-goals`.
 
-New requirements take ids from the highest in the file plus one. The ids this run accepted go in `brief.json` as `requirements`. The PM runs `node <plugin>/brief/cli.ts check <requirements path>` until it prints `OK:`, then commits the file alone on the target branch, as the extend pass does (`skills/run/SKILL.md:146`): `git switch <target>` if needed, `git add <requirements path>`, check `git status --porcelain`, `git commit -m "docs(req): <goal, short>"`. It logs `- HH:MM | requirements R-a..R-b accepted (client brief) | <size> | none | followed`. Crews work in worktrees that see only committed files, so the commit comes before section 4.
+New requirements take ids from the highest in the file plus one. The ids this run accepted go in `brief.json` as `requirements`. The PM runs `node <plugin>/brief/cli.ts check <requirements path>` until it prints `OK:`, then commits the file alone on the target branch, as the extend pass does (`skills/run/SKILL.md` section "Extend the doc for uncovered domains"): `git switch <target>` if needed, `git add <requirements path>`, check `git status --porcelain`, `git commit -m "docs(req): <goal, short>"`. It logs `- HH:MM | requirements R-a..R-b accepted (client brief) | <size> | none | followed`. Crews work in worktrees that see only committed files, so the commit comes before section 4.
 
 **Kept current across runs.** The next run's fact-finder reads the file (`SPEC:` lines), so its open requirements settle branches as facts and the client brief asks only about gaps. A change of mind is a new id plus `Status: replaced by R-<new>` on the old one; nothing is deleted. At section 10 the PM sets `Status: met` on each id in `brief.json`'s `requirements` whose citing crews all merged, runs `check`, and commits `docs(req): met R-...`. An id whose crew was dropped stays `open`.
 
 ### 8. Tracing R-n to plan, goal files and QC engineers
 
-- **Plan.** Section 4's design engineer brief gets one more bullet: the requirements path and this run's R-ids. In `agents/design-engineer.md` plan mode, the inputs name both, and `plan.md`'s crew table (`design-engineer.md:101`) gains a `Requirements` column: the R-ids the crew serves, comma-separated, or `none`. Every run R-id is served by at least one crew. One that no crew can serve goes under an `Unserved:` line in `plan.md` with a reason. `plan.json` and `plan.schema.json` don't change.
+- **Plan.** Section 4's design engineer brief gets one more bullet: the requirements path and this run's R-ids. In `agents/design-engineer.md` plan mode, the inputs name both, and `plan.md`'s crew table (`design-engineer.md` section "plan mode") gains a `Requirements` column: the R-ids the crew serves, comma-separated, or `none`. Every run R-id is served by at least one crew. One that no crew can serve goes under an `Unserved:` line in `plan.md` with a reason. `plan.json` and `plan.schema.json` don't change.
 - **Plan check.** The PM sends a plan back (section 4's list) when a run R-id is neither served nor under `Unserved:`. Section 5 lists each `Unserved:` id and each `Source: default` requirement under the plan table; dropping an unserved id is the client's ruling, recorded by `Status: dropped`. The client-approval table gets a `Requirements` column.
 - **Goal files.** Section 6's goal file gets a `## Requirements` section, one line per R-id the crew serves, `- R-<n>: <title>` with the title copied exactly. Before the first project manager starts, the PM runs `node <plugin>/brief/cli.ts trace <requirements path> <truss dir>/brief.json <truss dir>/goals` and fixes the goal files until it prints `OK:`.
-- **QC engineers.** No change to `qc-engineer.md`. The goal file is already approved scope (`qc-engineer.md:18`), so the QC engineer checks the diff against the quoted R-n lines, and work outside them is the usual `QUESTION: outside approved scope`.
+- **QC engineers.** No change to `qc-engineer.md`. The goal file is already approved scope (`qc-engineer.md`, the "You get:" list), so the QC engineer checks the diff against the quoted R-n lines, and work outside them is the usual `QUESTION: outside approved scope`.
 
 ```mermaid
 sequenceDiagram
@@ -197,7 +197,7 @@ sequenceDiagram
   F->>C: trace ... goals
 ```
 
-Caption: one run from goal to the first project manager with the client brief in place. Traces to `skills/run/SKILL.md:77-127` and `:206-208`; the client brief steps are new.
+Caption: one run from goal to the first project manager with the client brief in place. Traces to `skills/run/SKILL.md` section "1. Check the altitude" and section "6. Write the goal files and start the leads by wave"; the client brief steps are new.
 
 ### 9. The greenfield path
 
@@ -247,7 +247,7 @@ Edited:
 - docs/architecture.md: the client brief module, its seams, `requirements.md` and `brief.json` under "On disk", with this ADR's diagrams
 - docs/architecture.md: Truss's entry links this ADR and names `requirements.md`
 
-Not touched: `hooks/register.ts`, `docs/plan.schema.json`, `agents/qc-engineer.md`, `agents/project-manager.md`, `skills/principles/*`, `skills/retro/SKILL.md`, `.claude-plugin/plugin.json`. No existing test pins behaviour this design removes: it removes none. `grep -n "altitude\|depth pass" tests/*.ts` finds no test on sections 1 and 2; `deferred-sweep.check.ts:56-64` pins strings in section 10 that the `met` step adds to, not replaces.
+Not touched: `hooks/register.ts`, `docs/plan.schema.json`, `agents/qc-engineer.md`, `agents/project-manager.md`, `skills/principles/*`, `skills/retro/SKILL.md`, `.claude-plugin/plugin.json`. No existing test pins behaviour this design removes: it removes none. `grep -n "altitude\|depth pass" tests/*.ts` finds no test on sections 1 and 2; `deferred-sweep.check.ts` test "run SKILL.md section 10 starts with the sweep and bans listing dropped items" pins strings in section 10 that the `met` step adds to, not replaces.
 
 ## Build crews
 
@@ -256,7 +256,7 @@ Not touched: `hooks/register.ts`, `docs/plan.schema.json`, `agents/qc-engineer.m
 - interview-wiring | owns: skills/run/SKILL.md, agents/design-engineer.md, skills/init/SKILL.md, README.md, tests/interview-wiring.check.ts | acceptanceTest: node --test tests/interview-wiring.check.ts && node --test tests/packs.check.ts tests/init.check.ts | after: prompt-rules, interview-skill
 - interview-doc | owns: docs/architecture.md | acceptanceTest: grep -q 'skills/brief' docs/architecture.md && grep -q 'requirements[.]md' docs/architecture.md && grep -q '0008-owner-interview' docs/architecture.md | after: interview-wiring
 
-`interview-doc` is a design crew (verdict `design`; its design engineer writes the doc in design mode), because only a design crew may edit the architecture docs (`qc-engineer.md:47`). `interview-wiring` and the speed-design and intake-design build crews all edit `skills/run/SKILL.md`, and `interview-doc` shares both architecture docs with their doc crews; the PM orders those across ADRs.
+`interview-doc` is a design crew (verdict `design`; its design engineer writes the doc in design mode), because only a design crew may edit the architecture docs (`qc-engineer.md` section "How to QC engineer"). `interview-wiring` and the speed-design and intake-design build crews all edit `skills/run/SKILL.md`, and `interview-doc` shares both architecture docs with their doc crews; the PM orders those across ADRs.
 
 How each acceptance test was proved, at `fa0fa9f` and on a throwaway sample in a scratch copy (`git archive HEAD plugins/truss docs/architecture.md`, never committed):
 

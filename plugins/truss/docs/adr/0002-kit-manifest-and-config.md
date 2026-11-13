@@ -5,7 +5,7 @@ Proposed on 2026-10-26 by foundry run 2's design crew, for foundry 0.4.0. It app
 
 ## Context
 
-Truss init (`skills/init/SKILL.md`) only checks for the architecture doc and has the design engineer write one. It takes nothing from kit: the run skill lists agent types by hand each run (section 3), and `.claude/truss.json` holds only `architecture`, `adr` and four client keys (module doc, config table). Four things a project would set once are re-decided every run or not at all: which agent type does which job, how the project deploys, which writing skill the writer uses, and client additions to a role's prompt. And the design engineer invents a port range per crew in `plan.md` (`agents/design-engineer.md:72`) that nothing ties to worktrees' `PORT_BASE` slots (repo ADR-0005).
+Truss init (`skills/init/SKILL.md`) only checks for the architecture doc and has the design engineer write one. It takes nothing from kit: the run skill lists agent types by hand each run (section 3), and `.claude/truss.json` holds only `architecture`, `adr` and four client keys (module doc, config table). Four things a project would set once are re-decided every run or not at all: which agent type does which job, how the project deploys, which writing skill the writer uses, and client additions to a role's prompt. And the design engineer invents a port range per crew in `plan.md` (`agents/design-engineer.md` section "Extend pass") that nothing ties to worktrees' `PORT_BASE` slots (repo ADR-0005).
 
 The interfaces that can't take the work: the config table has no keys for these, init has no input from kit, and the run skill's inventory step has nothing stored to start from.
 

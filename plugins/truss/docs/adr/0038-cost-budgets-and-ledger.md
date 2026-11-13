@@ -37,7 +37,7 @@ Claude Code exposes no spend API to a plugin. What it does write is transcripts.
 
 `sweep(dir)` in `bin/cost.ts` reads every transcript of the session under the lock `D/locks/usage`, where `D` is the session's truss dir, and returns `{rows, files, bad, found}`.
 
-- `transcriptsOf` (`bin/store.ts:400`) finds the main transcript and walks `<sid>/subagents` for every `agent-*.jsonl`, Workflow agents included, reading each `.meta.json` beside it.
+- `transcriptsOf` (`bin/store.ts`) finds the main transcript and walks `<sid>/subagents` for every `agent-*.jsonl`, Workflow agents included, reading each `.meta.json` beside it.
 - Each file is read from its cursor offset in 4 MiB chunks, and each chunk is cut at its last newline (`CHUNK` and the read loop in `sweep`, `cost.ts`). A torn last line stays unread until it is whole. The offsets live in `D/usage-cursor.json`, keyed by path; on win32 the keys are lowercased (`keyOf` in `sweep`). A file shorter than its cursor is read again from the start (`sweep`).
 - Only `type: "assistant"` lines with `message.usage` become rows. A row whose token fields are all zero is skipped, which drops `<synthetic>` lines (`rowOf`, `cost.ts`). A line that doesn't parse adds to `bad`.
 - **Dedupe.** The sweep loads every `msgId` already in `D/usage.jsonl` once, before it reads, and skips any row whose id it has seen (`sweep`, `cost.ts`). Because the check is against the usage file, not the cursor, a deleted cursor or a path-case mismatch can't add a row twice. The sweep appends rows first and writes the cursor second, so a crash between the two is repaired by the same id set (the append and `writeJsonAtomic` of the cursor at the end of `sweep`).
@@ -69,7 +69,7 @@ Prices come only from `pricing` in the client's `.claude/truss.json`. Each entry
 - (0.29.0, ADR-0046) An entry may hold `longContext` with `abovePromptTokens` and the five rates. A standard-speed request whose prompt (input, cache read and both cache writes) is over that count is priced wholly at the `longContext` rates; a fast row ignores it (`cost.ts` `ratesFor`).
 - **No price means `usd: null`, never 0.** If any row in a sum has no price, the whole sum is `null` and the model is listed in `unpriced`, with `(fast)` appended for a fast row (`sumOf`, `cost.ts`).
 - `out` is priced alone; thinking is assumed to be inside it. `think` and `web` are counted in `tokens` but not priced (`sumOf`).
-- No price is written in plugin code, prose or fixtures. `tests/cost.check.ts:404` scans `bin/cost.ts`, `tests/fixtures/cost/**` and this ADR for price literals, after it has caught a planted example of each kind.
+- No price is written in plugin code, prose or fixtures. `tests/cost.check.ts` test "cost: no committed price literal in cost.ts, the cost fixtures or the prose, and a planted price table is caught" scans `bin/cost.ts`, `tests/fixtures/cost/**` and this ADR for price literals, after it has caught a planted example of each kind.
 
 ### 4. `factory cost`
 
@@ -98,7 +98,7 @@ The checks, in order, first hold wins:
 2. `runUsd`, against run spend, only when the plan has `approvedAt`.
 3. The crew check: the lower of `crewUsd` and `workTypes[<the crew's workType>].crewUsd`. The scope is `workType` when the work-type limit is the lower one, and `crew` otherwise.
 
-Each limit is the configured value plus the sum of `raiseUsd` from `budgetRaises(repo, sid)` (`bin/inbox.ts:21`) whose `ref` is `budget:<sid>:<scope>:<slug|run|session>`. A client raise of 3 on a crew limit of 5 gives a limit of 8.
+Each limit is the configured value plus the sum of `raiseUsd` from `budgetRaises(repo, sid)` (`bin/inbox.ts` `budgetRaises`) whose `ref` is `budget:<sid>:<scope>:<slug|run|session>`. A client raise of 3 on a crew limit of 5 gives a limit of 8.
 
 The verdict holds when:
 
@@ -108,13 +108,13 @@ The verdict holds when:
 
 Every `why` starts with `budget:`.
 
-**Where it is checked.** `holdOf` (`factory.ts`) runs inside `admission`, which `factory start` calls for each crew and `factory admit` calls before each member spawn (`admit` in `workflows/stage.js`). It runs after the blocking-inbox check and only when `truss.json` has a `budget`. A held verdict appends one `budget-hold` event and raises one blocking `budget` escalation with the ref above. If `escalate` throws, the hold still stands and the error rides on the answer as `escalateError`. `admit --wait-ms` doesn't wait on a budget hold: it refuses at once (`factory admit`), so the stage stops the crew.
+**Where it is checked.** `holdOf` (`factory.ts`) runs inside `admission`, which `factory start` calls for each crew and `factory admit` calls before each member spawn (`admit` in `workflows-src/stage/crew.js`). It runs after the blocking-inbox check and only when `truss.json` has a `budget`. A held verdict appends one `budget-hold` event and raises one blocking `budget` escalation with the ref above. If `escalate` throws, the hold still stands and the error rides on the answer as `escalateError`. `admit --wait-ms` doesn't wait on a budget hold: it refuses at once (`factory admit`), so the stage stops the crew.
 
 ### 6. The merge ledger
 
-`ledgerAppend(repo, row)` (`bin/ledger.ts:9`) appends one JSON line to `<git common dir>/truss/shared/ledger.jsonl` (`store.ts:131`) under the store lock `ledger`, through `appendJsonl` (`store.ts:360`). There is no update and no delete: no `track` command and no `settleDays`. Earlier rows are never rewritten.
+`ledgerAppend(repo, row)` (`bin/ledger.ts` `ledgerAppend`) appends one JSON line to `<git common dir>/truss/shared/ledger.jsonl` (`store.ts` `sharedDir`) under the store lock `ledger`, through `appendJsonl` (`store.ts`). There is no update and no delete: no `track` command and no `settleDays`. Earlier rows are never rewritten.
 
-`mergeCrew` writes one row per merge, through `finish` or `land`, after the merge is final (`factory.ts:2998-3004`):
+`mergeCrew` writes one row per merge, through `finish` or `land`, after the merge is final (`factory/finish.ts`):
 
 ```
 {v: 1, ts, kind: "merge", session, crew, goal, workType|null, process, qc, red, target, base, head, costUsd|null, costWhy?}
@@ -185,3 +185,16 @@ Long-term cost, accepted by the ruling: an attended session at its cap stops at 
 Decided by: the PM, on the checking engineer's review of the review-fixes round (decision 12:58, checker-7 item 2). The case is in `tests/cost-026.check.ts`.
 
 Until this amendment, `budgetVerdict` returned `held: false` when the usage lock stayed busy for its 1000 ms wait and no `usage.jsonl` existed. That let a crew in with unknown spend, a fail-open that parallel admits can reach. Now the verdict sweeps once more with the store's default wait (5 s, under the 120 s stale age), and if the lock is still busy it throws `StoreBusy` (exit 2, `store busy: usage`). It never returns a hold, because a hold raises a budget escalation that needs a typed raise. Exit 2 is never an admit: `admit` and `queue-next` exit 2 (`stage.js` retries `admit` once, then stops BLOCKED), and `start` lists the crew in `held` with that `why`. When `usage.jsonl` exists, a busy lock still reads it as it stands, and the lag is accepted (Decision 4).
+
+## Amendment 2026-11-13: a resumed run sweeps every session that ran it
+
+Decided by: the program manager, on item 9 of the 0.31.0 speed goal. The cases are in `tests/cost-sessions-031.check.ts`.
+
+Until this amendment `sweep` read only the transcripts of the session its run dir is named after. Wave 4 was started by one PM session and finished by a second one, and none of the second session's usage reached `usage.jsonl`. Its cost, budget checks and timing were all too low.
+
+- A session that runs a state-changing factory command on a run dir named after another session is recorded in `D/sessions/<sid>.json` (`attach` in `bin/factory.ts`, `recordSession` and `ATTACH_COMMANDS` in `bin/cost.ts`). The session id comes from `CLAUDE_CODE_SESSION_ID`, which Claude Code sets in a Bash call's environment; a subagent or Workflow run inherits the parent session's id. The record is created once and never rewritten. A read such as `factory cost` never attaches.
+- `sweep` reads the union of the transcripts of the session D is named after and every recorded one (`sessionsOf`). The cursor stays keyed by transcript path, so each session keeps its own offsets; the msgId dedupe, the lock and the busy and StoreBusy rules are unchanged. Each row keeps the `sid` of its transcript.
+- The Claude Code estimate is kept per session in the cursor's `ccEstimates`, and `ccEstimate` is their sum.
+- Crew attribution reads the agent metadata of every recorded session, so a Workflow crew that the resuming session started is attributed to its crew.
+
+Long-term cost, accepted: a resuming session's whole transcript counts toward the run, including work it did before it attached. The session cap (`sessionUsd`) of a resumed run therefore counts both sessions. A run that a session resumed before 0.31.0 has no record; it can be added by hand as `D/sessions/<sid>.json` with `{v: 1, sid, ts, by}`.

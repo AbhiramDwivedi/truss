@@ -5,7 +5,7 @@ Amended by ADR-0012 (the retro may read transcripts; P24 no longer binds the ret
 
 ## Context
 
-Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a stress test's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts:1324`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The stress test was detached because `agents/qc-engineer.md:78` tells it to run `git checkout --detach <sha>`.
+Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a stress test's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The stress test was detached because `agents/qc-engineer.md` section "Stress-test mode" tells it to run `git checkout --detach <sha>`.
 
 Three fixes follow, and this ADR decides all three:
 
@@ -13,7 +13,7 @@ Three fixes follow, and this ADR decides all three:
 2. the stress test resets its own branch instead of detaching, and leaves its worktree clean (section 2);
 3. the retro skill gets a root-cause step behind its description's "why crews stalled or got rejected" (section 3).
 
-**The interface that can't take the work.** `leftovers` is `{"branches": [...], "folders": [...], "count": n}`, and every test compares that whole dict: `tests/test_contract_leftovers.py`, `tests/test_retro_leftovers.py` and the root e2e test `tests/e2e/cleanup.e2e.ts`. A field nested inside it breaks all three. The top-level key set is pinned by set equality (`TOP_KEYS` in `tests/test_contract_retro.py:23` and `tests/test_contract_retro_050.py:69`). So the new facts go in one new top-level key, and `leftovers` and every other old key stay exactly as they are.
+**The interface that can't take the work.** `leftovers` is `{"branches": [...], "folders": [...], "count": n}`, and every test compares that whole dict: `tests/test_contract_leftovers.py`, `tests/test_retro_leftovers.py` and the root e2e test `tests/e2e/cleanup.e2e.ts`. A field nested inside it breaks all three. The top-level key set is pinned by set equality (`TOP_KEYS` in `tests/test_contract_retro.py` and `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged`). So the new facts go in one new top-level key, and `leftovers` and every other old key stay exactly as they are.
 
 ## Decision
 
@@ -28,7 +28,7 @@ Three fixes follow, and this ADR decides all three:
 | `id` | string | the agent id, as in the `spawn` event's `agentId` |
 | `branch` | string or null | `"worktree-agent-<id>"` when `refs/heads/worktree-agent-<id>` exists, else `null` |
 | `folder` | string or null | `".claude/worktrees/agent-<id>"` (forward slashes, relative to the main checkout) when that path is a directory, else `null` |
-| `head` | string or null | for a registered worktree: its branch's short name (`refs/heads/` stripped, as `parseWorktrees` does at `register.ts:580`), or `"detached <sha>"` with the full 40-hex sha of its `HEAD` line when it has no `branch` line; `null` when not registered |
+| `head` | string or null | for a registered worktree: its branch's short name (`refs/heads/` stripped, as `parseWorktrees` does in `register.ts` `stallText`), or `"detached <sha>"` with the full 40-hex sha of its `HEAD` line when it has no `branch` line; `null` when not registered |
 | `dirty` | boolean or null | for a registered worktree: `true` when `git status --porcelain --untracked-files=all` in its folder prints anything or fails, else `false`; `null` when not registered |
 | `inMain` | string or null | `"ancestor"`, `"tree"` or `"cherry"`, the first check that holds; `null` when none holds or there is no ref to check |
 | `skip` | string | the reason from the table below |
@@ -40,15 +40,15 @@ The JSON values in the table are literal: `"detached "` is the word, one space, 
 **Registered.** An entry is registered when `git worktree list --porcelain`, run in the main checkout, lists a `worktree <path>` whose path is the same file-system path as `<main checkout>/.claude/worktrees/agent-<id>` (`same_path`: realpath and normcase, as `leftovers` already compares paths). A registration whose folder is gone still counts: git lists it as `prunable`, with its `HEAD` and `branch` lines. Two cases the contract test pins:
 
 - **A branch with no worktree** (`branch` set, no registration): `head` `null`, `dirty` `null`, `inMain` computed for `branch`, `skip` `"no longer a registered worktree"`. A plain folder that git doesn't list gets the same `head`, `dirty` and `skip`.
-- **A registered worktree whose folder is gone** (`folder` `null`, `branch` set): `head` is its branch, and `dirty` is `true`, because `git status` can't run in a missing folder and a failure counts as dirty, as the sweep counts it (`register.ts:1329`, `dirty = !status.ok || status.out !== ''`). Its `skip` is `"uncommitted changes"`, unless an earlier check in the table below gives another reason.
+- **A registered worktree whose folder is gone** (`folder` `null`, `branch` set): `head` is its branch, and `dirty` is `true`, because `git status` can't run in a missing folder and a failure counts as dirty, as the sweep counts it (`register.ts` `plan`, `dirty = !status.ok || status.out !== ''`). Its `skip` is `"uncommitted changes"`, unless an earlier check in the table below gives another reason.
 
-**`dirty`.** The command is `git status --porcelain --untracked-files=all`, run with the folder as cwd through `git_out`, so `GIT_OPTIONAL_LOCKS=0` keeps it from refreshing the index. Untracked files count, as they do at `register.ts:1014`. The sweep itself runs `git status --porcelain` without the flag (`register.ts:1328`); both print something for the same worktrees, so the boolean is the same. retro computes `dirty` for a locked worktree too; the sweep doesn't (it leaves `dirty` false when locked), but `locked` is checked first, so `skip` is the same.
+**`dirty`.** The command is `git status --porcelain --untracked-files=all`, run with the folder as cwd through `git_out`, so `GIT_OPTIONAL_LOCKS=0` keeps it from refreshing the index. Untracked files count, as they do in `register.ts` `noteMainActivity`. The sweep itself runs `git status --porcelain` without the flag (`register.ts` `statusOf`); both print something for the same worktrees, so the boolean is the same. retro computes `dirty` for a locked worktree too; the sweep doesn't (it leaves `dirty` false when locked), but `locked` is checked first, so `skip` is the same.
 
-**`inMain`.** The ref is `head` when `head` is a branch name, else `branch`, else there is none and `inMain` is `null`. With a ref, retro runs these in the main checkout, in this order, and stops at the first that holds; this is `inMainBy` at `register.ts:1261-1272`:
+**`inMain`.** The ref is `head` when `head` is a branch name, else `branch`, else there is none and `inMain` is `null`. With a ref, retro runs these in the main checkout, in this order, and stops at the first that holds; this is `inMainBy` at `register.ts` `finalReportVerdict`:
 
 1. `"ancestor"`: `git merge-base --is-ancestor <ref> HEAD` exits 0.
-2. `"tree"`: `git merge-tree --write-tree HEAD <ref>` exits 0 and its first output line equals `git rev-parse HEAD^{tree}` (`mergesToSameTree`, `register.ts:1206-1211`). Exit 1, any other exit, or no `HEAD^{tree}` means this check doesn't hold.
-3. `"cherry"`, only when the entry is not locked and `dirty` is not `true` (the sweep's `wt.locked === undefined && !dirty`, `register.ts:1333`): `git cherry HEAD <ref>` exits 0 and prints at least one line, every line starting `- ` (`cherryMerged`, `register.ts:533-537`).
+2. `"tree"`: `git merge-tree --write-tree HEAD <ref>` exits 0 and its first output line equals `git rev-parse HEAD^{tree}` (`mergesToSameTree`, `register.ts` `budgetGate`). Exit 1, any other exit, or no `HEAD^{tree}` means this check doesn't hold.
+3. `"cherry"`, only when the entry is not locked and `dirty` is not `true` (the sweep's `wt.locked === undefined && !dirty`, `register.ts`): `git cherry HEAD <ref>` exits 0 and prints at least one line, every line starting `- ` (`cherryMerged`, `register.ts` `patchIdOf`).
 
 The ref is passed by its short name, as register.ts passes it.
 
@@ -56,7 +56,7 @@ The ref is passed by its short name, as register.ts passes it.
 
 **The main checkout's branch.** `git branch --show-current` in the main checkout, read once per run. Empty output or a failure means it is on no branch.
 
-**`skip`.** retro applies `decideSelfClean`'s checks (`register.ts:734-750`) in its order, skipping the ones it can't reproduce, and the first that applies gives `skip`. `<head>` is the entry's `head`; `<reason>` is the text after `locked ` on the porcelain `locked` line, or `locked` when the line is bare (`parseWorktrees`, `register.ts:581`).
+**`skip`.** retro applies `decideSelfClean`'s checks (`register.ts` `statusText`) in its order, skipping the ones it can't reproduce, and the first that applies gives `skip`. `<head>` is the entry's `head`; `<reason>` is the text after `locked ` on the porcelain `locked` line, or `locked` when the line is bare (`parseWorktrees`, `register.ts` `stallText`).
 
 | Order | Check (register.ts line) | Applies when | `skip` string |
 | --- | --- | --- | --- |
@@ -78,20 +78,20 @@ The ref is passed by its short name, as register.ts passes it.
 
 **What retro can't see.** Four facts the sweep uses come from places retro doesn't read, so `skip` never says them:
 
-- `isSession` (`register.ts:736`): the session's own checkout. The sweep itself always passes `false` (`register.ts:1344`), since an `agent-<id>` folder is never the session's checkout.
-- "its agent has not stopped yet" (`register.ts:739`): from the agent's transcript meta and the `active` entries of `slots.json` (`register.ts:1314-1323`).
-- "a member of it is still running" (`register.ts:742`): from the other agents' transcript metas (`membersRunning`, `register.ts:391`, called at 1332).
-- the checkout the merge ran in (`isRef`, `register.ts:1258`, used at 1311): the sweep never removes it, and retro doesn't know where the last merge ran.
+- `isSession` (`register.ts` `statusText`): the session's own checkout. The sweep itself always passes `false` (`register.ts` `excusedOnDisk`), since an `agent-<id>` folder is never the session's checkout.
+- "its agent has not stopped yet" (`register.ts` `statusText`): from the agent's transcript meta and the `active` entries of `slots.json` (`register.ts` `statusOf`).
+- "a member of it is still running" (`register.ts` `family`): from the other agents' transcript metas (`membersRunning`, `register.ts` `tagName`, called at 1332).
+- the checkout the merge ran in (`isRef`, `register.ts` `finalReportVerdict`, used at 1311): the sweep never removes it, and retro doesn't know where the last merge ran.
 
 The leftovers contract forbids reading `slots.json`, and retro never reads transcripts (P24).
 
-**A detached leftover.** Its `skip` is `not on a worktree-* branch (detached)`: what `decideSelfClean` would say. The sweep never asks it: it drops a worktree not on a `worktree-*` branch at `register.ts:1324`, before `decideSelfClean` runs, and logs nothing. retro's string is the reason the sweep's silence stands for.
+**A detached leftover.** Its `skip` is `not on a worktree-* branch (detached)`: what `decideSelfClean` would say. The sweep never asks it: it drops a worktree not on a `worktree-*` branch at `register.ts` `statusOf`, before `decideSelfClean` runs, and logs nothing. retro's string is the reason the sweep's silence stands for.
 
 **`"not recorded"`.** The whole key is `"not recorded"` whenever `leftovers` is, by the same rules (no event file, a dir not shaped `<git common dir>/truss/<session>`, or `git for-each-ref` failing), and also when `git worktree list --porcelain` fails. When `leftovers` is a dict with `count` 0, `leftoverDetails` is `[]`. Inside an entry a git failure is never `"not recorded"`: a failed `status` makes `dirty` `true`, a failed `merge-base`, `merge-tree` or `cherry` means that `inMain` check doesn't hold, and a failed `branch --show-current` means no branch.
 
 **The git commands retro may run for this key**, all with `GIT_OPTIONAL_LOCKS=0` through `git_out`: `worktree list --porcelain`, `status --porcelain --untracked-files=all`, `merge-base --is-ancestor`, `rev-parse HEAD^{tree}`, `merge-tree --write-tree` (quarantined as above), `cherry`, `branch --show-current`. None changes a ref, the index, a worktree or config. retro.py's docstring, which says "rev-parse and for-each-ref only", is updated by the stage-1 crew to name these.
 
-**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts:734-752`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts:1244-1349`) and `parseWorktrees` (`register.ts:571-586`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a Truss test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
+**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts` `patchOf`) and `parseWorktrees` (`register.ts` `headVerdict`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a Truss test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
 
 ### 2. the stress test's start and end state
 
@@ -99,10 +99,10 @@ The leftovers contract forbids reading `slots.json`, and retro never reads trans
 
 - **Start.** The first step is `git reset --hard <sha>` in its own worktree, in place of `git checkout --detach <sha>`. The worktree stays on its `worktree-agent-<id>` branch, which then points at the crew head, so once the crew merges the branch is an ancestor of main and the sweep removes it with `-d`. If the reset fails, or `git status --porcelain --untracked-files=all` prints anything afterwards, it stops with the first line `STRESSTEST: not run` and the reason. The literal `git checkout --detach` is gone from `qc-engineer.md`.
 - **End.** Before it reports, the stress test runs `git reset --hard <sha>` again and `git clean -fd` in its own worktree, then confirms `git status --porcelain --untracked-files=all` prints nothing.
-- **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts:812`) and then commits the leftovers for it (`commitLeftovers`, `register.ts:1021`, called at 1853); for a stress test that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
+- **Never commit.** It never commits, even when the worktrees hook tells it to commit. It discards the changes instead. The worktrees stop hook asks a dirty agent to commit (`register.ts` `State`) and then commits the leftovers for it (`commitLeftovers`, `register.ts` `stopperOf`, called at 1853); for a stress test that WIP commit would leave a branch that is never in main, which the sweep keeps forever as `... is not in the main checkout's HEAD yet`.
 - **Probes.** It prefers temp dirs outside the worktree for probe files. A file in a gitignored path doesn't count as dirty either.
 
-`agents/project-manager.md:66`'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
+`agents/project-manager.md` section "3. Split the work into member tasks"'s stress-test bullet no longer says the stress test "checks out" the SHA: it says the stress test first resets its own worktree to that SHA (`git reset --hard <sha>`).
 
 The literals the stage-0 check `tests/redteam-reset.check.ts` pins, each a substring of `qc-engineer.md`'s stress-test section (from the line starting `When your brief opens with the line \`Stress test:\`` to the next `##` heading or the `STRESSTEST: <n> findings` paragraph):
 
@@ -137,7 +137,7 @@ The stage-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `
 | Seam | Producer | Consumer | Contract | Pinned by |
 | --- | --- | --- | --- | --- |
 | retro's `leftoverDetails` | `scripts/retro.py` | the `truss:retro` skill's root-cause step | section 1 | `tests/test_contract_leftover_details.py` |
-| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py:23`, `tests/test_contract_retro_050.py:69` |
+| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py` `TOP_KEYS`, `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged` |
 | the stress test's start and end state | `agents/qc-engineer.md`, `agents/project-manager.md` | the stress-test QC engineer; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
 | The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | section 3 | `tests/retro-cause.check.ts` |
 
@@ -148,4 +148,4 @@ The stage-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `
 - retro's `skip` can drift from worktrees' `decideSelfClean` without any test failing (section 1, "The source, and the drift risk").
 - A stress test's worktree is removed by the sweep at the first merge after it stops, once its branch is in main. A rejected crew never merges, so its stress test's worktree stays, with `skip` `worktree-agent-<id> is not in the main checkout's HEAD yet`; that is correct, not a leak.
 - The `passes every check retro can see` string can stand for an entry the sweep still keeps, because of a check retro can't see; the root-cause step says so in its evidence rather than guessing.
-- Not done here, out of scope: a sweep log line for a detached worktree at `register.ts:1324`, and the dead `forget` field of `SelfCleanPlan` (set at `register.ts:736-737`, read nowhere). Both are worktrees changes.
+- Not done here, out of scope: a sweep log line for a detached worktree at `register.ts` `statusOf`, and the dead `forget` field of `SelfCleanPlan` (set in `register.ts` `statusText`, read nowhere). Both are worktrees changes.

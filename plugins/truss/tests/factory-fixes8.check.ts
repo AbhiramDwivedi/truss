@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../hooks/register.ts'
 import { ARCHIVE_PREFIX, worktreeChanges } from '../bin/factory.ts'
@@ -144,7 +144,7 @@ t('r2: an untracked symlink into the main checkout is clean; a symlink elsewhere
   assert.ok(existsSync(`${w.env.repo}/node_modules`), 'the link target in the main checkout is untouched')
   for (const [p, n] of [[paths.foreign, 2], [paths.file, 3]]) {
     assert.ok(existsSync(p) && branchExists(w.env.repo, `worktree-${RUN}-${n}`), `${p} stays`)
-    assert.ok(left(r.json).some((l) => l.path === p && l.why === 'dirty'), JSON.stringify(r.json.leftWorktrees))
+    assert.ok(left(r.json).some((l) => realpathSync(l.path) === realpathSync(p) && l.why === 'dirty'), JSON.stringify(r.json.leftWorktrees))
   }
 })
 
@@ -198,7 +198,9 @@ t('r3: processes inside member worktrees, the run\'s own and anyone else\'s, kee
 t('r4: factory exports no process scan or stopper and reads no other process\'s cwd or environment', () => {
   assert.equal(factory.processesIn, undefined)
   assert.equal(factory.stopPid, undefined)
-  const src = readFileSync(new URL('../bin/factory.ts', import.meta.url), 'utf8')
+  // 0.31.0 item 5: the factory code is bin/factory.ts plus its command modules in bin/factory/
+  const mods = new URL('../bin/factory/', import.meta.url)
+  const src = [readFileSync(new URL('../bin/factory.ts', import.meta.url), 'utf8'), ...readdirSync(mods).filter((n) => n.endsWith('.ts')).map((n) => readFileSync(new URL(n, mods), 'utf8'))].join('\n')
   assert.doesNotMatch(src, /\/cwd`|\/environ`|\bps -A|lsof|Win32_Process|taskkill/)
 })
 

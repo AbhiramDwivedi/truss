@@ -12,7 +12,7 @@ Two interfaces can't take that as they stand: plugin.json has no `dependencies` 
 
 - **The subagent-limits contract reaches Workflow agents.** All 27 agent transcripts of run `wf_e804087f-eaa` contain `[subagent-limits] Context budget.` (`grep -lF` over the run's `agent-*.jsonl` lists 27 files; its journal has 27 `started` lines), and so does every agent transcript of `wf_0dff946d-af1` after 2026-11-02T17:30Z. The string is the plugin's contract (subagent-limits README:65).
 - **Nudge and stop never fired.** Across the 806 Workflow agent meta files under `~/.claude/projects` when the plan was written, the largest request context was 181K tokens (181,414, run `wf_0af69b63-4d4`), under the defaults `nudgeAtK` 300 and `stopAtK` 450 (subagent-limits plugin.json `userConfig`, README:14-15).
-- **A refused agent returns no report.** Past `stopAtK` an agent gets 8 more tool calls, then every tool call is refused (README:8). Such an agent's `agent()` call ends with no schema object, and `reportOf` in `workflows/stage.js:314-317` stops the crew `BLOCKED` with `the member returned no report`.
+- **A refused agent() returns no report.** Past `stopAtK` an agent gets 8 more tool calls, then every tool call is refused (README:8). Such an agent's `agent` call ends with no schema object, and `reportOf` in `workflows/stage.js` stops the crew `BLOCKED` with `the member returned no report`.
 - **Worktrees.** `WorktreeCreate` fires for Workflow worktrees: `.git/claude-worktrees/slots.json` `"active"` holds `wf_*` entries (for example `wf_e804087f-eaa-18` and `wf_0dff946d-af1-6`). SubagentStart and `SubagentStop` miss them, so worktrees never cleaned them up: the plan counted 49 stale `wf_*` worktrees, each on a `worktree-wf_<id>-<n>` branch at `.claude/worktrees/wf_<id>-<n>`.
 - **Plugin agent types work as agentType.** Meta files show `truss:writer`, `truss:planning-engineer` and `truss:qc-engineer` runs. No Workflow agent has yet run as a `kit:*` type: 0 of the meta files.
 
@@ -55,9 +55,9 @@ The client accepted this probe in place of the isolated `CLAUDE_CONFIG_DIR` re-p
 
 "kit is loaded" means a `kit:` skill is among the session's skills.
 
-- **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json:5-7`) stand.
-- **Factory.** `rolesWithTypes` (`bin/factory.ts:305-318`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
-- **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts:9-13` pins today.
+- **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json` key `tester`) stand.
+- **Factory.** `rolesWithTypes` (`bin/factory/shared.ts`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
+- **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts` `NO_MANIFEST` pins today.
 - **Init, kit absent.** The kit-absent line stays word for word, because truss loaded alone by `--plugin-dir` still reaches it: `kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)`.
 
 PM gate 1 runs a member as `kit:builder` before stage 1 and records its meta.json agentType. If it fails, the PM re-plans this decision before stage 1 starts.
@@ -66,23 +66,23 @@ Decided by: the plan, items 2 and 3 (approved auto, checker-41); PM ruling D (14
 
 ### 4. split-work is loaded unconditionally
 
-The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:42` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
+The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md` section "3. Split the work into member tasks" loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`workflows-src/stage/split.js`) doesn't name it.
 
 Decided by: the plan, item 4 (approved auto, checker-41).
 
 ### 5. A CHECKPOINT or a missing report restarts a fresh member
 
-Today `runMember` (`stage.js:319-331`) starts one fresh member after a `CHECKPOINT` and stops `BLOCKED` on the next non-DONE, and `reportOf` stops `BLOCKED` on a missing report.
+Today `runMember` (`workflows-src/stage/members.js`) starts one fresh member after a `CHECKPOINT` and stops `BLOCKED` on the next non-DONE, and `reportOf` stops `BLOCKED` on a missing report.
 
 The new rule, for every `runMember` chain (tester, builder and writer tasks, and fix builders):
 
 - A member that returns `CHECKPOINT`, or returns no report (its result is not an object), is restarted: a fresh member of the same role, with a new label, from the same task.
 - A chain restarts at most `max(1, reworkAllowance)` times.
-- Restarts add no rework spend: no QC FAIL is counted, `spendOf` (`stage.js:152`) is unchanged, and no `guardAllowance` call runs per restart.
+- Restarts add no rework spend: no QC FAIL is counted, `spendOf` (`workflows-src/stage/crew.js`) is unchanged, and no `guardAllowance` call runs per restart.
 - A successor's `QUESTION`, `BLOCKED` or `PROPOSAL` stops the crew with that tag and text. A `DONE` goes on as usual.
 - Running out of restarts stops the crew `BLOCKED`.
 
-Each restart carries the previous member's note and is told to read the branch's commits. MEMBER_SCHEMA (`stage.js:33-44`) and the stage.js result shapes don't change.
+Each restart carries the previous member's note and is told to read the branch's commits. MEMBER_SCHEMA (`workflows-src/stage/schemas.js` `MEMBER_SCHEMA`) and the stage.js result shapes don't change.
 
 **Worst case.** A task runs at most `(1 + reworkAllowance) x (1 + restarts)` member runs per task: one first member and up to `reworkAllowance` fix builders, each chain restarted up to `restarts = max(1, reworkAllowance)` times. With `reworkAllowance` 2 that is 3 x 3 = 9 member runs.
 
@@ -90,13 +90,13 @@ Decided by: the plan, item 5 and item 1's missing-report finding (approved auto,
 
 ### 6. Restart events in events.jsonl
 
-`finish` (`recordRun`, `bin/factory.ts:1276-1336`) appends one `restart` event to `events.jsonl` per restarted member, naming crew, label, n and reason. It learns of restarts from the run's journal, the only place they show (Seams to pin).
+`finish` (`recordRun`, `bin/factory/audit.ts`) appends one `restart` event to `events.jsonl` per restarted member, naming crew, label, n and reason. It learns of restarts from the run's journal, the only place they show (Seams to pin).
 
 Decided by: the plan, item 5; PO ruling F (15:10) for the event shape.
 
 ### 7. finish removes its own run's merged wf_* worktrees
 
-When `finish --transcript T` merges a crew, step 5 (`bin/factory.ts:1489-1500`) already removes the crew's `truss-<slug>-*` member worktrees whose branch is an ancestor of the crew branch. It now also removes the Workflow worktrees of run `T`:
+When `finish --transcript T` merges a crew, step 5 (`bin/factory/finish.ts` `mergeCrew`) already removes the crew's `truss-<slug>-*` member worktrees whose branch is an ancestor of the crew branch. It now also removes the Workflow worktrees of run `T`:
 
 - Only worktrees whose branch is exactly `worktree-<basename of --transcript>-<digits>` and whose path ends `<basename of --transcript>-<digits>`. The basename is already `wf_<id>`, so the branch is `worktree-wf_<id>-<n>`.
 - `git worktree remove` without `--force`, so a dirty worktree stays.
@@ -159,8 +159,8 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 
 - A user who skips the claude-ops marketplace gets a truss that fails to load, and the fix is in the README.
 - `docs/events.schema.json`'s `event` enum has no `restart` today (it holds `spawn`, `stall`, `tag`, `report`, `allowance-spent`, `fetch`, `incomplete`, `refusal`, `sampler-error`). compose-runtime (stage 1), which owns that file under PO ruling F, adds `restart` with `crew`, `label`, `n` and `reason`. compose-design never edits it.
-- `tests/workflows.check.ts:808-813` (a second member that is not DONE after a CHECKPOINT stops BLOCKED, with no third member) is the one existing case reversed; compose-runtime may change only those lines. The case above it (`:801-807`, a CHECKPOINT then DONE) still holds.
-- `tests/init.check.ts:9-13` is reversed with Decision 3; compose-wiring owns it. `tests/contract.check.ts` stays green, because the kit-absent line stays.
+- `tests/workflows.check.ts` test "stage members: a second member that is not DONE after a CHECKPOINT stops BLOCKED at the task, with no third member" is the one existing case reversed; compose-runtime may change only that test. The test above it, "stage members: CHECKPOINT starts one fresh member of the same role from its text; DONE there carries on" (a CHECKPOINT then DONE), still holds.
+- `tests/init.check.ts` `NO_MANIFEST` is reversed with Decision 3; compose-wiring owns it. `tests/contract.check.ts` stays green, because the kit-absent line stays.
 - A task can take more member runs than before (the worst case above), but each is a fresh, smaller context.
 
 ## Left for later

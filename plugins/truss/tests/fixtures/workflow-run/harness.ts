@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync, appendFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,7 @@ process.on('exit', () => {
 
 /** A fresh temp dir (removed when the test process exits); forward slashes. */
 export function tmp(prefix = 'fcli-'): string {
-  const d = flat(mkdtempSync(join(tmpdir(), prefix)))
+  const d = flat(realpathSync(mkdtempSync(join(tmpdir(), prefix))))
   temps.push(d)
   return d
 }
@@ -272,6 +272,7 @@ export function runCli(factory: string, command: string, args: string[] = [], cw
   delete env.TRUSS_MIN_FREE_MB
   delete env.TRUSS_SESSION_START
   delete env.CLAUDE_PID
+  delete env.CLAUDE_CODE_SESSION_ID // a session id inherited from the Claude Code running the tests would attach it to every run dir (cost.ts recordSession)
   env.TRUSS_SAMPLE = highSampleFile()
   Object.assign(env, extraEnv)
   const r = spawnSync(process.execPath, [factory, command, ...args], { cwd, encoding: 'utf8', timeout: 120_000, env })

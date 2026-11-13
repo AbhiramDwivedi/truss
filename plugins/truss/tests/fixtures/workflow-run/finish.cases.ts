@@ -374,6 +374,68 @@ test('session audit: "audit waived: <run id>" in decisions.md lifts it', () => {
   assertMerged(w, assertOneLine(w.finish()))
 })
 
+// 0.31.0 item 3: no stops on obvious calls. The audit passes over transcripts that did no work, logs why, and the PM waives on evidence.
+test('session audit: a no-work outage transcript (<synthetic> model only) is passed over with a logged evidence line', () => {
+  const w = scenario([{ slug: 's' }])
+  withRun(w, 'wf_outage', [stray({ label: 's-runner-205', agentType: 'general-purpose', model: '<synthetic>' })])
+  const j = assertOneLine(w.finish())
+  assertMerged(w, j)
+  assert.deepEqual(j.audit, [])
+  const log = readFileSync(`${w.env.dir}/decisions.md`, 'utf8')
+  assert.match(log, /^- \d\d:\d\d \| audit passed over wf_outage\/s-runner-205 \| .*<synthetic>.*\| none \| followed$/m, log)
+})
+
+test('session audit: a no-work outage transcript in the stage run itself is no audit entry either', () => {
+  const extra = { label: 's-runner-205', agentType: 'general-purpose', metaModel: 'sonnet', model: '<synthetic>', effort: 'medium', result: 'API Error: 403' }
+  const w = scenario([{ slug: 's' }], { extraAgents: [extra] })
+  const j = assertOneLine(w.finish())
+  assert.ok(!j.audit.some((a) => /s-runner-205/.test(a.label)), JSON.stringify(j.audit))
+  assert.match(readFileSync(`${w.env.dir}/decisions.md`, 'utf8'), /\| audit passed over s-runner-205 \| no-work transcript/)
+})
+
+test('session audit: a <synthetic> record after real work keeps the real model', () => {
+  const w = scenario([{ slug: 's' }])
+  const run = withRun(w, 'wf_late', [stray({ label: 's-runner-9', agentType: 'general-purpose', model: 'claude-haiku-4-5' })])
+  const p = `${run.dir}/agent-${run.ids['s-runner-9']}.jsonl`
+  writeFileSync(p, readFileSync(p, 'utf8') + JSON.stringify({ type: 'assistant', message: { role: 'assistant', model: '<synthetic>', content: [{ type: 'text', text: 'API Error' }] }, timestamp: '2026-10-29T09:05:00.000Z' }) + '\n')
+  const j = assertOneLine(w.finish())
+  assert.ok(j.audit.some((a) => a.label === 'wf_late/s-runner-9' && /haiku/.test(a.why)), JSON.stringify(j.audit))
+  assertHeld(w, j)
+})
+
+test('session audit: another workflow\'s live agent still in progress is passed over with a logged evidence line', () => {
+  const w = scenario([{ slug: 's' }])
+  withRun(w, 'wf_live', [stray({ label: 's-writer-3', agentType: 'general-purpose', model: '', noResult: true, mtimeMs: Date.now() })])
+  const j = assertOneLine(w.finish())
+  assertMerged(w, j)
+  assert.deepEqual(j.audit, [])
+  assert.match(readFileSync(`${w.env.dir}/decisions.md`, 'utf8'), /^- \d\d:\d\d \| audit passed over wf_live\/s-writer-3 \| .*in progress.*\| none \| followed$/m)
+})
+
+test('session audit: a dead agent with no result and no model still stands', () => {
+  const w = scenario([{ slug: 's' }])
+  withRun(w, 'wf_dead', [stray({ label: 's-writer-3', agentType: 'general-purpose', model: '', noResult: true, mtimeMs: Date.now() - 3 * 3600_000 })])
+  const j = assertOneLine(w.finish())
+  assert.ok(j.audit.some((a) => a.label === 'wf_dead/s-writer-3'), JSON.stringify(j.audit))
+  assertHeld(w, j)
+})
+
+test('session audit: a standing entry is the program manager\'s call, not the client\'s', () => {
+  const w = scenario([{ slug: 's' }])
+  withRun(w, 'wf_other', [stray()])
+  assertHeld(w, assertOneLine(w.finish()))
+  const log = readFileSync(`${w.env.dir}/decisions.md`, 'utf8')
+  assert.doesNotMatch(log, /the client rules/)
+  assert.match(log, /session audit stands, nothing merged: .*\| the program manager rules on the evidence/)
+})
+
+test('session audit: a waiver with no evidence field does not lift it', () => {
+  const w = scenario([{ slug: 's' }])
+  withRun(w, 'wf_other', [stray()])
+  writeFileSync(`${w.env.dir}/decisions.md`, '- 11:00 | audit waived: wf_other |  | none | followed\n')
+  assertHeld(w, assertOneLine(w.finish()))
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // merge step gates
 

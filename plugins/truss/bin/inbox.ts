@@ -12,15 +12,15 @@ import type { Flags, Obj } from './store.ts'
 export type EscalateInput = { kind: string; title: string; detail?: string; crews?: string[]; ref?: string | null; blocking?: boolean }
 export type EscalateOut = { id: string; kind: string; deduped: boolean; code: string; notified: boolean | null; notifyError?: string }
 
-// kind -> who may resolve it and whether it always blocks its crews.
-const KINDS: Record<string, { by: 'client' | 'any'; blocking: boolean }> = {
+// kind -> who may resolve it, whether it always blocks, and whether a --by pm resolve needs --note (graded by risk: architecture.md "Gate grades").
+const KINDS: Record<string, { by: 'client' | 'any'; blocking: boolean; evidence?: true }> = {
   'client-question': { by: 'client', blocking: false },
   'scope-change': { by: 'client', blocking: true },
   'pm-question': { by: 'any', blocking: true },
   'client-trigger': { by: 'client', blocking: true },
   'long-term-cost': { by: 'client', blocking: true },
   budget: { by: 'client', blocking: true },
-  'allowance-spent': { by: 'client', blocking: true },
+  'allowance-spent': { by: 'any', blocking: true, evidence: true },
   'doctor-bundle': { by: 'client', blocking: true },
   blocked: { by: 'any', blocking: true },
   'stall-unrecovered': { by: 'any', blocking: true },
@@ -543,6 +543,7 @@ function resolveItem(f: Flags): Obj {
     planItem = kind === 'client-trigger' && it.open.ref === 'run' && it.open.session === session
     firstCrew = it.crews[0] ?? 'main'
     if (by === 'pm' && KINDS[kind]?.by !== 'any') throw refuse({ error: `${kind} is resolved by the client, not by pm` })
+    if (by === 'pm' && KINDS[kind]?.evidence === true && note.trim() === '') throw refuse({ error: `a --by pm resolve of ${kind} needs its evidence in --note` })
     if (raiseUsd !== undefined && kind !== 'budget') throw refuse({ error: '--raise-usd is for the budget kind only' })
     if (codeHashOf(id, code) !== it.open.codeHash) throw refuse({ error: 'wrong code' })
     if (by === 'client') {

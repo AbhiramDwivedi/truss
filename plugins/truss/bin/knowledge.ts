@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { isFragment } from './fragments.ts'
 
 export type Budgets = { agentsIndex: number; persona: number; personaStandards: number; rule: number; featureEntry: number; doc: number }
 export const DEFAULT_BUDGETS: Budgets = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150 }
@@ -378,7 +379,8 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
   const add = (severity: Raw['severity'], check: string, p: string, message: string, subjects: string[] = ['']): void => { out.push({ severity, check, path: p, message, subjects }) }
   const files = tree.files
   const set = new Set(files)
-  const under = (dir: string): string[] => files.filter((f) => f.startsWith(`${dir}/`) && f.toLowerCase().endsWith('.md')).sort()
+  // a doc fragment (`<doc>.d/<crew>.md`) is stitched into its doc at release, so it is linted as part of that doc, not on its own
+  const under = (dir: string): string[] => files.filter((f) => f.startsWith(`${dir}/`) && f.toLowerCase().endsWith('.md') && !isFragment(f, cfg.rulesDir)).sort()
   const rules = under(cfg.rulesDir)
   const docs = under(cfg.knowledgeDir).filter((f) => !rules.includes(f))
   const personas = personaFiles(files)
@@ -453,7 +455,7 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
 // Docs (rules and knowledge docs) that carry sources: [{path, sources, verified}].
 function sourcedDocs(tree: Tree, cfg: KCfg): { path: string; sources: string[]; verified: string | undefined }[] {
   const out: { path: string; sources: string[]; verified: string | undefined }[] = []
-  for (const f of tree.files.filter((x) => (x.startsWith(`${cfg.rulesDir}/`) || x.startsWith(`${cfg.knowledgeDir}/`)) && x.toLowerCase().endsWith('.md')).sort()) {
+  for (const f of tree.files.filter((x) => (x.startsWith(`${cfg.rulesDir}/`) || x.startsWith(`${cfg.knowledgeDir}/`)) && x.toLowerCase().endsWith('.md') && !isFragment(x, cfg.rulesDir)).sort()) {
     const fm = parseFrontmatter(tree.read(f) ?? '')
     const sources = fm ? asList(fm.data.sources) : []
     if (!fm || sources.length === 0) continue

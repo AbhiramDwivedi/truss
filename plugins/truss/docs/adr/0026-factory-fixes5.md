@@ -12,27 +12,27 @@ Line numbers are those of this crew's base, main at `47975ae`.
 
 | Item | What the code does |
 |---|---|
-| item 45 | `agents/resource-monitor.md:23` goes up one only when `freeMB` is above four times `minFreeMB`, 8192 MB with `DEFAULT_MIN_FREE_MB` 2048 (`resources/index.ts:8`). The down rule fires below 2 x (`:22`). Logged idle readings kept parallelism at 1: 8189 MB / load1 0.49, 8152 / 0.68 and 8178 / 1.5, on 4 cpus with 0 running. |
-| item 46 | `start --slug` without `--resume` is a usage error: `start --slug and --resume go together` (`bin/factory.ts:1334`). The PM can't run first the crew that unblocks others. |
+| item 45 | `agents/resource-monitor.md` (the "Go up one" rule) goes up one only when `freeMB` is above four times `minFreeMB`, 8192 MB with `DEFAULT_MIN_FREE_MB` 2048 (`resources/index.ts`). The down rule fires below 2 x (`admits`). Logged idle readings kept parallelism at 1: 8189 MB / load1 0.49, 8152 / 0.68 and 8178 / 1.5, on 4 cpus with 0 running. |
+| item 46 | `start --slug` without `--resume` is a usage error: `start --slug and --resume go together` (`bin/factory/start.ts` `cmdStart`). The PM can't run first the crew that unblocks others. |
 | item 47 | The ui-server-fixes acceptance test grepped `by: *['"]` in a test file and stopped a crew whose behaviour was right. The design engineer has no rule against pinning source spelling. |
-| item 48 | `runMembers` returns early for every task in `crew.e.done` (`workflows/stage.js:541`, `:546`). `answersFor` sends an answer at a task name to that task only (`:329-331`). An answer at a done tester task reaches no one. |
-| item 49 | `roleWarnings` (`bin/factory.ts:1038`) warns whenever an agent file is newer than the session start, on every `start`, with nothing stored between starts. |
-| item 50 | `spawn` lets the entry's `## Members` value win over the roles row (`workflows/stage.js:93-98`, ADR-0022 U6). monitor-hold's builder ran on sonnet while `roles.builder` said opus. |
-| item 51a | `ownsUiFile` matches only UI file suffixes (`stage.js:1079`), so an owns of `ui/**` alone gives `Review mode: files` (`:1084`). |
-| item 51b | `backstopPrompt` says "Work in the crew worktree" (`:604`), while `memberPrompt` adds an own-worktree proof line (`:318`) and "Commit on your branch" (`:389`). |
-| item 51c | `testsBackstop` turns any resolver marker but DONE into BLOCKED (`:636`). |
-| item 51d | `testsCheckExtra` builds `Head:` from `crew.e.head` (`:336`), while `crew.head` moves within the run (`:783`). |
-| item 51e | stage.js reads `args.truss` straight off `args` (`:10-11`). `expandTrussFile` returns a JSON string when it was given one (`hooks/register.ts:823`, `:862`). |
-| item 52 | The stress engineer's probe went to a fixed name in the shared scratchpad and overwrote `probe.mjs`. `agents/stress-engineer.md:17` allows "scratch and `mkdtemp` dirs". |
-| item 53 | `crewEntry`'s `livePage` match (`bin/factory.ts:944`) accepts "Live pages are not built" and gives null for `-  Live page` and `1. Live page`; `checkArgsFile` (`:1433`) passes a read-only existing P that `argsFileOut` then fails to write; `changeDetail` (`:1017`) gives the mtime form for a file committed and then reverted. |
-| item 54 | `tally.seen` is a Record trimmed by `Object.keys` (`ui/server/session/fold.ts:180-183`), so integer-like ids sort first and break oldest-first order. `reduce.ts:260` excludes `main`, `factory` and `workflow:*` from credit, unpinned. No case rolls a stall into `events.1.jsonl`. A successor project manager `a-2` never clears `a`'s idle-project-manager stall. |
-| item 55 | ui `pretest` is `npm run build` (`ui/package.json:11`), and build starts with `tsc` (`:10`). A partial `node_modules` fails with "tsc: command not found". |
-| item 56 | An agent file changed by a merge (resource-monitor.md in monitor-hold) is used by no running session until restart. `cmdFinish` (`bin/factory.ts:1972`) warns of nothing. |
-| item 57 | `sample()` reads only `freeMB`, `totalMB`, `cpus` and `load1` (`resources/index.ts:65-67`). A `TRUSS_SAMPLE` file is checked for `freeMB` and `totalMB` only (`:61-63`). This host's kill switch is systemd-oomd keyed on memory pressure: `/etc/systemd/oomd.conf.d/10-omarchy.conf` sets `DefaultMemoryPressureLimit=50%` for `DefaultMemoryPressureDurationSec=20s`. The brief gives oomd's 90% swap limit. `/proc/pressure/memory` here reads `some avg10=0.00`; `/proc/meminfo` gives SwapTotal 32455736 kB and SwapFree 23878156 kB, 26% used. |
+| item 48 | `runMembers` returns early for every task in `crew.e.done` (`workflows-src/stage/tasks.js`). `answersFor` sends an answer at a task name to that task only. An answer at a done tester task reaches no one. |
+| item 49 | `roleWarnings` (`bin/factory/warnings.ts`) warns whenever an agent file is newer than the session start, on every `start`, with nothing stored between starts. |
+| item 50 | `spawn` lets the entry's `## Members` value win over the roles row (`workflows-src/stage/spawn.js`, ADR-0022 U6). monitor-hold's builder ran on sonnet while `roles.builder` said opus. |
+| item 51a | `ownsUiFile` matches only UI file suffixes (`workflows-src/stage/ux.js`), so an owns of `ui/**` alone gives `Review mode: files` (`mode`). |
+| item 51b | `backstopPrompt` says "Work in the crew worktree", while `memberPrompt` adds an own-worktree proof line (`memberHeavyLines`) and "Commit on your branch". |
+| item 51c | `testsBackstop` turns any resolver marker but DONE into BLOCKED. |
+| item 51d | `testsCheckExtra` builds `Head:` from `crew.e.head`, while `crew.head` moves within the run (`green`). |
+| item 51e | stage.js reads `args.truss` straight off `args` (`F`). `expandTrussFile` returns a JSON string when it was given one (`hooks/register.ts` `refuse`). |
+| item 52 | The stress engineer's probe went to a fixed name in the shared scratchpad and overwrote `probe.mjs`. `agents/stress-engineer.md` allows "scratch and `mkdtemp` dirs". |
+| item 53 | `crewEntry`'s `livePage` match (`bin/factory/start.ts`) accepts "Live pages are not built" and gives null for `-  Live page` and `1. Live page`; `checkArgsFile`  passes a read-only existing P that `argsFileOut` then fails to write; `changeDetail`  gives the mtime form for a file committed and then reverted. |
+| item 54 | `tally.seen` is a Record trimmed by `Object.keys` (`ui/server/session/fold.ts` `keys`), so integer-like ids sort first and break oldest-first order. `reduce.ts` `event` excludes `main`, `factory` and `workflow:*` from credit, unpinned. No case rolls a stall into `events.1.jsonl`. A successor project manager `a-2` never clears `a`'s idle-project-manager stall. |
+| item 55 | ui `pretest` is `npm run build` (`ui/package.json` key `scripts.pretest`), and build starts with `tsc` (key `scripts.build`). A partial `node_modules` fails with "tsc: command not found". |
+| item 56 | An agent file changed by a merge (resource-monitor.md in monitor-hold) is used by no running session until restart. `cmdFinish` (`bin/factory/finish.ts`) warns of nothing. |
+| item 57 | `sample()` reads only `freeMB`, `totalMB`, `cpus` and `load1` (`resources/index.ts` `sample`). A `TRUSS_SAMPLE` file is checked for `freeMB` and `totalMB` only (`ok`). This host's kill switch is systemd-oomd keyed on memory pressure: `/etc/systemd/oomd.conf.d/10-omarchy.conf` sets `DefaultMemoryPressureLimit=50%` for `DefaultMemoryPressureDurationSec=20s`. The brief gives oomd's 90% swap limit. `/proc/pressure/memory` here reads `some avg10=0.00`; `/proc/meminfo` gives SwapTotal 32455736 kB and SwapFree 23878156 kB, 26% used. |
 
 ## Decision
 
-The goal runs as four crews in two stages. Stage 1's crews own disjoint files, so they run in parallel. The factory items wait for a follow-up crew, because plan-check refuses an owns overlap between crews of different goals while either is unmerged (`bin/factory.ts:481`), and resume-fixes4 owned `bin/factory.ts` when this goal was planned.
+The goal runs as four crews in two stages. Stage 1's crews own disjoint files, so they run in parallel. The factory items wait for a follow-up crew, because plan-check refuses an owns overlap between crews of different goals while either is unmerged (`bin/factory/plan.ts` `cmdPlanCheck`), and resume-fixes4 owned `bin/factory.ts` when this goal was planned.
 
 ```mermaid
 flowchart TD
@@ -66,7 +66,7 @@ flowchart TD
 - These stay: one step per crossing, the `maxParallelCrews` cap, the down rule at 2 x, the item 38 hold and the item 39 step-3 text.
 - `minFreeMB` stays 2048 (client, 10:55: "keep 2048, go ahead").
 - Not 2 x: the down rule fires below 2 x, so a 2 x up bar leaves no gap and flaps. The band between the down point (4096 MB) and the up point (6144 MB) is 1 x `minFreeMB`. A reading inside it keeps the value.
-- factory admit's `minFreeMB` floor stays the safety net (`bin/factory.ts:1533`).
+- factory admit's `minFreeMB` floor stays the safety net (`bin/factory/resources.ts` `admission`).
 - Tests read the rule as behaviour: an evaluator takes the multipliers from the "Go down one" and "Go up one" lines and applies them to a reading. `i45 2:` replays each logged idle reading; `control N: i45 ...` puts freeMB at 2.5 x, inside the band, and keeps the value.
 - The two base cases that name four times are re-pinned with "three times": `control 2: the up rule still names three times minFreeMB and half of cpus` in `factory-fixes4-monitor.check.ts`, and `agent states the up rule: above three times minFreeMB, load1 below half of cpus` in `monitor-wiring.check.ts`. The acceptance test exempts exactly the two old titles.
 
@@ -98,7 +98,7 @@ sequenceDiagram
 
 ### The other built items
 
-**Item 47** (agents-fixes5). design-engineer.md's acceptance rules say an acceptance test pins behaviour by a test's title and its ok or not-ok outcome, or by an assertion's result, and never greps the literal text of a source or test file (`i47 1:`). checking-engineer.md names a spelling pin as a reason to send a plan back (`i47 2:`). `skills/run/SKILL.md` gives the same reason beside "gameable" at `:167` and `:187` (`i47 3:`); "gameable" stays, because `speed-rules.check.ts:88` pins it.
+**Item 47** (agents-fixes5). design-engineer.md's acceptance rules say an acceptance test pins behaviour by a test's title and its ok or not-ok outcome, or by an assertion's result, and never greps the literal text of a source or test file (`i47 1:`). checking-engineer.md names a spelling pin as a reason to send a plan back (`i47 2:`). `skills/run/SKILL.md` gives the same reason beside "gameable" at section "4. Have the design engineer draft the plan" and section "Have a checking engineer review the verdicts" (`i47 3:`); "gameable" stays, because `speed-rules.check.ts` test "5 planning one round: empty-implementation self-check, parallel checker review" pins it.
 
 **Item 51** (stage-fixes5), five parts:
 - **Item 51a.** An owns that includes `ui/**` counts as owning UI in `ownsUiFile`: with no `livePage`, the crew gets `Review mode: live` and the `ui/**` default steps. Control: an owns of docs only still gets `files`. (`i51 1:`)
@@ -113,7 +113,7 @@ sequenceDiagram
 **Item 54** (ui-fixes5).
 - `i54 1:` `tally.seen` keeps the arrival order of message ids, as a Map, Set or array, and stays bounded at 256: ids "1" to "300" keep "300" and drop "1".
 - `i54 2:` an idle-project-manager stall of crew `a` clears on a later event line of a successor project manager `a-<n>`. A stall of kind `agent` still needs the stalled agent itself.
-- **`reduce.ts:260` exclusions: pinned, not removed.** A member or crew can carry these names: any event line's `agent` becomes a member, and `factory` is a valid slug. Removing them would let the factory or a workflow runner clear a stall. Controls passing on base: `control N: i54 ... member main`, `... member workflow:x` and `... crew factory` (a spawn `by` that name doesn't clear the project manager's stall), and `... events.1.jsonl` (a stall there clears on the stalled agent's later line in `events.jsonl`). A control that fails on base is a real bug: retitle it `i54 N:`, fix it, tell the PM.
+- **`reduce.ts` `event` exclusions: pinned, not removed.** A member or crew can carry these names: any event line's `agent` becomes a member, and `factory` is a valid slug. Removing them would let the factory or a workflow runner clear a stall. Controls passing on base: `control N: i54... member main`, `... member workflow:x` and `... crew factory` (a spawn `by` that name doesn't clear the project manager's stall), and `... events.1.jsonl` (a stall there clears on the stalled agent's later line in `events.jsonl`). A control that fails on base is a real bug: retitle it `i54 N:`, fix it, tell the PM.
 
 **Item 55** (ui-fixes5). As seam 3. `i55 2:` pins the PO's case: `node_modules` exists but `typescript` is missing, so the script exits 1 naming `typescript`.
 
@@ -136,7 +136,7 @@ sequenceDiagram
 
 ## Seams to pin
 
-1. **Answer at a done task** | stage.js `runMembers` and `answersFor`. On an answers resume, a task whose name is in `entry.done` and is the `at` of an answer runs again, with that answer in its prompt. A tester task commits with `Truss-Role: test-writer`, and that commit passes the tests guard. Done tasks no answer names stay done. This amends ADR-0019 item 12.
+1. **Answer at a done task** | `workflows-src/stage/tasks.js`, `workflows-src/stage/answers.js` `runMembers` and `answersFor`. On an answers resume, a task whose name is in `entry.done` and is the `at` of an answer runs again, with that answer in its prompt. A tester task commits with `Truss-Role: test-writer`, and that commit passes the tests guard. Done tasks no answer names stay done. This amends ADR-0019 item 12.
 2. **String args** | stage.js head (`args`). `args` may be an object or a JSON string holding one. Both give the same `args.truss`. Anything else throws the item-29 error unchanged.
 3. **`check-deps`** | `ui/scripts/check-deps.mjs [uiDir]`. `uiDir` defaults to the script's parent directory. Every name in `dependencies` and `devDependencies` of `uiDir/package.json` must have `uiDir/node_modules/<name>/package.json`. When any is missing, the script prints one stderr line naming each one and `npm --prefix ui ci`, then exits 1. This covers a missing `node_modules` and a single missing package. Otherwise it is silent and exits 0. pretest runs it before the build.
 4. **Sample pressure fields** | `resources/index.ts` `Sample`, `sample()`, new `pressureOf(paths?)`. `pressureOf({ pressure, meminfo })` defaults to `/proc/pressure/memory` and `/proc/meminfo`. It returns `memPressure`, the `some` line's `avg10`, a number from 0 to 100, and `swapUsedPct`, `round((SwapTotal - SwapFree) / SwapTotal * 100)`. It leaves a field out when its file is absent or unreadable, and leaves `swapUsedPct` out when SwapTotal is 0. `sample()` adds both on the host path. A `TRUSS_SAMPLE` file may carry either field; a field present that is not a number from 0 to 100 throws, like `freeMB`. Both fields are optional in `Sample`. The monitor and, later, factory admit read them; factory's other readers read only `freeMB` and don't change.
@@ -153,5 +153,5 @@ sequenceDiagram
 
 ## Dropped
 
-- **Item 52, the symlink mutant and the handler case.** Commit `f53b5ec` (in main) added `i29 13` to `i29 16` in `tests/gate-trussfile.check.ts` (`:297`, `:309`, `:321`, `:335`). They drive the real Workflow handler with object args, string args, a symlinked file and a symlinked directory, and the gate-trussfile tester's report shows the mutant killed. agents-fixes5 still adds the two `control N: i52` cases.
-- **Item 54, "tally.tasks is unbounded".** `tasks` holds one number per subagent task id, so the number of agents bounds it. `withTally` sums it into `subagentTokens` (`ui/server/session/fold.ts:151`). Dropping an entry would lose or double-count tokens.
+- **Item 52, the symlink mutant and the handler case.** Commit `f53b5ec` (in main) added `i29 13` to `i29 16` in `tests/gate-trussfile.check.ts` (test "i29 13: the handler expands a plugin script trussFile before the gate judges it, and passes the object args on to next", test "i29 14: the handler passes string args on to next as a string", test "i29 15: the handler refuses a trussFile whose real path leaves the truss dir through a symlink", test "i29 16: the handler refuses a trussFile under a symlinked sub-directory that leaves the truss dir"). They drive the real Workflow handler with object args, string args, a symlinked file and a symlinked directory, and the gate-trussfile tester's report shows the mutant killed. agents-fixes5 still adds the two `control N: i52` cases.
+- **Item 54, "tally.tasks is unbounded".** `tasks` holds one number per subagent task id, so the number of agents bounds it. `withTally` sums it into `subagentTokens` (`ui/server/session/fold.ts`). Dropping an entry would lose or double-count tokens.

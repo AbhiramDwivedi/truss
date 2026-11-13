@@ -135,7 +135,8 @@ const hasnt = (s, sub) => assert.ok(!s.includes(sub), `unexpected ${JSON.stringi
 const passed = (r, slug = 'a') => assert.equal(r.result.find((x) => x.slug === slug).state, 'passed', why(r))
 const callOf = (r, label) => r.calls.find((c) => c.label === label)
 const indexOf = (r, label) => r.calls.findIndex((c) => c.label === label)
-const greens = (r) => r.calls.filter((c) => c.runner && c.runner.key === 'check:green')
+// the green checks before QC; the full suite before merge (check --full, 0.31.0 item 1) is not one
+const greens = (r) => r.calls.filter((c) => c.runner && c.runner.key === 'check:green' && !/\s--full\b/.test(c.prompt))
 const ITEM = { kind: 'feature', text: 'export button lives in ExportMenu', source: 'src/ui/a.ts:10' }
 // the default builder reports one learned item, so the knowledge step runs; PLAIN is a crew that learned nothing
 const labelsFor = (o = {}) => ({ 'a-planner': PLAN(TT, TF), 'a-tester': done('feat/t'), 'a-builder': done('feat/b', { learned: [ITEM] }), 'a-writer': done('feat/k'), 'a-qc': PASS, ...o })
@@ -923,4 +924,17 @@ t('product 10: the product-answer resume names the asking member earlier branch'
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
   passed(r)
   has(callOf(r, 'a-builder-2').prompt, 'Its branch was feat/b.')
+})
+
+t('scope 1: a QC fixer that edits outside the crew owns stops at the scope check, before the next QC is paid for', async () => {
+  const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: wrong\n'
+  const labels = labelsFor({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-2': done('feat/fix'), 'a-writer-2': done('feat/k2') })
+  // owns-check passes on the first head and refuses the head the fix round produced
+  const owns = ({ cmd, n }) => (cmd === 'owns-check' && n >= 1 ? rj({ ok: false, outside: ['src/other.ts'] }, 2) : undefined)
+  const r = await runStage([OLD()], { personas: PERSONAS, labels, runner: owns })
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.equal(s.state, 'stopped', JSON.stringify(s).slice(0, 300))
+  assert.equal(s.at, 'scope')
+  has(s.text, 'src/other.ts')
+  assert.ok(!r.labels.includes('a-qc-2'), 'no second QC was spawned')
 })

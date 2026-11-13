@@ -31,7 +31,7 @@ Clone with `-b main`. ADR-0013 puts the catalog on its own `marketplace` branch 
 | `plugins/truss/` | The plugin: agents, skills, hooks, workflows, `bin/`, `tests/`, `docs/` (the architecture doc and ADRs), its [README](plugins/truss/README.md) (the full manual) and [CHANGELOG](plugins/truss/CHANGELOG.md). `.claude-plugin/plugin.json` holds the version. |
 | `ui/` | The optional local web UI, with its own `package.json`. The plugin never installs or starts it. See [ui/README.md](ui/README.md). |
 | `marketplace/` | The catalog source: `.claude-plugin/marketplace.json` and `README.md`, the GitHub landing page. The maintainer publishes this directory as the `marketplace` branch with `git subtree split --prefix=marketplace main`. |
-| `checks/` | The root contract, [checks/repo-home.check.ts](checks/repo-home.check.ts): layout, catalog, install and docs checks. |
+| `checks/` | The root contract: [checks/repo-home.check.ts](checks/repo-home.check.ts) holds the layout, catalog, install and docs checks, and [checks/compose-manifests.check.ts](checks/compose-manifests.check.ts) holds the dependency and catalog checks. The opt-in [checks/real-cli-install.e2e.ts](checks/real-cli-install.e2e.ts) runs the real install. |
 | `package.json` | Test scripts only, with no dependencies. |
 | `LICENSE` | MIT. `plugins/truss/LICENSE` is a copy. |
 
@@ -45,7 +45,13 @@ Run these from the repo root.
 npm test
 ```
 
-This runs the plugin's Node tests (`plugins/truss/tests/*.check.ts` and `plugins/truss/tests/*/*.check.ts`), then the root contract (`checks/*.check.ts`). The contract's install suite runs the two install commands against a local copy of the repo served over HTTP, so it needs `claude` and `git` on your `PATH`.
+This runs the plugin's Node tests (`plugins/truss/tests/*.check.ts` and `plugins/truss/tests/*/*.check.ts`), then the root contract (`checks/*.check.ts`). These need only `node` and `git`. The install suite does not run the `claude` CLI. It works out what an install holds from the catalog entry and the repo's files.
+
+```
+npm run test:real-cli
+```
+
+This opt-in check runs the real `claude plugin marketplace add` and `claude plugin install truss@truss` against a local copy of the repo served over HTTP. It needs `claude` on your `PATH` and fails with a message if it is missing.
 
 ```
 npm run test:ui

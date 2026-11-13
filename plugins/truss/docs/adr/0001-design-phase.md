@@ -147,7 +147,7 @@ The design engineer splits the goal once, on paper, along the module map. Agents
 - The QC engineer adds one rubric question: does the diff conform to the architecture doc's principles and module map, and to this run's ADRs? A violation that doesn't affect the acceptance test is a QUESTION. One that breaks a declared principle is a FAIL.
 - Crews never edit the architecture doc or ADRs. A needed design change goes to the PM as `PROPOSAL:`.
 - **Mid-run design slice:** when the PM takes up a design proposal, it handles it like this.
-  - It adds a design crew (`verdict: "design"`) to the earliest stage whose crews it doesn't depend on, first in that stage's queue and ahead of the crews that need it. A running crew isn't moved. (Amended 2026-10-29 to match `skills/run/SKILL.md:278`: a new stage after the last would deadlock when a running crew needs the slice.)
+  - It adds a design crew (`verdict: "design"`) to the earliest stage whose crews it doesn't depend on, first in that stage's queue and ahead of the crews that need it. A running crew isn't moved. (Amended 2026-10-29 to match `skills/run/SKILL.md` section "Run a mid-run design slice": a new stage after the last would deadlock when a running crew needs the slice.)
   - It moves only the crews that depend on the slice, and haven't started, one stage later. Running crews and crews that don't depend on it keep their stage.
   - The run-level `approval` and `approvedAt` don't change.
   - The slice waits for the client only when one of section 4's triggers applies. Then the PM sets the crew's `clientApproval` to `"pending"`, and to `"approved"` when the client answers.

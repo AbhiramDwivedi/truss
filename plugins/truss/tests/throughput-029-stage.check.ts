@@ -231,7 +231,8 @@ t('i1 1: the reap after each member rides on the crew\'s next factory call; only
   })
   // ADR-0046 item 1, measured: this crew cost 32 runner spawns before the change (31 before items 6 and 7)
   // ADR-0046 item 8 adds the stress finding's regression tester before the fix builder: its admit and its integrate, 24 -> 26
-  assert.ok(runners(r).length <= 26, `runner commands: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
+  // 0.31.0 item 1 adds the full suite before merge: one heavy check --full after the QC PASS, 26 -> 27
+  assert.ok(runners(r).length <= 27, `runner commands: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
 })
 
 // the runner labels that answered more than one command: gates calls (gatesAware records each step under the call's label)
@@ -243,7 +244,8 @@ t('i1 6: green, the owns and tests checks, the lint and the QC admit before QC c
   passed(r)
   const spawns = spawnLabels(r.calls)
   // measured: 26 runner spawns before gates (26 commands, one spawn each); the same commands now
-  assert.ok(spawns.length <= 22, `runner spawns: ${spawns.length}: ${spawns.map((l) => r.calls.filter((c) => c.label === l).map((c) => c.runner.key).join('+')).join(',')}`)
+  // 0.31.0 item 1 adds the full suite before merge, one spawn after the QC PASS: 22 -> 23
+  assert.ok(spawns.length <= 23, `runner spawns: ${spawns.length}: ${spawns.map((l) => r.calls.filter((c) => c.label === l).map((c) => c.runner.key).join('+')).join(',')}`)
   const qcAt = indexOf(r, 'a-qc')
   // the last spawn before QC answers green, owns-check, tests-check, knowledge-lint and the QC admit together
   const before = r.calls.slice(0, qcAt).filter((c) => c.runner)
@@ -349,6 +351,8 @@ t('q0 1: a builder, first round and fix round, owns the docs of its change; a te
     assert.ok(p.includes('set `verified` to the commit your change builds on'), l)
     assert.ok(p.includes('Cite code by symbol'), l)
     assert.ok(p.includes('Never edit a test a tester wrote'), l)
+    // 0.31.0 item 4: shared docs take the crew's fragment, not an edit
+    assert.ok(p.includes('Shared docs take fragments, not edits') && p.includes('docs/features.d/a.md') && p.includes('.claude/rules.d/<area>/a.md'), l)
   }
   assert.ok(!callOf(r, 'a-tester').prompt.includes('You own the docs of your change.'))
 })
@@ -485,7 +489,9 @@ t('q2 1: the knowledge writer repairs citations by symbol and checks changed ski
   passed(r)
   const p = callOf(r, 'a-writer').prompt
   assert.ok(p.includes('cite code by symbol'), p.slice(0, 1500))
-  assert.ok(p.includes('re-point every `file:line` citation whose code moved'))
+  assert.ok(p.includes('replace every `file:line` citation the docs hold with the symbol it points at'))
+  assert.ok(p.includes('Shared docs take fragments, not edits') && p.includes('docs/features.d/a.md'))
+  assert.ok(callOf(r, 'a-qc').prompt.includes('counts as an update of that doc'))
   assert.ok(p.includes('check every line of skill and agent prose (SKILL.md, agents/*.md) the diff added or changed against the code'))
 })
 

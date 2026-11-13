@@ -43,7 +43,7 @@ A QC engineer case always has `keyword: "VERDICT"`; a checking engineer case alw
 
 **`input` for a checking engineer case** is the item the PM gave the checking engineer, rebuilt from the `decisions.md` line: the decision text and the citation field, without the checking engineer field or the outcome. It never contains the word `RECOMMEND`.
 
-**`expected`** is the ruling the source file records. A QC file records it as its first line, `VERDICT: PASS` or `VERDICT: FAIL`. A `decisions.md` line records it in one of the forms `retro.py`'s `CHECKER_FIELD` and `RECOMMEND` patterns read (`scripts/retro.py:40-45`): `RECOMMEND: answer`, `checker-3 RECOMMEND: answer`, `checker-4: RECOMMEND: pass, option (a)`, or `checker-1 RECOMMEND pass: ...`. So any check that looks for the keyword in a source file accepts it with or without a colon after `RECOMMEND`.
+**`expected`** is the ruling the source file records. A QC file records it as its first line, `VERDICT: PASS` or `VERDICT: FAIL`. A `decisions.md` line records it in one of the forms `retro.py`'s `CHECKER_FIELD` and `RECOMMEND` patterns read (`scripts/retro.py`): `RECOMMEND: answer`, `checker-3 RECOMMEND: answer`, `checker-4: RECOMMEND: pass, option (a)`, or `checker-1 RECOMMEND pass: ...`. So any check that looks for the keyword in a source file accepts it with or without a colon after `RECOMMEND`.
 
 **Where `source` is checked.** `evals-build`'s acceptance test resolves each `source` against `git rev-parse --git-common-dir`, requires the file to exist, and requires the case's keyword and kind in it. That check lives in the acceptance test only, never in a suite: a fresh clone has no run dirs (P25).
 
@@ -71,11 +71,11 @@ These ids are required, with these sources and kinds. `evals-build` adds the res
 | `cynic-defer-log-promise` | checking engineer | `.git/foundry/70917104-1578-48f5-8ac2-f9e48814b8cc/decisions.md` (the 08:41 checker-5 "rejecting $.ui.log promise" line) | `RECOMMEND` `defer` |
 | `cynic-pass-seam-route` | checking engineer | `.git/foundry/40816bb1-1ec8-4755-8d97-0d12599e1e84/decisions.md` (the 09:50 checker-1 "seam route" line) | `RECOMMEND` `pass` |
 
-Checked at design time, from each listed QC file's first line: `roles-judge.md` to `roles-judge-7.md` and `foundry-protocol-judge.md` start `VERDICT: FAIL`; `redteam-reset-judge.md` and `foundry-protocol-judge-2.md` start `VERDICT: PASS`. `foundry-protocol-judge.md` is the catch on `gates.check.ts:88-102` (its finding at line 52). `judge-redteam-reset` is the PASS that took the stress test's worktree premise on trust, the gap `897528e` and `4e43d5c` then closed. It records the accepted ruling. A prompt change that makes the QC engineer FAIL it is a difference for the client to read, not a regression by itself.
+Checked at design time, from each listed QC file's first line: `roles-judge.md` to `roles-judge-7.md` and `foundry-protocol-judge.md` start `VERDICT: FAIL`; `redteam-reset-judge.md` and `foundry-protocol-judge-2.md` start `VERDICT: PASS`. `foundry-protocol-judge.md` is the catch on `gates.check.ts` `judgeRuling` (its finding at line 52). `judge-redteam-reset` is the PASS that took the stress test's worktree premise on trust, the gap `897528e` and `4e43d5c` then closed. It records the accepted ruling. A prompt change that makes the QC engineer FAIL it is a difference for the client to read, not a regression by itself.
 
 ### 4. The scorer, `evals/score.ts`
 
-Deterministic, no I/O. It imports `qcRuling` from `../hooks/register.ts`, the hooks module's entry file, as `tests/gates.check.ts:90` already does under `node`. So the evals rule a `VERDICT:` line exactly as the merge gate does.
+Deterministic, no I/O. It imports `qcRuling` from `../hooks/register.ts`, the hooks module's entry file, as `tests/gates.check.ts` `judgeRuling` already does under `node`. So the evals rule a `VERDICT:` line exactly as the merge gate does.
 
 ```ts
 export type Expected =
@@ -86,14 +86,14 @@ export type Score = { ok: boolean; got: Kind | undefined }
 export function score(report: string, expected: Expected): Score
 ```
 
-- `keyword: 'VERDICT'`: `got` is `qcRuling(report).verdict`. That is the marker on the report's first non-empty line, after a BOM and `\r` are dropped: `PASS` when the line starts with `VERDICT: PASS`, `FAIL` when it starts with `VERDICT: FAIL`, else `undefined` (`register.ts:205-212`, `:506-530`). So `VERDICT:PASS` with no space scores `got: undefined`, never `PASS`, the way the gate rules it.
-- `keyword: 'RECOMMEND'`: `got` is the kind on the first line of the report that matches `^\s*(?:checker-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b`, after `\r` is dropped; else `undefined`. This is `retro.py`'s `CHECKER_FIELD` (`scripts/retro.py:44-45`) with leading space allowed and the `(xN)` count ignored. `RECOMMEND: drop` scores `got: undefined`.
+- `keyword: 'VERDICT'`: `got` is `qcRuling(report).verdict`. That is the marker on the report's first non-empty line, after a BOM and `\r` are dropped: `PASS` when the line starts with `VERDICT: PASS`, `FAIL` when it starts with `VERDICT: FAIL`, else `undefined` (`register.ts` `MARKERS`, `judgeRuling`). So `VERDICT:PASS` with no space scores `got: undefined`, never `PASS`, the way the gate rules it.
+- `keyword: 'RECOMMEND'`: `got` is the kind on the first line of the report that matches `^\s*(?:checker-\d+:?\s+)?RECOMMEND:?\s+(answer|defer|pass)\b`, after `\r` is dropped; else `undefined`. This is `retro.py`'s `CHECKER_FIELD` (`scripts/retro.py`) with leading space allowed and the `(xN)` count ignored. `RECOMMEND: drop` scores `got: undefined`.
 - `ok` is `got === expected.kind`.
 - An `expected` that pairs a keyword with a kind outside its list, or names another keyword, throws a `TypeError` (core 6).
 
 ### 5. The snippet runner, `evals/snippets.ts`
 
-The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md:62`, `agents/project-manager.md:199`, `skills/retro/SKILL.md:18`), so the list picks the snippets, not a tag.
+The runner pulls the shell snippets this ADR's `## Snippets` list names out of the shipped prompts and runs them in a throwaway git repo. No fence in the prompts has a language tag at `da17861` (`agents/qc-engineer.md` section "Head and patch lines", `agents/project-manager.md` section "12. When the PM asks you to make your branch ready", `skills/retro/SKILL.md` section "1. Find the dir and run the script"), so the list picks the snippets, not a tag.
 
 ```ts
 export type Where = 'root' | 'subdir' | 'worktree'
@@ -119,7 +119,7 @@ and gives `file` (repo-relative, forward slashes), `opening`, `form` and `fills`
 
 **`runSnippet`** fills each key of `fills` by replacing every occurrence of the key, angle brackets included, with its value. If the result still matches `<[a-z][a-z0-9-]*>`, it runs nothing and returns `{ ok: false, code: null }` with the placeholder named in `stderr`. Otherwise:
 
-1. It makes `fs.realpathSync.native(fs.mkdtempSync(join(os.tmpdir(), 'truss-snippet-')))` and a repo under it, as `tests/e2e/cleanup.e2e.ts:42-53` does. The repo has local `user.name`, `user.email`, `commit.gpgsign false` and `core.autocrlf false`, and two commits: the first adds `a.txt` (`one\n`) and `sub/b.txt` (`b\n`), the second changes `a.txt` to `two\n`. So `HEAD~1` and `HEAD` exist, their diff is not empty, and its patch id is the same in every temp repo.
+1. It makes `fs.realpathSync.native(fs.mkdtempSync(join(os.tmpdir(), 'truss-snippet-')))` and a repo under it, as `tests/e2e/cleanup.e2e.ts` does. The repo has local `user.name`, `user.email`, `commit.gpgsign false` and `core.autocrlf false`, and two commits: the first adds `a.txt` (`one\n`) and `sub/b.txt` (`b\n`), the second changes `a.txt` to `two\n`. So `HEAD~1` and `HEAD` exist, their diff is not empty, and its patch id is the same in every temp repo.
 2. `where` picks the working directory: `root` (the default) is the repo, `subdir` is its `sub/`, and `worktree` is a linked worktree that `git worktree add <tmp>/wt -b eval-wt` makes.
 3. It runs `bash -c` with `set -euo pipefail`, a newline and the filled script, through `spawnSync` without a shell, with `windowsHide`, a 30-second timeout, and the caller's environment minus every `GIT_*` variable. A pipe's failure is the script's failure.
 4. It removes the temp dir in a `finally`, with `rmSync` recursive, forced, `maxRetries: 10`.
@@ -139,7 +139,7 @@ The script exits 0 when the two are equal, which is the main checkout: the stres
 
 An optional tool for the client, never a gate. It runs from the checkout under test (`node evals/run-model.ts`), and it is outside every suite.
 
-- **Binary.** It spawns the path in the `CLAUDE` environment variable, else `claude`, without a shell, the way `scripts/catalog-refresh/run.sh:8` takes `CLAUDE`.
+- **Binary.** It spawns the path in the `CLAUDE` environment variable, else `claude`, without a shell, the way `scripts/catalog-refresh/run.sh` takes `CLAUDE`.
 - **Fixed case list.** Every `golden/*.json` file, sorted by `id`, one at a time. It takes no flag that picks or adds cases.
 - **Per case.** `-p`, the prompt on stdin (the case's `input`), `--system-prompt` with the body of the role's agent file after its frontmatter (`agents/qc-engineer.md` for `qc`, `agents/checking-engineer.md` for `checker`), `--model` and `--effort` from that frontmatter, `--no-session-persistence`, `--output-format text`, and a fixed `--allowedTools` list (P20): `Read Grep Glob Bash(git log:*) Bash(git show:*) Bash(git diff:*) Bash(git rev-parse:*)` for the QC engineer, `Read Grep Glob` for the checking engineer. No write tool either way. The working directory is the checkout's root (`git rev-parse --show-toplevel`). So the run tests the prompt in the checkout, not the installed plugin.
 - **Bound.** A per-case timeout, `CASE_TIMEOUT_MS = 600000`, kills the child and scores the case `timeout`. With the fixed case list, that bounds the run (P26). No `--max-allowance-usd`, by the client's ruling.
@@ -173,7 +173,7 @@ flowchart LR
   tests -->|"calls"| snip
 ```
 
-*The evals area and what it reads; `run-model.ts` sits outside every suite.* Traces to: this ADR; `hooks/register.ts:205-212`, `:506`; `tests/gates.check.ts:90`; `tests/e2e/cleanup.e2e.ts:42-53`; `scripts/catalog-refresh/run.sh:8`.
+*The evals area and what it reads; `run-model.ts` sits outside every suite.* Traces to: this ADR; `hooks/register.ts` `MARKERS`, `judgeRuling`; `tests/gates.check.ts` `judgeRuling`; `tests/e2e/cleanup.e2e.ts`; `scripts/catalog-refresh/run.sh`.
 
 ```mermaid
 sequenceDiagram
@@ -202,7 +202,7 @@ sequenceDiagram
 
 Stage 2 (`prompt-rules`) deletes the wording checks in `## Checks replaced`; `tests/contract-replaced.check.ts` pins that. `tests/packs.check.ts` stays: it checks the packs' form, which is not QC engineer or checking engineer behaviour, so P12 and the entry-points table keep naming it.
 
-A check moves only when a suite check covers what it asserts. Two do. The qc-engineer.md and SKILL.md patch-command checks assert `git patch-id --stable` is in the file; the snippet check runs that command and compares its id with `PATCH_COMMAND`'s (`register.ts:422`). The checking engineer Items check in `deferred-sweep.check.ts` stays: in the suite the checking engineer cases only score their own recorded `expected` lines and nothing reads `checking-engineer.md`, so no suite check covers it. Most wording checks pin a report literal or a section's order, which no case scores, so they stay too.
+A check moves only when a suite check covers what it asserts. Two do. The qc-engineer.md and SKILL.md patch-command checks assert `git patch-id --stable` is in the file; the snippet check runs that command and compares its id with `PATCH_COMMAND`'s (`register.ts`). The checking engineer Items check in `deferred-sweep.check.ts` stays: in the suite the checking engineer cases only score their own recorded `expected` lines and nothing reads `checking-engineer.md`, so no suite check covers it. Most wording checks pin a report literal or a section's order, which no case scores, so they stay too.
 
 ## Snippets
 

@@ -16,7 +16,7 @@ The client rejected today's page against the reference `truss_factory.tsx` and l
 
 The Agent SDK runs a skill when the user message starts with `/<name>`, and the `system/init` message lists the commands the session can run (Agent SDK docs, "Slash commands"). The recorded stream's `init` lists `truss:run` in `slash_commands` (`ui/contract/fixtures/sdk-stream.jsonl:3`). `live.check.ts` does not send `/truss:run` today, so the live case below is new.
 
-ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan(): boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts:163`, `reduce.ts:349`).
+ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan(): boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts` `refresh`, `reduce.ts` `build`).
 
 | Intent | Condition | Session input |
 | --- | --- | --- |
@@ -25,22 +25,22 @@ ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), an
 | `add` | any | `INTENT_LINES.add`, a blank line, then the text (a follow-up) |
 | none | any | the text |
 
-The second `goal` row covers a goal sent while the PM is still planning: the run skill is already running, so a second `/truss:run` would start a run inside a run. `INTENT_LINES` keep their wording (`ui/server/session/session.ts:18-21`), so `ui/contract/gaps.check.ts` keeps its `add` case and changes its first `goal` case to expect `/truss:run <text>`; rework-server updates `ui/test/session/gaps.test.ts` to match.
+The second `goal` row covers a goal sent while the PM is still planning: the run skill is already running, so a second `/truss:run` would start a run inside a run. `INTENT_LINES` keep their wording (`ui/server/session/session.ts`), so `ui/contract/gaps.check.ts` keeps its `add` case and changes its first `goal` case to expect `/truss:run <text>`; rework-server updates `ui/test/session/gaps.test.ts` to match.
 
-The composer, in code: with no plan, intent `goal`, label "Start run", textarea label "Your goal". With a plan or a sent goal, no intent and "Send to PM", with a "Message / New goal" choice; "New goal" sends `goal` and relabels the button "Add as new goal". The client knows a goal was sent from a transcript user entry whose `intent` is `goal` (`ui/app/store/types.ts:86`).
+The composer, in code: with no plan, intent `goal`, label "Start run", textarea label "Your goal". With a plan or a sent goal, no intent and "Send to PM", with a "Message / New goal" choice; "New goal" sends `goal` and relabels the button "Add as new goal". The client knows a goal was sent from a transcript user entry whose `intent` is `goal` (`ui/app/store/types.ts` `TranscriptEntry`).
 
 ### 2. The reply card (R-47)
 
 `ReplyRequest` gains `approvalAsk?: boolean`. ui-session sets it when the reply opens (`ui/server/session/reply.ts`), in code, from the turn's text: true only when the last non-empty paragraph contains `approve` or `approval` as a word and ends with `?`, and the text has no `nothing` or `no` before `approval` in the same sentence. Absent or false means not an approval ask. When unsure, the rule says false, so the card shows the reply form.
 
-- `approvalAsk` false: title and accessible name "The PM replied" (`cardName()`, `ui/app/views/move/format.ts:86`), a "Your reply" box and the primary button "Send reply", which posts `{decision: 'message', message}` (`ui/server/session/registry.ts:92-97`). No Approve, no Deny.
+- `approvalAsk` false: title and accessible name "The PM replied" (`cardName()`, `ui/app/views/move/format.ts` `cardName`), a "Your reply" box and the primary button "Send reply", which posts `{decision: 'message', message}` (`ui/server/session/registry.ts` `apply`). No Approve, no Deny.
 - `approvalAsk` true: title "Approval needed"; "Approve" with the hint "Sends: Approved." and "Deny" with "Sends: Not approved." (the texts `registry.ts` sends); "Send reply" is still there and becomes primary when the box holds text.
 
-The rail item (`ui/app/views/rail/Timeline.tsx:40`) uses the same two titles. The F5 fixture is the bug note's turn ("Nothing is waiting on approval ... give me something new."), which must give false.
+The rail item (`ui/app/views/rail/Timeline.tsx` `entries`) uses the same two titles. The F5 fixture is the bug note's turn ("Nothing is waiting on approval... give me something new."), which must give false.
 
 ### 3. ADRs live in one place (R-37)
 
-The rail's "Decisions and ADRs" timeline is the one list (`views/rail/Timeline.tsx`). It takes the status strip and filter from `views/decisions/AdrSection.tsx`. The ADR items in Deliverables (`Deliverables.tsx:43-54`), the Decisions tab and `RunTabs` go. Opening a timeline ADR shows its fields (title, status, number, date, decided by, links, summary; `types.ts:237-247`) in the deliverable preview. That is reading, not a second list. No body field is added.
+The rail's "Decisions and ADRs" timeline is the one list (`views/rail/Timeline.tsx`). It takes the status strip and filter from `views/decisions/AdrSection.tsx`. The ADR items in Deliverables (`Deliverables.tsx` `deliverablesOf`), the Decisions tab and `RunTabs` go. Opening a timeline ADR shows its fields (title, status, number, date, decided by, links, summary; `types.ts` `Adr`) in the deliverable preview. That is reading, not a second list. No body field is added.
 
 ### 4. Only the latest architecture (R-39)
 
@@ -56,7 +56,7 @@ Amended by [ADR-0029](0029-real-data.md) section 6: the architecture doc itself 
 - Failure: a block that fails `parse` shows its source in a `pre`, under "This diagram couldn't be drawn: <first line of the error>". If the chunk fails to load, every block shows its source with "Diagrams couldn't load, so their source is shown."
 - Accessibility: the SVG sits in a focusable `figure` labelled "Diagram n of m", with `role="img"` and a "Show source" disclosure.
 
-**CSP: no change.** The page CSP is `default-src 'self'` with no `style-src` (`ui/server/http/static.ts:8`), so inline `<style>` elements and `style` attributes are blocked. Mermaid 12.2.0 inserts a `<style>` element into each SVG while it renders (`mermaid.core.mjs:1361-1363`), and its diagrams write `style` attributes. The CSP doesn't block CSSOM writes such as `element.style.setProperty` (MDN, `style-src`). The ruling is to restyle:
+**CSP: no change.** The page CSP is `default-src 'self'` with no `style-src` (`ui/server/http/static.ts` `PAGE_CSP`), so inline `<style>` elements and `style` attributes are blocked. Mermaid 12.2.0 inserts a `<style>` element into each SVG while it renders (`mermaid.core.mjs`), and its diagrams write `style` attributes. The CSP doesn't block CSSOM writes such as `element.style.setProperty` (MDN, `style-src`). The ruling is to restyle:
 
 1. The app's own stylesheet themes `svg[id^="truss-mmd-"]` with the D2 tokens: fills, strokes, text and fonts. Mermaid measures text in the live document, where this rule already applies, so the layout and the shown font agree.
 2. Before inserting the returned SVG, DesignPanel parses it with `DOMParser`, removes every `<style>`, and moves each `style` attribute into `style.setProperty` calls on the inserted node.
@@ -66,9 +66,9 @@ The gate is `docs.spec.ts`, which runs F7 against the real server and its CSP. I
 
 ### 6. Agent task and purpose (R-42)
 
-The task comes from matching IDs. Each SDK `task_started` and `task_progress` message carries a `task_id` and a `description` (`sdk-stream.jsonl:64`, `:71`). The real truss dir `361b2630-…` has 1,888 spawn lines, and 1,807 of them carry an `agentId` of the same form, `a` plus 16 hex digits. The other 81 are factory crew lines with `agentId: null` and type `workflow-crew`. The subagent's own messages carry `agent_id` equal to that `task_id` (`sdk-stream.jsonl`, subagent lines).
+The task comes from matching IDs. Each SDK `task_started` and `task_progress` message carries a `task_id` and a `description` (`sdk-stream.jsonl`). The real truss dir `361b2630-…` has 1,888 spawn lines, and 1,807 of them carry an `agentId` of the same form, `a` plus 16 hex digits. The other 81 are factory crew lines with `agentId: null` and type `workflow-crew`. The subagent's own messages carry `agent_id` equal to that `task_id` (`sdk-stream.jsonl`, subagent lines).
 
-New optional `Member` fields (`types.ts:145-153`):
+New optional `Member` fields (`types.ts`):
 
 ```ts
 agentId?: string | null  // the spawn line's agentId
@@ -76,7 +76,7 @@ purpose?: string | null  // see below
 task?: string | null     // see below
 ```
 
-- `agentId`: ui-state keeps it from the spawn line (`reduce.ts:211-212`).
+- `agentId`: ui-state keeps it from the spawn line (`reduce.ts` `event`).
 - `task`: ui-session keeps the latest `description` per `task_id` from `task_started` and `task_progress`, at most 500 entries. ui-server sets `Member.task` when it builds the snapshot, where `task_id === agentId`. It is null when nothing matches. TODO: no recording shows whether the tasks of members started inside a Workflow crew reach the PM's stream; rework-server's `R-42:` case must record one, or this falls back.
 - Fallback, in the client: the crew's `goal` for the project manager; otherwise the member's latest activity (its `detail`, for example the report marker); otherwise "No activity yet".
 - `purpose`: the first sentence of the `description:` line in `<pluginPath>/agents/<name>.md`. The name is the member's `type` with `truss:` stripped. Type `workflow-crew`, and the crew's project manager, map to `project-manager`. Unknown types, and `general-purpose` (1,566 of the real dir's spawns), get null, and the card shows the type only. ui-state reads the files once at start; it writes nothing (R-9).
@@ -97,7 +97,7 @@ interface FlowEntry {
 }
 ```
 
-ui-session folds these from the PM's own top-level assistant `tool_use` blocks, so not subagent lines (`fold.ts:220`). It keeps only blocks named `Agent`, `SendMessage` or `Workflow`. `summary` is the input's `description` for Agent and Workflow, and the first line of `message` for SendMessage. `to` is the longest crew slug that appears as a whole word in, in order, SendMessage's `to`, then `description`, then `prompt`. The crew slugs come from a second injected function, `crewSlugs(): string[]`. The recorded Agent call has `description` and `prompt` (`sdk-stream.jsonl:61`). TODO: no recording holds a SendMessage or Workflow call; rework-server's `R-40:` case records one and confirms the input key names before relying on them.
+ui-session folds these from the PM's own top-level assistant `tool_use` blocks, so not subagent lines (`fold.ts` `foldMessage`). It keeps only blocks named `Agent`, `SendMessage` or `Workflow`. `summary` is the input's `description` for Agent and Workflow, and the first line of `message` for SendMessage. `to` is the longest crew slug that appears as a whole word in, in order, SendMessage's `to`, then `description`, then `prompt`. The crew slugs come from a second injected function, `crewSlugs(): string[]`. The recorded Agent call has `description` and `prompt` (`sdk-stream.jsonl:61`). TODO: no recording holds a SendMessage or Workflow call; rework-server's `R-40:` case records one and confirms the input key names before relying on them.
 
 The network lights the wire whose `data-crew` equals `to` for 10 s after `at`. The crew card shows "From PM <time>: <summary>". The thread shows "PM → crew <slug>: <summary>" as a system line.
 
@@ -111,7 +111,7 @@ One section, h2 "Run metrics", `#run-metrics`, at the end of main. Every value i
 - agents started: the count of project managers and members across `run.crews`;
 - crews done: merged crews "n of m".
 
-There is no limit, budget, ceiling or "of $X" anywhere. The UI sets no spending limit (`live.check.ts:22` keeps none).
+There is no limit, budget, ceiling or "of $X" anywhere. The UI sets no spending limit (`live.check.ts` `WAIT_MS` keeps none).
 
 Amended by [ADR-0029](0029-real-data.md) section 4: run time with no transcript, Cost "Not recorded", and the header summary.
 
@@ -145,7 +145,7 @@ This follows the UX direction.
 - The thread is a `role="log"` scroll region in the rail, with the newest message in view (R-45).
 - The D2 tokens stay. There are no per-crew colours. Sentence case throughout, and the PM badge reads "PM" (R-46).
 
-**Partial crew.** `Crew` gains `eventsUnread?: number`: the count of the crew's event lines that ui-state skipped for `version` (`reduce.ts:169`). Such lines parse, so the crew is known. A `json` skip names no crew and stays only in `run.skipped`. When the count is above 0, the card shows "Couldn't read this crew's events" and the last known agents.
+**Partial crew.** `Crew` gains `eventsUnread?: number`: the count of the crew's event lines that ui-state skipped for `version` (`reduce.ts` `event`). Such lines parse, so the crew is known. A `json` skip names no crew and stays only in `run.skipped`. When the count is above 0, the card shows "Couldn't read this crew's events" and the last known agents.
 
 ### 11. Contract, fixtures and tests
 
@@ -166,7 +166,7 @@ rework-design rewrites the existing specs this ADR changes, in `ui/e2e/**`, `ui/
 | Old expectation | New |
 | --- | --- |
 | "No plan yet." | the PM node and the dashed card |
-| `mermaid diagram (source)` (`DesignPanel.tsx:18`) | an SVG figure, or the source with an error line |
+| `mermaid diagram (source)` (`DesignPanel.tsx` `MERMAID_LABEL`) | an SVG figure, or the source with an error line |
 | "Reply needed" with Approve and Deny | "The PM replied" or "Approval needed" |
 | ADRs in Deliverables, a Decisions tab | the rail timeline only |
 | Run tabs | none |

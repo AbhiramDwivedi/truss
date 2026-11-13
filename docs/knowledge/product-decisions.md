@@ -12,7 +12,7 @@ verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
 
 ## a0-foundation: store staleness test title
 
-- Question: `store.check.ts` is titled "a lock older than 200 s is taken over" but the code threshold is 120 s (`STALE_AGE_MS`, `plugins/truss/bin/store.ts:155`). Retitle it or amend the acceptance?
+- Question: `store.check.ts` is titled "a lock older than 200 s is taken over" but the code threshold is 120 s (`STALE_AGE_MS`, `plugins/truss/bin/store.ts`). Retitle it or amend the acceptance?
 - Answer: keep the pinned title and do not amend the acceptance.
 - Reason: contract-025 section 8 uses that exact title, and it is true: the case plants a lock 201 s old with a live pid, which is over the 120 s threshold. The title does not pin the 120 s value itself. To pin it, add one untitled case: a live-pid lock about 121 s old is taken over, one about 100 s old is waited on.
 - Decided by: product-owner persona (crew a0-foundation).
@@ -46,7 +46,7 @@ verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
 ## hygiene: 5.5 prices and the inbox flake
 
 - Pricing: `pricing` in `.claude/truss.json` holds the three 5.5 ids. Cache write is 1.25x input (5m) and 2x input (1h), cache read 0.05x for Opus and Sonnet 5.5 (claude-api skill, `shared/prompt-caching.md`). Haiku 5.5 is priced from the claude-api skill pricing page read 2026-11-12, including its long-context tier (`longContext {abovePromptTokens: 100000, ...}`, priced in `bin/cost.ts` `ratesFor`; see features.md, Long-context price tier).
-- Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the `:442` flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
+- Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
 - Decided by: crew hygiene (hygiene-tester, hygiene-builder items).
 
 ## crew-decisions: who answers a crew product call

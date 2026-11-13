@@ -8,21 +8,21 @@ VERDICT: change. The **stage workflow** changes: `admit` fails closed, reversing
 
 Retro 2 (2026-11-03) triaged five findings fix now, and the PO added two catalog narrowings (decisions.md 13:42). Line numbers are those of this crew's base, main at `9caa6f1`.
 
-- **F-67.** `runFactory` (stage.js:255-256) puts `--dir ${sh(F.dir)}` on the runner's line unresolved, while `heavyParts` (stage.js:306-309) resolves a relative `F.dir` against `F.repo`. In run wf_25e6716a-c99 at least 17 runner calls of `factory.ts admit --dir .git/truss/<id>` exited 2 with "cannot read .git/truss/<id>/plan.json". `admit` (stage.js:187-194) stops a crew only on `admitted === false`, so admission was silently off for the stage. [ADR-0019](0019-factory-fixes2.md) item 18 already makes `start` and `start --resume` resolve `--dir`, so no current caller makes a relative `F.dir`; the live bug is the fail-open admit.
-- **F-70.** `green` (stage.js:793-815) sends every failure to `fixBuilder` with the builder role and runs no `testsBackstop`. `fixFindings` (stage.js:596-610) does both. A green failure in a tester-owned file reached a builder, who ended BLOCKED.
-- **F-72.** `memberPrompt` carries the foreground rule (stage.js:392); `qcPrompt` (stage.js:974-1010) does not. A QC engineer backgrounded the acceptance run and was blocked on `sleep 240`.
-- **F-73.** The PM's Edits to `decisions.md` failed as "not found" or "Found 24 matches". `appendDecision` (factory.ts:181-186) can write only `- HH:MM | <text> | none | followed`, so it can't carry the grammar architecture.md declares: the four-field decision line, the `checker-` line, continuation lines and the `## Run` heading.
-- **F-74.** The PM ran `node retro/cli.ts scrub ... 2>&1 | tail -5; git push origin main`. Scrub exits 1 on a hit and 2 on an unreadable file (retro/cli.ts:2-3), but `;` ignores that, and a pipeline's status is `tail`'s, so a home path reached origin main. R-32 (requirements.md:223) keeps committed files clean; SKILL.md:432 asks for the scrub, and base register.ts has no `Bash` handler to enforce it.
-- **Catalog.** `trailers-format-unquoted` (catalog.json:148-162) matches `--format=%\(trailers`, which also hits the quoted form the fix asks for. `webkit-host-missing-dependencies` (catalog.json:120-133) matches the `ENV_LINE` constant in factory test fixtures (for example factory-fixes6.check.ts:441). Each false hit reports a recurrence that isn't one.
+- **F-67.** `runFactory` (`workflows-src/stage/runner.js`) puts `--dir ${sh(F.dir)}` on the runner's line unresolved, while `heavyParts` (`workflows-src/stage/gates.js`) resolves a relative `F.dir` against `F.repo`. In run wf_25e6716a-c99 at least 17 runner calls of `factory.ts admit --dir .git/truss/<id>` exited 2 with "cannot read .git/truss/<id>/plan.json". `admit` (`workflows-src/stage/crew.js`) stops a crew only on `admitted === false`, so admission was silently off for the stage. [ADR-0019](0019-factory-fixes2.md) item 18 already makes `start` and `start --resume` resolve `--dir`, so no current caller makes a relative `F.dir`; the live bug is the fail-open admit.
+- **F-70.** `green` (`workflows-src/stage/green.js`) sends every failure to `fixBuilder` with the builder role and runs no `testsBackstop`. `fixFindings` (`workflows-src/stage/fixes.js`) does both. A green failure in a tester-owned file reached a builder, who ended BLOCKED.
+- **F-72.** `memberPrompt` carries the foreground rule (`workflows-src/stage/prompts.js`); `qcPrompt` (`workflows-src/stage/qc.js`) does not. A QC engineer backgrounded the acceptance run and was blocked on `sleep 240`.
+- **F-73.** The PM's Edits to `decisions.md` failed as "not found" or "Found 24 matches". `appendDecision` (`bin/factory/shared.ts`) can write only `- HH:MM | <text> | none | followed`, so it can't carry the grammar architecture.md declares: the four-field decision line, the `checker-` line, continuation lines and the `## Run` heading.
+- **F-74.** The PM ran `node retro/cli.ts scrub... 2>&1 | tail -5; git push origin main`. Scrub exits 1 on a hit and 2 on an unreadable file (the header comment of retro/cli.ts), but `;` ignores that, and a pipeline's status is `tail`'s, so a home path reached origin main. R-32 (requirements.md section "R-32: Raw transcript text stays local; committed files stay clean") keeps committed files clean; SKILL.md section "9. Merge" asks for the scrub, and base register.ts has no `Bash` handler to enforce it.
+- **Catalog.** `trailers-format-unquoted` (catalog.json key `entries`) matches `--format=%\(trailers`, which also hits the quoted form the fix asks for. `webkit-host-missing-dependencies` (catalog.json key `entries`) matches the `ENV_LINE` constant in factory test fixtures (for example factory-fixes6.check.ts). Each false hit reports a recurrence that isn't one.
 
 ## Decision
 
 ### F-67: the `--dir` split, and admit fails closed
 
-1. **`runFactory` resolves `F.dir`** the way `heavyParts` does (stage.js:309): an absolute `F.dir` as is, else `${F.repo}/${F.dir}`. One helper serves both, so the two can't drift.
-2. **factory.ts refuses a relative `--dir`** on every command except `start` and `start --resume`, with a usage error, exit 2 (`usage`, factory.ts:40). The check sits in `dirOf` (factory.ts:100), which every command shares; `cmdStart` and the resume path keep resolving it themselves (factory.ts:1457, :1637), as ADR-0019 item 18 left them.
-3. **`admit` fails closed.** A runner result with no parsed JSON object, or whose `admitted` isn't a boolean, stops the crew BLOCKED. The stop text starts `admission check failed:` and carries `r.out`, the runner's exit code and stdout. It must not start `held by admission:`, because the run skill reads that prefix as a memory hold and starts the resource monitor (SKILL.md:254). `admitted: false` stops as today, with `held by admission: <why>`. `admitted: true` admits.
-4. **G7 is kept.** ADR-0015 Decision 2 (adr/0015-resource-aware.md:60) admits on a sampler error and prints `freeMB: null`. That result is still JSON with `admitted: true`, so it admits. Fail-closed covers a result truss can't read, not a host truss can't sample.
+1. **`runFactory` resolves `F.dir`** the way `heavyParts` does (`workflows-src/stage/gates.js`): an absolute `F.dir` as is, else `${F.repo}/${F.dir}`. One helper serves both, so the two can't drift.
+2. **factory.ts refuses a relative `--dir`** on every command except `start` and `start --resume`, with a usage error, exit 2 (`usage`, factory.ts). The check sits in `dirOf` (`bin/factory/shared.ts`), which every command shares; `cmdStart` and the resume path keep resolving it themselves (`bin/factory/start.ts` `cmdStart`, `cmdStartResume`), as ADR-0019 item 18 left them.
+3. **`admit` fails closed.** A runner result with no parsed JSON object, or whose `admitted` isn't a boolean, stops the crew BLOCKED. The stop text starts `admission check failed:` and carries `r.out`, the runner's exit code and stdout. It must not start `held by admission:`, because the run skill reads that prefix as a memory hold and starts the resource monitor (SKILL.md section "6. Write the goal files and start the project managers by stage"). `admitted: false` stops as today, with `held by admission: <why>`. `admitted: true` admits.
+4. **G7 is kept.** ADR-0015 Decision 2 (adr/0015-resource-aware.md section "Decision 2: admission, `factory admit` and `factory start`") admits on a sampler error and prints `freeMB: null`. That result is still JSON with `admitted: true`, so it admits. Fail-closed covers a result truss can't read, not a host truss can't sample.
 5. **All crews exit 2.** When the runner exits 2 on every crew (a bad `--dir`, a missing plan), every crew stops BLOCKED at its first `admit`, each with its own runner output. The stage returns one BLOCKED result per crew, so the PM sees every one.
 
 ```mermaid
@@ -45,9 +45,9 @@ sequenceDiagram
 
 ### F-70: the narrow trigger, the both-named order and the backstop
 
-1. **The builder still goes first** on every green failure, as `green` does today. Routing on "the output names a tester file" would send nearly every failure to a tester, since a failing case always names its test file, and `testerFiles` (stage.js:431-435) includes the guarded acceptance-test files.
-2. **The trigger.** When a green fix builder ends BLOCKED or QUESTION (`runMember` throws a `Stop`, stage.js:509-511) and the stop text names a tester file (`namesFile` against `testerFiles`, stage.js:448), `green` catches it and runs a fix member with the tester role on that text instead of stopping the crew. Any other stop still stops the crew.
-3. **Both named.** When that text names a tester file and also a code file (`namesCode`, stage.js:450), the tester fix runs first, then a builder fix for the code half, in the order `fixFindings` uses (stage.js:604-609).
+1. **The builder still goes first** on every green failure, as `green` does today. Routing on "the output names a tester file" would send nearly every failure to a tester, since a failing case always names its test file, and `testerFiles` (`workflows-src/stage/prompts.js`) includes the guarded acceptance-test files.
+2. **The trigger.** When a green fix builder ends BLOCKED or QUESTION (`runMember` throws a `Stop`, `workflows-src/stage/members.js`) and the stop text names a tester file (`namesFile` against `testerFiles`, `workflows-src/stage/prompts.js`), `green` catches it and runs a fix member with the tester role on that text instead of stopping the crew. Any other stop still stops the crew.
+3. **Both named.** When that text names a tester file and also a code file (`namesCode`, `workflows-src/stage/prompts.js`), the tester fix runs first, then a builder fix for the code half, in the order `fixFindings` uses (`workflows-src/stage/fixes.js`).
 4. **The backstop.** `testsBackstop` runs after each green fix: after the builder fix, and after each fix of a re-route.
 5. **The control.** A green failure whose output names the acceptance test file and a code assertion goes to the builder, as today.
 
@@ -55,7 +55,7 @@ The tester gets only a case a builder has declared not code, and the QC engineer
 
 ### F-72: where the foreground rule goes
 
-Both places. `qcPrompt` gains the line `memberPrompt` carries (stage.js:392), word for word: foreground, a Bash timeout up to 600000, no `run_in_background`, no `Monitor`, no `sleep` or polling. `agents/qc-engineer.md` gains the rule as plain prose in its body, so a QC engineer started outside `stage.js` gets it too. The prose adds no code snippet ahead of the fenced `git diff --no-color` that contract-evals.check.ts:104 expects first.
+Both places. `qcPrompt` gains the line `memberPrompt` carries (`workflows-src/stage/prompts.js`), word for word: foreground, a Bash timeout up to 600000, no `run_in_background`, no `Monitor`, no `sleep` or polling. `agents/qc-engineer.md` gains the rule as plain prose in its body, so a QC engineer started outside `stage.js` gets it too. The prose adds no code snippet ahead of the fenced `git diff --no-color` that contract-evals.check.ts test "parseSnippets: ADR-0007 yields at least the five listed lines, in order, with fills keeping their angle brackets" expects first.
 
 ### F-73: `factory.ts decide`
 
@@ -67,19 +67,19 @@ Both places. `qcPrompt` gains the line `memberPrompt` carries (stage.js:392), wo
 | checker | `decide --checker <n> --recommend <answer\|defer\|pass> --text '<text>' --outcome '<outcome>'` | `- HH:MM \| checker-<n> RECOMMEND <answer\|defer\|pass>: <text> \| <outcome>` |
 | run heading | `decide --run '<goal>'` | `## Run <start> \| <goal>` |
 
-- `HH:MM` is the clock's local time, from `localTime` as `appendDecision` uses it (factory.ts:185). `<start>` is the clock's UTC time in the form `date -u +%Y-%m-%dT%H:%M:%SZ` prints (SKILL.md:28). The caller never types a time, so no line is stamped ahead of the clock.
-- **decide and `appendDecision`.** Both go through one append step: `appendDecision`'s read-old-file, newline guard and `appendFileSync` (factory.ts:183-185). `appendDecision` keeps its signature and output: `plan approve` (factory.ts:518), `mark merged` (:813) and its other callers still write `- HH:MM | <text> | none | followed`. `decide` is the PM's route; `appendDecision` stays the factory's own.
+- `HH:MM` is the clock's local time, from `localTime` as `appendDecision` uses it (`bin/factory/shared.ts`). `<start>` is the clock's UTC time in the form `date -u +%Y-%m-%dT%H:%M:%SZ` prints (SKILL.md section "Decisions and the decision log"). The caller never types a time, so no line is stamped ahead of the clock.
+- **decide and `appendDecision`.** Both go through one append step: `appendDecision`'s read-old-file, newline guard and `appendFileSync` (`bin/factory/shared.ts` `appendDecision`). `appendDecision` keeps its signature and output: `plan approve` (`bin/factory/plan.ts` `cmdApprove`), `mark merged` (`bin/factory/crew.ts` `cmdMarkMerged`) and its other callers still write `- HH:MM | <text> | none | followed`. `decide` is the PM's route; `appendDecision` stays the factory's own.
 - **Refusals.** Each refusal exits 2 and writes nothing.
   - Decision form only: a field count other than four. Fewer than four fields, and five or more (`a | b | c | d | e`, which holds four or more `|`), are refused. decide checks the count, not the words: `- HH:MM | a | b | c | d` is a valid line.
   - Checker form and heading: checked by their own modes. `<n>` is a positive integer, the answer is one of `answer`, `defer` or `pass`, and the goal isn't empty. The field-count rule doesn't apply to them.
   - Every form: a newline (`\n` or `\r`) in any value.
   - Every form: a relative `--dir` (F-67 item 2).
-- **Continuation lines: the grammar drops them.** decide writes no continuation line and has no flag for one. decide refuses a newline in every form, so a multi-line value has nowhere to go; and `read_decisions` (scripts/retro.py:202-221) skips every line that is neither a `## Run` heading nor starts `- `, so a continuation line carries nothing the retro reads. A longer note goes in a work file the line names. Older files with continuation lines still parse.
-- SKILL.md:30-32 names `factory.ts decide` as the only route and drops "with Edit or Write".
+- **Continuation lines: the grammar drops them.** decide writes no continuation line and has no flag for one. decide refuses a newline in every form, so a multi-line value has nowhere to go; and `read_decisions` (scripts/retro.py) skips every line that is neither a `## Run` heading nor starts `- `, so a continuation line carries nothing the retro reads. A longer note goes in a work file the line names. Older files with continuation lines still parse.
+- SKILL.md section "Decisions and the decision log" names `factory.ts decide` as the only route and drops "with Edit or Write".
 
 ### F-74: the R-32 push and merge gate in register.ts
 
-A new main-session handler, `on('tool.call', { tool: 'Bash' })`, of the same kind as the Workflow handler (register.ts:2173-2175: gated on `e.agentId === undefined`, refusing through `refuse`, register.ts:2234, and wrapped in `.catch(failOpen)`, :2238). A scrub subcommand would be a step the PM can skip; a PreToolUse rule is not.
+A new main-session handler, `on('tool.call', { tool: 'Bash' })`, of the same kind as the Workflow handler (register.ts the `tool.call` handler for `Workflow`: gated on `e.agentId === undefined`, refusing through `refuse`, register.ts the `tool.call` handler for `Workflow`, and wrapped in `.catch(failOpen)`, the `tool.call` handler for `Workflow`). A scrub subcommand would be a step the PM can skip; a PreToolUse rule is not.
 
 **The rule.** Split the command into segments at the operators `&&`, `||`, `;`, `|` and newline. A redirection such as `2>&1` is not an operator. If no segment runs `retro/cli.ts scrub`, allow. Otherwise, take the first scrub segment. For each later segment that holds `git push` or `git merge` anywhere in it, matched as `git (-C <one word> )?(push|merge)` followed by whitespace or the segment's end, scrub gates it only when every operator from the scrub segment up to it is `&&`. That excludes a pipe right after scrub. If any such push or merge is not gated, refuse, and name the rule and the fix: join scrub and push or merge with `&&`, and never pipe scrub's output.
 
@@ -96,7 +96,7 @@ The match ends at whitespace or the end, not at `\b`: `/git (-C \S+ )?(push|merg
 | a plain `git push`, with no scrub | allowed |
 | `scrub f; git merge-base main HEAD`, `scrub f; git log` | allowed: not push or merge |
 
-**An earlier call is not seen, by design.** The hook judges one command, so a scrub in an earlier call followed by a push passes. Tying calls together would need state about what a scrub covered and what changed since; SKILL.md:432 covers that path in prose.
+**An earlier call is not seen, by design.** The hook judges one command, so a scrub in an earlier call followed by a push passes. Tying calls together would need state about what a scrub covered and what changed since; SKILL.md section "9. Merge" covers that path in prose.
 
 ```mermaid
 flowchart TD
@@ -111,7 +111,7 @@ flowchart TD
 
 ### The two catalog narrowings
 
-The catalog's shape doesn't change; only the two `patterns` arrays do. The matcher tests each pattern with `new RegExp(p)` per line (retro/catalog.ts:124), and transcript lines are JSON, so a quote reaches it escaped.
+The catalog's shape doesn't change; only the two `patterns` arrays do. The matcher tests each pattern with `new RegExp(p)` per line (retro/catalog.ts `matchLine`), and transcript lines are JSON, so a quote reaches it escaped.
 
 - **`trailers-format-unquoted`.** Neither pattern matches when a quote sits right before `--format`, for example `(?<!["'])--format=%\(trailers`. The JSON-escaped quoted form `\"--format=%(trailers` and the single-quoted form no longer match; the unquoted command from F-24's evidence still does.
 - **`webkit-host-missing-dependencies`.** The pattern doesn't match the message inside a string literal assigned in source, for example a leading `(?<!= *\\?['"][^'"]*)`. The fixture text `const ENV_LINE = 'Error: browserType.launch: Host system is missing dependencies to run browsers.'` no longer matches; F-17's quote, "Host system is missing dependencies to run browsers ... sudo apt-get install libicu74 libxml2 libflite1", still does.

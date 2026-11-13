@@ -442,7 +442,7 @@ test('inbox: a notify exit 1 is fail-open', () => {
   assert.equal(errs[0].id, j.id)
 })
 
-test('inbox: a notify grandchild that sleeps is killed within 11 s', () => {
+test('inbox: a notify grandchild that sleeps is killed within notify-run limit plus a load-scaled margin', () => {
   const pidFile = `${mk('inbox-slp-')}/pid`
   const repo = flat(realpathSync(mkRepo({ config: { notify: notifyCmd(SLEEPER, pidFile) } })))
   let pid = 0
