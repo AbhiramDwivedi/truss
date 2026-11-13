@@ -1,5 +1,6 @@
 // start's and admit's admission (ADR-0015, contract-025): blocking inbox items, the budget hold, memory, then the parallelism. Split
 // from bin/factory/resources.ts (0.32.0 item 8). Never imports factory.ts, whose top-level await would make an import cycle.
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { configOf, isObj, need, parseLabel, refuse, str, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
