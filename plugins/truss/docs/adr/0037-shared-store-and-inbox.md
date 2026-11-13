@@ -55,7 +55,7 @@ Outside a git repo every command that needs `<common>` exits 2 with `needs a git
 
 **The lock.** `withLock(dir, name, fn, {waitMs = 5000})` (`bin/store.ts` `withLock`) makes `<dir>/locks/<name>.lock` with `mkdirSync`, writes `owner.json`, runs `fn`, and removes the lock only if its token is still its own. A busy lock is retried every 25 ms. After `waitMs` it throws `StoreBusy`, exit 2 with `{error: "store busy: <name>"}` (`bin/store.ts`). A lock is stale when its owner pid is dead on the same host, when it has no readable owner file after 10 s, or when it is older than 120 s (`bin/store.ts` `STALE_AGE_MS`). A process never takes a second lock while it holds one.
 
-The contract said to rename a stale lock aside. The code doesn't: a rename can move a lock that has just turned live. Instead one breaker at a time holds a `<name>.lock.break` mutex, re-reads the owner, and removes the lock only if it still carries the token judged stale (`bin/store.ts:179-188`). The cost is the age rule: a live owner that holds a lock past 120 s can lose it.
+The contract said to rename a stale lock aside. The code doesn't: a rename can move a lock that has just turned live. Instead one breaker at a time holds a `<name>.lock.break` mutex, re-reads the owner, and removes the lock only if it still carries the token judged stale (`bin/store.ts` `takeOver`). The cost is the age rule: a live owner that holds a lock past 120 s can lose it.
 
 **Atomic writes.** `writeJsonAtomic` writes a tmp file and renames it over the target, retrying a rename refused with EPERM, EBUSY or EACCES 10 times, 20 ms apart (`bin/store.ts` `RETRY_RENAME`); Windows refuses a rename while a scanner holds the file.
 

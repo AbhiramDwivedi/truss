@@ -113,7 +113,7 @@ Rules:
 
 The session starts when the client sends the first message, not when the server starts. It runs until the generator ends or the server stops. `close()` calls `interrupt()` and ends the generator.
 
-**Turns.** The spike sent each message only after the previous top-level `result` (`ui/spike/run.ts:105-112`). ui-session does the same. A message the client sends while a turn runs waits in a queue and goes out after the next top-level `result`. Sending into a running turn was not tried, so the queue is the safe rule.
+**Turns.** The spike sent each message only after the previous top-level `result` (the `for await` loop over `q` in `ui/spike/run.ts`, which pushes `pending` once per `turn`). ui-session does the same. A message the client sends while a turn runs waits in a queue and goes out after the next top-level `result`. Sending into a running turn was not tried, so the queue is the safe rule.
 
 **Status**, shown in the header:
 
@@ -181,7 +181,7 @@ Every prompt the client answers is a **request**: an id (`crypto.randomUUID()`),
 - **Crews.** The `plan.json` crews, then crews named only in event lines, in order of first appearance. Crew `main` is never a crew.
 - **Project manager and members.** The project manager is the agent whose name equals the crew slug. Members are the other agents the crew's event lines name. Each member line shows type, model and effort from its latest spawn, and a state from its latest event: `spawned`, `stalled`, `tagged`, `reported`, `allowance-spent` or `fetched`.
 - **Latest activity.** One line per crew, from the newest event or message by `ts`, in the words the schema's `activity.text` gives (for example `auth-builder stalled 15 min`). A message line belongs to the crew of its `from` agent, else of its `to` agent.
-- **QC verdict.** The crew's newest QC file under `reports/<crew>/`, by the hooks' own rule. Only `<crew>-qc.md` and `<crew>-qc-<k>.md` count (`isQcFile`, `hooks/register.ts`). That leaves out `auth-qc-2.interim.md`. The newest by mtime wins, and on a tie the higher k (`latestQc`, `:513-520`), without the run filter. The verdict is `PASS` or `FAIL` from a first non-empty line `VERDICT: <v>`.
+- **QC verdict.** The crew's newest QC file under `reports/<crew>/`, by the hooks' own rule. Only `<crew>-qc.md` and `<crew>-qc-<k>.md` count (`isQcFile`, `hooks/register.ts`). That leaves out `auth-qc-2.interim.md`. The newest by mtime wins, and on a tie the higher k (`latestQc`), without the run filter. The verdict is `PASS` or `FAIL` from a first non-empty line `VERDICT: <v>`.
 - **Decisions, ADRs and design.** As `decisions`, `adrs` and `design` in the schema.
 
 **No Truss dir yet.** Until the session's `init` arrives, the Truss dir is unknown. Once known, it may not exist until the hooks write it. `run` is then `null` and a notice says so. A missing `.claude/truss.json`, or a missing `architecture` or `adr` key (neither has a default, `skills/run/SKILL.md` section "0. Check for the architecture doc"), gives `design.architecture: null` or an empty ADR list, and a notice.
