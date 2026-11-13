@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, takeLease, refreshLease, releaseLease } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, transcriptsOf, takeLease, refreshLease, releaseLease } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -399,6 +399,15 @@ function scriptPathFor(plugin: string, script: string, scriptsDir: string | unde
   copyFileSync(src, to)
   return to
 }
+// The session scripts dir the Workflow tool accepts: <dirname of the main transcript>/<sid>/workflows/scripts, where <sid> is the path
+// segment directly under <git common dir>/truss/ of the truss dir (a wave subdir is allowed). undefined when the session is not found.
+function sessionScriptsDir(repo: string, dir: string): string | undefined {
+  const rel = path.relative(`${flat(commonDir(repo))}/truss`, path.resolve(dir))
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return undefined
+  const sid = flat(rel).split('/')[0] as string
+  const main = transcriptsOf(sid).main
+  return main === null ? undefined : `${path.posix.dirname(flat(main))}/${sid}/workflows/scripts`
+}
 // The architecture doc as an absolute path (the key `architecture` of truss.json, repo-relative, default docs/architecture.md).
 const archPath = (repo: string, rel: unknown): string => path.isAbsolute(String(rel)) ? flat(String(rel)) : `${repo}/${typeof rel === 'string' && rel !== '' ? rel : 'docs/architecture.md'}`
 
@@ -420,7 +429,7 @@ function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
+      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir)), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -453,7 +462,8 @@ function cmdPlanWrite(f: Flags): Obj {
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  const keepExisting = (): void => {
+  // An unapproved plan is overwritten; an approved one with a running crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
+  const keepExisting = (archive: boolean): void => {
     if (!existsSync(`${dir}/plan.json`)) return
     let existing
     try {
@@ -461,10 +471,18 @@ function cmdPlanWrite(f: Flags): Obj {
     } catch {
       return no('kept the existing plan: it could not be read')
     }
-    if (existing === undefined) no('kept the existing plan: it is not a readable plan')
-    else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
+    if (existing === undefined) return no('kept the existing plan: it is not a readable plan')
+    if (existing.approvedAt === null) return
+    const running = existing.crews.filter((c: Obj) => c.status === 'running').map((c: Obj) => String(c.slug))
+    if (running.length > 0) return no(`kept the existing plan: crew ${running.join(', ')} of the earlier run is running`)
+    if (!archive) return
+    const stamp = String(existing.approvedAt).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'run'
+    let name = `plan-${stamp}`
+    for (let n = 2; existsSync(`${dir}/${name}.json`) || existsSync(`${dir}/${name}.md`); n++) name = `plan-${stamp}-${n}`
+    renameSync(`${dir}/plan.json`, `${dir}/${name}.json`)
+    if (existsSync(`${dir}/plan.md`)) renameSync(`${dir}/plan.md`, `${dir}/${name}.md`)
   }
-  keepExisting()
+  keepExisting(false)
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -476,7 +494,7 @@ function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
-    keepExisting()
+    keepExisting(true)
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
@@ -2213,7 +2231,7 @@ function cmdStart(f: Flags): Obj {
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
   excludeScratch(repo)
-  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
+  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir))
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
