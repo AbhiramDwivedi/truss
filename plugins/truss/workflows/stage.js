@@ -405,12 +405,15 @@ async function ask(crew, role, prompt, opts = {}) {
   const member = persona ? null : memberFor(crew, role)
   // whether this member is meant to run at effort high, so factory's audit does not flag it (a persona, task effort or ## Members line)
   const high = (PERSONA_ROLES.includes(role) || role === 'po') && ((persona && PERSONAS[persona] && PERSONAS[persona].effort === 'high') || rest.effort === 'high' || (member && member.effort === 'high'))
-  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title), persona, !!high)
+  // reserve the label before the awaited admit: sibling members start in parallel, and a peek taken before the counter moves
+  // would give two of them one label, so the admission title (persona, --high) would land on a label the member does not run under.
+  // A held admission stops the crew and its number stays used: a resume numbers from labelFrom, so the gap is harmless.
+  const label = nextLabel(crew, role)
+  if (labelOut) labelOut.label = label
+  await admit(crew, at ?? crew.step, label, titleOf(crew, role, title), persona, !!high)
   // a member can change the crew branch: no gates result outlives it
   dropGates(crew)
   try {
-    const label = nextLabel(crew, role)
-    if (labelOut) labelOut.label = label
     return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
   } finally {
     // ADR-0046 item 1: the reap rides on the crew's next factory call (--reap-first), not a runner spawn of its own;
