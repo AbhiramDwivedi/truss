@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { gatesAware } from './fixtures/gates-stub.ts'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
 const STAGE = `${PLUGIN}/workflows/stage.js`
@@ -48,7 +49,7 @@ async function exec(args, o = {}) {
   const calls = []
   const unscripted = []
   const counters = {}
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -85,7 +86,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await ticks(2)
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   let result
@@ -225,11 +226,11 @@ t('knowledge 5: the knowledge writer runs after members and the green check, bef
   assert.ok(title && title.prompt.includes('Record what a learned'), 'admit records the title')
 })
 
-t('knowledge 6: the knowledge writer comes before the stress test', async () => {
+t('knowledge 6: the knowledge writer comes after the stress test (0.29.0, ADR-0046 item 7)', async () => {
   const labels = labelsFor({ 'a-stress': 'STRESSTEST: 0 findings\n' })
   const r = await runStage([OLD('a', { stressTest: true })], { personas: PERSONAS, labels })
   passed(r)
-  assert.ok(indexOf(r, 'a-writer') < indexOf(r, 'a-stress'), r.labels.join(','))
+  assert.ok(indexOf(r, 'a-stress') < indexOf(r, 'a-writer'), r.labels.join(','))
 })
 
 t('knowledge 7: args.truss.featureMap and adrDir override the default paths', async () => {
@@ -676,7 +677,7 @@ t('replies 8: a runner result the crew cannot read is not acked, so the reply is
 
 t('replies 9: a change that arrives during QC rework is not applied and is listed as late; the crew is not looped', async () => {
   const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: the export button is wrong\n'
-  const labels = DECIDING({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-3': done('feat/fix') })
+  const labels = DECIDING({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-3': done('feat/fix'), 'a-writer-2': done('feat/k2') })
   const runner = replying([], [CHANGE])
   const r = await runStage([OLD()], { personas: PERSONAS, labels, runner })
   passed(r)
@@ -685,7 +686,8 @@ t('replies 9: a change that arrives during QC rework is not applied and is liste
   assert.equal(cmdsOf(r, 'decision-ack').length, 0)
   assert.equal(replyPolls(r).length, 2)
   assert.ok(replyPolls(r)[1].i > indexOf(r, 'a-qc-2'), 'the late read follows the last QC')
-  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 1, 'the knowledge step does not rerun')
+  // ADR-0046 item 6: the knowledge step re-runs after the QC fix round, but it applies no late reply
+  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 2, 'the knowledge step re-runs once, after the fix round')
   const s = r.result.find((x) => x.slug === 'a')
   assert.deepEqual(s.late, [CHANGE].map(({ id, reply, note }) => ({ id, reply, note })))
   assert.deepEqual(s.decisions.map((x) => [x.id, x.reply]), [['d1', 'accepted']])
@@ -894,18 +896,24 @@ t('knowledge 21 (review 3): green always re-runs after the knowledge commit (mar
   }
 })
 
-t('knowledge 22: learned items from members after the knowledge step are listed as unrecorded in the crew result, never counted', async () => {
+t('knowledge 22: a QC fixer\'s learned items are recorded by the knowledge re-run after its round; a stop before it lists them as unrecorded', async () => {
   const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: wrong\n'
   const late = { kind: 'persona', text: 'always run the fixer', source: 'qc' }
-  const labels = labelsFor({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-2': done('feat/fix', { learned: [late] }) })
+  // ADR-0046 item 6: the re-run records the item, so it is counted and not unrecorded
+  const labels = labelsFor({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-2': done('feat/fix', { learned: [late] }), 'a-writer-2': done('feat/k2') })
   const r = await runStage([OLD()], { personas: PERSONAS, labels })
   passed(r)
   const s = r.result.find((x) => x.slug === 'a')
-  assert.equal(s.unrecorded.length, 1)
-  assert.equal(s.unrecorded[0].text, 'always run the fixer')
-  assert.equal(s.unrecorded[0].kind, 'persona')
-  assert.deepEqual(s.knowledge, { items: 1, ran: true, sourceChanges: 0 }, 'the late item is not in the count')
-  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 1, 'the step does not rerun')
+  assert.equal(s.unrecorded, undefined)
+  assert.deepEqual(s.knowledge, { items: 2, ran: true, sourceChanges: 0 })
+  assert.equal(r.labels.filter((l) => /^a-writer/.test(l)).length, 2, 'the step re-runs after the fix round')
+  // the re-run writer stops: the fixer's item was never recorded, so the stopped result lists it
+  const stop = labelsFor({ 'a-qc': FAIL, 'a-builder-2': done('feat/fix', { learned: [late] }), 'a-writer-2': done('feat/k2', { marker: 'BLOCKED', text: 'no docs access' }) })
+  const st = await runStage([OLD()], { personas: PERSONAS, labels: stop })
+  const ss = st.result.find((x) => x.slug === 'a')
+  assert.equal(ss.state, 'stopped', JSON.stringify(ss).slice(0, 400))
+  assert.equal(ss.unrecorded.length, 1)
+  assert.equal(ss.unrecorded[0].text, 'always run the fixer')
   const clean = await runStage([OLD()], { personas: PERSONAS, labels: labelsFor() })
   assert.equal(clean.result.find((x) => x.slug === 'a').unrecorded, undefined)
 })

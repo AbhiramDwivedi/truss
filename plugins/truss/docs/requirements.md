@@ -591,76 +591,76 @@ Example: Given two crews in one stage whose owns both list skills/run/SKILL.md, 
 ## R-85: An agent cannot approve a plan or goal as the client
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan with approval client, when an agent runs `factory approve --by client` without the typed-prompt proof `/truss:inbox` resolve requires (ADR-0037), then the factory refuses and approvedAt stays null; with a genuine typed client prompt it approves; and the run skill tells the program manager never to call a client-only command.
 
 ## R-86: A crew decision that needs the program manager reaches the program manager's inbox and waits
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a running crew whose product owner escalates a call that needs the program manager, when the crew posts it, then an item appears in the program manager's inbox and the asking task waits for the reply instead of counting the call as accepted.
 
 ## R-87: plan-write writes the full plan on every path
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan.js result whose designer hand-back holds a full plan.json and plan.md, when plan-write runs on the path that wrote a stub in wave 3, then plan.json and plan.md on disk hold every crew of the hand-back.
 
 ## R-88: A bare-directory owns entry matches the files under it
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose owns lists `plugins/truss/bin/`, when owns-check or globToRegExp tests `plugins/truss/bin/factory.ts`, then it matches, as `plugins/truss/bin/**` would; and plan-check warns on the bare-directory entry.
 
 ## R-89: Only one finisher runs per crew
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose resumed agent is still finishing, when the program manager runs finish or a resume for the same crew, then the second is refused by a lock or state check and no duplicate finisher starts; once the first ends, a later finish runs.
 
 ## R-90: A resume merges the target into the crew branch before the crew restarts
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew branch cut from main at A, and another crew merged to main at B, when the program manager resumes the crew, then the crew branch contains B before any resumed member starts, and a conflict goes to a resolver, never a silent drop.
 
 ## R-91: Every factory command accepts or refuses a relative --dir the same way
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given any factory command run with a relative `--dir`, when it starts, then it either resolves the path against the cwd or refuses with a message naming --dir, never writing to a wrong directory.
 
 ## R-92: Stage green installs ui dependencies when they are missing
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew worktree whose ui/node_modules is missing, when the stage green check runs, then it runs `npm --prefix ui ci` first and the ui checks run instead of failing on missing modules.
 
 ## R-93: The goal check has a factory command
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan with a goalCheck, when the program manager runs the factory goal-check command after the last merge, then it runs the check at the target head, prints the result as JSON and logs a decision line.
 
 ## R-94: The run skill says the program manager fast-forwards the main checkout after a crew's PR merge
 Status: open
 Kind: constraint
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-95: A second run in one session dir has a supported start
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a session dir that holds a finished run's plan files, when the program manager starts a new run by the documented way, then the old plan files are kept (archived or per-goal) and the new plan does not overwrite them.
 
@@ -668,21 +668,140 @@ Example: Given a session dir that holds a finished run's plan files, when the pr
 Status: open
 Kind: nfr
 Measure: inbox.check.ts passes 20 of 20 consecutive runs on a loaded host
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-97: Docs cite code by symbol, or the release check tolerates line drift, and the wrong citations on main are fixed
 Status: open
 Kind: constraint
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-98: factory cost prices the Claude 5.5 family
 Status: open
 Kind: functional
-Added: 2026-11-12T12:01:59Z | truss 0.29.0 wave-3 plugin-fix release
+Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given usage rows for claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-5, when factory cost runs, then each row is priced at the current published per-token rates and none is reported as unpriced.
+
+## R-99: A resume carries every unbuilt ruling
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a ruling given on an earlier resume at a task not yet built, when the crew resumes with a newer answers file, then the stored ruling is in the crew's answers too; once a later run built that task, it is dropped.
+
+## R-100: Claude 5.5 models are priced in this repo's config
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a Haiku 5.5 request with a prompt over 100,000 tokens, when factory cost prices it, then it uses the entry's longContext rates for the whole request.
+
+## R-101: The stress test runs before the knowledge step
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a crew with stress and knowledge on, when its chain runs, then the order is reply checkpoint, UX review, stress test, knowledge step, green, scope check, QC.
+
+## R-102: The knowledge lint runs before every QC round and after fix rounds
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a new lint failure before a QC round, when the round starts, then the knowledge writer re-runs (at most twice) and the lint runs again; after a QC fix round the writer re-runs on the fix diff.
+
+## R-103: A check on an unchanged head is not re-run
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a fixer that commits nothing, when the crew re-checks, then green, the owns check and the tests check cost no runner spawn.
+
+## R-104: The reap after a member rides on the next factory call
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a member that finished, when the crew makes its next factory call, then that call carries --reap-first and no separate reap spawn runs; the crew's end still runs a standalone reap.
+
+## R-105: factory gates runs the pre-QC checks as one call
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a stubbed crew, when its stage runs, then it uses 22 runner spawns where it used 31; factory gates stops at the first unmet step and prints each step's body.
+
+## R-106: The heavy slot count is configurable
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given heavySlots set to 2 in .claude/truss.json, when two heavy checks start, then both get a slot; the value is an integer 1-16, else the host default; the docs caution that timing-sensitive tests may flake and heavySlots 1 restores one slot.
+
+## R-107: Builders update the docs their change makes stale, and the acceptance test stays read-only
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a builder commit that edits the feature map and a knowledge doc, when owns-check runs, then it passes; given a commit that edits the tester's acceptance test, then the crew stops BLOCKED, because a builder that could edit it could pass by weakening it.
+
+## R-108: A tester writes the regression case before the fix
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a stress finding or a QC finding rated bug or risk, when the fix round runs, then a tester writes a failing case before the fix builder; a nit gets none.
+
+## R-109: A stress-fix round that adds no test blocks
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a stress-fix round that changed no test file, when green runs with --tests-since, then one regression-test builder runs, and if still no test file changed the crew stops BLOCKED at green.
+
+## R-110: testGlobs names the project's test files, and init detects them
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a testGlobs entry in .claude/truss.json, when the tests check lists changed test files, then a file matching it counts; truss init proposes the key from the project's test layout and writes it only on approval.
+
+## R-111: Stamp drift and line drift do not block QC
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a knowledge doc with a stale verified stamp or a moved file:line citation, when QC rules, then it does not fail for that alone and fails only on a statement that is now wrong.
+
+## R-112: From round 2, QC gets its previous report and the fix diff
+Status: open
+Kind: functional
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a second QC round, when the brief is built, then it holds the round number, the previous report and the fix diff, and asks QC to rule each prior finding CLOSED or OPEN.
+
+## R-113: A known defect on a trust or money path fails the crew
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a diff touching an approval check that fails open, when an ADR permits it, then QC still fails the crew and adds a design QUESTION.
+
+## R-114: A PM-ruled edit of an acceptance test is a QUESTION, not a FAIL
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a PM answer in the brief that permits a builder's edit of an acceptance test, when QC sees the edit, then it reports a QUESTION quoting the ruling; a member's own call is no ruling.
+
+## R-115: A nit is fixed only when the fix changes no behaviour
+Status: open
+Kind: constraint
+Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality release
+Source: goal
+Example: Given a nit whose fix would change behaviour, when the fix round runs, then it is left and listed under "Nits left".
 
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.

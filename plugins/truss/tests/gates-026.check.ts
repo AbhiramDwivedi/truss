@@ -15,6 +15,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, cpSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { pathToFileURL } from 'node:url'
 import {
   REAL_FACTORY, REAL_PLUGIN, addCrewWorktree, appendEvent, assertOneLine, crew, factorySpawn, git, head, mkEnv, mkRepo, mkRun, mkTrussDir, planObj, pluginCopy, putFile, readPlan, runCli, tmp, writeGoal, writePlan,
@@ -89,7 +90,7 @@ async function exec(args, o = {}) {
   const body = readFileSync(STAGE_PATH, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
   const unscripted = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -132,7 +133,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await tick()
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {

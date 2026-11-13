@@ -38,5 +38,5 @@ verified: 269c640a141b8b010bac7e450729bf85ba2b7572
 
 - Question: when a product owner escalates, who answers and who waits?
 - Answer: the program manager answers only an escalation inside approved scope (a `pm-question` item). A call that contradicts approved scope or a client ruling becomes a client-only `scope-change` item (or a `PROPOSAL:`) that the program manager never resolves. Only the asking crew waits, and a resumed stage re-reads the item through `factory inbox`, never a timer. A call touching no scope line is logged and never waits.
-- Reason: scope changes are the client to rule on (plan decision 07:22, goal file `crew-decisions.md` approved scope); design in `plugins/truss/docs/adr/0046-crew-decisions-reach-pm.md`.
+- Reason: scope changes are the client to rule on (plan decision 07:22, goal file `crew-decisions.md` approved scope); design in `plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md`.
 - Decided by: program manager as product owner (plan finding 3 ruling).

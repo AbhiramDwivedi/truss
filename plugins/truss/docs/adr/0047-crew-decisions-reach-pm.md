@@ -1,4 +1,4 @@
-# ADR-0046: route escalated crew product calls through the inbox and hold the asking crew
+# ADR-0047: route escalated crew product calls through the inbox and hold the asking crew
 
 Status: accepted, 2026-11-12
 Decided by: program manager (auto), on the product owner's plan finding 3, 2026-11-12 (rests on the client rule that scope changes are the client's to rule on)
