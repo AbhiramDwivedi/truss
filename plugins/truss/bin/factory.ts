@@ -1433,7 +1433,7 @@ function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: 
   const warnings = [...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries, ...(typeof c.plan.approvedAt === 'string' ? { approvedAt: c.plan.approvedAt } : {}) },
     held, projectManagers, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -4290,7 +4290,7 @@ const isMain = ((): boolean => {
 // booleans ok, merged and admitted, head as a string, env cut to 200 characters, and ran from heavy.ran.
 export function statusLine(body: Obj): string {
   const s: Obj = {}
-  for (const k of ['ok', 'merged', 'admitted']) if (typeof body[k] === 'boolean') s[k] = body[k]
+  for (const k of ['ok', 'merged', 'admitted', 'checkpoint']) if (typeof body[k] === 'boolean') s[k] = body[k]
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
