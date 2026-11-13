@@ -153,6 +153,23 @@ test('a second run is refused while a crew of the earlier plan is running', () =
   assert.deepEqual(walk(env.dir).sort(), files, 'nothing was archived or written')
 })
 
+test('a second run is refused while a crew of the earlier plan is planned, not finished', () => {
+  for (const statuses of [['planned'], ['merged', 'planned']]) {
+    const env = mkEnv()
+    writePlan(env.dir, planObj(statuses.map((s, i) => crew(`old${i}`, { status: s })), { goal: 'old goal' }))
+    writeFileSync(`${env.dir}/plan.md`, OLD_MD)
+    const oldPlan = readFileSync(`${env.dir}/plan.json`, 'utf8')
+    const files = walk(env.dir).sort()
+    const res = go(env, 'plan-write', { transcript: planRun(env), label: 'truss-designer' })
+    const label = statuses.join('+')
+    assert.notEqual(res.status, 0, `${label}: a live run's plan is not archived: ${res.stdout}`)
+    assert.equal(assertOneLine(res).written, false, label)
+    assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), oldPlan, `${label}: the live plan is untouched`)
+    assert.equal(readFileSync(`${env.dir}/plan.md`, 'utf8'), OLD_MD, label)
+    assert.deepEqual(walk(env.dir).sort(), files, `${label}: nothing was archived or written`)
+  }
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // item 18: the session scripts dir is the default scriptPath
 
