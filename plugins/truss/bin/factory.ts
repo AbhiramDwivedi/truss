@@ -2343,7 +2343,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
 // ==== resources (ADR-0015): admit, heavy, reap ====
 
 import { spawn } from 'node:child_process'
-import { admits, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
+import { admits, defaultHeavySlots, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
 
 // How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 540 s (under the 600000 ms Bash timeout stage.js sets, leaving room for the command).
 export const HEAVY_WAIT_MS = 540000
@@ -2353,6 +2353,16 @@ export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = 
     if (Number.isInteger(n) && n >= 0) return n
   }
   return HEAVY_WAIT_MS
+}
+
+// ADR-0046 item 4: how many heavy commands may run at once. truss.json `heavySlots` (a whole number 1-16) of the repo the
+// command runs in, else TRUSS_HEAVY_SLOTS, else the host default (defaultHeavySlots: max(1, min(4, cpus/4, totalGB/8))).
+export function heavySlotsOf(cfg: Obj, env: Record<string, string | undefined> = process.env, host: () => number = defaultHeavySlots): number {
+  const ok = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 16
+  if (ok(cfg.heavySlots)) return cfg.heavySlots
+  const e = env.TRUSS_HEAVY_SLOTS
+  if (typeof e === 'string' && /^\d+$/.test(e) && ok(Number(e))) return Number(e)
+  return host()
 }
 const sleepSync = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 // True while pid runs: process.kill(pid, 0), which works on every OS. On Linux a zombie counts as gone; elsewhere a live answer
@@ -2523,10 +2533,12 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     const cwd = flat(need(f, 'cwd'))
     if (cmd.length === 0) throw usage('heavy needs a command after --')
     const waitLimit = heavyWaitMs(f)
+    const top = run(cwd, ['rev-parse', '--show-toplevel'])
+    const slots = heavySlotsOf(configOf(top.status === 0 ? flat(top.out) : cwd))
     const t0 = Date.now()
     let token: string | null = null
     for (;;) {
-      token = takeHeavySlot(dir, { label, slug, pid: process.pid })
+      token = takeHeavySlot(dir, { label, slug, pid: process.pid }, process.platform, slots)
       if (token !== null) {
         let low = false
         try {
@@ -2570,7 +2582,7 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       releaseHeavySlot(dir, token)
       if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
       const stdout = readFileSync(`${scratch}/out.txt`, 'utf8')
-      const meta = { label, waitedMs, exit }
+      const meta = { label, waitedMs, exit, slots }
       let parsed: unknown
       try {
         // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone

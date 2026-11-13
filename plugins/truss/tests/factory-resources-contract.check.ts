@@ -37,6 +37,8 @@ function childEnv(sample?: string, minFreeMB?: number): Record<string, string> {
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) e[k] = v
   delete e.TRUSS_SAMPLE
   delete e.TRUSS_MIN_FREE_MB
+  // ADR-0046 item 4: one slot, whatever the host, so "one heavy slot" serializes
+  e.TRUSS_HEAVY_SLOTS = '1'
   if (sample !== undefined) e.TRUSS_SAMPLE = sample
   if (minFreeMB !== undefined) e.TRUSS_MIN_FREE_MB = String(minFreeMB)
   return e

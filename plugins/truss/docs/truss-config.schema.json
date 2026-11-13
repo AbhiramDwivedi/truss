@@ -81,6 +81,12 @@
       "type": "integer",
       "minimum": 1
     },
+    "heavySlots": {
+      "description": "ADR-0046 item 4: how many red and green checks (`factory heavy`) run at once across the session. Default from the host: max(1, min(4, floor(cpus/4), floor(totalGB/8))).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
     "merge": {
       "description": "Merge mode of every run; the PM never asks. Default sequential.",
       "enum": ["sequential", "single"]

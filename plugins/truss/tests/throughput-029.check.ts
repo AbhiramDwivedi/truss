@@ -6,6 +6,7 @@
 // Run with: node --test plugins/truss/tests/throughput-029.check.ts
 
 import assert from 'node:assert/strict'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { test } from 'node:test'
@@ -171,4 +172,86 @@ test('i1 3: --reap-first <slug> reaps before the command, leaves its output unch
   assert.equal(folded.status, 0, say(folded))
   assert.equal(folded.stdout.split('\n')[0], plain.stdout.split('\n')[0], 'a clean reap leaves the output as it was')
   assert.ok(folded.stdout.trimEnd().split('\n').at(-1).startsWith('truss-status: '), 'the status line stays last')
+})
+
+// ---------------------------------------------------------------- item 4: a configurable heavy slot count
+
+test('i4 1: the host default is max(1, min(4, floor(cpus/4), floor(totalGB/8)))', async () => {
+  const { defaultHeavySlots } = await import(`${REAL_PLUGIN}/resources/index.ts`)
+  const GB = 2 ** 30
+  assert.equal(defaultHeavySlots(4, 16 * GB), 1)
+  assert.equal(defaultHeavySlots(2, 64 * GB), 1, 'never below 1')
+  assert.equal(defaultHeavySlots(8, 32 * GB), 2)
+  assert.equal(defaultHeavySlots(16, 24 * GB), 3, 'memory bounds it')
+  assert.equal(defaultHeavySlots(64, 512 * GB), 4, 'never above 4')
+  assert.ok(defaultHeavySlots() >= 1 && defaultHeavySlots() <= 4, 'the real host gives 1 to 4')
+})
+
+test('i4 2: truss.json heavySlots wins, then TRUSS_HEAVY_SLOTS, then the host; a bad value falls through; the schema declares the key', async () => {
+  const { heavySlotsOf } = await import(`${REAL_PLUGIN}/bin/factory.ts`)
+  const host = () => 3
+  assert.equal(heavySlotsOf({ heavySlots: 2 }, { TRUSS_HEAVY_SLOTS: '5' }, host), 2)
+  assert.equal(heavySlotsOf({}, { TRUSS_HEAVY_SLOTS: '5' }, host), 5)
+  assert.equal(heavySlotsOf({}, {}, host), 3)
+  for (const bad of [0, -1, 1.5, '2', 17, null]) assert.equal(heavySlotsOf({ heavySlots: bad }, {}, host), 3, `heavySlots ${JSON.stringify(bad)}`)
+  assert.equal(heavySlotsOf({}, { TRUSS_HEAVY_SLOTS: '0' }, host), 3)
+  const schema = JSON.parse(readFileSync(`${REAL_PLUGIN}/docs/truss-config.schema.json`, 'utf8'))
+  assert.deepEqual({ type: schema.properties.heavySlots?.type, minimum: schema.properties.heavySlots?.minimum }, { type: 'integer', minimum: 1 })
+})
+
+test('i4 3: with two slots two takers hold heavy.lock and heavy-2.lock, a third gets null, and a release frees only its own slot', async () => {
+  const { takeHeavySlot, releaseHeavySlot } = await import(`${REAL_PLUGIN}/resources/index.ts`)
+  const dir = mkTrussDir()
+  const a = takeHeavySlot(dir, { slug: 'a' }, process.platform, 2)
+  const b = takeHeavySlot(dir, { slug: 'b' }, process.platform, 2)
+  assert.equal(typeof a, 'string')
+  assert.equal(typeof b, 'string')
+  assert.ok(existsSync(join(dir, 'resources', 'heavy.lock')) && existsSync(join(dir, 'resources', 'heavy-2.lock')))
+  assert.equal(takeHeavySlot(dir, { slug: 'c' }, process.platform, 2), null, 'the third waits')
+  assert.equal(takeHeavySlot(dir, { slug: 'c' }), null, 'one slot by default')
+  releaseHeavySlot(dir, b)
+  assert.ok(existsSync(join(dir, 'resources', 'heavy.lock')), 'a\'s slot stays held')
+  assert.ok(!existsSync(join(dir, 'resources', 'heavy-2.lock')), 'b\'s slot is freed')
+  const c = takeHeavySlot(dir, { slug: 'c' }, process.platform, 2)
+  assert.equal(typeof c, 'string', 'the third takes the freed slot')
+  releaseHeavySlot(dir, 'not-a-token')
+  assert.ok(existsSync(join(dir, 'resources', 'heavy.lock')) && existsSync(join(dir, 'resources', 'heavy-2.lock')), 'a stranger token frees nothing')
+})
+
+test('i4 4: through the CLI, two crews run heavy at once under heavySlots 2 and the third waits until its limit', async () => {
+  const repo = mkRepo({ config: { heavySlots: 2 } })
+  const dir = mkTrussDir()
+  const scratch = tmp('i4-heavy-')
+  const ok = join(scratch, 'ok.json')
+  writeFileSync(ok, JSON.stringify({ freeMB: 9000, totalMB: 16000 }))
+  const go = join(scratch, 'go')
+  const env = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  delete env.TRUSS_HEAVY_SLOTS
+  delete env.TRUSS_MIN_FREE_MB
+  env.TRUSS_SAMPLE = ok
+  // each command marks that it started, then holds its slot until the test writes `go`
+  const hold = (n) => `const fs=require('fs');fs.writeFileSync(${JSON.stringify(join(scratch, `started-${n}`))},'');const t=setInterval(()=>{if(fs.existsSync(${JSON.stringify(go)})){clearInterval(t);console.log(JSON.stringify({ok:true}))}},20)`
+  const args = (slug, more = []) => [`${REAL_PLUGIN}/bin/factory.ts`, 'heavy', '--dir', dir, '--repo', repo, '--slug', slug, '--label', slug, '--cwd', repo, ...more, '--']
+  const runs = ['a', 'b'].map((s) => new Promise((res) => {
+    const c = spawn(process.execPath, [...args(s), process.execPath, '-e', hold(s)], { cwd: repo, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    c.stdout.on('data', (d) => { out += d })
+    c.on('exit', (code) => res({ code, out }))
+  }))
+  try {
+    const end = Date.now() + 20000
+    while (!(existsSync(join(scratch, 'started-a')) && existsSync(join(scratch, 'started-b'))) && Date.now() < end) await new Promise((r) => setTimeout(r, 50))
+    assert.ok(existsSync(join(scratch, 'started-a')) && existsSync(join(scratch, 'started-b')), 'both crews hold a slot at once')
+    const third = spawnSync(process.execPath, [...args('c', ['--wait-ms', '1200']), process.execPath, '-e', 'console.log(JSON.stringify({ok:true}))'], { cwd: repo, env, encoding: 'utf8', timeout: 30000 })
+    assert.equal(third.status, 1, say(third))
+    const j = JSON.parse(third.stdout.split('\n')[0])
+    assert.equal(j.heavy.ran, false, 'the third crew waits while both slots are held')
+  } finally {
+    writeFileSync(go, '')
+  }
+  for (const r of await Promise.all(runs)) {
+    assert.equal(r.code, 0, r.out)
+    assert.equal(JSON.parse(r.out.split('\n')[0]).heavy.slots, 2)
+  }
 })
