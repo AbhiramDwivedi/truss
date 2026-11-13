@@ -118,10 +118,11 @@ const TARGET_KINDS = ['plugin', 'project-config', 'proposed-goal']
 const PLUGIN_DIRS = ['agents', 'skills', 'bin', 'hooks', 'retro', 'workflows', 'workflows-src', '.claude-plugin']
 
 /** ADR-0051 Decision 4: product code is any path that is neither the truss plugin nor project config (CLAUDE.md, .claude/). */
-const isProductPath = (p: string): boolean => {
+const isProductPath = (p: string, kind: unknown): boolean => {
   const s = p.replace(/\\/g, '/').replace(/^\.\//, '')
   if (s === 'CLAUDE.md' || s.startsWith('.claude/') || s.startsWith('plugins/truss/')) return false
-  return !PLUGIN_DIRS.includes(s.split('/')[0])
+  // a bare top-level bin/, hooks/ ... is the plugin only when the judge says kind plugin; in any other project it is product code (R-128)
+  return !(kind === 'plugin' && PLUGIN_DIRS.includes(s.split('/')[0]))
 }
 
 /** Why a judge's block breaks the finding shape of ADR-0051 Decision 2 against the counted measures, or null when it holds. It cuts a long title and marks product code as a proposed goal in place (v is this call's own parsed JSON). */
@@ -152,7 +153,7 @@ function judgedProblem(v: unknown, measures: Record<string, number>): string | n
   if (!isObj(t) || onlyKeys(t, ['kind', 'path'])) return 'target must be {kind, path?}'
   if (!TARGET_KINDS.includes(t.kind as string)) return `target kind must be one of ${TARGET_KINDS.join(', ')}`
   if ('path' in t && !nonEmpty(t.path)) return 'target path must be a non-empty string'
-  if (typeof t.path === 'string' && isProductPath(t.path)) t.kind = 'proposed-goal'
+  if (typeof t.path === 'string' && isProductPath(t.path, t.kind)) t.kind = 'proposed-goal'
   if ('signature' in v) {
     if (!Array.isArray(v.signature) || v.signature.length === 0) return 'signature must be a non-empty array'
     for (const p of v.signature) {
