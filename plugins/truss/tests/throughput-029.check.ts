@@ -7,10 +7,11 @@
 
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
-  addCrewWorktree, appendEvent, crew, factorySpawn, git, mkEnv, mkRun, planObj, putFile, tmp, writeGoal, writePlan,
+  REAL_PLUGIN, addCrewWorktree, appendEvent, crew, factorySpawn, git, mkEnv, mkRepo, mkRun, mkTrussDir, planObj, putFile, runCli, tmp, writeGoal, writePlan,
 } from './fixtures/workflow-run/harness.ts'
 
 const HOUR = 3_600_000
@@ -97,6 +98,47 @@ test('i5 3: a merge-ready resume carries the stored rulings too', () => {
   const stale = env.run('start', { slug: 'x', resume: 'merge-ready' })
   assert.equal(stale.status, 0, say(stale))
   assert.deepEqual(entryOf(stale).answers, [{ at: 'qc', text: 'ruling D' }])
+})
+
+// ---------------------------------------------------------------- pricing: the Claude 5.5 family in `factory cost`
+
+// The repo's own .claude/truss.json holds the client's price table (the plugin writes no price). Rates from the claude-api
+// skill and platform.claude.com/docs/en/about-claude/pricing, read 2026-11-12.
+const REPO_CONFIG = fileURLToPath(new URL('../../../.claude/truss.json', import.meta.url))
+function priceWorld() {
+  const config = JSON.parse(readFileSync(REPO_CONFIG, 'utf8'))
+  const repo = mkRepo({ config: { architecture: 'docs/architecture.md', adr: 'docs/adr', pricing: config.pricing } })
+  const dir = mkTrussDir()
+  const root = tmp('t029-tr-')
+  return { repo, dir, root, sid: basename(dir) }
+}
+const usageRow = (id, model, u, speed = 'standard') => JSON.stringify({ type: 'assistant', uuid: `u-${id}`, timestamp: '2026-11-12T06:30:00.000Z', message: { id, model, role: 'assistant', content: [{ type: 'text', text: 'a' }], usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, speed, ...u } } }) + '\n'
+function costOf(w, rows) {
+  mkdirSync(join(w.root, '-work-proj'), { recursive: true })
+  writeFileSync(join(w.root, '-work-proj', `${w.sid}.jsonl`), rows.join(''))
+  const r = runCli(`${REAL_PLUGIN}/bin/factory.ts`, 'cost', ['--dir', w.dir, '--repo', w.repo], w.repo, { TRUSS_TRANSCRIPTS_ROOT: w.root })
+  assert.equal(r.status, 0, say(r))
+  return r.json?.session?.usd
+}
+const near = (a, b, what) => assert.ok(typeof a === 'number' && Math.abs(a - b) < 1e-9, `${what}: expected ${b}, got ${a}`)
+const M = 1_000_000
+
+test('pricing 1: factory cost prices Claude Opus 5.5 (standard and fast) and Sonnet 5.5 from the repo config', () => {
+  // opus 5.5: 1M in $4 + 1M out $20 + 1M cache read $0.20 + 1M 5m write $5
+  near(costOf(priceWorld(), [usageRow('m1', 'claude-opus-5-5', { input_tokens: M, output_tokens: M, cache_read_input_tokens: M, cache_creation_input_tokens: M })]), 29.2, 'opus 5.5')
+  // opus 5.5 fast: 1M in $8 + 1M out $40 + 1M 1h write $16
+  near(costOf(priceWorld(), [usageRow('m2', 'claude-opus-5-5', { input_tokens: M, output_tokens: M, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: M } }, 'fast')]), 64, 'opus 5.5 fast')
+  // sonnet 5.5: 1M in $2 + 1M out $10 + 1M cache read $0.10 + 1M 1h write $4
+  near(costOf(priceWorld(), [usageRow('m3', 'claude-sonnet-5-5', { input_tokens: M, output_tokens: M, cache_read_input_tokens: M, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: M } })]), 16.1, 'sonnet 5.5')
+})
+
+test('pricing 2: Claude Haiku 5.5 bills a request whose prompt is over 100,000 tokens at the long-context rates', () => {
+  // a 100,000-token prompt (60K in + 40K cache read) is at the threshold, not over it: $0.10 and $0.01 rates, plus 1M out at $0.50
+  near(costOf(priceWorld(), [usageRow('h1', 'claude-haiku-5-5', { input_tokens: 60_000, cache_read_input_tokens: 40_000, output_tokens: M })]), 0.006 + 0.0004 + 0.5, 'haiku 5.5 at 100K')
+  // 100,001 tokens (60,001 in + 40K cache read): every token of the request at $0.50 / $0.05 / $2.50
+  near(costOf(priceWorld(), [usageRow('h2', 'claude-haiku-5-5', { input_tokens: 60_001, cache_read_input_tokens: 40_000, output_tokens: M })]), 60_001 * 0.5 / M + 0.002 + 2.5, 'haiku 5.5 over 100K')
+  // two requests in one session are priced each on its own
+  near(costOf(priceWorld(), [usageRow('h3', 'claude-haiku-5-5', { input_tokens: 200_000 }), usageRow('h4', 'claude-haiku-5-5', { input_tokens: 50_000 })]), 0.1 + 0.005, 'haiku 5.5 per request')
 })
 
 test('i5 4: a first answers resume with no store passes its answers through unchanged and writes the store', () => {

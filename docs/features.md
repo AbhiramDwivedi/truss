@@ -116,6 +116,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
 
+## Long-context price tier (Claude 5.5 prices)
+
+- What: a `pricing` entry may hold `longContext: {abovePromptTokens, <the five rates>}`. A standard-speed request whose prompt (input plus cache read plus both cache writes) is over `abovePromptTokens` is priced wholly at the `longContext` rates; each request is judged on its own. A fast row ignores `longContext`. This repo's own `.claude/truss.json` prices `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5` (with its long-context tier), from the claude-api skill's pricing page read 2026-11-12. The plugin still writes no price.
+- Entry points: `plugins/truss/bin/cost.ts` (`ratesFor`, `sumOf`), `plugins/truss/docs/truss-config.schema.json` (`$defs.price.longContext`); tests `plugins/truss/tests/throughput-029.check.ts` (`pricing *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) "Pricing", [ADR-0038](../plugins/truss/docs/adr/0038-cost-budgets-and-ledger.md) section 3.
+
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.

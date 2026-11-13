@@ -66,6 +66,7 @@ Prices come only from `pricing` in the client's `.claude/truss.json`. Each entry
 
 - A model's price is the **longest** `pricing` key that is a prefix of its id (`cost.ts:236`).
 - A row with `speed: "fast"` uses the entry's `fast` prices.
+- (0.29.0, ADR-0046) An entry may hold `longContext` with `abovePromptTokens` and the five rates. A standard-speed request whose prompt (input, cache read and both cache writes) is over that count is priced wholly at the `longContext` rates; a fast row ignores it (`cost.ts` `ratesFor`).
 - **No price means `usd: null`, never 0.** If any row in a sum has no price, the whole sum is `null` and the model is listed in `unpriced`, with `(fast)` appended for a fast row (`cost.ts:252-258`).
 - `out` is priced alone; thinking is assumed to be inside it. `think` and `web` are counted in `tokens` but not priced (`cost.ts:249`, `:256`).
 - No price is written in plugin code, prose or fixtures. `tests/cost.check.ts:404` scans `bin/cost.ts`, `tests/fixtures/cost/**` and this ADR for price literals, after it has caught a planted example of each kind.

@@ -220,7 +220,21 @@
         "cacheReadPerMTok": { "type": "number", "minimum": 0 },
         "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
         "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 },
-        "fast": { "$ref": "#/$defs/rates" }
+        "fast": { "$ref": "#/$defs/rates" },
+        "longContext": {
+          "description": "0.29.0. Rates for a request whose prompt (input, cache reads and cache writes) is over abovePromptTokens tokens, such as Claude Haiku 5.5 over 100,000. A fast row never uses them.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["abovePromptTokens", "inputPerMTok", "outputPerMTok", "cacheReadPerMTok", "cacheWrite5mPerMTok", "cacheWrite1hPerMTok"],
+          "properties": {
+            "abovePromptTokens": { "type": "integer", "minimum": 0 },
+            "inputPerMTok": { "type": "number", "minimum": 0 },
+            "outputPerMTok": { "type": "number", "minimum": 0 },
+            "cacheReadPerMTok": { "type": "number", "minimum": 0 },
+            "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
+            "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 }
+          }
+        }
       }
     },
     "workTypeBudget": {

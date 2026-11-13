@@ -22,7 +22,13 @@ Each item below records what changed. Items not yet listed here were not done in
 - A stored ruling at a task name drops once a run after `after` finished that task: it is built, and re-sending it would make the resume re-run the task. Until then it rides along and keeps the task out of `done`. A ruling at a step name (red, split, green, qc, stress, UX) always rides along: a step has no "built" record.
 - The red-record refusal looks only at the new answers, as before.
 
+### Pricing: the Claude 5.5 family
+
+- The plugin still writes no price (ADR-0038 section 3). This repo's own `.claude/truss.json` gains `pricing` for `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5`, from the claude-api skill's pricing page read 2026-11-12. Every rate there is published; none is derived.
+- Haiku 5.5 bills a request whose prompt is over 100,000 tokens at higher rates for the whole request. A `pricing` entry may now hold `longContext: {abovePromptTokens, <the five rates>}` (`$defs.price` in `truss-config.schema.json`). `ratesFor` in `bin/cost.ts` takes the request's prompt size (input, cache read and both cache writes) and uses `longContext` when it is over the bound. Each usage row is one request, priced on its own. A fast row ignores `longContext`: no model has both.
+
 ## Consequences
 
 - The PM's answers file holds only new rulings (`skills/run/SKILL.md` section 7). A ruling the PM wants withdrawn must be overridden by a newer ruling at the same `at`; there is no delete command. Long-term cost: step rulings accumulate for the life of the crew and lengthen every resumed brief.
-- Tests: `plugins/truss/tests/throughput-029.check.ts` (`i5 *`).
+- The repo's prices go stale when Anthropic changes them; the client re-reads the pricing page and edits `.claude/truss.json`. A future model with both a fast mode and a long-context tier would need `fast.longContext`, which the schema does not allow yet.
+- Tests: `plugins/truss/tests/throughput-029.check.ts` (`i5 *`, `pricing *`).
