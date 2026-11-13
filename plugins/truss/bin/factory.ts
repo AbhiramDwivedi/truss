@@ -1162,7 +1162,8 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
     const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
     return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
   }
-  const isPersona = (file: string): boolean => /^\.claude\/agents\/[^/]+\.md$/.test(file)
+  // a persona file, or (ADR-0046 item 0) a project skill's markdown: the body is the crew's to keep true, the frontmatter never
+  const isPersona = (file: string): boolean => /^\.claude\/agents\/[^/]+\.md$/.test(file) || /^\.claude\/skills\/[^/]+\/[^/]+\.md$/.test(file)
   const frontmatterKept = (file: string): boolean => {
     const was = run(c.wt, ['show', `${base}:${file}`])
     const now = run(c.wt, ['show', `HEAD:${file}`])

@@ -144,6 +144,14 @@ t('scope 5 (ADR-0046 item 0): the architecture doc (truss.json `architecture`, d
   assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['docs/architecture.md'], exempt: ['arch/ARCH.md'] })
 })
 
+t('scope 5b (ADR-0046 item 0): a project skill\'s markdown body is a doc path for the builder; its frontmatter is never exempt', () => {
+  const SK = (desc, body) => `---\nname: export\ndescription: ${desc}\n---\n\n${body}`
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', '.claude/skills/export/SKILL.md': SK('exports', 'old\n'), '.claude/skills/ship/SKILL.md': SK('ships', 'old\n') })
+  putFile(wt, '.claude/skills/export/SKILL.md', SK('exports', 'new behaviour\n'), 'builder keeps the skill true to the code')
+  putFile(wt, '.claude/skills/ship/SKILL.md', SK('ships everything', 'old\n'), 'builder changes when the skill loads')
+  assert.deepEqual(ownsFull(env), { status: 1, outside: ['.claude/skills/ship/SKILL.md'], exempt: ['.claude/skills/export/SKILL.md'] })
+})
+
 t('scope 6: the configured featureMap and adrDir (as .md) are doc paths of the recorded knowledge commit; without the key they are not', () => {
   const cfg = { merge: 'sequential', target: 'main', featureMap: 'docs/capabilities.md', adrDir: 'decisions' }
   const a = world(cfg)
