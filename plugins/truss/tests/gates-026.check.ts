@@ -113,6 +113,7 @@ async function exec(args, o = {}) {
         else if (p.cmd === 'owns-check') out = rj({ ok: true, outside: [] })
         else if (p.cmd === 'tests-check') out = rj({ ok: true, tests: [] })
         else if (p.cmd === 'sync') out = rj({ merged: true })
+        else if (p.cmd === 'inbox') out = rj({ ok: true, items: [] })
         else if (p.cmd === 'knowledge-lint' && /knowledge-lint --slug=\S/.test(p.line)) out = rj({ ok: true, failures: [], warnings: [] })
         else if (['decision-checkpoint', 'crew-learned', 'knowledge-commit', 'decision-ack', 'decisions'].includes(p.cmd)) out = rj({ ok: true, decisions: [] })
         else {
@@ -357,8 +358,9 @@ st('gates-026: owns-extend adds a glob that overlaps another crew in the stage (
 
 const RULE = '.claude/rules/plugin-tests.md'
 
-/** A temp git repo holding the real rule file (rulesIndex reads tracked files only) and a plan of this run's shape: stage 1 has one crew
- * owning the rule file and a test file; stage 2 has two crews owning test files under the rule's paths and no rule-file owner. */
+/** A temp git repo holding the real rule file (rulesIndex reads tracked files only) and a plan of three crews: stage 1 has one crew
+ * owning the rule file and a test file; stage 2 has two crews owning test files under the rule's paths and no rule-file owner.
+ * Since ADR-0043 plan-check does not require a stage to own the rule file its crews match. */
 function ruleWorld() {
   const text = readFileSync(`${CHECKOUT}/${RULE}`, 'utf8')
   const repo = mkRepo({ config: { architecture: 'docs/architecture.md', adr: 'docs/adr' }, files: { [RULE]: text } })

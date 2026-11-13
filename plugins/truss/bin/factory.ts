@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, transcriptsOf, takeLease, refreshLease, releaseLease } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -399,6 +399,15 @@ function scriptPathFor(plugin: string, script: string, scriptsDir: string | unde
   copyFileSync(src, to)
   return to
 }
+// The session scripts dir the Workflow tool accepts: <dirname of the main transcript>/<sid>/workflows/scripts, where <sid> is the path
+// segment directly under <git common dir>/truss/ of the truss dir (a wave subdir is allowed). undefined when the session is not found.
+function sessionScriptsDir(repo: string, dir: string): string | undefined {
+  const rel = path.relative(`${flat(commonDir(repo))}/truss`, path.resolve(dir))
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return undefined
+  const sid = flat(rel).split('/')[0] as string
+  const main = transcriptsOf(sid).main
+  return main === null ? undefined : `${path.posix.dirname(flat(main))}/${sid}/workflows/scripts`
+}
 // The architecture doc as an absolute path (the key `architecture` of truss.json, repo-relative, default docs/architecture.md).
 const archPath = (repo: string, rel: unknown): string => path.isAbsolute(String(rel)) ? flat(String(rel)) : `${repo}/${typeof rel === 'string' && rel !== '' ? rel : 'docs/architecture.md'}`
 
@@ -420,7 +429,7 @@ function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
+      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir)), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -448,23 +457,49 @@ function cmdPlanWrite(f: Flags): Obj {
   }
   const fieldMd = isObj(raw) && typeof raw.planMd === 'string' && raw.planMd.trim() !== '' ? raw.planMd : undefined
   const json = fieldJson ?? fencedBlock(message, '````json plan.json')
-  const md = fieldMd ?? fencedBlock(message, '````markdown plan.md')
+  const fencedMd = fencedBlock(message, '````markdown plan.md')
+  // a stub or pointer field ("See plan.json.") is shorter than the fenced block and has no crew table: the fenced plan wins then
+  const hasTable = (s: string): boolean => /^\s*\|.*\|\s*$/m.test(s)
+  const stubMd = fieldMd !== undefined && fencedMd !== undefined && fieldMd.length < fencedMd.length && hasTable(fencedMd) && !hasTable(fieldMd)
+  const md = fieldMd !== undefined && !stubMd ? fieldMd : fencedMd
   if (json === undefined || md === undefined) no(json === undefined ? 'no plan.json block' : 'no plan.md block')
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  const keepExisting = (): void => {
-    if (!existsSync(`${dir}/plan.json`)) return
+  // An unapproved plan is overwritten; an approved one with a running or planned crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
+  // seen is the approvedAt the unlocked check saw; an approve that lands after it (a different value) is refused, never archived.
+  const keepExisting = (archive: boolean, seen: unknown = null): unknown => {
+    if (!existsSync(`${dir}/plan.json`)) return null
     let existing
     try {
       existing = parsePlan(readFileSync(`${dir}/plan.json`, 'utf8'))
     } catch {
       return no('kept the existing plan: it could not be read')
     }
-    if (existing === undefined) no('kept the existing plan: it is not a readable plan')
-    else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
+    if (existing === undefined) return no('kept the existing plan: it is not a readable plan')
+    if (existing.approvedAt === null) return null
+    if (archive && existing.approvedAt !== seen) return no('kept the existing plan: it is approved')
+    const live = existing.crews.filter((c: Obj) => c.status === 'running' || c.status === 'planned')
+    if (live.length > 0) return no(`kept the existing plan: crew ${live.map((c: Obj) => String(c.slug)).join(', ')} of the earlier run is ${live.some((c: Obj) => c.status === 'running') ? 'running' : 'planned, not finished'}`)
+    if (!archive) return existing.approvedAt
+    const stamp = String(existing.approvedAt).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'run'
+    let name = `plan-${stamp}`
+    for (let n = 2; existsSync(`${dir}/${name}.json`) || existsSync(`${dir}/${name}.md`); n++) name = `plan-${stamp}-${n}`
+    renameSync(`${dir}/plan.json`, `${dir}/${name}.json`)
+    if (existsSync(`${dir}/plan.md`)) renameSync(`${dir}/plan.md`, `${dir}/${name}.md`)
+    return existing.approvedAt
   }
-  keepExisting()
+  const seenApproved = keepExisting(false)
+  // test-only sync point (unset in production): after the unlocked first check, write <gate>/checked, then wait for <gate>/go; a timeout fails closed
+  const gate = process.env.TRUSS_TEST_PLAN_WRITE_GATE
+  if (gate !== undefined && gate !== '') {
+    writeFileSync(`${gate}/checked`, '')
+    const until = Date.now() + 30000
+    while (!existsSync(`${gate}/go`)) {
+      if (Date.now() > until) no('kept the existing plan: the test gate timed out')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -476,7 +511,7 @@ function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
-    keepExisting()
+    keepExisting(true, seenApproved)
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
@@ -663,6 +698,8 @@ function cmdPlanCheck(f: Flags): Obj {
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   const warnings = stageWarnings(dirOf(f), crews)
+  // a bare-directory owns entry (`dir/`) is read as `dir/**` by owns-check and the stage split; say so, so a plan that meant it is explicit
+  for (const c of crews) for (const g of Array.isArray(c.owns) ? c.owns : []) if (typeof g === 'string' && g.endsWith('/')) warnings.push(`crew ${name(c)}: owns entry ${g} is a bare directory, read as ${g}**; write ${g}** to say so`)
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
@@ -805,6 +842,28 @@ export function envVerdict(text: string): { env?: string; envSeen?: string } {
   return explained ? { env: first } : { envSeen: first }
 }
 
+// Stage green (ADR-0046 item 8): run `npm ci` in each directory with a tracked package-lock.json whose node_modules is missing.
+// A linked node_modules (lstat) counts as present. On win32 npm is a .cmd, which spawn runs only through a shell (CVE-2024-27980):
+// one fixed command string with shell: true and no args array (DEP0190); nothing in it comes from input.
+export function installMissingDeps(cwd: string, platform: string = process.platform, spawn: typeof spawnSync = spawnSync): { dir: string; status: number | null; output: string }[] {
+  const listed = spawnSync('git', ['-c', 'core.quotepath=off', 'ls-files', '-z', '--', 'package-lock.json', '**/package-lock.json'], { cwd, encoding: 'utf8', windowsHide: true })
+  const out: { dir: string; status: number | null; output: string }[] = []
+  if (listed.status !== 0) return out
+  for (const rel of String(listed.stdout).split('\0').filter(Boolean)) {
+    const dir = flat(path.join(cwd, path.dirname(rel)))
+    try {
+      lstatSync(`${dir}/node_modules`)
+      continue
+    } catch {
+      // missing: install
+    }
+    const opts = { cwd: dir, encoding: 'utf8' as const, windowsHide: true, timeout: 600000 }
+    const r = platform === 'win32' ? spawn('npm ci', { ...opts, shell: true }) : spawn('npm', ['ci'], opts)
+    out.push({ dir, status: r.status ?? 1, output: `${String(r.stdout ?? '')}${String(r.stderr ?? '')}${r.error ? `\n${r.error.message}` : ''}` })
+  }
+  return out
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -818,12 +877,14 @@ function cmdCheck(f: Flags): Obj {
   let text: string
   let exit: number
   try {
+    // a failed install goes into the check text, so the env catalog sees it
+    const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
     const fd = openSync(`${scratch}/out.txt`, 'w')
     const r = spawnSync('bash', ['-c', crew.acceptanceTest], { cwd, stdio: ['ignore', fd, fd] })
     closeSync(fd)
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
     exit = r.status ?? 1
-    text = readFileSync(`${scratch}/out.txt`, 'utf8')
+    text = installs.map((i) => `npm ci failed in ${i.dir} (exit ${i.status}):\n${i.output}\n`).join('') + readFileSync(`${scratch}/out.txt`, 'utf8')
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -1011,6 +1072,12 @@ function mergeIn(wt: string, args: string[]): Obj {
 }
 function cmdSync(f: Flags): Obj {
   const c = crewCtx(f)
+  // ADR-0026 item 58: an unconcluded operation (the resolver's merge) is the resolver's to conclude, so sync refuses before any merge
+  const inProgress = operationInProgress(c.wt)
+  if (inProgress !== undefined) {
+    const conflicts = run(c.wt, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+    throw refuse({ merged: false, conflicts, inProgress, why: `a ${inProgress} is in progress in ${c.wt}; conclude or abort it before syncing ${c.target}` })
+  }
   return mergeIn(c.wt, [c.target])
 }
 // Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
@@ -1131,6 +1198,9 @@ function cmdOwnsCheck(f: Flags): Obj {
   const files = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'diff', '--name-only', `${baseOf(c.wt, c.target)}...HEAD`]).split('\n').filter(Boolean)
   // path.matchesGlob's `**` skips dot segments; an owned `**` covers them.
   const owned = (file: string, g: string): boolean => {
+    file = file.replace(/\\/g, '/')
+    g = g.replace(/\\/g, '/')
+    if (g.endsWith('/')) g += '**' // a bare directory entry means dir/**
     if (path.matchesGlob(file, g)) return true
     const i = g.indexOf('**')
     if (i === -1) return false
@@ -1427,7 +1497,7 @@ function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: 
   const warnings = [...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
-    truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries },
+    truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries, ...(typeof c.plan.approvedAt === 'string' ? { approvedAt: c.plan.approvedAt } : {}) },
     held, projectManagers, ...(direct.length > 0 ? { direct } : {}), refused, stale, unfinished, warnings,
   }
 }
@@ -2091,45 +2161,66 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const goalFile = `${c.dir}/goals/${slug}.md`
   const membersDeny = membersOf(goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '').Members, goalFile).refuse
   if (membersDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: membersDeny }], [], [])
-  const wt = ensureWorktree(c.repo, slug, c.settings.target)
-  // A stale crew whose branch has no commit beyond the base starts from step 1.
-  const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
-  const rebuild = kind !== 'merge-ready' && !noWork
-  // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
-  const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
-  // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
-  answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
-  const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
-  // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
-  // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
-  const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
-  // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
-  const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
-  const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior, runLabels: labelsOfRuns(runs, slug) })
-  // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
-  // it; a result read earlier no longer holds for a crew that runs again
-  entry.learned = learnedOf(c.dir, slug)
-  setCrewState(c.dir, slug, null)
-  // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
-  if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
-  const missing = missingWorktrees(c, slug, runs)
-  // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
-  const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
-  if (existsSync(rtFile)) {
-    let section: string | undefined
-    entry.deferred = []
-    for (const line of readFileSync(rtFile, 'utf8').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
-      if (line.startsWith('## ')) section = line.trimEnd()
-      else if (section === '## Notes' && line.startsWith('- ')) entry.deferred.push(line.slice(2))
+  // R-89: one finisher per crew; a live finisher lease refuses the resume
+  const lease = takeLease(c.dir, `finisher-${slug}`)
+  if (lease === null) throw refuse({ slug, why: 'finisher live' })
+  try {
+    const wt = ensureWorktree(c.repo, slug, c.settings.target)
+    // R-90: the target goes into the crew branch as cmdSync does; a conflict is aborted (the worktree stays clean) and stage.js re-syncs it to the resolver
+    let syncConflicts: string[] | undefined
+    // ADR-0026 item 58: an operation left unconcluded in the worktree (the resolver's merge, partly or fully resolved) is never merged
+    // into or aborted; its unmerged paths (none when all are staged) go to the resolver as the sync conflicts, which concludes it
+    const pending = operationInProgress(wt)
+    if (pending !== undefined) syncConflicts = run(wt, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+    else try {
+      mergeIn(wt, [c.settings.target])
+    } catch (e) {
+      if (!(e instanceof CliError) || e.code !== 1 || !Array.isArray(e.body.conflicts)) throw e
+      syncConflicts = e.body.conflicts as string[]
+      run(wt, ['merge', '--abort'])
     }
+    // A stale crew whose branch has no commit beyond the base starts from step 1.
+    const noWork = kind === 'stale' && Number(run(wt, ['rev-list', '--count', `${baseOf(wt, c.settings.target)}..HEAD`]).out) === 0
+    const rebuild = kind !== 'merge-ready' && !noWork
+    // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
+    const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+    // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
+    answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
+    const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
+    // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
+    // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
+    const tasks = plan.tasks.map((t: unknown) => (isObj(t) && done.includes(String(t.name)) ? { name: t.name, role: t.role, effort: t.effort, files: t.files, after: t.after, ...(typeof t.brief === 'string' ? { brief: t.brief } : {}), ...(typeof t.persona === 'string' && t.persona !== '' ? { persona: t.persona } : {}) } : t))
+    // answers and stale: an earlier member's stopped branch whose commits the crew branch lacks, so its resumed successor merges it
+    const prior = rebuild ? priorBranches(runs.slice(plan.from), slug, wt, c.settings.target, done) : []
+    const entry = crewEntry(c, crew, wt, { resume: kind, tasks, done, answers, prior, runLabels: labelsOfRuns(runs, slug) })
+    // review 2: what the crew's members reported before the restart (crew-learned) goes back in, so the knowledge step and QC still see
+    // it; a result read earlier no longer holds for a crew that runs again
+    entry.learned = learnedOf(c.dir, slug)
+    if (syncConflicts !== undefined) entry.syncConflicts = syncConflicts
+    setCrewState(c.dir, slug, null)
+    // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
+    if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
+    const missing = missingWorktrees(c, slug, runs)
+    // The crew's first stress test report (label <slug>-stress, stage.js nextLabel :108-112): its ## Notes bullets, parsed as stage.js stressTest() :479 and sectionOf :466-473.
+    const rtFile = `${c.dir}/reports/${slug}/${slug}-stress.md`
+    if (existsSync(rtFile)) {
+      let section: string | undefined
+      entry.deferred = []
+      for (const line of readFileSync(rtFile, 'utf8').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
+        if (line.startsWith('## ')) section = line.trimEnd()
+        else if (section === '## Notes' && line.startsWith('- ')) entry.deferred.push(line.slice(2))
+      }
+    }
+    if (kind === 'stale') {
+      appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(c.roles, 'planner'), by: 'factory' })
+      appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
+    }
+    const out = stageOut(c, [entry], [], [], [], [])
+    saveAnswers(c.dir, slug, answers as Answer[], runs)
+    return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
+  } finally {
+    releaseLease(c.dir, `finisher-${slug}`, lease.token)
   }
-  if (kind === 'stale') {
-    appendEvent(c.dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(c.roles, 'planner'), by: 'factory' })
-    appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
-  }
-  const out = stageOut(c, [entry], [], [], [], [])
-  saveAnswers(c.dir, slug, answers as Answer[], runs)
-  return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
 }
 
 // 0.29.0 item 5: the crew's answers store, <dir>/crews/<slug>/answers.json. Each row is one ruling {at, text} plus `after`, the
@@ -2186,7 +2277,7 @@ function cmdStart(f: Flags): Obj {
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
   excludeScratch(repo)
-  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
+  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir))
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
@@ -3233,7 +3324,7 @@ type Outcome ={ merged?: true; left?: { path: string; branch: string; why: strin
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 // `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
 // `runId` names the run in the retire event of the crew's own branch (land has none: 'land').
-function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }, runId = 'land'): Outcome {
+function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Obj, ruling: QcRuling | undefined, audits: Audit[], fails: number, gates?: { process: string; qc: boolean; red: boolean }, runId = 'land', leaseToken?: string): Outcome {
   const needRed = gates?.red ?? true
   const needQc = gates?.qc ?? true
   const slug: string = crew.slug
@@ -3295,6 +3386,9 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
       return { rework: 'reqc' }
     }
   }
+  // R-89: the acceptance test above can outlast LEASE_STALE_MS, and a blocked thread refreshes nothing, so a second finisher may have
+  // taken the lease and merged. A finisher that no longer holds its lease never moves the target.
+  if (leaseToken !== undefined && !refreshLease(dir, `finisher-${slug}`, leaseToken)) return { refused: 'finisher lease lost' }
   // step 4: fast-forward the target
   const onTarget = worktreesOf(repo).find((w) => w.branch === target)
   if (onTarget !== undefined) {
@@ -3403,7 +3497,17 @@ function cmdLand(f: Flags): Obj {
   throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
+// R-89: one finisher per crew. Leases (finisher-<slug>) are taken before a crew is written, refreshed between crews and before each merge,
+// and released on every return and throw.
 function cmdFinish(f: Flags): Obj {
+  const held = new Map<string, string>()
+  try {
+    return finishRun(f, held)
+  } finally {
+    for (const [slug, token] of held) releaseLease(dirOf(f), `finisher-${slug}`, token)
+  }
+}
+function finishRun(f: Flags, held: Map<string, string>): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
   const settings = settingsOf(repo)
@@ -3421,10 +3525,20 @@ function cmdFinish(f: Flags): Obj {
   // ADR-0022 R4: the run's roles table, truss.json roles laid on, so the ux audit names the mapped ux agentType
   const roles = rolesWithTypes(PLUGIN, [], configOf(repo).roles)
   const wfRun = runOf(tdir)
-  const factoryCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
+  const allCrews: Obj[] = plan.crews.filter((c: Obj) => isObj(c) && typeof c.slug === 'string' && c.status === 'running' && factorySpawned(dir, c.slug) !== undefined)
+  const liveFinisher: Obj[] = []
+  for (const c of allCrews) {
+    if (results !== undefined && !results.some((r) => r.slug === c.slug) && !wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug)) continue
+    if (results === undefined && !wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug)) continue
+    const got = takeLease(dir, `finisher-${String(c.slug)}`)
+    if (got === null) liveFinisher.push({ slug: c.slug, why: 'finisher live' })
+    else held.set(String(c.slug), got.token)
+  }
+  const factoryCrews = allCrews.filter((c) => !liveFinisher.some((l) => l.slug === c.slug))
   const factorySlugs = new Set(factoryCrews.map((c) => c.slug as string))
   const inRun = factoryCrews.filter((c) => wfRun.agents.some((a) => parseLabel(a.label)?.slug === c.slug))
   const out = { merged: [] as string[], rework: [] as Obj[], blocked: [] as Obj[], refused: [] as Obj[], audit: [] as Obj[], incomplete: [] as string[], stopped: [] as Obj[], leftWorktrees: [] as Obj[], warnings: [] as string[] }
+  out.refused.push(...liveFinisher)
   const finishWith = (): Obj => {
     const body = {
       merged: out.merged, rework: out.rework, blocked: out.blocked, refused: out.refused, audit: out.audit, incomplete: out.incomplete, stopped: out.stopped,
@@ -3497,11 +3611,12 @@ function cmdFinish(f: Flags): Obj {
   for (const c of inRun) {
     const res = results.find((r) => r.slug === c.slug)
     if (res === undefined || res.state !== 'passed') continue
+    for (const [slug, token] of held) refreshLease(dir, `finisher-${slug}`, token)
     const files = reportsOf(dir, c.slug)
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
-    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id)
+    const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id, held.get(String(c.slug)))
     if (r.merged) {
       out.merged.push(c.slug)
       out.leftWorktrees.push(...(r.left ?? []))
@@ -3595,6 +3710,43 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   }
   appendDecisionLine(dir, line)
   return { ok: true, form, line }
+}
+// `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head in a temporary detached
+// worktree, never in the main checkout, and never pushes or moves a branch. One JSON line, one decision line, ok or not.
+export function cmdGoalCheck(f: Flags): Obj {
+  const dir = dirOf(f)
+  const repo = repoOf(f)
+  const plan = loadPlan(dir)
+  const goalId = str(f, 'goal')
+  let command: unknown = plan.goalCheck
+  if (goalId !== undefined) {
+    const g = (Array.isArray(plan.goals) ? plan.goals : []).find((x: Obj) => isObj(x) && x.id === goalId)
+    if (!g) throw usage(`no goal ${goalId} in the plan`)
+    command = g.goalCheck
+  }
+  if (typeof command !== 'string' || command.trim() === '') throw usage(goalId === undefined ? 'the plan has no goalCheck' : `goal ${goalId} has no goalCheck`)
+  const target = settingsOf(repo).target
+  const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${target}^{commit}`])
+  const wt = flat(path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'truss-goalcheck-'))), 'wt'))
+  const label = goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`
+  let status = 1
+  let tail = ''
+  let added = false
+  try {
+    gitOrFail(repo, ['-c', 'core.quotepath=off', 'worktree', 'add', '-q', '--detach', wt, sha])
+    added = true
+    const r = spawnSync('bash', ['-c', command], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
+    status = r.error ? 1 : (r.status ?? 1)
+    tail = `${r.error ? `${r.error.message}\n` : ''}${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000)
+  } finally {
+    if (added) run(repo, ['-c', 'core.quotepath=off', 'worktree', 'remove', '--force', wt])
+    run(repo, ['-c', 'core.quotepath=off', 'worktree', 'prune'])
+    rmSync(path.dirname(wt), { recursive: true, force: true })
+  }
+  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
+  if (status !== 0) throw refuse(body)
+  return body
 }
 
 // ==== crew decisions ====
@@ -4174,7 +4326,7 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check': cmdGoalCheck, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
@@ -4239,7 +4391,7 @@ const isMain = ((): boolean => {
 // booleans ok, merged and admitted, head as a string, env cut to 200 characters, and ran from heavy.ran.
 export function statusLine(body: Obj): string {
   const s: Obj = {}
-  for (const k of ['ok', 'merged', 'admitted']) if (typeof body[k] === 'boolean') s[k] = body[k]
+  for (const k of ['ok', 'merged', 'admitted', 'checkpoint']) if (typeof body[k] === 'boolean') s[k] = body[k]
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran

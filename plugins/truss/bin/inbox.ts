@@ -16,6 +16,7 @@ export type EscalateOut = { id: string; kind: string; deduped: boolean; code: st
 const KINDS: Record<string, { by: 'client' | 'any'; blocking: boolean }> = {
   'client-question': { by: 'client', blocking: false },
   'scope-change': { by: 'client', blocking: true },
+  'pm-question': { by: 'any', blocking: true },
   'client-trigger': { by: 'client', blocking: true },
   'long-term-cost': { by: 'client', blocking: true },
   budget: { by: 'client', blocking: true },
@@ -505,9 +506,15 @@ export function onPlanApprove(fn: (repo: string, dir: string, item: string) => O
   planApprover = fn
 }
 
+/** --dir as factory.ts dirOf reads it (ADR-0027 F-67 item 2): a relative one is a usage error, so sessionOf never sees a relative basename. */
+export function absDirOf(d: string): string {
+  if (!path.isAbsolute(d)) throw usage(`--dir must be an absolute path, got ${d}`)
+  return d
+}
+
 function resolveItem(f: Flags): Obj {
   const repo = flat(need(f, 'repo'))
-  const dir = need(f, 'dir')
+  const dir = absDirOf(need(f, 'dir'))
   const id = need(f, 'id')
   const decision = need(f, 'decision')
   const by = need(f, 'by')
@@ -582,7 +589,7 @@ function resolveItem(f: Flags): Obj {
 function markApplied(f: Flags): Obj {
   const repo = flat(need(f, 'repo'))
   const id = need(f, 'id')
-  const session = sessionOf(need(f, 'dir'))
+  const session = sessionOf(absDirOf(need(f, 'dir')))
   const S = sharedDir(repo)
   const file = `${S}/inbox.jsonl`
   withLock(S, 'inbox', () => {
@@ -598,7 +605,8 @@ function markApplied(f: Flags): Obj {
 function listItems(f: Flags): Obj {
   const repo = flat(need(f, 'repo'))
   if (f['recover-codes'] === true) return recoverCodes(repo)
-  const dirFlag = str(f, 'dir')
+  const dirGiven = str(f, 'dir')
+  const dirFlag = dirGiven === undefined || dirGiven === '' ? dirGiven : absDirOf(dirGiven)
   const sidFlag = f.unapplied === true ? str(f, 'session') : undefined
   const session = sidFlag ?? (dirFlag === undefined ? null : sessionOf(dirFlag))
   const kind = str(f, 'kind')
@@ -674,7 +682,7 @@ export const INBOX_COMMANDS: Record<string, (f: Flags) => Obj> = {
     const title = textOf(f, 'title')
     if (title === undefined || title === '') throw usage('missing --title or --title-file')
     const ref = str(f, 'ref')
-    const out = escalate(flat(need(f, 'repo')), need(f, 'dir'), { kind, title, detail: textOf(f, 'detail'), crews: listOf(f, 'crew'), ref: ref === undefined ? null : ref, blocking: f.blocking === true || f.blocking === 'true' })
+    const out = escalate(flat(need(f, 'repo')), absDirOf(need(f, 'dir')), { kind, title, detail: textOf(f, 'detail'), crews: listOf(f, 'crew'), ref: ref === undefined ? null : ref, blocking: f.blocking === true || f.blocking === 'true' })
     const body: Obj = { id: out.id, kind: out.kind, deduped: out.deduped }
     body.code = out.deduped ? null : out.code
     body.notified = out.notified

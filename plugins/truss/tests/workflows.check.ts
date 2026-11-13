@@ -80,7 +80,7 @@ async function exec(file, args, o = {}) {
         const cut = mh[1].indexOf(' -- ')
         m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
       } else {
-        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions)\b([^\n`]*)/)
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions|inbox|escalate)\b([^\n`]*)/)
       }
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
@@ -932,7 +932,8 @@ t('stage resume answers: an answer at red runs the red check again; other answer
   const atRed = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'red', text: 'host fixed' }] })], { labels: base() })
   // a resume first asks factory decisions --crew for the crew's earlier product calls, then runs the red check
   assert.deepEqual(atRed.timeline.slice(0, 2), ['start:runner:a:decisions', 'end:runner:a:decisions'])
-  assert.equal(atRed.timeline[2], 'start:runner:a:check:red')
+  assert.equal(atRed.timeline[2], 'start:runner:a:sync')
+  assert.equal(atRed.timeline[4], 'start:runner:a:check:red')
   passedShape(atRed.res[0], 'a', HEAD, 'a-qc')
   const atSplit = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'split', text: 'x' }] })], { labels: base() })
   assert.ok(noRunner(atSplit, 'check:red'))
@@ -1342,7 +1343,8 @@ t('stage resume stale: with invalid tasks it stops BLOCKED at split and never ru
 t('stage resume stale: with no tasks the chain starts at the red check', async () => {
   const r = await runStage([entry('a', { resume: 'stale' })], { labels: base() })
   assert.equal(r.timeline[0], 'start:runner:a:decisions')
-  assert.equal(r.timeline[2], 'start:runner:a:check:red')
+  assert.equal(r.timeline[2], 'start:runner:a:sync')
+  assert.equal(r.timeline[4], 'start:runner:a:check:red')
   assert.ok(had(r, 'a-planner'))
 })
 t('stage resume merge-ready: sync, green, owns-check, qc in that order; no red, planner, member or stress test', async () => {

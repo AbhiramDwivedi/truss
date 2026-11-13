@@ -5,7 +5,7 @@
 
 import { appendFileSync, closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
 import path from 'node:path'
-import { budgetRaises } from './inbox.ts'
+import { absDirOf, budgetRaises } from './inbox.ts'
 import { StoreBusy, configOf, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
@@ -367,7 +367,7 @@ export function crewCost(dir: string, repo: string, slug: string): { usd: number
 }
 
 function costOf(f: Flags): Obj {
-  const dir = flat(need(f, 'dir'))
+  const dir = flat(absDirOf(need(f, 'dir')))
   const repo = flat(need(f, 'repo'))
   const only = str(f, 'crew')
   const swept = sweepOrRead(dir, repo, {})
