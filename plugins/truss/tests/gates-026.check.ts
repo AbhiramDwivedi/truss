@@ -357,8 +357,9 @@ st('gates-026: owns-extend adds a glob that overlaps another crew in the stage (
 
 const RULE = '.claude/rules/plugin-tests.md'
 
-/** A temp git repo holding the real rule file (rulesIndex reads tracked files only) and a plan of this run's shape: stage 1 has one crew
- * owning the rule file and a test file; stage 2 has two crews owning test files under the rule's paths and no rule-file owner. */
+/** A temp git repo holding the real rule file (rulesIndex reads tracked files only) and a plan of three crews: stage 1 has one crew
+ * owning the rule file and a test file; stage 2 has two crews owning test files under the rule's paths and no rule-file owner.
+ * Since ADR-0043 plan-check does not require a stage to own the rule file its crews match. */
 function ruleWorld() {
   const text = readFileSync(`${CHECKOUT}/${RULE}`, 'utf8')
   const repo = mkRepo({ config: { architecture: 'docs/architecture.md', adr: 'docs/adr' }, files: { [RULE]: text } })
