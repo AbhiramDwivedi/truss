@@ -116,6 +116,20 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
 
+## Knowledge after stress and every fix round
+
+- What: a workflow crew runs its stress test (and UX review) before the knowledge step, so the writer records the stress fixer's `learned` items. Before every QC round the knowledge lint runs; new failures send the writer back with them (at most twice, stopping when it commits nothing), then green and the lint re-run. After a QC fix round the writer runs again on the fix diff with the fixer's items, when the step ran before or the fixer learned something; so `unrecorded` holds only items a stop left behind.
+- Entry points: `plugins/truss/workflows/stage.js` (`chain`, `qc`, `lintClean`, `LINT_FIX_ROUNDS`, `knowledgeAgain`, `knowledge`, `knowledgePrompt`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i6 *`, `i7 *`).
+- Owner: `truss-workflow-scripts`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) items 6 and 7, [ADR-0033](../plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md).
+
+## Fewer runner spawns (reap fold, same-head skip)
+
+- What: the reap after each member spawn rides on the crew's next factory call as `--reap-first <slug>`; `factory.ts` reaps `<slug>-check` before running the command and adds `reapedFirst: {error}` to its output only when that reap failed. Only the crew-end reap is a runner call of its own. Green, owns-check and the tests check skip a re-run while the crew head has not moved since they passed. A stubbed crew with a stress fix went from 32 runner spawns to 24.
+- Entry points: `plugins/truss/workflows/stage.js` (`runFactory`, `ask`, `reap`, `moved`, `unmoved`, `passedAt`, `green`, `scope`, `testsGuard`, `testsBackstop`), `plugins/truss/bin/factory.ts` (`takeReapFlag`, `reapFirst`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`), `plugins/truss/tests/throughput-029.check.ts` (`i1 3`).
+- Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 1, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 6.
+
 ## Long-context price tier (Claude 5.5 prices)
 
 - What: a `pricing` entry may hold `longContext: {abovePromptTokens, <the five rates>}`. A standard-speed request whose prompt (input plus cache read plus both cache writes) is over `abovePromptTokens` is priced wholly at the `longContext` rates; each request is judged on its own. A fast row ignores `longContext`. This repo's own `.claude/truss.json` prices `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5` (with its long-context tier), from the claude-api skill's pricing page read 2026-11-12. The plugin still writes no price.

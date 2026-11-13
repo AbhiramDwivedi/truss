@@ -4119,6 +4119,24 @@ export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } 
   const rest = cut < 0 ? [] : argv.slice(cut)
   return { on: head.includes('--status-line'), argv: [...head.filter((a) => a !== '--status-line'), ...rest] }
 }
+// ADR-0046 item 1: `--reap-first <slug>` reaps that crew's `<slug>-check` process groups (as `reap --slug <slug> --label
+// <slug>-check`) before the command runs, so stage.js folds the reap after a member into its next factory call instead of
+// spending a runner spawn on it. For heavy it is taken only before the `--`. Only a failed reap rides on the body (as reapedFirst), so the command's own output is unchanged.
+export function takeReapFlag(argv: string[]): { slug: string | null; argv: string[] } {
+  const cut = argv.indexOf('--')
+  const i = argv.indexOf('--reap-first')
+  if (i < 0 || (cut >= 0 && i > cut)) return { slug: null, argv }
+  return { slug: argv[i + 1] ?? '', argv: [...argv.slice(0, i), ...argv.slice(i + 2)] }
+}
+export function reapFirst(argv: string[], slug: string): Obj {
+  try {
+    const cut = argv.indexOf('--')
+    const f = parseFlags((cut < 0 ? argv : argv.slice(0, cut)).slice(1))
+    return cmdReap({ ...f, slug, label: `${slug}-check` })
+  } catch (e) {
+    return { error: e instanceof CliError ? JSON.stringify(e.body) : e instanceof Error ? e.message : String(e) }
+  }
+}
 // start's admission: a busy usage lock with no reading (StoreBusy from budgetVerdict, ADR-0038 amendment 2026-11-11) is never an
 // admit. start holds that crew with why `store busy: usage` and still reports the crews it already started in this call.
 function heldOnBusy(f: () => Admission): Admission {
@@ -4130,8 +4148,11 @@ function heldOnBusy(f: () => Admission): Admission {
   }
 }
 if (isMain) {
-  const { on, argv } = takeStatusFlag(process.argv.slice(2))
+  const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
+  const { slug: reapSlug, argv } = takeReapFlag(plain)
+  const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
   const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
+  if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
   else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))

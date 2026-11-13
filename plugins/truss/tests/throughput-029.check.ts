@@ -150,3 +150,25 @@ test('i5 4: a first answers resume with no store passes its answers through unch
   assert.deepEqual(entryOf(r).answers, [{ at: 'qc', text: 'only' }])
   assert.ok(existsSync(join(env.dir, 'crews', 'x', 'answers.json')))
 })
+
+// ---------------------------------------------------------------- item 1: --reap-first folds a reap into any command
+
+test('i1 3: --reap-first <slug> reaps before the command, leaves its output unchanged, and reports only a failed reap', async () => {
+  const { takeReapFlag, reapFirst } = await import(`${REAL_PLUGIN}/bin/factory.ts`)
+  assert.deepEqual(takeReapFlag(['decisions', '--reap-first', 'a', '--dir', 'D']), { slug: 'a', argv: ['decisions', '--dir', 'D'] })
+  assert.deepEqual(takeReapFlag(['decisions', '--dir', 'D']), { slug: null, argv: ['decisions', '--dir', 'D'] })
+  // heavy: taken before the `--` only; the inner command's argv is never touched
+  assert.deepEqual(takeReapFlag(['heavy', '--slug', 'a', '--reap-first', 'a', '--', 'node', 'x']), { slug: 'a', argv: ['heavy', '--slug', 'a', '--', 'node', 'x'] })
+  assert.equal(takeReapFlag(['heavy', '--slug', 'a', '--', 'node', 'x', '--reap-first', 'b']).slug, null)
+  // a reap that cannot run returns {error}, never throws
+  const bad = reapFirst(['decisions'], 'a')
+  assert.equal(typeof bad.error, 'string', JSON.stringify(bad))
+
+  const dir = mkTrussDir()
+  const repo = mkRepo()
+  const plain = runCli(`${REAL_PLUGIN}/bin/factory.ts`, 'decisions', ['--dir', dir, '--repo', repo])
+  const folded = runCli(`${REAL_PLUGIN}/bin/factory.ts`, 'decisions', ['--reap-first', 'a', '--dir', dir, '--repo', repo, '--status-line'])
+  assert.equal(folded.status, 0, say(folded))
+  assert.equal(folded.stdout.split('\n')[0], plain.stdout.split('\n')[0], 'a clean reap leaves the output as it was')
+  assert.ok(folded.stdout.trimEnd().split('\n').at(-1).startsWith('truss-status: '), 'the status line stays last')
+})

@@ -389,7 +389,8 @@ function memberFor(crew, role) {
   return v && typeof v === 'object' && !Array.isArray(v) ? v : null
 }
 
-// ADR-0015 Decision 6: every spawn of a role other than runner is preceded by admit and followed by reap.
+// ADR-0015 Decision 6: every spawn of a role other than runner is preceded by admit and followed by reap (since ADR-0046
+// item 1 the reap runs inside the crew's next factory call, --reap-first, or the crew-end reap).
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
   if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
@@ -406,7 +407,9 @@ async function ask(crew, role, prompt, opts = {}) {
     if (labelOut) labelOut.label = label
     return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
   } finally {
-    await reap(crew)
+    // ADR-0046 item 1: the reap rides on the crew's next factory call (--reap-first), not a runner spawn of its own;
+    // reap() runs it alone only where no factory call follows (the crew's end)
+    crew.reapDue = true
   }
 }
 
@@ -432,8 +435,10 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   }
 }
 
-// reap --slug --label: a failure is logged in the crew's proofs and never stops the crew
+// reap --slug --label: a failure is logged in the crew's proofs and never stops the crew. A reap a member left due
+// (crew.reapDue) is folded into this call, so it is cleared here too.
 async function reap(crew) {
+  crew.reapDue = false
   try {
     const r = await runFactory(crew, `reap --slug ${sh(crew.slug)} --label ${sh(`${crew.slug}-check`)}`, 'reaped')
     if (!r.parsed || typeof r.parsed !== 'object' || !Array.isArray(r.parsed.reaped)) crew.proofs.push(`reap failed: ${r.out}`)
@@ -496,7 +501,13 @@ const trussDir = () => (F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/
 // extra: one more line after the command, so a resumed call gets its own cache key (the runtime caches by prompt); null
 // leaves the prompt exactly as it was
 async function runFactory(crew, command, key, line = null, extra = null) {
-  const full = line ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
+  // ADR-0046 item 1: a reap left due by the last member spawn runs first inside this same command (--reap-first <slug>,
+  // before heavy's `--`), so it costs no runner spawn. A reap command itself never carries it.
+  const fold = !!crew.reapDue && !/^reap\b/.test(String(command || ''))
+  const rf = fold ? ` --reap-first ${sh(crew.slug)}` : ''
+  // the flag goes just before --dir, so --dir, --repo and --status-line stay last
+  const base = line ? (fold ? line.replace(/ --dir /, `${rf} --dir `) : line) : null
+  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
@@ -509,6 +520,12 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   const res = await ask(crew, 'runner', prompt, { schema: RUNNER_SCHEMA })
   if (!res || typeof res.stdout !== 'string') return { met: false, parsed: null, out: 'the runner returned no result' }
   const fromStdout = lastJsonObject(res.stdout)
+  if (fold && full.includes(rf)) {
+    // the reap ran (or failed) inside the command; a failure is logged as a separate reap's was, and never stops the crew
+    crew.reapDue = false
+    const rr = fromStdout && fromStdout.reapedFirst
+    if (isPlainObject(rr) && !Array.isArray(rr.reaped)) crew.proofs.push(`reap failed: ${typeof rr.error === 'string' ? rr.error : JSON.stringify(rr)}`)
+  }
   const status = statusOf(res.status)
   // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or
   // unparseable status falls back to the stdout rule
@@ -822,8 +839,8 @@ async function runMember(crew, role, makePrompt, opts, at, first = null) {
   }
   const fresh = learnedOf(report).map((item) => ({ ...item, task: at, member: label }))
   if (fresh.length) {
-    // a member that runs after the knowledge step (a stress or QC fixer) has no step left to record its items: they are listed as
-    // unrecorded in the crew result for the run-end reconcile pass, never counted as learned
+    // a member that runs after the knowledge step (a QC fixer) is unrecorded until the knowledge re-run after its round records it
+    // (knowledgeAgain, ADR-0046 item 6); what is still unrecorded at the end goes in the crew result for the run-end reconcile pass
     if (crew.pastKnowledge) crew.unrecorded.push(...fresh)
     else crew.learned.push(...fresh)
     if (at !== 'knowledge') await recordLearned(crew, fresh)
@@ -1179,7 +1196,7 @@ function integrate(crew, branch, at) {
 async function integrateNow(crew, branch, at) {
   const command = `integrate --slug ${sh(crew.slug)} --branch ${sh(branch)}`
   let r = await runFactory(crew, command, 'merged')
-  if (r.met) return headOf(r)
+  if (r.met) return moved(crew, headOf(r))
   // commits whose Truss-Crew or Truss-Role line git does not parse as a trailer: a stop that names them, never a resolver or a QC role FAIL
   const bad = r.parsed && Array.isArray(r.parsed.trailers) ? r.parsed.trailers.map(String) : []
   if (bad.length) throw new Stop('BLOCKED', `${branch} not merged: git does not parse the Truss-Crew or Truss-Role trailer of ${bad.join('; ')}. The trailers must be the last block of the message, with no blank line between Truss-Crew, Truss-Role and any Co-Authored-By. Reword those commits, or rerun the task.`, at)
@@ -1193,11 +1210,22 @@ async function integrateNow(crew, branch, at) {
   await resolveConflicts(crew, `merging ${branch} into ${crew.e.branch}`, conflicts, at)
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `could not integrate ${branch} after the resolver:\n${r.out}`, at)
-  return headOf(r)
+  return moved(crew, headOf(r))
 }
 
 // the crew head factory integrate printed after a merge, or null when it printed none
 const headOf = (r) => (r.parsed && typeof r.parsed.head === 'string' && r.parsed.head ? r.parsed.head : null)
+
+// ADR-0046 item 1: crew.moves counts the merges that changed the crew head (one that printed no head counts: it may have).
+// green, scope and testsGuard remember the count they last passed at and skip a re-run on the same head.
+function moved(crew, head) {
+  if (!head || head !== crew.head) crew.moves = (crew.moves || 0) + 1
+  return head
+}
+const unmoved = (crew, key) => crew[key] !== undefined && crew[key] === (crew.moves || 0)
+const passedAt = (crew, key) => {
+  crew[key] = crew.moves || 0
+}
 
 // ADR-0032: the persona a task's member runs as (a builder or tester task with a persona), else null
 const taskPersona = (task) => (['builder', 'tester'].includes(task.role) && typeof task.persona === 'string' && task.persona ? task.persona : null)
@@ -1322,10 +1350,14 @@ function backstopPrompt(crew, what, lines) {
 // bug 28: after a builder fix, the tests check testsGuard runs. Touched tester files get a resolver that moves each such
 // change into a tester commit on the crew branch, then one re-check; a check that still fails is left to testsGuard to stop on.
 async function testsBackstop(crew, what) {
+  // ADR-0046 item 1: on a head the tests check already passed, no commit can touch a tester file; a pass here also
+  // serves testsGuard's next run on the same head
+  if (unmoved(crew, 'testsAt')) return
   const n = (crew.backstops = (crew.backstops || 0) + 1)
   // an extra line per run, so no run shares testsGuard's cache key or another run's (the runtime caches by prompt)
   const check = (k) => runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, `Backstop: ${n}.${k}`))
   const r = await check(1)
+  if (r.met) passedAt(crew, 'testsAt')
   const touched = !r.met && r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   if (!touched.length) return
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
@@ -1492,6 +1524,12 @@ async function split(crew) {
 // ---------------------------------------------------------------- green, stress test, scope, QC
 
 async function green(crew) {
+  // ADR-0046 item 1: nothing merged since the last green pass, so the head is the one it passed on
+  if (crew.head && unmoved(crew, 'greenAt')) {
+    crew.step = 'green'
+    log(`green check skipped: crew ${crew.slug}, head ${crew.head} unchanged since it passed`)
+    return
+  }
   for (let attempt = 1; ; attempt++) {
     crew.step = 'green'
     const g = await check(crew, 'green')
@@ -1500,6 +1538,7 @@ async function green(crew) {
       if (typeof g.parsed.head !== 'string' || !g.parsed.head) throw new Stop('BLOCKED', `the green check gave no head:\n${g.out}`, 'green')
       crew.head = g.parsed.head
       crew.sourceChanges = sourceChangesOf(g.parsed)
+      passedAt(crew, 'greenAt')
       return
     }
     const env = envOf(g)
@@ -1619,8 +1658,9 @@ async function stressTest(crew) {
 
 async function scope(crew) {
   crew.step = 'scope'
+  if (unmoved(crew, 'scopeAt')) return
   const r = await runFactory(crew, `owns-check --slug ${sh(crew.slug)}`, 'ok')
-  if (r.met) return
+  if (r.met) return passedAt(crew, 'scopeAt')
   // ADR-0033: factory owns-check itself leaves out the doc files the crew's knowledge commit alone changed (bin/factory.ts
   // knowledgeDocs); stage.js exempts nothing, so whatever it still lists is outside
   const outside = r.parsed && Array.isArray(r.parsed.outside) ? r.parsed.outside : []
@@ -1634,8 +1674,9 @@ async function testsGuard(crew) {
   crew.step = 'tests'
   // a resume that answers at tests (the PM rewrote the crew branch) must re-run the check, not replay the cached BLOCKED
   const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
+  if (unmoved(crew, 'testsAt')) return
   const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null))
-  if (r.met) return
+  if (r.met) return passedAt(crew, 'testsAt')
   const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
   throw new Stop('BLOCKED', `${lines.length ? `These commits touch acceptance-test files a tester wrote:\n${lines.join('\n')}` : `the tests check did not pass:\n${r.out}`}\nThe QC engineer fails any builder or resolver commit that touches them, so the crew stops before QC. Drop those commits from the crew branch (or have the tester make the change) and resume.`, 'tests')
@@ -1761,16 +1802,24 @@ function alwaysLoaded(p) {
   return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && loadedForm(x.file) === f)
 }
 
-function knowledgePrompt(crew, resume) {
+// again (0.29.0, ADR-0046 item 6): a re-run after a fix round ({why, from, items}) or to clear knowledge-lint failures ({why, from,
+// items: [], lint}); it reviews only the fix's diff, from `from` (the head before that round)
+function knowledgePrompt(crew, resume, again = null) {
   const e = crew.e
   const note = (i) => (!isMarkdown(i.target) ? ' (not markdown: skip it and list it in your report)' : i.kind === 'product' && alwaysLoaded(i.target) ? ` (always loaded: a product call never goes there; record it in ${productOwnerFile()} instead)` : '')
-  const items = crew.learned.map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}${note(i)}` : ''}; from ${i.member}, task ${i.task})`)
+  const items = (again ? again.items : crew.learned).map((i) => `- [${i.kind}] ${i.text} (source: ${i.source || 'none given'}${i.target ? `; target: ${i.target}${note(i)}` : ''}; from ${i.member}, task ${i.task})`)
   const moved = crew.sourceChanges.map((c) => (c.status === 'A' ? `- added ${c.path}` : c.status === 'D' ? `- deleted ${c.path}` : `- renamed ${c.from} -> ${c.path}`))
+  const from = again && again.from ? again.from : e.base
   const body = [
     `Task: record what crew ${crew.slug} learned`,
+    ...(again && again.lint
+      ? ['Why this run: the knowledge lint failed on the docs this crew changed. Fix each failure below in the doc it names (re-stamp `verified`, fix or drop a citation, fold an entry under its budget); change nothing else.', ...lintData(again.lint)]
+      : again
+        ? [`Why this run: a fix round (${again.why}) changed the code after the docs were recorded. Bring every doc the fix diff makes stale back in line, and record the fixers' learned items below.`]
+        : []),
     `Learned items: ${items.length ? `\n${items.join('\n')}` : 'none reported'}`,
     ...(moved.length ? [`Source files the diff added, renamed or deleted (from git diff --name-status -M; tests, fixtures and docs left out):\n${moved.join('\n')}\nGive each user-facing capability among them a feature-map entry, and fix the feature-map entries and persona paths that name a deleted or renamed file. A file that is only an internal helper needs none.`] : []),
-    `Diff range: ${e.base}...${crew.head || 'HEAD'} (git diff ${e.base}...${crew.head || 'HEAD'}, in the crew checkout)`,
+    `Diff range: ${from}...${crew.head || 'HEAD'} (git diff ${from}...${crew.head || 'HEAD'}, in the crew checkout)`,
     `Feature map: ${FEATURE_MAP}`,
     `Persona files the crew used: ${crewPersonaFiles(crew).join(', ') || 'none'}`,
     `Product decisions file: ${productOwnerFile()}`,
@@ -1814,12 +1863,19 @@ function knowledgePrompt(crew, resume) {
 // it runs on Sonnet at effort medium, not the writer row's Opus; QC (Opus) checks the result.
 // Returns false when it did not run, true when it ran; the caller then runs green again, always: markdown can be test input (this
 // repo's own prose checks read SKILL.md and agents/*.md), and land runs no check.
-async function knowledge(crew) {
-  if ((!crew.learned.length && !crew.sourceChanges.length) || !hasCodeTasks(crew)) return false
+async function knowledge(crew, again = null) {
+  if (!hasCodeTasks(crew)) return false
+  if (!again && !crew.learned.length && !crew.sourceChanges.length) return false
   crew.step = 'knowledge'
   const before = crew.head
-  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
+  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume, again), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
+  crew.unrecorded = crew.unrecorded.filter((i) => i.task !== 'knowledge')
+  // the fixers' items this re-run recorded count as learned, no longer as unrecorded
+  if (again && again.items.length) {
+    crew.unrecorded = crew.unrecorded.filter((i) => !again.items.includes(i))
+    crew.learned.push(...again.items)
+  }
   crew.proofs.push(`knowledge: ${report.proof}`)
   const head = await integrate(crew, report.branch, 'knowledge')
   crew.knowledgeRan = true
@@ -1899,6 +1955,31 @@ async function knowledgeLint(crew) {
     log(`knowledge-lint failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
     crew.lint = { ran: false }
   }
+}
+
+// ADR-0046 item 6: how many writer runs may chase knowledge-lint failures before QC gets them (QC FAILs on each new one)
+const LINT_FIX_ROUNDS = 2
+// ADR-0046 item 6: the lint before QC, with the writer looping on its new failures until it is clean (or LINT_FIX_ROUNDS runs, or a
+// run leaves the head where it was). Predating failures and warnings never loop: QC lists them for the main session.
+async function lintClean(crew) {
+  for (let n = 0; ; n++) {
+    await knowledgeLint(crew)
+    const fresh = crew.lint && crew.lint.ran ? crew.lint.failures.filter(isNewFinding) : []
+    if (!fresh.length || !hasCodeTasks(crew) || n >= LINT_FIX_ROUNDS) return
+    const from = crew.head
+    log(`knowledge-lint failed: crew ${crew.slug}, ${fresh.length} new failure${fresh.length === 1 ? '' : 's'}, writer round ${n + 1}`)
+    await knowledge(crew, { why: 'knowledge lint', from, items: [], lint: fresh })
+    await green(crew)
+    if (crew.head === from) return
+  }
+}
+
+// ADR-0046 item 6: after a QC fix round the knowledge step runs again on the fix's diff, when it applies to the crew:
+// it ran before, or a fixer reported learned items. `from` is the head before the round. Markdown can be test input, so green re-runs.
+async function knowledgeAgain(crew, why, from) {
+  const items = crew.unrecorded.slice()
+  if (!crew.knowledgeRan && !items.length) return
+  if (await knowledge(crew, { why, from, items })) await green(crew)
 }
 
 // a failure counts as new unless the lint says it was already there at the merge base (new: false)
@@ -2012,7 +2093,7 @@ async function runQc(crew) {
   try {
     text = await spawn('qc', label, qcPrompt(crew))
   } finally {
-    await reap(crew)
+    crew.reapDue = true
   }
   return { label, text: text || '', verdict: verdictOf(text) }
 }
@@ -2022,7 +2103,8 @@ async function qc(crew) {
     await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
-    await knowledgeLint(crew)
+    await lintClean(crew)
+    crew.step = 'qc'
     let j = await runQc(crew)
     if (!j.verdict) {
       j = await runQc(crew)
@@ -2036,9 +2118,11 @@ async function qc(crew) {
     const detail = unscoped.length
       ? `The QC passed the work but left claims with no stated scope:\n${unscoped.join('\n')}\nFor each claim, state its scope (in ## Examined or beside the claim) or withdraw it.`
       : `The QC ruled FAIL:\n${j.text}`
+    const from = crew.head
     if (unscoped.length) await fixBuilder(crew, 'QC findings', detail)
     else await fixFindings(crew, 'QC findings', 'The QC ruled FAIL, with these findings:', /^## Findings\s*$/m.test(j.text) ? sectionOf(j.text, '## Findings').join('\n') : j.text, detail)
     await green(crew)
+    await knowledgeAgain(crew, 'QC findings', from)
   }
 }
 
@@ -2188,10 +2272,11 @@ async function syncStep(crew) {
   crew.step = 'R1'
   const command = `sync --slug ${sh(crew.slug)}`
   let r = await runFactory(crew, command, 'merged')
-  if (r.met) return
+  if (r.met) return void moved(crew, headOf(r))
   await resolveConflicts(crew, `syncing ${crew.e.branch} with ${F.target}`, conflictsOf(r), 'R1')
   r = await runFactory(crew, command, 'merged')
   if (!r.met) throw new Stop('BLOCKED', `the sync is still not merged after the resolver:\n${r.out}`, 'R1')
+  moved(crew, headOf(r))
 }
 
 async function redStep(crew) {
@@ -2232,14 +2317,16 @@ async function chain(crew) {
   }
   await runMembers(crew, tasks)
   await green(crew)
-  // ADR-0033: the one reply checkpoint (a change re-runs its task and checks green again), then record what the crew learned (its
-  // commit moves the head, so green always runs again). A reply that arrives after this is late: the crew result lists it.
+  // ADR-0033: the one reply checkpoint (a change re-runs its task and checks green again). A reply that arrives after this is late:
+  // the crew result lists it.
   await checkpoint(crew)
+  if (uxOn(crew)) await uxReview(crew)
+  // ADR-0046 item 7: the stress test runs before the knowledge step, so its fixes (and their learned items) are recorded
+  if (e.stressTest) await stressTest(crew)
+  // record what the crew learned (its commit moves the head, so green always runs again)
   const recorded = await knowledge(crew)
   crew.pastKnowledge = true
   if (recorded) await green(crew)
-  if (uxOn(crew)) await uxReview(crew)
-  if (e.stressTest) await stressTest(crew)
   await scope(crew)
   return qc(crew)
 }
