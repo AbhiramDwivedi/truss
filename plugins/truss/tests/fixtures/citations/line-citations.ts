@@ -35,6 +35,10 @@ export function lineCitations(md) {
 // The doc roots the lint walks. `.claude/truss.json` targetedTests.map must send each root to the citation checks; doc-citations-031.check.ts pins that.
 export const CITATION_DOC_ROOTS = ['plugins/truss/docs', 'docs', '.claude/rules']
 
+// Single docs outside those roots that the lint also covers: the retro skill and the planning engineer. They are listed by file,
+// not by root, because a root must be selected by `.claude/truss.json` targetedTests.map; hygiene-029.check.ts lints these in a targeted run.
+export const CITATION_DOC_FILES = ['plugins/truss/agents/planning-engineer.md', 'plugins/truss/skills/retro/SKILL.md']
+
 export function citationDocs(root) {
   const out = []
   const walk = (rel) => {
@@ -46,6 +50,7 @@ export function citationDocs(root) {
     }
   }
   for (const d of CITATION_DOC_ROOTS) walk(d)
+  for (const f of CITATION_DOC_FILES) if (existsSync(path.join(root, ...f.split('/')))) out.push(f)
   return out
 }
 
