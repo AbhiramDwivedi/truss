@@ -7,7 +7,7 @@
 // this file's own location, so a copy of tests/ placed in a base copy of the plugin exercises that copy's code.
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { test } from 'node:test'
@@ -56,7 +56,7 @@ const body = (p: string): string => readFileSync(p, 'utf8').replace(/^---\r?\n[\
 
 test('F67 3: a non-start command given a relative --dir exits 2 with a usage error; start given a relative --dir still resolves it', () => {
   const env = runningWorld()
-  const cwd = tmpdir()
+  const cwd = realpathSync(tmpdir()) // the child's real cwd; a relative path from a symlinked TMPDIR (/var on macOS) would climb one level too far
   const rel = relative(cwd, env.dir)
   assert.ok(!isAbsolute(rel), 'the test needs a relative path')
   for (const cmd of ['admit', 'sync']) {
