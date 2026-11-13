@@ -1225,7 +1225,7 @@ async function restoreCalls(crew) {
 // Before a task's first member on a resume: its item still open holds the crew again (the item and not a timer decides), a resolved
 // one starts the member with the answer (logged once: not again when an earlier run's decision for this task came back).
 // Returns the first member's retry note, or null when the task asked nothing.
-async function pendingCall(crew, role, makePrompt, opts, at) {
+async function pendingCall(crew, role, makePrompt, opts, at, isTask = false) {
   // one inbox read per resumed crew, shared by its parallel tasks, made when the first task starts (after red and split)
   if (crew.e.resume) await (crew.callsRead ??= restoreCalls(crew))
   const row = crew.calls[at]
@@ -1235,7 +1235,11 @@ async function pendingCall(crew, role, makePrompt, opts, at) {
   delete crew.calls[at]
   // logged once per item, not per task: a task can ask twice, and the second item's answer is a new decision. An earlier run's
   // decision stands for this item when its logged question names the item id (takeCall puts it there)
-  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !crew.decisions.some((d) => String(d.question).includes(`(inbox item ${row.id})`)))
+  const logged = crew.decisions.some((d) => String(d.question).includes(`(inbox item ${row.id})`))
+  // a fix or writer member at a step (green, qc, stress, knowledge) is a new member on every resume: an item an earlier run already
+  // used for its asking member answers none of them (ADR-0047, one item answers one member). A task is its own asker, so it re-reads.
+  if (logged && !isTask) return null
+  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !logged)
   if (got.resume) return got.resume
   // a resolve with no note holds no answer, but the program manager's answers resume does: the member starts with that answer (answersFor)
   if ((crew.e.answers || []).some((a) => a && a.at === at)) return null
@@ -1280,7 +1284,8 @@ async function restoreDecisions(crew) {
     // this run applies no reply: checkpoint() skips, and a reply that is still unacked comes out in the result's late list
     if (r.parsed && r.parsed.checkpoint === true) crew.checkpointed = true
     for (const d of list) {
-      if (!isPlainObject(d) || d.crew !== crew.slug || typeof d.id !== 'string' || !d.id || typeof d.question !== 'string' || typeof d.answer !== 'string') continue
+      // decisions --crew already filters by crew: a row that names another crew is skipped, one that names none is this crew's
+      if (!isPlainObject(d) || (d.crew !== undefined && d.crew !== crew.slug) || typeof d.id !== 'string' || !d.id || typeof d.question !== 'string' || typeof d.answer !== 'string') continue
       if (crew.decisions.some((c) => c.id === d.id)) continue
       const task = typeof d.task === 'string' && d.task ? d.task : 'earlier run'
       const taken = d.consumed === true && (d.reply === 'ack' || d.reply === 'change')
@@ -1497,7 +1502,7 @@ async function runTask(crew, task) {
   const at = task.name
   const makePrompt = (note) => taskPrompt(crew, task, note)
   // a resume: the task's product call may still wait on its inbox item (stop again) or be answered (start with the answer)
-  const first = await pendingCall(crew, task.role, makePrompt, taskOpts(task), at)
+  const first = await pendingCall(crew, task.role, makePrompt, taskOpts(task), at, true)
   const report = await runMember(crew, task.role, makePrompt, taskOpts(task), at, first)
   report.task = task.name
   crew.proofs.push(`${task.name}: ${report.proof}`)
