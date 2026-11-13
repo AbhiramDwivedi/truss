@@ -3647,6 +3647,43 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   appendDecisionLine(dir, line)
   return { ok: true, form, line }
 }
+// `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head in a temporary detached
+// worktree, never in the main checkout, and never pushes or moves a branch. One JSON line, one decision line, ok or not.
+export function cmdGoalCheck(f: Flags): Obj {
+  const dir = dirOf(f)
+  const repo = repoOf(f)
+  const plan = loadPlan(dir)
+  const goalId = str(f, 'goal')
+  let command: unknown = plan.goalCheck
+  if (goalId !== undefined) {
+    const g = (Array.isArray(plan.goals) ? plan.goals : []).find((x: Obj) => isObj(x) && x.id === goalId)
+    if (!g) throw usage(`no goal ${goalId} in the plan`)
+    command = g.goalCheck
+  }
+  if (typeof command !== 'string' || command.trim() === '') throw usage(goalId === undefined ? 'the plan has no goalCheck' : `goal ${goalId} has no goalCheck`)
+  const target = settingsOf(repo).target
+  const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${target}^{commit}`])
+  const wt = flat(path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'truss-goalcheck-'))), 'wt'))
+  const label = goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`
+  let status = 1
+  let tail = ''
+  let added = false
+  try {
+    gitOrFail(repo, ['worktree', 'add', '-q', '--detach', wt, sha])
+    added = true
+    const r = spawnSync('bash', ['-c', command], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
+    status = r.error ? 1 : (r.status ?? 1)
+    tail = `${r.error ? `${r.error.message}\n` : ''}${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000)
+  } finally {
+    if (added) run(repo, ['worktree', 'remove', '--force', wt])
+    run(repo, ['worktree', 'prune'])
+    rmSync(path.dirname(wt), { recursive: true, force: true })
+  }
+  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
+  if (status !== 0) throw refuse(body)
+  return body
+}
 
 // ==== crew decisions ====
 
@@ -4225,7 +4262,7 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check': cmdGoalCheck, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
