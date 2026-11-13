@@ -62,7 +62,9 @@ const MESSAGE = `Plan.\n\n\`\`\`\`json plan.json\n${PLAN_JSON}\n\`\`\`\`\n\n\`\`
 st('gates-026-regress: plan-write does not overwrite a plan approved while it waited for the plan lock', async () => {
   const env = mkEnv()
   const { dir: run } = mkRun(env.transcripts, 'wf_plan', [{ id: 'aarch', label: 'truss-designer', agentType: 'truss:design-engineer', metaModel: 'opus', result: MESSAGE }])
-  const existing = planObj([crew('kept', { stage: 0, verdict: 'design' })], { approval: 'client', approvedAt: null })
+  // the crew is running, so an approval that lands before the child's first check is refused too (the running-crew rule): the
+  // outcome does not depend on how long the child takes to reach that check
+  const existing = planObj([crew('kept', { stage: 0, verdict: 'design', status: 'running' })], { approval: 'client', approvedAt: null })
   writePlan(env.dir, existing)
   // a live owner holds the plan lock: plan-write passes its first check (the plan is unapproved), then waits
   const lock = `${env.dir}/locks/plan.lock`
@@ -79,7 +81,7 @@ st('gates-026-regress: plan-write does not overwrite a plan approved while it wa
   rmSync(lock, { recursive: true, force: true })
   const status = await closed
   assert.equal(status, 1, `plan-write must refuse: ${out}`)
-  assert.match(out, /kept the existing plan: it is approved/, out)
+  assert.match(out, /kept the existing plan: (it is approved|crew kept of the earlier run is running)/, out)
   assert.equal(readPlan(env.dir).crews[0].slug, 'kept', 'the approved plan is untouched')
   assert.equal(existsSync(`${env.dir}/plan.md`), false, 'no plan.md was written')
 })
