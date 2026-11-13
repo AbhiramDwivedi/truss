@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { fileURLToPath } from 'node:url'
 import { mkRepo, mkTrussDir, readEvents, runCli, validateEvent } from './fixtures/workflow-run/harness.ts'
 
@@ -74,7 +75,7 @@ async function runStage(dir, repo, crews, labels, hook = () => {}) {
   const body = readFileSync(STAGE, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
   const real = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label }
     calls.push(call)
     await tick()
@@ -100,7 +101,7 @@ async function runStage(dir, repo, crews, labels, hook = () => {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await tick()
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   const args = {

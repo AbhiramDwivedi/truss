@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { fileURLToPath } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
@@ -113,7 +114,7 @@ async function exec(args, o = {}) {
   const body = stageText.replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
   const unscripted = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -154,7 +155,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await tick()
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {
@@ -322,9 +323,11 @@ st('case: reap after each member', async () => {
       members++
       let next = seq.findIndex((x, j) => j > k && x.kind === 'member')
       if (next < 0) next = seq.length
-      const reap = seq.slice(k + 1, next).find((x) => x.kind === 'runner' && x.cmd === 'reap' && x.slug === 'a' && x.label === 'a-check')
-      assert.ok(reap, `${name}: ${s.label} is not followed by a reap --slug a --label a-check runner call before the next member or the crew's result`)
-      assert.match(reap.line, /factory\.ts\s+reap\s/, reap.line)
+      // ADR-0046 item 1: the reap is a standalone reap --slug a --label a-check, or rides as --reap-first a on the crew's
+      // next factory call
+      const reap = seq.slice(k + 1, next).find((x) => x.kind === 'runner' && ((x.cmd === 'reap' && x.slug === 'a' && x.label === 'a-check') || / --reap-first a(\s|$)/.test(x.line)))
+      assert.ok(reap, `${name}: ${s.label} is not followed by a reap (standalone or --reap-first a) before the next member or the crew's result`)
+      assert.match(reap.line, /factory\.ts\s+reap\s| --reap-first a\b/, reap.line)
       assert.equal(reap.dir, '/proj/.truss', 'reap --dir')
       assert.equal(reap.repo, '/proj', 'reap --repo')
     }
