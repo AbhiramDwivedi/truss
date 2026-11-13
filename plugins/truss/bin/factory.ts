@@ -41,6 +41,8 @@ import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS, profilesOf, workTypeErrors } from './worktypes.ts'
 import { ltcCrewGate, ltcPlan, ltcPlanGate } from './guard.ts'
 import { ledgerAppend } from './ledger.ts'
+import { selectForCheckout, stripBlanketSuite } from './testmap.ts'
+import type { Selection, TestsConfig } from './testmap.ts'
 
 const PLUGIN = path.dirname(path.dirname(fileURLToPath(import.meta.url))).replace(/\\/g, '/')
 
@@ -706,6 +708,9 @@ function cmdPlanCheck(f: Flags): Obj {
   const warnings = stageWarnings(dirOf(f), crews)
   // a bare-directory owns entry (`dir/`) is read as `dir/**` by owns-check and the stage split; say so, so a plan that meant it is explicit
   for (const c of crews) for (const g of Array.isArray(c.owns) ? c.owns : []) if (typeof g === 'string' && g.endsWith('/')) warnings.push(`crew ${name(c)}: owns entry ${g} is a bare directory, read as ${g}**; write ${g}** to say so`)
+  // 0.31.0 item 1: the green check runs the tests the diff reaches and the full suite runs before merge, so a trailing whole-suite
+  // step only slows every check; factory check cuts it (stripBlanketSuite), and the plan should drop it
+  for (const c of crews) if (typeof c.acceptanceTest === 'string' && stripBlanketSuite(c.acceptanceTest).blanket) warnings.push(`crew ${name(c)}: the acceptance test ends with the whole test suite (npm test); the green check runs the tests the diff reaches and the full suite runs before merge, so drop that step`)
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
@@ -870,6 +875,67 @@ export function installMissingDeps(cwd: string, platform: string = process.platf
   return out
 }
 
+// Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
+function bashRun(cwd: string, command: string): { exit: number; text: string } {
+  const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
+  try {
+    const fd = openSync(`${scratch}/out.txt`, 'w')
+    // a check started under node --test (the plugin's own tests) must not hand NODE_TEST_CONTEXT to the tests it runs: a nested
+    // node --test that sees it skips every file and exits 0
+    const { NODE_TEST_CONTEXT: _, ...env } = process.env
+    const r = spawnSync('bash', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd] })
+    closeSync(fd)
+    if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
+    return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8') }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+}
+
+// 0.31.0 item 1: the tests a green check runs after the acceptance test. bin/testmap.ts maps the crew's diff (merge-base with the
+// target ... HEAD) to the test files it reaches, or to the full suite when reach is unclear; --full forces the full suite (the run
+// before merge). A targeted set runs outside the heavy slot; the full suite takes the slot for exactly its own run, then records
+// its time for slotWaitMs. A slot not free within heavyWaitMs comes back as `slot: {ran: false}`, which heavy reports as busy.
+function checkTests(f: Flags, dir: string, slug: string, cwd: string): { exit: number; text: string; tests: Obj; slot?: Obj } {
+  let config: TestsConfig = {}
+  let sel: Selection
+  try {
+    const t = configOf(repoOf(f)).targetedTests
+    config = isObj(t) ? (t as TestsConfig) : {}
+    sel = selectForCheckout(cwd, baseOf(cwd, settingsOf(repoOf(f)).target), config)
+  } catch (e) {
+    sel = { mode: 'full', why: [`the diff could not be mapped: ${e instanceof Error ? e.message : String(e)}`], files: [], commands: [] }
+    const full = typeof config.full === 'string' && config.full.trim() !== '' ? config.full.trim() : existsSync(`${cwd}/package.json`) ? 'npm test' : undefined
+    if (full !== undefined) sel.full = full
+  }
+  if (f.full === true && sel.mode !== 'full') sel = { mode: 'full', why: ['--full: the full suite before merge'], files: [], commands: [], ...(sel.full === undefined ? {} : { full: sel.full }) }
+  const tests: Obj = { mode: sel.mode, why: sel.why, files: sel.files, commands: sel.mode === 'full' ? (sel.full === undefined ? [] : [sel.full]) : sel.commands }
+  if (sel.mode === 'targeted') {
+    let exit = 0
+    let text = ''
+    for (const c of sel.commands) {
+      const r = bashRun(cwd, c)
+      text += `\n$ ${c}\n${r.text}`
+      if (r.exit !== 0 && exit === 0) exit = r.exit
+    }
+    return { exit, text, tests }
+  }
+  if (sel.full === undefined) return { exit: 0, text: '\nno full-suite command is known (set targetedTests.full)\n', tests: { ...tests, why: [...sel.why, 'no full-suite command is known (set targetedTests.full)'] } }
+  const limit = heavyWaitMs(f, process.env, dir)
+  const label = `${slug}-check`
+  const a = acquireSlot(dir, { label, slug }, slotsAt(cwd), limit)
+  if (a.token === null) return { exit: 1, text: '', tests, slot: { ran: false, waitedMs: a.waitedMs, waitLimitMs: limit, why: `waited ${a.waitedMs} ms (limit ${limit} ms) for the heavy slot and free memory` } }
+  const t1 = Date.now()
+  let r: { exit: number; text: string }
+  try {
+    r = bashRun(cwd, sel.full)
+  } finally {
+    releaseHeavySlot(dir, a.token)
+  }
+  recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
+  return { exit: r.exit, text: `\n$ ${sel.full}\n${r.text}`, tests }
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -879,25 +945,29 @@ function cmdCheck(f: Flags): Obj {
   const crew = loadPlan(dir).crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
   if (typeof crew.acceptanceTest !== 'string' || crew.acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
-  const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
-  let text: string
-  let exit: number
-  try {
-    // a failed install goes into the check text, so the env catalog sees it
-    const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
-    const fd = openSync(`${scratch}/out.txt`, 'w')
-    const r = spawnSync('bash', ['-c', crew.acceptanceTest], { cwd, stdio: ['ignore', fd, fd] })
-    closeSync(fd)
-    if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
-    exit = r.status ?? 1
-    text = installs.map((i) => `npm ci failed in ${i.dir} (exit ${i.status}):\n${i.output}\n`).join('') + readFileSync(`${scratch}/out.txt`, 'utf8')
-  } finally {
-    rmSync(scratch, { recursive: true, force: true })
+  // 0.31.0 item 1: a trailing whole-suite step (`&& npm test`) is cut; the green check adds the targeted set itself. An acceptance
+  // test that is nothing but the suite stays as it is.
+  const cut = stripBlanketSuite(crew.acceptanceTest)
+  const command = cut.blanket && cut.command.trim() !== '' ? cut.command : crew.acceptanceTest
+  // a failed install goes into the check text, so the env catalog sees it
+  const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
+  const acc = bashRun(cwd, command)
+  let exit = acc.exit
+  let text = installs.map((i) => `npm ci failed in ${i.dir} (exit ${i.status}):\n${i.output}\n`).join('') + acc.text
+  let tests: Obj | undefined
+  let slot: Obj | undefined
+  if (expect === 'green' && exit === 0) {
+    const t = checkTests(f, dir, slug, cwd)
+    exit = t.exit
+    text += t.text
+    tests = t.tests
+    slot = t.slot
   }
   const lines = text.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
   const tail = lines.slice(-40).join('\n')
   const head = gitOrFail(cwd, ['rev-parse', 'HEAD'])
+  if (slot !== undefined) throw refuse({ ok: false, exit, head, tail, tests, slot })
   mkdirSync(`${dir}/checks`, { recursive: true })
   const used = readdirSync(`${dir}/checks`).map((n) => new RegExp(`^${slug.replace(/[^a-z0-9-]/g, '\\$&')}-(\\d+)\\.json$`).exec(n)?.[1]).filter((n) => n !== undefined).map(Number)
   const n = (used.length === 0 ? 0 : Math.max(...used)) + 1
@@ -906,13 +976,15 @@ function cmdCheck(f: Flags): Obj {
   const { env, envSeen } = exit === 0 ? {} : envVerdict(text)
   const envKeys = { ...(env === undefined ? {} : { env }), ...(envSeen === undefined ? {} : { envSeen }) }
   const known = exit === 0 ? [] : catalogHits(text)
-  writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
+  const record = `${dir}/checks/${slug}-${n}.json`
+  writeFileSync(record, JSON.stringify({ command, exit, head, tail, ...(tests === undefined ? {} : { tests }), ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
   const since = ok && expect === 'green' ? testsSinceOf(cwd, f) : {}
-  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since.list === undefined ? {} : { testsSince: since.list }), ...(since.unknown === undefined ? {} : { testsUnknown: since.unknown }) }
+  const body = { ok, exit, head, tail, record, ...(tests === undefined ? {} : { tests }), ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since.list === undefined ? {} : { testsSince: since.list }), ...(since.unknown === undefined ? {} : { testsUnknown: since.unknown }) }
   if (!ok) throw refuse(body)
   return body
 }
+
 
 // ADR-0046 item 3: with --tests-since <sha>, the test files (isTestPath) changed in <sha>..HEAD, so stage.js can fail a stress-fix
 // round that added no regression test. Undefined without the flag, or when the range can't be read (no list, no check).
@@ -2499,14 +2571,70 @@ function argsFileOut(f: Flags, out: Obj): Obj {
 import { spawn } from 'node:child_process'
 import { admits, defaultHeavySlots, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
 
-// How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 540 s (under the 600000 ms Bash timeout stage.js sets, leaving room for the command).
+// How long a heavy run waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else slotWaitMs(dir), which
+// scales with the measured suite time (0.31.0 item 2). The wait happens in a background job (heavyJobMain), so it is no longer
+// bounded by the runner's 600 s Bash timeout; the caller only waits HEAVY_ATTACH_MS for the result.
 export const HEAVY_WAIT_MS = 540000
-export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = process.env): number {
+export const HEAVY_WAIT_MAX_MS = 2 * 3600 * 1000
+const HEAVY_TIMES = (dir: string): string => `${dir}/resources/heavy-times.jsonl`
+function explicitWaitMs(f: Flags, env: Record<string, string | undefined> = process.env): number | undefined {
   for (const v of [str(f, 'wait-ms'), env.TRUSS_HEAVY_WAIT_MS]) {
     const n = v === undefined || v.trim() === '' ? NaN : Number(v)
     if (Number.isInteger(n) && n >= 0) return n
   }
-  return HEAVY_WAIT_MS
+  return undefined
+}
+export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = process.env, dir?: string): number {
+  return explicitWaitMs(f, env) ?? (dir === undefined ? HEAVY_WAIT_MS : slotWaitMs(dir))
+}
+// Twice the longest of the last 10 slot runs recorded in <dir>/resources/heavy-times.jsonl (one suite running, one ahead of the
+// waiter), never below HEAVY_WAIT_MS and never above HEAVY_WAIT_MAX_MS; HEAVY_WAIT_MS when nothing is recorded yet.
+export function slotWaitMs(dir: string): number {
+  let ms: number[] = []
+  try {
+    ms = readFileSync(HEAVY_TIMES(dir), 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => {
+      try {
+        return Number(JSON.parse(l).ms)
+      } catch {
+        return NaN
+      }
+    }).filter((n) => Number.isFinite(n) && n > 0).slice(-10)
+  } catch {
+    ms = []
+  }
+  if (ms.length === 0) return HEAVY_WAIT_MS
+  return Math.min(HEAVY_WAIT_MAX_MS, Math.max(HEAVY_WAIT_MS, 2 * Math.max(...ms)))
+}
+function recordHeavyTime(dir: string, row: { label: string; slug: string; ms: number }): void {
+  try {
+    mkdirSync(`${dir}/resources`, { recursive: true })
+    appendFileSync(HEAVY_TIMES(dir), JSON.stringify({ ...row, at: new Date().toISOString() }) + '\n')
+  } catch {
+    // a lost row only makes the next wait shorter
+  }
+}
+// Takes one of `slots` heavy slots once free memory admits a run, waiting up to limitMs. The token is null when the wait ran out.
+function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number): { token: string | null; waitedMs: number } {
+  const t0 = Date.now()
+  for (;;) {
+    const token = takeHeavySlot(dir, { ...owner, pid: process.pid }, process.platform, slots)
+    if (token !== null) {
+      let low = false
+      try {
+        low = !admits(sample(), minFreeMB())
+      } catch (e) {
+        appendEvent(dir, { event: 'sampler-error', crew: owner.slug, agent: owner.slug, command: 'heavy', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
+      }
+      if (!low) return { token, waitedMs: Date.now() - t0 }
+      releaseHeavySlot(dir, token)
+    }
+    if (Date.now() - t0 >= limitMs) return { token: null, waitedMs: Date.now() - t0 }
+    sleepSync(500)
+  }
+}
+const slotsAt = (cwd: string): number => {
+  const top = run(cwd, ['rev-parse', '--show-toplevel'])
+  return heavySlotsOf(configOf(top.status === 0 ? flat(top.out) : cwd))
 }
 
 // ADR-0046 item 4: how many heavy commands may run at once. truss.json `heavySlots` (a whole number 1-16) of the repo the
@@ -2675,68 +2803,84 @@ function cmdReap(f: Flags): Obj {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-// The one async command: runs argv (after the first `--`) through the heavy slot.
+// How long the heavy caller waits for its job's result before it returns pending: TRUSS_HEAVY_ATTACH_MS, else 540 s, under the
+// 600000 ms Bash timeout stage.js sets. A run that takes longer goes on in the background; the same line, run again, collects it.
+export const HEAVY_ATTACH_MS = 540000
+const attachMsOf = (env: Record<string, string | undefined> = process.env): number => {
+  const v = env.TRUSS_HEAVY_ATTACH_MS
+  const n = v === undefined || v.trim() === '' ? NaN : Number(v)
+  return Number.isInteger(n) && n >= 0 ? n : HEAVY_ATTACH_MS
+}
+const JOBS = (dir: string): string => `${dir}/resources/jobs`
+const FACTORY_ARG = /(^|[\\/])factory(\.ts)?$/
+// The job key: crew, label, worktree, its HEAD and the command, with a factory command's --dir, --repo and --status-line left
+// out, so the gates call and stage.js's own heavy line for the same check share one job. A new head is a new job.
+function jobKey(slug: string, label: string, cwd: string, cmd: string[]): string {
+  const at = cmd.findIndex((a) => FACTORY_ARG.test(a))
+  const parts: string[] = []
+  const tail = at < 0 ? cmd : cmd.slice(at + 1)
+  for (let i = 0; i < tail.length; i++) {
+    if (at >= 0 && (tail[i] === '--dir' || tail[i] === '--repo')) i++
+    else if (at >= 0 && tail[i] === '--status-line') continue
+    else parts.push(tail[i] as string)
+  }
+  const head = run(cwd, ['rev-parse', 'HEAD'])
+  return createHash('sha256').update([slug, label, cwd, head.status === 0 ? head.out : '', ...parts].join('\0')).digest('hex').slice(0, 16)
+}
+const readObj = (p: string): Obj | undefined => {
+  try {
+    const v = JSON.parse(readFileSync(p, 'utf8'))
+    return isObj(v) ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The one async command: runs argv (after the first `--`) as a background job (heavyJobMain), through the heavy slot unless the
+// command is `factory check`, which takes the slot itself and only for a full suite (0.31.0 items 1-2: targeted runs don't take
+// it). Waits up to HEAVY_ATTACH_MS for the result; a run still going returns {heavy: {pending: true}} with exit 1.
 export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: number }> {
   try {
     const cut = argv.indexOf('--')
     const cmd = cut < 0 ? [] : argv.slice(cut + 1)
     const f = parseFlags(cut < 0 ? argv : argv.slice(0, cut))
-    const dir = dirOf(f)
+    const dir = path.resolve(dirOf(f))
     const slug = need(f, 'slug')
     const label = need(f, 'label')
     const cwd = flat(need(f, 'cwd'))
     if (cmd.length === 0) throw usage('heavy needs a command after --')
-    const waitLimit = heavyWaitMs(f)
-    const top = run(cwd, ['rev-parse', '--show-toplevel'])
-    const slots = heavySlotsOf(configOf(top.status === 0 ? flat(top.out) : cwd))
+    // --dir and --repo are relative to this process's cwd; the child runs in the crew worktree, where a relative
+    // .git/truss/... does not exist (.git is a file there), so hand it absolute paths.
+    // Only when the command is factory itself; any other command's --dir is its own and passes unchanged.
+    const isFactory = cmd.some((a) => FACTORY_ARG.test(a))
+    const argv2 = cmd.map((a, i) => (isFactory && i > 0 && (cmd[i - 1] === '--dir' || cmd[i - 1] === '--repo') ? path.resolve(a) : a))
+    const at = argv2.findIndex((a) => FACTORY_ARG.test(a))
+    const isCheck = at >= 0 && argv2[at + 1] === 'check'
+    const explicit = explicitWaitMs(f)
+    const slots = slotsAt(cwd)
+    const key = jobKey(slug, label, cwd, argv2)
+    const jdir = `${JOBS(dir)}/${key}`
     const t0 = Date.now()
-    let token: string | null = null
-    for (;;) {
-      token = takeHeavySlot(dir, { label, slug, pid: process.pid }, process.platform, slots)
-      if (token !== null) {
-        let low = false
-        try {
-          low = !admits(sample(), minFreeMB())
-        } catch (e) {
-          appendEvent(dir, { event: 'sampler-error', crew: slug, agent: slug, command: 'heavy', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
-        }
-        if (!low) break
-        releaseHeavySlot(dir, token)
-        token = null
-      }
-      if (Date.now() - t0 >= waitLimit) {
-        const waitedMs = Date.now() - t0
-        return { body: { heavy: { label, ran: false, waitedMs, waitLimitMs: waitLimit, why: `waited ${waitedMs} ms (limit ${waitLimit} ms) for the heavy slot and free memory` } }, code: 1 }
-      }
-      await sleep(500)
+    const job = { cmd: argv2, cwd, slug, label, slots, slot: !isCheck, waitLimit: explicit ?? slotWaitMs(dir), ...(explicit !== undefined ? { env: { TRUSS_HEAVY_WAIT_MS: String(explicit) } } : {}) }
+    const attach = attachMsOf()
+    for (let restarts = 0; ; ) {
+      startJob(dir, key, job)
+      while (!existsSync(`${jdir}/result.json`) && Date.now() - t0 < attach && jobAlive(jdir)) await sleep(200)
+      if (existsSync(`${jdir}/result.json`) || Date.now() - t0 >= attach) break
+      // the job died with no result (killed, or the host rebooted): start it once more, then give up
+      if (restarts++ >= 1) return { body: { heavy: { label, ran: false, waitedMs: Date.now() - t0, why: 'the heavy job ended without a result' } }, code: 1 }
+      rmSync(jdir, { recursive: true, force: true })
     }
-    const waitedMs = Date.now() - t0
-    const scratch = mkdtempSync(`${tmpdir()}/factory-heavy-`)
-    let pgid: number | undefined
+    const res = readObj(`${jdir}/result.json`)
+    if (res === undefined) {
+      const why = `still running after ${Date.now() - t0} ms in the background (job ${key}); run the same command again to wait for its result`
+      return { body: { heavy: { label, pending: true, job: key, waitedMs: Date.now() - t0, why } }, code: 1 }
+    }
     try {
-      const outFd = openSync(`${scratch}/out.txt`, 'w')
-      const errFd = openSync(`${scratch}/err.txt`, 'w')
-      const exit = await new Promise<number>((resolve) => {
-        // --dir and --repo are relative to this process's cwd; the child runs in the crew worktree, where a relative
-        // .git/truss/... does not exist (.git is a file there), so hand it absolute paths.
-        // Only when the command is factory itself; any other command's --dir is its own and passes unchanged.
-        const isFactory = cmd.some((a) => /(^|\/)factory(\.ts)?$/.test(a))
-        const argv2 = cmd.map((a, i) => (isFactory && i > 0 && (cmd[i - 1] === '--dir' || cmd[i - 1] === '--repo') ? path.resolve(a) : a))
-        const child = spawn(argv2[0], argv2.slice(1), { cwd, detached: true, stdio: ['ignore', outFd, errFd] })
-        child.on('error', () => resolve(127))
-        if (child.pid !== undefined) {
-          pgid = child.pid
-          mkdirSync(GROUPS(dir), { recursive: true })
-          writeFileSync(`${GROUPS(dir)}/${pgid}.json`, JSON.stringify({ pgid, heavyPid: process.pid, label, slug, since: Date.now() }))
-        }
-        child.on('exit', (code, signal) => resolve(code ?? (signal === null ? 1 : 128)))
-      })
-      closeSync(outFd)
-      closeSync(errFd)
-      releaseHeavySlot(dir, token)
-      if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
-      const stdout = readFileSync(`${scratch}/out.txt`, 'utf8')
-      const meta = { label, waitedMs, exit, slots }
+      if (res.ran === false) return { body: { heavy: { label, ran: false, waitedMs: res.waitedMs, waitLimitMs: res.waitLimitMs, why: res.why } }, code: 1 }
+      const exit = Number.isInteger(res.exit) ? (res.exit as number) : 1
+      const stdout = readText(`${jdir}/out.txt`) ?? ''
+      let meta: Obj = { label, waitedMs: res.waitedMs, exit, slots }
       let parsed: unknown
       try {
         // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone
@@ -2744,17 +2888,115 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       } catch {
         parsed = undefined
       }
-      if (isObj(parsed)) return { body: { ...parsed, heavy: meta }, code: exit }
-      const lines = (stdout + readFileSync(`${scratch}/err.txt`, 'utf8')).split('\n')
+      if (isObj(parsed)) {
+        // a check that waited out the slot for its full suite reports it as heavy's own busy slot
+        if (isObj(parsed.slot) && parsed.slot.ran === false) meta = { ...meta, ran: false, waitedMs: parsed.slot.waitedMs, waitLimitMs: parsed.slot.waitLimitMs, why: parsed.slot.why }
+        return { body: { ...parsed, heavy: meta }, code: exit }
+      }
+      const lines = (stdout + (readText(`${jdir}/err.txt`) ?? '')).split('\n')
       if (lines[lines.length - 1] === '') lines.pop()
       return { body: { heavy: meta, tail: lines.slice(-40).join('\n') }, code: exit }
     } finally {
-      releaseHeavySlot(dir, token)
-      rmSync(scratch, { recursive: true, force: true })
+      rmSync(jdir, { recursive: true, force: true })
     }
   } catch (e) {
     if (e instanceof CliError) return { body: e.body, code: e.code }
     return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
+}
+
+// A job dir is alive while it has a result, its wrapper's pid runs, or it was made under 10 s ago and the wrapper has not yet
+// written its pid.
+function jobAlive(jdir: string): boolean {
+  if (existsSync(`${jdir}/result.json`)) return true
+  const p = readObj(`${jdir}/pid.json`)
+  if (p !== undefined) return pidAlive(p.pid)
+  try {
+    return Date.now() - statSync(jdir).mtimeMs < 10000
+  } catch {
+    return false
+  }
+}
+
+// Makes the job dir (exclusive mkdir) and starts its wrapper, detached so the runner's Bash timeout can't kill it. A live job of
+// the same key is attached to, never started twice; a dead one without a result is replaced.
+function startJob(dir: string, key: string, job: Obj): void {
+  const jdir = `${JOBS(dir)}/${key}`
+  mkdirSync(JOBS(dir), { recursive: true })
+  try {
+    mkdirSync(jdir)
+  } catch (e: any) {
+    if (e.code !== 'EEXIST') throw e
+    if (jobAlive(jdir)) return
+    rmSync(jdir, { recursive: true, force: true })
+    mkdirSync(jdir)
+  }
+  writeFileSync(`${jdir}/job.json`, JSON.stringify(job))
+  const self = [...process.execArgv, fileURLToPath(import.meta.url), 'heavy-job', '--dir', dir, '--job', key]
+  spawn(process.execPath, self, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+}
+
+// `heavy-job --dir D --job KEY` (internal, started by heavyMain): takes the slot when the job needs it, runs the command in its
+// own process group with output to the job dir, releases the slot the moment the command ends, records a slot run's time for
+// slotWaitMs, and writes result.json last (atomically), which is what the caller waits for.
+export async function heavyJobMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  const f = parseFlags(argv)
+  const dir = need(f, 'dir')
+  const jdir = `${JOBS(dir)}/${need(f, 'job')}`
+  const done = (r: Obj): void => {
+    writeFileSync(`${jdir}/result.tmp`, JSON.stringify(r))
+    renameSync(`${jdir}/result.tmp`, `${jdir}/result.json`)
+  }
+  writeFileSync(`${jdir}/pid.json`, JSON.stringify({ pid: process.pid }))
+  const job = readObj(`${jdir}/job.json`)
+  if (job === undefined || !Array.isArray(job.cmd) || job.cmd.length === 0) {
+    done({ ran: false, waitedMs: 0, why: 'the heavy job has no command' })
+    return { body: { ok: false }, code: 1 }
+  }
+  const slug = String(job.slug)
+  const label = String(job.label)
+  let token: string | null = null
+  try {
+    let waitedMs = 0
+    if (job.slot === true) {
+      const a = acquireSlot(dir, { label, slug }, Number(job.slots), Number(job.waitLimit))
+      waitedMs = a.waitedMs
+      if (a.token === null) {
+        done({ ran: false, waitedMs, waitLimitMs: job.waitLimit, why: `waited ${waitedMs} ms (limit ${job.waitLimit} ms) for the heavy slot and free memory` })
+        return { body: { ok: false }, code: 1 }
+      }
+      token = a.token
+    }
+    const outFd = openSync(`${jdir}/out.txt`, 'w')
+    const errFd = openSync(`${jdir}/err.txt`, 'w')
+    const t1 = Date.now()
+    let pgid: number | undefined
+    const exit = await new Promise<number>((resolve) => {
+      const env = { ...process.env, ...(isObj(job.env) ? (job.env as Record<string, string>) : {}) }
+      const child = spawn(job.cmd[0], job.cmd.slice(1), { cwd: String(job.cwd), env, detached: true, stdio: ['ignore', outFd, errFd], windowsHide: true })
+      child.on('error', () => resolve(127))
+      if (child.pid !== undefined) {
+        pgid = child.pid
+        mkdirSync(GROUPS(dir), { recursive: true })
+        writeFileSync(`${GROUPS(dir)}/${pgid}.json`, JSON.stringify({ pgid, heavyPid: process.pid, label, slug, since: Date.now() }))
+      }
+      child.on('exit', (code, signal) => resolve(code ?? (signal === null ? 1 : 128)))
+    })
+    closeSync(outFd)
+    closeSync(errFd)
+    if (token !== null) {
+      releaseHeavySlot(dir, token)
+      token = null
+      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
+    }
+    if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
+    done({ ran: true, exit, waitedMs, ms: Date.now() - t1 })
+    return { body: { ok: exit === 0 }, code: 0 }
+  } catch (e) {
+    done({ ran: false, waitedMs: 0, why: `the heavy job failed: ${e instanceof Error ? e.message : String(e)}` })
+    return { body: { ok: false }, code: 1 }
+  } finally {
+    if (token !== null) releaseHeavySlot(dir, token)
   }
 }
 
@@ -4435,13 +4677,15 @@ const isMain = ((): boolean => {
   }
 })()
 // ADR-0022 U5 (item 22): the `truss-status: <short JSON>` line `--status-line` adds after the result. It holds only the
-// booleans ok, merged and admitted, head as a string, env cut to 200 characters, and ran from heavy.ran.
+// booleans ok, merged and admitted, head as a string, env cut to 200 characters, ran from heavy.ran, and pending from heavy.pending.
 export function statusLine(body: Obj): string {
   const s: Obj = {}
   for (const k of ['ok', 'merged', 'admitted', 'checkpoint']) if (typeof body[k] === 'boolean') s[k] = body[k]
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
+  // 0.31.0 item 2: a heavy run still going in the background, which the same line collects when run again
+  if (isObj(body.heavy) && body.heavy.pending === true) s.pending = true
   // ADR-0046 item 1: a gates result also carries each step's met and the step that stopped it
   if (isObj(body.gates)) {
     s.gates = Object.fromEntries(Object.entries(body.gates).filter(([, v]) => typeof v === 'boolean'))
@@ -4488,7 +4732,7 @@ if (isMain) {
   const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : main(argv)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))

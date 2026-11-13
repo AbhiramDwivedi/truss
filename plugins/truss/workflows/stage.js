@@ -664,9 +664,9 @@ function heavyParts(crew) {
   return { bin, dr, slug, cwd, prefix: `node ${bin} heavy ${dr} --slug ${slug} --label ${sh(`${crew.slug}-check`)} --cwd ${cwd} --status-line --` }
 }
 
-function heavyLine(crew, expect, testsSince = null) {
+function heavyLine(crew, expect, testsSince = null, more = '') {
   const { bin, dr, slug, cwd, prefix } = heavyParts(crew)
-  return `${prefix} node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)}${testsSince ? ` --tests-since ${sh(testsSince)}` : ''} ${dr}`
+  return `${prefix} node ${bin} check --slug ${slug} --cwd ${cwd} --expect ${sh(expect)}${testsSince ? ` --tests-since ${sh(testsSince)}` : ''}${more ? ` ${more}` : ''} ${dr}`
 }
 
 // ADR-0017 Decisions 1-2 (ADR-0019 item 5): the member side of the one heavy slot, from the same values as heavyLine. Its
@@ -675,6 +675,7 @@ const memberHeavyLines = (crew) => [
   'Run a build, a browser test or a whole test suite through the one heavy slot: the program and its arguments go after the `--` of the line below, with no shell, and the Bash timeout is 600000 because the slot wait counts against it.',
   `${heavyParts(crew).prefix} <program> <arguments>`,
   'A result with "ran": false means the slot was busy: report it, never retry it another way.',
+  'A result with "pending": true means the run goes on in the background: run the same line again, unchanged, to wait for its result.',
   `That slot runs in the crew worktree ${crew.e.worktree}, on the crew branch, so it never sees your own worktree's changes: a green result from it proves nothing about them. Prove your own change with a plain node --test in your own worktree.`,
 ]
 
@@ -727,15 +728,25 @@ const testsCheckExtra = (crew, ...lines) => {
 // 3 rounds of 540 s, about 27 minutes, for the slot. Non-FIFO: a crew can still lose every round and block. No sleep
 // between rounds, since each run already waits inside factory.
 const HEAVY_WAIT_ROUNDS = 3
+// 0.31.0 item 2: a heavy run longer than the 540 s attach budget goes on in the background in factory (heavyJobMain) and comes
+// back {heavy: {pending: true}}; the same line, run again, waits up to 540 s more for it. HEAVY_POLLS = 8 bounds that at about
+// 72 minutes, so a hung run blocks the crew instead of holding it for ever. A pending poll is not a slot round.
+const HEAVY_POLLS = 8
+const pendingOf = (r) => !!(r.parsed && (r.parsed.pending === true || (isPlainObject(r.parsed.heavy) && r.parsed.heavy.pending === true)))
 
-async function check(crew, expect, testsSince = null) {
+async function check(crew, expect, testsSince = null, more = '') {
   let r, h
-  for (let round = 1; round <= HEAVY_WAIT_ROUNDS; round++) {
+  for (let round = 1, polls = 0; round <= HEAVY_WAIT_ROUNDS; ) {
     // ADR-0046 item 1: a green check gates already ran (never one with --tests-since, which gates does not send)
-    const pre = round === 1 && expect === 'green' && !testsSince ? takeGate(crew, 'green') : null
-    r = pre ?? (await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect, testsSince)))
+    const pre = round === 1 && polls === 0 && expect === 'green' && !testsSince && !more ? takeGate(crew, 'green') : null
+    r = pre ?? (await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect, testsSince, more)))
     h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
+    if (pendingOf(r)) {
+      if (++polls > HEAVY_POLLS) throw new Stop('BLOCKED', `heavy run still going after ${HEAVY_POLLS} polls: ${h && typeof h.why === 'string' ? h.why : r.out}`, crew.step)
+      continue
+    }
     if (!(h && typeof h === 'object' && h.ran === false)) return r
+    round++
   }
   throw new Stop('BLOCKED', `heavy slot busy: ${typeof h.why === 'string' ? h.why : r.out}`, crew.step)
 }
@@ -1835,6 +1846,33 @@ async function split(crew) {
 // The defects themselves go along, as stressTest gives them to fixFindings, so the fix member knows which cases to add.
 const noTestText = (since, head, findings) => `${since === head ? `The stress-fix round left the head at ${head}: it committed no fix and no test file` : `The stress-fix round (${since}..${head}) changed no test file`}: every defect fix carries a regression test that fails before the fix and passes after it (R-71). Add a regression case for each defect the stress test reported, and name each in your report.${findings ? `\nThe stress test reported these findings:\n${findings}` : ''}`
 
+// 0.31.0 item 1: the tests a passing green check ran (factory check's `tests`: targeted or full, and why) and the check record
+// that holds them, kept as crew.greenRecord for QC (qcPrompt), which reads it instead of re-running a suite green on that head.
+function noteTests(crew, parsed) {
+  const t = parsed && isPlainObject(parsed.tests) ? parsed.tests : null
+  if (!t) return
+  const why = Array.isArray(t.why) ? t.why.map(String) : []
+  crew.greenRecord = { head: crew.head, mode: t.mode === 'full' ? 'full' : 'targeted', files: Array.isArray(t.files) ? t.files.map(String) : [], why, record: typeof parsed.record === 'string' ? parsed.record : null }
+  log(`green check: crew ${crew.slug}, ${crew.greenRecord.mode} tests (${crew.greenRecord.files.length} files): ${why.join('; ').slice(0, 600) || 'no reason given'}`)
+}
+
+// 0.31.0 item 1: the full suite runs once before merge, after a QC PASS, unless the green check already ran it on this head (a diff
+// whose reach was unclear). null when it passed or was not needed; the failing check result otherwise.
+async function fullSuite(crew) {
+  const gr = crew.greenRecord
+  if (crew.fullAt === crew.head || (gr && gr.head === crew.head && gr.mode === 'full')) return null
+  crew.step = 'full-suite'
+  const g = await check(crew, 'green', null, '--full')
+  if (g.met) {
+    crew.fullAt = crew.head
+    log(`full suite before merge: crew ${crew.slug}, passed on head ${crew.head}`)
+    return null
+  }
+  const env = envOf(g)
+  if (env) throw new Stop('BLOCKED', `the full suite fails on the environment, not the code, so no fix builder can clear it: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(g)}\n${clip(g.out)}`, 'full-suite')
+  return g
+}
+
 // opts.testsSince (ADR-0046 item 3): the head before a stress-fix round. The green check then lists the test files changed since
 // it, and a pass with none is a failure: a fix member adds the cases (the tester when the crew has tester files), once; a second
 // pass with none stops the crew, so a fix with no regression test never reaches QC.
@@ -1855,6 +1893,7 @@ async function green(crew, opts = {}) {
       if (typeof g.parsed.head !== 'string' || !g.parsed.head) throw new Stop('BLOCKED', `the green check gave no head:\n${g.out}`, 'green')
       crew.head = g.parsed.head
       crew.sourceChanges = sourceChangesOf(g.parsed)
+      noteTests(crew, g.parsed)
       passedAt(crew, 'greenAt')
       // a project whose test files truss can't recognise: unknown, so a warning, never a stop (ADR-0046 item 3, testGlobs)
       if (since && typeof g.parsed.testsUnknown === 'string' && g.parsed.testsUnknown) log(`warning: green check: crew ${crew.slug}: ${g.parsed.testsUnknown}`)
@@ -2402,6 +2441,16 @@ function reQcLines(crew) {
   ]
 }
 
+// 0.31.0 item 1: what the green check ran on this head, so QC reads the result instead of re-running a suite that is already green
+function greenResultLines(crew) {
+  const gr = crew.greenRecord
+  if (!gr || gr.head !== crew.head) return []
+  return [
+    `Green result: the green check passed on head ${gr.head}, running the acceptance test and the ${gr.mode === 'full' ? 'full test suite' : `targeted tests (${gr.files.join(', ') || 'none reached'})`}. Its record is ${gr.record || 'not kept'}.`,
+    'Do not re-run a test suite that is green on this head: read that record. Run a test only to probe a specific doubt, and name the test file.',
+  ]
+}
+
 function qcPrompt(crew) {
   const e = crew.e
   const wt = e.worktree
@@ -2418,6 +2467,7 @@ function qcPrompt(crew) {
     `Architecture doc: ${e.architecture}`,
     `ADRs: ${e.adrs.join(', ') || 'none'}`,
     `Acceptance test: ${acceptanceOf(e)}`,
+    ...greenResultLines(crew),
     `Work type: ${typeof e.workType === 'string' && e.workType ? e.workType : 'none'}.`,
     '',
     'Member proofs:',
@@ -2483,6 +2533,17 @@ async function qc(crew) {
     }
     crew.ltc = ltcLinesOf(j.text) // a QC FAIL's cost lines ride on the stopped result too (stopResult)
     const unscoped = j.verdict === 'PASS' ? unscopedOf(j.text) : []
+    const full = j.verdict === 'PASS' && unscoped.length === 0 ? await fullSuite(crew) : null
+    if (full) {
+      // a test the targeted set did not reach fails: one green-fix round, the targeted green again, then a new QC
+      crew.fails++
+      if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'full-suite', full.out)
+      const from = crew.head
+      await greenFix(crew, 'full suite before merge', `The QC passed, but the full test suite before merge failed.${knownOf(full)}\nIts output tail:\n${clip(full.out)}`)
+      await green(crew)
+      await knowledgeAgain(crew, 'full suite before merge', from)
+      continue
+    }
     if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)

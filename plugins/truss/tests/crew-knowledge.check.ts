@@ -135,7 +135,8 @@ const hasnt = (s, sub) => assert.ok(!s.includes(sub), `unexpected ${JSON.stringi
 const passed = (r, slug = 'a') => assert.equal(r.result.find((x) => x.slug === slug).state, 'passed', why(r))
 const callOf = (r, label) => r.calls.find((c) => c.label === label)
 const indexOf = (r, label) => r.calls.findIndex((c) => c.label === label)
-const greens = (r) => r.calls.filter((c) => c.runner && c.runner.key === 'check:green')
+// the green checks before QC; the full suite before merge (check --full, 0.31.0 item 1) is not one
+const greens = (r) => r.calls.filter((c) => c.runner && c.runner.key === 'check:green' && !/\s--full\b/.test(c.prompt))
 const ITEM = { kind: 'feature', text: 'export button lives in ExportMenu', source: 'src/ui/a.ts:10' }
 // the default builder reports one learned item, so the knowledge step runs; PLAIN is a crew that learned nothing
 const labelsFor = (o = {}) => ({ 'a-planner': PLAN(TT, TF), 'a-tester': done('feat/t'), 'a-builder': done('feat/b', { learned: [ITEM] }), 'a-writer': done('feat/k'), 'a-qc': PASS, ...o })

@@ -2,6 +2,8 @@
 sources:
   - plugins/truss/tests/lifecycle-029.check.ts
   - plugins/truss/bin/factory.ts
+  - plugins/truss/bin/testmap.ts
+  - plugins/truss/workflows/stage.js
 verified: 25e4e4d087e6348ba1a0b70a8d8ed0979606aa5a
 ---
 
@@ -23,3 +25,7 @@ Pins `goal-check` (`cmdGoalCheck`), `plan-write` archiving a second run (`keepEx
 ## Running the suite
 
 `npm test` takes over 600 s, so one foreground Bash call can hit its 600 s timeout. A bare `exit -1` with an empty tail is then a timeout or kill, not a failing test. Run it with output redirected to a file and read the tail. `lifecycle-029.check.ts` alone runs 8 cases in about 20 s.
+
+## Targeted tests
+
+Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`), `plugins/truss/bin/factory.ts` (`checkTests`), `plugins/truss/workflows/stage.js` (`fullSuite`).

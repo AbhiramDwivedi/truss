@@ -3,7 +3,12 @@
   "adr": "plugins/truss/docs/adr",
   "merge": "sequential",
   "target": "main",
-  "heavySlots": 2,
+  "targetedTests": {
+    "map": [
+      { "paths": ["plugins/truss/**", ".claude/rules/**"], "tests": ["plugins/truss/tests/release-026.check.ts", "plugins/truss/tests/hygiene-029.check.ts"] },
+      { "paths": ["ui/**"], "run": "npm --prefix ui test" }
+    ]
+  },
   "pricing": {
     "claude-opus-5-5": {
       "inputPerMTok": 4, "outputPerMTok": 20, "cacheReadPerMTok": 0.2, "cacheWrite5mPerMTok": 5, "cacheWrite1hPerMTok": 8,
