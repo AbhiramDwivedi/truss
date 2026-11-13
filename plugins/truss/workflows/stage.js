@@ -1194,7 +1194,8 @@ async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
 // A resolved item's answer for the asking task: its resolve note, logged as a crew decision by whoever resolved it. A resolve with no
 // note holds no answer, so the question stops the crew as a QUESTION.
 async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
-  const note = oneLine(row.note, 800)
+  // the cap is resolve's own (inbox.ts resolveItem keeps 4000), so no stored answer reaches the member cut short
+  const note = oneLine(row.note, 4000)
   if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
   // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
   if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
