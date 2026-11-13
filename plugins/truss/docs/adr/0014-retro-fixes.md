@@ -35,7 +35,7 @@ The stress test keeps its `Truss-Role: stress` value, its `<crew>-stress` name a
 A new PreToolUse gate in `hooks/register.ts` refuses the PM's own Edit, Write, MultiEdit and NotebookEdit calls on repo files while a run is active. The PM delegates the change to a crew or an agent instead. The verdict is a pure function, `mainEditVerdict` (Seams, section 1), and the handler only gathers its inputs.
 
 - **Main thread only.** A call with an `agent_id` is a subagent's and is never gated.
-- **Run active.** This session's `<truss dir>/plan.json` parses and holds a crew whose `status` is neither `merged` nor `dropped`. The truss dir comes from `trussDir` (`hooks/register.ts` `trussDir`), the plan from `planPath` and `parsePlan` (`hooks/register.ts` `planPath`, `parsePlan`).
+- **Run active.** This session's `<truss dir>/plan.json` parses and holds a crew whose `status` is neither `merged` nor `dropped`. The truss dir comes from `trussDir()` (`hooks/register.ts` `trussDir`), the plan from `planPath()` and `parsePlan()` (`hooks/register.ts` `planPath`, `parsePlan`).
 - **Exempt paths.** Each of these is allowed:
   - the truss dir;
   - the requirements path, `requirements.md` in the directory of `.claude/truss.json`'s `architecture` key (`docs/architecture.md` gives `docs/requirements.md`);

@@ -103,7 +103,7 @@ Rules:
 
 ### 2. Host the session with the defaults
 
-`ui-session` calls `query` with a streaming prompt: an async generator that yields `{type: 'user', message: {role: 'user', content: text}, parent_tool_use_id: null}` for each message the client sends (as `ui/spike/run.ts` `input` does). Options:
+`ui-session` calls `query()` with a streaming prompt: an async generator that yields `{type: 'user', message: {role: 'user', content: text}, parent_tool_use_id: null}` for each message the client sends (as `ui/spike/run.ts` `input` does). Options:
 
 - `cwd`: the repo.
 - `plugins: [{type: 'local', path: <plugin path>}]`.

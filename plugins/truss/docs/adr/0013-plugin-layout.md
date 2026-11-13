@@ -81,7 +81,7 @@ main has **no root `.claude-plugin/`**. If the default-branch flip were ever und
 
 The plugin moves as one directory, so every path the code resolves from the plugin's own location still resolves after the move:
 
-- `pluginDirOf` in `hooks/register.ts` `pluginDirOf` returns the parent of the hooks module's directory;
+- `pluginDirOf()` in `hooks/register.ts` `pluginDirOf` returns the parent of the hooks module's directory;
 - `const PLUGIN` in `bin/factory/shared.ts` is two directories above `bin/factory.ts`, and `bin/factory/plan.ts` `cmdPlanArgs` passes `${PLUGIN}/docs/plan.schema.json` as the plan schema;
 - `skills/retro/SKILL.md` section "1. Find the dir and run the script" finds `${CLAUDE_PLUGIN_ROOT}/scripts/retro.py`, or `scripts/retro.py` two directories above the skill;
 - `agents/design-engineer.md` section "plan mode" finds the schema at `<principles skill base dir>/../../docs/plan.schema.json`;

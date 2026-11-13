@@ -11,7 +11,7 @@ Run 3 left 89 `worktree-agent-*` branches on origin and 100 registered worktrees
 
 - it only looks at the worktrees this session's `WorktreeCreate` put in the in-memory `tracked` map (`register.ts` `appendLine`, `1351`), so a resumed or restarted session sweeps nothing;
 - it keeps any worktree whose `slots.json` `active` entry is under 24 hours old (`isActive`, `register.ts` `gateOf`), and `active` is only cleared from `SubagentStop` (`cleanWorktree`, `register.ts` `State`), which did not run for most agents;
-- it measures "merged" against the HEAD of `$.session.cwd` (`register.ts` `keepReason`), the program manager's checkout, never the crew worktree where a lead merged its members;
+- it measures "merged" against the HEAD of `$.session.cwd()` (`register.ts` `keepReason`), the program manager's checkout, never the crew worktree where a lead merged its members;
 - leads rebased their crew branches (`plugins/foundry/agents/lead.md` section "11. Messages to main"), so member branches stopped being ancestors of anything, and the three-way merge test (`mergesToSameTree`, `register.ts` `State`) conflicts on them.
 
 Separately, since about 13:47Z on 2026-10-28 worktrees' own auto-isolation stopped giving worktrees to agents spawned without the `isolation` parameter, while native `isolation: "worktree"` still worked (design-probe.md, first version, section (a)).

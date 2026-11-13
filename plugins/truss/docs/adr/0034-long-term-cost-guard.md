@@ -62,7 +62,7 @@ It lives in five places: the `LONG_TERM_COST` constants of `workflows/stage.js` 
 
 A new file counts once, under the first rule it matches, in the order above. Only added files trigger, except `package.json`, which also triggers when modified. No triggers is never the answer to a diff that could not be read: a failed `git diff` throws a refusal that names the range, and output over the 1 MB buffer of `git()` in `bin/store.ts` throws a refusal that names the limit. `ltcCrewGate` catches those refusals and returns them as `refused`, so the merge step refuses instead of crashing. The merge step also refuses when it can't resolve `base` or `head` (below).
 
-The contract named `declares` for the dependency rule. The code reads the four dependency lists directly instead, because `declares` (`bin/store.ts` `declares`) answers "does the nearest `package.json` declare this name", not "which names did this diff add". The effect is the same for `package.json`. Other ecosystems' manifests (`requirements.txt`, `go.mod`, `Cargo.toml` and the like) are not triggers in this version.
+The contract named `declares()` for the dependency rule. The code reads the four dependency lists directly instead, because `declares()` (`bin/store.ts` `declares`) answers "does the nearest `package.json` declare this name", not "which names did this diff add". The effect is the same for `package.json`. Other ecosystems' manifests (`requirements.txt`, `go.mod`, `Cargo.toml` and the like) are not triggers in this version.
 
 ### The plan gate
 

@@ -87,7 +87,7 @@ The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` fi
 
 **Item 15** (plugin-meta). Version 0.16.0 becomes 0.17.0 and the subagent-limits dependency `^0.3.1` becomes `^0.3.2` (`.claude-plugin/plugin.json` key `version`, key `dependencies`), with the compose-manifests pins and a CHANGELOG entry. The nudge is re-proved live in an isolated `CLAUDE_CONFIG_DIR` and recorded in ADR-0021.
 
-**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows-src/stage/split.js`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry` fixture (`entry`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
+**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows-src/stage/split.js`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry()` fixture (`entry`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
 
 **Item 17** (runtime-factory). doneTasks also counts a task whose branch has a full patch-id match on `truss-<slug>`, not only an ancestor, so a task whose commits reached the crew branch under other hashes stays done.
 

@@ -40,7 +40,7 @@ On any other first line it stops with `BLOCKED:` and writes no direction. It loa
 
 The effort is medium, on Opus, per ADR-0009's no-Opus-at-high ruling (R1). U2 asked for effort high. The PO overruled that, and the row then passes `spawn()` and the `finish` high audit unchanged.
 
-**The ux role has no `typeFromProject` (R6).** It never takes `--type ux=...`, so `rolesWithTypes` (`bin/factory/shared.ts`) keeps refusing that with `--type: role ux does not take a project agent type`, and the project-manager-shape case at `tests/factory.check.ts` test "roles.json: the foreman\" stays true with no exemption (F2).
+**The ux role has no `typeFromProject` (R6).** It never takes `--type ux=...`, so `rolesWithTypes` (`bin/factory/shared.ts`) keeps refusing that with `--type: role ux does not take a project agent type`, and the project-manager-shape case at `tests/factory.check.ts` test `roles.json: the project manager's shape - typeFromProject on tester and builder, "builder" on resolver, nowhere else` stays true with no exemption (F2).
 
 `docs/truss-config.schema.json` `roles` (key `properties.roles`) gains `"ux": { "$ref": "#/$defs/agentType" }`. `rolesWithTypes` lays a non-empty `roles.ux` string on the ux row's `agentType` directly, not through the `typeFromProject` test that guards `build` and `test`.
 

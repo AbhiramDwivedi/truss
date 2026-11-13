@@ -1,7 +1,10 @@
 ---
 sources:
   - plugins/truss/tests/lifecycle-029.check.ts
-  - plugins/truss/bin/factory.ts
+  - plugins/truss/bin/factory/decide.ts
+  - plugins/truss/bin/factory/plan.ts
+  - plugins/truss/bin/factory/check.ts
+  - plugins/truss/bin/factory/start.ts
   - plugins/truss/bin/testmap.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/green.js

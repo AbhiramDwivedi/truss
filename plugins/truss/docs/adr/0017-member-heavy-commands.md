@@ -12,7 +12,7 @@ Decided by: amend brief item 5 (`amend-brief-plugin-fixes.md`), the plan's modul
 
 The gap is still there in the code:
 
-- `stage.js` builds the one `factory heavy` line in `heavyLine` (`workflows-src/stage/gates.js`). Only `check` (`check`) uses it, through a runner call.
+- `stage.js` builds the one `factory heavy` line in `heavyLine()` (`workflows-src/stage/gates.js`). Only `check()` (`check`) uses it, through a runner call.
 - No member prompt holds the plugin path or the truss dir. `stage.js` reads `F.plugin`, `F.dir` and `F.repo` only for runner lines (`runFactory`, `heavyLine`) and for QC report paths (`path`). So a member can't call `factory heavy` today without guessing the paths.
 - `reap` after each member (`workflows-src/stage/crew.js`) kills only recorded groups with label `<slug>-check` (`bin/factory/resources.ts` `admission`). A member's own processes are never recorded (`0015-resource-aware.md` section "Reap: its own runner call").
 
@@ -41,7 +41,7 @@ Every argument in this line is a literal. It needs no `&&`, `;`, `cd` or `$VAR`,
 
 What a build crew would change, and nothing else:
 
-1. **`workflows/stage.js`, member prompts.** A helper beside `heavyLine` builds the member line from the same values: `F.plugin`, `F.dir`, `F.repo`, `crew.slug` and `crew.e.worktree`, each quoted through `sh` (`workflows-src/stage/runner.js`). Its label is `<slug>-check`, so the existing `reap` after each member  also cleans up a member run's orphans, with no new reap call. `memberPrompt`  adds one line next to `SHELL`. It gives the literal prefix, ending in ` -- `, and says:
+1. **`workflows/stage.js`, member prompts.** A helper beside `heavyLine()` builds the member line from the same values: `F.plugin`, `F.dir`, `F.repo`, `crew.slug` and `crew.e.worktree`, each quoted through `sh()` (`workflows-src/stage/runner.js`). Its label is `<slug>-check`, so the existing `reap` after each member  also cleans up a member run's orphans, with no new reap call. `memberPrompt`  adds one line next to `SHELL`. It gives the literal prefix, ending in ` -- `, and says:
    - run a build, a browser test or a whole test suite through it, as the program and its arguments after `--`, with no shell;
    - use a Bash timeout of 600000, because the slot wait counts against it;
    - a result with `"ran": false` means the slot was busy; report it, don't retry it another way.

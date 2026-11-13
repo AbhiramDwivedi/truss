@@ -1,7 +1,11 @@
 ---
 sources:
   - plugins/truss/bin/store.ts
-  - plugins/truss/bin/factory.ts
+  - plugins/truss/bin/factory/resources.ts
+  - plugins/truss/bin/factory/plan.ts
+  - plugins/truss/bin/factory/start.ts
+  - plugins/truss/bin/factory/finish.ts
+  - plugins/truss/bin/factory/shared.ts
   - plugins/truss/bin/inbox.ts
   - plugins/truss/bin/guard.ts
   - plugins/truss/bin/cost.ts

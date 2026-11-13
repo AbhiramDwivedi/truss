@@ -16,7 +16,7 @@ The client rejected today's page against the reference `truss_factory.tsx` and l
 
 The Agent SDK runs a skill when the user message starts with `/<name>`, and the `system/init` message lists the commands the session can run (Agent SDK docs, "Slash commands"). The recorded stream's `init` lists `truss:run` in `slash_commands` (`ui/contract/fixtures/sdk-stream.jsonl:3`). `live.check.ts` does not send `/truss:run` today, so the live case below is new.
 
-ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan: boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts` `refresh`, `reduce.ts` `build`).
+ui-session routes in code (ai rule 9). It adds no system prompt (ai rule 12), and the transcript keeps the client's text as typed. `createSession` gains one injected function, `hasPlan(): boolean`, which `main.ts` wires to the state store: true when `run !== null && run.version !== null` (`ui/server/state/index.ts` `refresh`, `reduce.ts` `build`).
 
 | Intent | Condition | Session input |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The composer, in code: with no plan, intent `goal`, label "Start run", textarea 
 
 `ReplyRequest` gains `approvalAsk?: boolean`. ui-session sets it when the reply opens (`ui/server/session/reply.ts`), in code, from the turn's text: true only when the last non-empty paragraph contains `approve` or `approval` as a word and ends with `?`, and the text has no `nothing` or `no` before `approval` in the same sentence. Absent or false means not an approval ask. When unsure, the rule says false, so the card shows the reply form.
 
-- `approvalAsk` false: title and accessible name "The PM replied" (`cardName`, `ui/app/views/move/format.ts` `cardName`), a "Your reply" box and the primary button "Send reply", which posts `{decision: 'message', message}` (`ui/server/session/registry.ts` `apply`). No Approve, no Deny.
+- `approvalAsk` false: title and accessible name "The PM replied" (`cardName()`, `ui/app/views/move/format.ts` `cardName`), a "Your reply" box and the primary button "Send reply", which posts `{decision: 'message', message}` (`ui/server/session/registry.ts` `apply`). No Approve, no Deny.
 - `approvalAsk` true: title "Approval needed"; "Approve" with the hint "Sends: Approved." and "Deny" with "Sends: Not approved." (the texts `registry.ts` sends); "Send reply" is still there and becomes primary when the box holds text.
 
 The rail item (`ui/app/views/rail/Timeline.tsx` `entries`) uses the same two titles. The F5 fixture is the bug note's turn ("Nothing is waiting on approval... give me something new."), which must give false.
@@ -97,7 +97,7 @@ interface FlowEntry {
 }
 ```
 
-ui-session folds these from the PM's own top-level assistant `tool_use` blocks, so not subagent lines (`fold.ts` `foldMessage`). It keeps only blocks named `Agent`, `SendMessage` or `Workflow`. `summary` is the input's `description` for Agent and Workflow, and the first line of `message` for SendMessage. `to` is the longest crew slug that appears as a whole word in, in order, SendMessage's `to`, then `description`, then `prompt`. The crew slugs come from a second injected function, `crewSlugs: string[]`. The recorded Agent call has `description` and `prompt` (`sdk-stream.jsonl:61`). TODO: no recording holds a SendMessage or Workflow call; rework-server's `R-40:` case records one and confirms the input key names before relying on them.
+ui-session folds these from the PM's own top-level assistant `tool_use` blocks, so not subagent lines (`fold.ts` `foldMessage`). It keeps only blocks named `Agent`, `SendMessage` or `Workflow`. `summary` is the input's `description` for Agent and Workflow, and the first line of `message` for SendMessage. `to` is the longest crew slug that appears as a whole word in, in order, SendMessage's `to`, then `description`, then `prompt`. The crew slugs come from a second injected function, `crewSlugs(): string[]`. The recorded Agent call has `description` and `prompt` (`sdk-stream.jsonl:61`). TODO: no recording holds a SendMessage or Workflow call; rework-server's `R-40:` case records one and confirms the input key names before relying on them.
 
 The network lights the wire whose `data-crew` equals `to` for 10 s after `at`. The crew card shows "From PM <time>: <summary>". The thread shows "PM → crew <slug>: <summary>" as a system line.
 

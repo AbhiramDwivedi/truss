@@ -1,7 +1,9 @@
 ---
 sources:
   - plugins/truss/bin/inbox.ts
-  - plugins/truss/bin/factory.ts
+  - plugins/truss/bin/factory/start.ts
+  - plugins/truss/bin/factory/plan.ts
+  - plugins/truss/bin/factory/resources.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/replies.js
   - plugins/truss/workflows-src/stage/crew.js

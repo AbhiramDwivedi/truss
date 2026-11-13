@@ -266,7 +266,7 @@ Screenshot widths: phone 360 px, tablet 768 px, desktop 1440 px
 - `stuck-crew/` also holds `idle-project-manager.json`: the same state, with the stuck crew's `stuck.kind` `idle-project-manager` and its project manager the stalled agent.
 - `artifacts/` also holds `no-images.json`: the same state, with `design.images: []`, so the `Images` filter matches nothing.
 - The stuck-crew and artifacts fixtures hold an 80-character slug and a 300-character follow-up.
-- The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`). Session fields go through `setSession` (`Iface`). Requests go through the interface's `question`, `permission` and `reply` (`Iface`), so the page can answer them.
+- The specs plant a fixture into the fake interface of `ui/e2e/harness.ts` (`startInterface`). Session fields go through `setSession` (`Iface`). Requests go through the interface's `question()`, `permission()` and `reply()` (`Iface`), so the page can answer them.
 - The existing root files `ui/contract/fixtures/run/plan.json`, `events.jsonl` and `decisions.md` stay unchanged.
 - The specs never write a fixture in place. They copy what they change to an `mkdtemp` dir.
 
