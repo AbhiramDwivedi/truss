@@ -1,0 +1,15 @@
+{
+  "version": 4,
+  "goal": "Add three route kinds to the small web service",
+  "architecture": "docs/architecture.md",
+  "approval": "auto",
+  "approvedAt": null,
+  "maxParallelCrews": 1,
+  "reworkAllowance": 2,
+  "crews": [
+    { "slug": "users-route", "stage": 1, "verdict": "extend", "modules": ["users"], "owns": ["src/router.ts", "src/users/**"], "acceptanceTest": "true", "acceptanceTestProved": true, "estAgents": 3, "status": "planned" },
+    { "slug": "orders-route", "stage": 2, "verdict": "extend", "modules": ["orders"], "owns": ["src/router.ts", "src/orders/**"], "acceptanceTest": "true", "acceptanceTestProved": true, "estAgents": 3, "status": "planned" },
+    { "slug": "billing-route", "stage": 3, "verdict": "extend", "modules": ["billing"], "owns": ["src/router.ts", "src/billing/**"], "acceptanceTest": "true", "acceptanceTestProved": true, "estAgents": 3, "status": "planned" },
+    { "slug": "docs-pass", "stage": 1, "verdict": "extend", "modules": ["docs"], "owns": ["docs/api.md"], "acceptanceTest": "true", "acceptanceTestProved": true, "estAgents": 1, "status": "planned" }
+  ]
+}
