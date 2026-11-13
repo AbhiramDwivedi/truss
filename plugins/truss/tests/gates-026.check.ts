@@ -113,6 +113,7 @@ async function exec(args, o = {}) {
         else if (p.cmd === 'owns-check') out = rj({ ok: true, outside: [] })
         else if (p.cmd === 'tests-check') out = rj({ ok: true, tests: [] })
         else if (p.cmd === 'sync') out = rj({ merged: true })
+        else if (p.cmd === 'inbox') out = rj({ ok: true, items: [] })
         else if (p.cmd === 'knowledge-lint' && /knowledge-lint --slug=\S/.test(p.line)) out = rj({ ok: true, failures: [], warnings: [] })
         else if (['decision-checkpoint', 'crew-learned', 'knowledge-commit', 'decision-ack', 'decisions'].includes(p.cmd)) out = rj({ ok: true, decisions: [] })
         else {

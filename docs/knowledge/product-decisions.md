@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: af304d965400136f9e09a76f854a01b938a7a0d4
+verified: 269c640a141b8b010bac7e450729bf85ba2b7572
 ---
 
 # Product decisions
@@ -33,3 +33,10 @@ verified: af304d965400136f9e09a76f854a01b938a7a0d4
 - Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` returns `usd: null` ('usage sweep busy') while the usage lock stays busy, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
 - Reason: contract-025 section 4 lists only those holds; the first-sweep hold BLOCKED 3 of 4 crews started together (ADR-0038, `plugins/truss/bin/cost.ts` `budgetVerdict`). Known limit: no budget is enforced until the first sweep lands.
 - Decided by: product-owner persona (crew b-cost).
+
+## crew-decisions: who answers a crew product call
+
+- Question: when a product owner escalates, who answers and who waits?
+- Answer: the program manager answers only an escalation inside approved scope (a `pm-question` item). A call that contradicts approved scope or a client ruling becomes a client-only `scope-change` item (or a `PROPOSAL:`) that the program manager never resolves. Only the asking crew waits, and a resumed stage re-reads the item through `factory inbox`, never a timer. A call touching no scope line is logged and never waits.
+- Reason: scope changes are the client to rule on (plan decision 07:22, goal file `crew-decisions.md` approved scope); design in `plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md`.
+- Decided by: program manager as product owner (plan finding 3 ruling).
