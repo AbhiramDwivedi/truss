@@ -6,7 +6,7 @@ Amended 2026-10-31 by the end-of-run design-engineer extend pass, to match the m
 
 Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): a main-session `tool.call` hook on `Bash` in `hooks/register.ts` enforces R-32 before each merge, refusing a `git push` or `git merge` that `retro/cli.ts scrub` doesn't gate with `&&`. Decision 6's scrub step is unchanged.
 
-VERDICT: change. The interfaces that can't take the work are the retro skill's source rule, P24 (`skills/retro/SKILL.md:8`, "You never read the raw logs (P24)", and `:74`, "It never reads message, prompt or report bodies (P24)."), and `factory.ts check`'s one failure label, `env` (`bin/factory.ts:459-494`, `ENV_PATTERNS` and `envFailure`).
+VERDICT: change. The interfaces that can't take the work are the retro skill's source rule, P24 (`skills/retro/SKILL.md:8`, "You never read the raw logs (P24)", and `:74`, "It never reads message, prompt or report bodies (P24)."), and `factory.ts check`'s one failure label, `env` (`bin/factory/check.ts`, `ENV_PATTERNS` and `envFailure`).
 
 ## Context
 
@@ -16,7 +16,7 @@ Today the retro sees only what the hooks and the PM wrote down. `scripts/retro.p
 
 P24 is cited at `skills/retro/SKILL.md:8` and `:74`, ADR-0003:101, ADR-0006:85 and `:128`, `docs/events.schema.json:99` and `docs/architecture.md:430`. P8 is at ADR-0003:29.
 
-`factory.ts check` labels a failure only as an environment failure: four Playwright and loader patterns, plus a declared but uninstalled package (`bin/factory.ts:459-494`). Each known problem the session met again (webkit host libraries, `settings.local.json`, the worktree guard's shell shapes, harness-only `claude-code` tests, `node_modules` missing after a merge, tracked `.pyc` files) costs a crew a turn or a BLOCKED stop before anyone recognises it.
+`factory.ts check` labels a failure only as an environment failure: four Playwright and loader patterns, plus a declared but uninstalled package (`bin/factory/check.ts` `ENV_PATTERNS`). Each known problem the session met again (webkit host libraries, `settings.local.json`, the worktree guard's shell shapes, harness-only `claude-code` tests, `node_modules` missing after a merge, tracked `.pyc` files) costs a crew a turn or a BLOCKED stop before anyone recognises it.
 
 The client's brief answers (decisions.md, 03:39):
 
@@ -166,7 +166,7 @@ The UI's state gains the key `retro`: the file's content, or null while the file
 
 A crew in `plan.json` may list `needs`: what it needs from the host, each with a probe ([`plan.schema.json`](../plan.schema.json) `$defs.need` and `$defs.probe`). The plan design engineer writes them.
 
-`node <plugin>/bin/factory.ts doctor --dir <truss dir> --repo <repo> [--catalog <path>]` runs, in the repo, every need's probe and every catalog entry's probe. `--catalog` defaults to `<plugin>/retro/catalog.json`. A `command` probe is `bash -c <run>` in the repo with a 120-second timeout, and passes when bash exits 0, even when a background child held its output pipes until the timeout; a failed one's `detail` is the first non-empty line of its stdout, then stderr, else the spawn error, the signal or `exit <n>`, cut to 300 characters (`bin/factory.ts:560-566`). A `file` probe passes when the path, resolved against the repo, exists (`:556-558`). A `--catalog` that can't be loaded is a usage error (`:572-578`). `doctor` writes nothing. It prints one JSON line:
+`node <plugin>/bin/factory.ts doctor --dir <truss dir> --repo <repo> [--catalog <path>]` runs, in the repo, every need's probe and every catalog entry's probe. `--catalog` defaults to `<plugin>/retro/catalog.json`. A `command` probe is `bash -c <run>` in the repo with a 120-second timeout, and passes when bash exits 0, even when a background child held its output pipes until the timeout; a failed one's `detail` is the first non-empty line of its stdout, then stderr, else the spawn error, the signal or `exit <n>`, cut to 300 characters (`bin/factory/check.ts` `catalogHits`). A `file` probe passes when the path, resolved against the repo, exists (`:556-558`). A `--catalog` that can't be loaded is a usage error (`:572-578`). `doctor` writes nothing. It prints one JSON line:
 
 ```json
 {"ok": false, "probes": [{"name": "<crew slug>/<need id>", "kind": "command", "pass": false, "detail": "<first line of output, or the missing path>"}], "passed": ["<name>"], "failed": ["<name>"], "known": [{"id": "<catalog id>", "pass": true}], "bundle": {"allow": ["<rule>"], "downloads": ["<download>"], "rulings": [{"id": "<catalog id>", "fix": "<fix>"}]}}
@@ -182,15 +182,15 @@ The PM shows the bundle with the plan as one approval: allow rules for the commi
 
 ### 10. `check` and `finish`
 
-**`check`.** When the command exits non-zero, `check` matches the output against the catalog. If any entry hits, the printed body and the `checks/<slug>-<n>.json` record gain `catalog`: `[{"id", "fix", "line"}]`, in catalog order, with `line` the first hit line, trimmed and cut to 300 characters. Each non-blank output line is matched as it is, with only a trailing carriage return cut. The catalog is `<plugin>/retro/catalog.json`; one that can't be loaded gives no hits, so a check never fails over it (`bin/factory.ts:527-552`). Without a hit, neither gains the key. `ok` means what it means today (`:529`).
+**`check`.** When the command exits non-zero, `check` matches the output against the catalog. If any entry hits, the printed body and the `checks/<slug>-<n>.json` record gain `catalog`: `[{"id", "fix", "line"}]`, in catalog order, with `line` the first hit line, trimmed and cut to 300 characters. Each non-blank output line is matched as it is, with only a trailing carriage return cut. The catalog is `<plugin>/retro/catalog.json`; one that can't be loaded gives no hits, so a check never fails over it (`bin/factory/check.ts` `cmdCheck`). Without a hit, neither gains the key. `ok` means what it means today (`:529`).
 
-**`finish`.** When there is no `--result`, after the liveness rule passes (`bin/factory.ts:1245-1250`), and always when there is one, `finish` writes the extract as in Decision 2 (`:1252-1262`). The printed body keeps exactly its keys (`tests/fixtures/workflow-run/finish.cases.ts:29`, `KEYS`), and `finish` stays idempotent (`finish.cases.ts:223`): the extract is the same bytes each time. When the extract can't be written, `finish` appends the decision line `retro extract failed: <message>` once, and the body and exit code are unchanged. `bin/factory.ts` loads `retro/` lazily, so a plugin copy without it still runs every other command: there `check` adds no `catalog`, `doctor` is a usage error, and `finish` logs `retro extract failed: retro/ is not in this plugin copy` (`:16-26`).
+**`finish`.** When there is no `--result`, after the liveness rule passes (`bin/factory/heavy.ts` `heavyMain`), and always when there is one, `finish` writes the extract as in Decision 2 (`:1252-1262`). The printed body keeps exactly its keys (`tests/fixtures/workflow-run/finish.cases.ts:29`, `KEYS`), and `finish` stays idempotent (`finish.cases.ts:223`): the extract is the same bytes each time. When the extract can't be written, `finish` appends the decision line `retro extract failed: <message>` once, and the body and exit code are unchanged. `bin/factory.ts` loads `retro/` lazily, so a plugin copy without it still runs every other command: there `check` adds no `catalog`, `doctor` is a usage error, and `finish` logs `retro extract failed: retro/ is not in this plugin copy` (`:16-26`).
 
 ### 11. `plan.json` stays at version 3
 
 The PM's ruling (decisions.md, 04:04, on checker-7's recommendation): "optional crew `needs` at plan version 3, no bump; plan.schema.json's version description and ADR-0012 say why; every reader treats missing needs as empty".
 
-`needs` is optional at every version, and a reader treats a missing `needs` as an empty list, so no reader has to refuse an older file. A bump would also refuse the live plan: `plan-check` accepts only versions 2 and 3 (`bin/factory.ts:393`, `plan: version must be 2 or 3`). The schema's `version` description now says the version goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse.
+`needs` is optional at every version, and a reader treats a missing `needs` as an empty list, so no reader has to refuse an older file. A bump would also refuse the live plan: `plan-check` accepts only versions 2 and 3 (`bin/factory/plan.ts` `cmdPlanCheck`, `plan: version must be 2 or 3`). The schema's `version` description now says the version goes up when a field is renamed, retyped or removed, or when an added field is required or changes what a reader must refuse.
 
 ### 12. Wiring into the run skill
 

@@ -13,10 +13,10 @@ Line numbers are those of this crew's base, main at `47975ae`.
 | Item | What the code does |
 |---|---|
 | item 45 | `agents/resource-monitor.md:23` goes up one only when `freeMB` is above four times `minFreeMB`, 8192 MB with `DEFAULT_MIN_FREE_MB` 2048 (`resources/index.ts:8`). The down rule fires below 2 x (`:22`). Logged idle readings kept parallelism at 1: 8189 MB / load1 0.49, 8152 / 0.68 and 8178 / 1.5, on 4 cpus with 0 running. |
-| item 46 | `start --slug` without `--resume` is a usage error: `start --slug and --resume go together` (`bin/factory.ts:1334`). The PM can't run first the crew that unblocks others. |
+| item 46 | `start --slug` without `--resume` is a usage error: `start --slug and --resume go together` (`bin/factory/start.ts` `cmdStart`). The PM can't run first the crew that unblocks others. |
 | item 47 | The ui-server-fixes acceptance test grepped `by: *['"]` in a test file and stopped a crew whose behaviour was right. The design engineer has no rule against pinning source spelling. |
 | item 48 | `runMembers` returns early for every task in `crew.e.done` (`workflows/stage.js:541`, `:546`). `answersFor` sends an answer at a task name to that task only (`:329-331`). An answer at a done tester task reaches no one. |
-| item 49 | `roleWarnings` (`bin/factory.ts:1038`) warns whenever an agent file is newer than the session start, on every `start`, with nothing stored between starts. |
+| item 49 | `roleWarnings` (`bin/factory/warnings.ts`) warns whenever an agent file is newer than the session start, on every `start`, with nothing stored between starts. |
 | item 50 | `spawn` lets the entry's `## Members` value win over the roles row (`workflows/stage.js:93-98`, ADR-0022 U6). monitor-hold's builder ran on sonnet while `roles.builder` said opus. |
 | item 51a | `ownsUiFile` matches only UI file suffixes (`stage.js:1079`), so an owns of `ui/**` alone gives `Review mode: files` (`:1084`). |
 | item 51b | `backstopPrompt` says "Work in the crew worktree" (`:604`), while `memberPrompt` adds an own-worktree proof line (`:318`) and "Commit on your branch" (`:389`). |
@@ -24,15 +24,15 @@ Line numbers are those of this crew's base, main at `47975ae`.
 | item 51d | `testsCheckExtra` builds `Head:` from `crew.e.head` (`:336`), while `crew.head` moves within the run (`:783`). |
 | item 51e | stage.js reads `args.truss` straight off `args` (`:10-11`). `expandTrussFile` returns a JSON string when it was given one (`hooks/register.ts:823`, `:862`). |
 | item 52 | The stress engineer's probe went to a fixed name in the shared scratchpad and overwrote `probe.mjs`. `agents/stress-engineer.md:17` allows "scratch and `mkdtemp` dirs". |
-| item 53 | `crewEntry`'s `livePage` match (`bin/factory.ts:944`) accepts "Live pages are not built" and gives null for `-  Live page` and `1. Live page`; `checkArgsFile` (`:1433`) passes a read-only existing P that `argsFileOut` then fails to write; `changeDetail` (`:1017`) gives the mtime form for a file committed and then reverted. |
+| item 53 | `crewEntry`'s `livePage` match (`bin/factory/start.ts`) accepts "Live pages are not built" and gives null for `-  Live page` and `1. Live page`; `checkArgsFile` (`:1433`) passes a read-only existing P that `argsFileOut` then fails to write; `changeDetail` (`:1017`) gives the mtime form for a file committed and then reverted. |
 | item 54 | `tally.seen` is a Record trimmed by `Object.keys` (`ui/server/session/fold.ts:180-183`), so integer-like ids sort first and break oldest-first order. `reduce.ts:260` excludes `main`, `factory` and `workflow:*` from credit, unpinned. No case rolls a stall into `events.1.jsonl`. A successor project manager `a-2` never clears `a`'s idle-project-manager stall. |
 | item 55 | ui `pretest` is `npm run build` (`ui/package.json:11`), and build starts with `tsc` (`:10`). A partial `node_modules` fails with "tsc: command not found". |
-| item 56 | An agent file changed by a merge (resource-monitor.md in monitor-hold) is used by no running session until restart. `cmdFinish` (`bin/factory.ts:1972`) warns of nothing. |
+| item 56 | An agent file changed by a merge (resource-monitor.md in monitor-hold) is used by no running session until restart. `cmdFinish` (`bin/factory/finish.ts`) warns of nothing. |
 | item 57 | `sample()` reads only `freeMB`, `totalMB`, `cpus` and `load1` (`resources/index.ts:65-67`). A `TRUSS_SAMPLE` file is checked for `freeMB` and `totalMB` only (`:61-63`). This host's kill switch is systemd-oomd keyed on memory pressure: `/etc/systemd/oomd.conf.d/10-omarchy.conf` sets `DefaultMemoryPressureLimit=50%` for `DefaultMemoryPressureDurationSec=20s`. The brief gives oomd's 90% swap limit. `/proc/pressure/memory` here reads `some avg10=0.00`; `/proc/meminfo` gives SwapTotal 32455736 kB and SwapFree 23878156 kB, 26% used. |
 
 ## Decision
 
-The goal runs as four crews in two stages. Stage 1's crews own disjoint files, so they run in parallel. The factory items wait for a follow-up crew, because plan-check refuses an owns overlap between crews of different goals while either is unmerged (`bin/factory.ts:481`), and resume-fixes4 owned `bin/factory.ts` when this goal was planned.
+The goal runs as four crews in two stages. Stage 1's crews own disjoint files, so they run in parallel. The factory items wait for a follow-up crew, because plan-check refuses an owns overlap between crews of different goals while either is unmerged (`bin/factory/plan.ts` `cmdPlanCheck`), and resume-fixes4 owned `bin/factory.ts` when this goal was planned.
 
 ```mermaid
 flowchart TD
@@ -66,7 +66,7 @@ flowchart TD
 - These stay: one step per crossing, the `maxParallelCrews` cap, the down rule at 2 x, the item 38 hold and the item 39 step-3 text.
 - `minFreeMB` stays 2048 (client, 10:55: "keep 2048, go ahead").
 - Not 2 x: the down rule fires below 2 x, so a 2 x up bar leaves no gap and flaps. The band between the down point (4096 MB) and the up point (6144 MB) is 1 x `minFreeMB`. A reading inside it keeps the value.
-- factory admit's `minFreeMB` floor stays the safety net (`bin/factory.ts:1533`).
+- factory admit's `minFreeMB` floor stays the safety net (`bin/factory/resources.ts` `admission`).
 - Tests read the rule as behaviour: an evaluator takes the multipliers from the "Go down one" and "Go up one" lines and applies them to a reading. `i45 2:` replays each logged idle reading; `control N: i45 ...` puts freeMB at 2.5 x, inside the band, and keeps the value.
 - The two base cases that name four times are re-pinned with "three times": `control 2: the up rule still names three times minFreeMB and half of cpus` in `factory-fixes4-monitor.check.ts`, and `agent states the up rule: above three times minFreeMB, load1 below half of cpus` in `monitor-wiring.check.ts`. The acceptance test exempts exactly the two old titles.
 

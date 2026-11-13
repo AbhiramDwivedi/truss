@@ -14,18 +14,18 @@ The ui-redesign run logged twelve plugin bugs in `decisions.md` between 23:34 an
 
 | Item | What the code does on `693a307` |
 |---|---|
-| item 24 | Only the stress role gets an "agent file changed after the session" warning: `stressWarnings` (`bin/factory.ts:942-963`). A `truss:ux-engineer` added mid-session was unspawnable ("agent type 'truss:ux-engineer' not found") and nothing warned. |
+| item 24 | Only the stress role gets an "agent file changed after the session" warning: `stressWarnings` (`bin/factory/warnings.ts`). A `truss:ux-engineer` added mid-session was unspawnable ("agent type 'truss:ux-engineer' not found") and nothing warned. |
 | item 25 | `answersFor` (`workflows/stage.js:325-328`) sends every answer whose `at` is not a task name to every member. That includes `ux-direction` and `ux-review`, which already reach their own step (`stage.js:1003`, `:1051`). |
 | item 26 | Hotfix `08ae9bd` makes member briefs merge with `--no-ff`, pinned in `tests/workflows.check.ts:687` ("bug 26"). A resume still never looks for member worktrees that have vanished. |
-| item 27 | `doneTasks` (`bin/factory.ts:1033-1047`) skips every result whose `marker !== 'DONE'` (`:1037`). A BLOCKED task whose branch the PM merged by hand is never done. |
+| item 27 | `doneTasks` (`bin/factory/start.ts`) skips every result whose `marker !== 'DONE'` (`:1037`). A BLOCKED task whose branch the PM merged by hand is never done. |
 | item 28 | `testsBackstop` (`stage.js:591-606`) goes through `fixBuilder` (`stage.js:554`) and `fixPrompt` (`:431`), whose brief opens with a `git merge --no-ff` step and "Work in your own worktree" (`:445`), then tells the agent to rewrite the crew branch "not in your own worktree" (`:603`). The tester role runs with isolation `worktree` (`workflows/roles.json:5`), where the worktree guard refuses `git -C <crew worktree>`. |
-| item 29 | `const F = args.truss` (`stage.js:9`). `workflowCallVerdict` refuses a call with no object `args.truss` (`hooks/register.ts:766-767`). `--args-file` already writes the object to a file (`bin/factory.ts:1219-1230`), but the PM still pastes it inline. A hook can rewrite a call's input: `next({ ...e, content: stamped })` (`register.ts:2200`). |
+| item 29 | `const F = args.truss` (`stage.js:9`). `workflowCallVerdict` refuses a call with no object `args.truss` (`hooks/register.ts:766-767`). `--args-file` already writes the object to a file (`bin/factory/start.ts` `argsFileOut`), but the PM still pastes it inline. A hook can rewrite a call's input: `next({ ...e, content: stamped })` (`register.ts:2200`). |
 | item 30 | `agents/ux-engineer.md:41` stops review mode BLOCKED with no screenshots and no dev server, even for a crew that renders nothing. |
-| item 31 | `testsGuard` (`stage.js:856-865`) changes its prompt only per `tests` answer (`Attempt:`, `:859-860`, hotfix `8daf2ac`). The crew entry has no head SHA (`crewEntry`, `bin/factory.ts:883-907`), so a cached guard result outlives a branch rewrite. |
-| item 32 | `cmdIntegrate` (`bin/factory.ts:698-704`) always runs `git merge --no-ff <branch>` (`:703`). A resume that replays a stale member branch brings back commits a rewrite removed. |
+| item 31 | `testsGuard` (`stage.js:856-865`) changes its prompt only per `tests` answer (`Attempt:`, `:859-860`, hotfix `8daf2ac`). The crew entry has no head SHA (`crewEntry`, `bin/factory/start.ts`), so a cached guard result outlives a branch rewrite. |
+| item 32 | `cmdIntegrate` (`bin/factory/crew.ts`) always runs `git merge --no-ff <branch>` (`:703`). A resume that replays a stale member branch brings back commits a rewrite removed. |
 | item 33 | `uxReviewPrompt` (`stage.js:1035-1055`) gives the green tail only (`:1046-1047`). It never points to the goal file's `## UX` "Live page" line, and `ux-engineer.md:41-42` still stops for missing screenshots or ports. |
-| item 34 | `cmdCheck` sets `env` whenever `envFailure` finds any env line (`bin/factory.ts:580`). `green` stops BLOCKED on any `env` (`stage.js:753-754`). One WebKit launch line hid 66 real e2e failures. |
-| item 35 | `directionOf` (`bin/factory.ts:313-319`) reads only `reports/<slug>/`, which `finish` fills (`recordRun`, `:1489-1496`, called at `:1778`). A ux crew resumed before `finish` gets `direction: null`. |
+| item 34 | `cmdCheck` sets `env` whenever `envFailure` finds any env line (`bin/factory/check.ts`). `green` stops BLOCKED on any `env` (`stage.js:753-754`). One WebKit launch line hid 66 real e2e failures. |
+| item 35 | `directionOf` (`bin/factory/runs.ts`) reads only `reports/<slug>/`, which `finish` fills (`recordRun`, `:1489-1496`, called at `:1778`). A ux crew resumed before `finish` gets `direction: null`. |
 
 ## Decision
 
@@ -54,7 +54,7 @@ flowchart LR
 
 ### The items
 
-**Item 24** (factory-resume). `stressWarnings` warns for every `truss:*` agent type a starting crew will spawn: `planner`, `qc`, `writer`, `tester` and `builder` when their type is `truss:*`, `stress` when the goal file says `## Stress test` yes, and `ux` when the entry is ux. A type warns when its agent file is missing, is newer than the session start, or the session start can't be read. Each warning names the fallback: restart the session, or resume with `roles.<role>.agentType` set to `general-purpose` and an answer telling the agent to read `agents/<name>.md` and follow it. The existing stress warning texts (`bin/factory.ts:960-961`) stay word for word.
+**Item 24** (factory-resume). `stressWarnings` warns for every `truss:*` agent type a starting crew will spawn: `planner`, `qc`, `writer`, `tester` and `builder` when their type is `truss:*`, `stress` when the goal file says `## Stress test` yes, and `ux` when the entry is ux. A type warns when its agent file is missing, is newer than the session start, or the session start can't be read. Each warning names the fallback: restart the session, or resume with `roles.<role>.agentType` set to `general-purpose` and an answer telling the agent to read `agents/<name>.md` and follow it. The existing stress warning texts (`bin/factory/warnings.ts` `stressWarnings`) stay word for word.
 
 **Item 25** (stage-fixes3). `answersFor(crew, name)` gives answers at `ux-direction` and `ux-review` to no member, task or fix. They still reach their own step (`stage.js:1003`, `:1051`), the planner (all answers, `stage.js:713`) and QC. QC gets them in a new `Answers to earlier stops of this crew:` block that lists only those two steps. An answer at a task name reaches only that task. An answer at a crew-level stop (`red`, `split`, `green`, `R1`, `tests`, `scope`, `stress`, `qc`, or a name the plan no longer has) still reaches every member, which keeps ADR-0019 item 12's intent.
 
@@ -76,13 +76,13 @@ This adds an input form to the gate ADR-0009 Decision 6 defined. Every check `wo
 
 **Item 31** (factory-resume, stage-fixes3). As seam 1, both halves.
 
-**Item 32** (factory-resume). As seam 4, using `git merge-tree --write-tree HEAD <branch>` (git 2.56.0 on this host). On a conflict, or when merge-tree fails, `cmdIntegrate` falls back to today's `--no-ff` merge, unchanged. The trailer check (`bin/factory.ts:701-702`) still runs first. Known limit: a stale member branch that also carries new work changes the tree, so it still merges whole, stale commits included. Tree equality catches only a branch the crew head already contains.
+**Item 32** (factory-resume). As seam 4, using `git merge-tree --write-tree HEAD <branch>` (git 2.56.0 on this host). On a conflict, or when merge-tree fails, `cmdIntegrate` falls back to today's `--no-ff` merge, unchanged. The trailer check (`bin/factory/crew.ts` `cmdIntegrate`) still runs first. Known limit: a stale member branch that also carries new work changes the tree, so it still merges whole, stale commits included. Tree equality catches only a branch the crew head already contains.
 
 **Item 33** (stage-fixes3). The review brief tells the UX engineer how to take its own screenshots. It quotes the goal file's `## UX` "Live page" line when there is one; the parser matches the line's real form, `Live page (how review takes its own screenshots): ...`. Otherwise a crew that owns `ui/**` gets a default: `npm --prefix ui run build`, start `node ui/server/main.ts` in the background, wait for its listening line, capture each screen with `@playwright/test` chromium from `ui/node_modules`, then kill the server by its pid. The brief says never to stop BLOCKED for missing screenshots: after two failed starts, review from the files and say so. `ux-engineer.md:41-42` change to match, and the "No port" stop becomes a note, because the review serves on a port the OS picks. This adds to ADR-0022's review step; its text is unchanged.
 
 **Item 34** (factory-resume, stage-fixes3). As seam 2. "Every failure is explained" works on failure blocks: Playwright's `N) [project] › ...` headers, node:test TAP's `not ok N - ...`, and otherwise the whole output as one block. `env` is set only when every block holds an env line, or no block is found and an env line is. Otherwise the record gets `envSeen`. A red with `envSeen` and no `env` counts as red. When `env` is set, `green` behaves as today.
 
-**Item 35** (factory-resume). In `cmdStartResume`, when `directionOf(dir, slug)` is null, the entry takes the newest `<slug>-ux*` agent result in the crew's runs (`crewRunsOf`, `bin/factory.ts:971`; highest label number, later run on a tie) whose first non-empty line, after `unbannered`, is `UX: DIRECTION`, as `{label, text}`. The text is trimmed as `directionOf` trims it (`:318`).
+**Item 35** (factory-resume). In `cmdStartResume`, when `directionOf(dir, slug)` is null, the entry takes the newest `<slug>-ux*` agent result in the crew's runs (`crewRunsOf`, `bin/factory/runs.ts`; highest label number, later run on a tie) whose first non-empty line, after `unbannered`, is `UX: DIRECTION`, as `{label, text}`. The text is trimmed as `directionOf` trims it (`:318`).
 
 ### The trussFile path, end to end
 

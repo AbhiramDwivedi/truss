@@ -14,7 +14,7 @@ A Workflow run that is resumed (run `wf_0dff946d-af1`) can hold two agentIds und
 
 Among the agentIds under a label that returned a result text, the k-th distinct one in the run's journal (`started` order) owns `<label>.md` for k=1 and `<label>.run<k>.md` for k>=2. N is that rank, not the first free name on disk.
 
-`recordRun` computes the rank from the run's agents (the `started` lines, in journal order, deduplicated by agentId, per label), counting only agentIds that left a result text: an agent interrupted before it returned has no report, takes no rank, and so a resumed agent after it is rank 1 and files `<label>.md`. Spawn lines (once per agentId and run) and report lines (deduplicated per crew, label and marker, `bin/factory.ts:1344`) are appended as before, with `agent` set to the label, not the file name.
+`recordRun` computes the rank from the run's agents (the `started` lines, in journal order, deduplicated by agentId, per label), counting only agentIds that left a result text: an agent interrupted before it returned has no report, takes no rank, and so a resumed agent after it is rank 1 and files `<label>.md`. Spawn lines (once per agentId and run) and report lines (deduplicated per crew, label and marker, `bin/factory/audit.ts` `recordRun`) are appended as before, with `agent` set to the label, not the file name.
 
 A refusal ("a report file with different text already exists; not overwritten") happens only when the file an agentId owns by this rule already holds different text. That includes a file whose origin is unknown: a first-rank agent finds `<label>.md` holding other text and is refused, so the existing finish case that pre-seeds a different report stays green unchanged. Every other audit in `recordRun` is unchanged.
 

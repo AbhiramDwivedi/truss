@@ -17,12 +17,12 @@ The approved items, from `amend-brief-plugin-fixes.md` (cited as "brief :N"), wi
 3. **Scrub and the plugin author** (brief :8). The scrubber flags `.claude-plugin/plugin.json:7`, the published author name.
 4. **Design engineer validation** (brief :9). A design engineer ran a cached `ajv-cli` after the classifier refused `npx -y`. The prompt must say: validate with `factory.ts plan-check` only, and report a refused command, never retry it another way.
 5. **Members' own heavy commands** (brief :10). ADR-0015 queues only runner-run checks. Left to a design slice (Decision 8).
-6. **A role added mid-session** (brief :11). A role added to the plugin after the session loaded its agents, such as `truss:stress-engineer`, can't be spawned until restart. Today `start` (`bin/factory.ts:861-951`) reads no agent file, and its output (`stageOut`, `bin/factory.ts:740-745`) has no key that can carry a notice.
-7. **Missing goal file** (brief :12; approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory.ts:913-914`; `crewEntry` does the same at `:731`), so `engineOf` returns `the goal file has no ## Engine section` (`:707`) and the crew goes to the project manager path.
+6. **A role added mid-session** (brief :11). A role added to the plugin after the session loaded its agents, such as `truss:stress-engineer`, can't be spawned until restart. Today `start` (`bin/factory/start.ts` `crewState`) reads no agent file, and its output (`stageOut`, `bin/factory/start.ts`) has no key that can carry a notice.
+7. **Missing goal file** (brief :12; approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory/start.ts`; `crewEntry` does the same at `:731`), so `engineOf` returns `the goal file has no ## Engine section` (`:707`) and the crew goes to the project manager path.
 8. **Stale stress-test references** (brief :16). Several files point at `agents/qc-engineer.md` "Stress-test mode", a section that is gone. They should point at `agents/stress-engineer.md`.
-9. **False env verdicts** (brief :17). `envFailure` (`bin/factory.ts:485-494`) tests each trimmed line against `ENV_PATTERNS` (`:459-464`) and the `Cannot find package` match anywhere on the line, so a failing test that echoes an env string inside JSON or assert text stops the crew as an env failure.
+9. **False env verdicts** (brief :17). `envFailure` (`bin/factory/check.ts`) tests each trimmed line against `ENV_PATTERNS` (`:459-464`) and the `Cannot find package` match anywhere on the line, so a failing test that echoes an env string inside JSON or assert text stops the crew as an env failure.
 10. **F-16** (brief :18). The planning engineer never assigns a report, summary or findings `.md` as a member deliverable.
-11. **F-21** (brief :19). Today `tests-check` guards only the files of `Truss-Role: test-writer` commits (`bin/factory.ts:674`). A file the acceptance test names that a builder added is not guarded.
+11. **F-21** (brief :19). Today `tests-check` guards only the files of `Truss-Role: test-writer` commits (`bin/factory/crew.ts` `cmdTestsCheck`). A file the acceptance test names that a builder added is not guarded.
 12. **F-29** (brief :20). A crew's acceptance proof uses only files from earlier stages or the crew's own owned files.
 13. **F-33** (brief :21). `workflowCallVerdict` reads `args.truss` only when `args` is an object (`register.ts:743-745`), so a Truss script whose `args` is a JSON string is refused with "a truss Workflow needs args.truss".
 14. **`ui/README.md` example token** (brief :22). A real-looking `?token=` value in the example launch line trips scrub. It becomes a placeholder such as `<token>`.
@@ -60,7 +60,7 @@ The confirm-against-main list (brief :24), as plan revision 2 settled it (`plan-
 
 TODO: plan revision 2 doesn't say which crews count as "starting now" on a `--resume` call; the factory-fixes crew decides and pins it.
 
-**The stress role.** `start` reads the stress role from `roles.json` `stress.agentType`, which is `truss:stress-engineer` (`workflows/roles.json`). Its agent file is the plugin's `agents/stress-engineer.md`. Today `readRoles` reads `<plugin>/workflows/roles.json` (`bin/factory.ts:187-188`).
+**The stress role.** `start` reads the stress role from `roles.json` `stress.agentType`, which is `truss:stress-engineer` (`workflows/roles.json`). Its agent file is the plugin's `agents/stress-engineer.md`. Today `readRoles` reads `<plugin>/workflows/roles.json` (`bin/factory/shared.ts`).
 
 **The session start.** `start` reads the session's start time this way:
 
@@ -189,7 +189,7 @@ Decided by: checker-32's answer of 20:34 (`decisions.md:509`, followed), the cli
 Two gaps showed in goal `plugin-move` (`decisions.md:508`):
 
 - The rule in "`tests-check` guards the acceptance files" (Decision 1) guards every existing path the `acceptanceTest` names. It can't tell a test file from a deliverable the test only inspects, with `cmp` or `grep`, so a builder commit to such a deliverable is refused.
-- `cmdTestsCheck` reads `git log --cc --name-only` (`bin/factory.ts:675`), which has no rename detection and shows only a rename's new path. Builder commit 77f5f09 renamed two test-writer files and edited them in the same commit (99% renames), and `tests-check` did not list it.
+- `cmdTestsCheck` reads `git log --cc --name-only` (`bin/factory/crew.ts`), which has no rename detection and shows only a rename's new path. Builder commit 77f5f09 renamed two test-writer files and edited them in the same commit (99% renames), and `tests-check` did not list it.
 
 ### The rule
 

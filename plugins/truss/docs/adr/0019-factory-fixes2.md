@@ -14,18 +14,18 @@ This run logged bugs in the factory, the stage workflow, plan-check and the plan
 
 The code facts the items rest on:
 
-- `cmdOwnsCheck` keeps a changed file only when `path.matchesGlob(file, g)` holds for some owned glob (`bin/factory.ts:672`). On Node v24.22.0, `path.matchesGlob('marketplace/.claude-plugin/marketplace.json', 'marketplace/**')` is `false`, and so is `path.matchesGlob('plugins/truss/.claude-plugin/plugin.json', 'plugins/truss/**')`. `**` does not match a dot segment.
-- `doneTasks` takes the task name from the member's own `result.task` and counts it only when `merge-base --is-ancestor <branch> truss-<slug>` succeeds (`bin/factory.ts:903-911`).
-- `cmdStartResume` builds the entry with `done: doneTasks(...)` and no answers filter (`bin/factory.ts:947`). `runMembers` skips every name in `done` (`workflows/stage.js:386-392`).
-- `recordRestarts` links a checkpointed member to the next agent of the same crew and role that started after its result (`bin/factory.ts:1367`), not to the next agent of the same task.
-- The merge step refuses a crew whose `redRecord` is missing or has exit 0 (`bin/factory.ts:1493-1494`). An answers resume skips red unless an answer's `at` is `red` (`workflows/stage.js:818-820`).
-- `cmdPlanCheck` compares owns only between crews of the same stage and the same goal (`bin/factory.ts:439`).
-- `crewEntry` copies `goal`, `scope` (the goal file's `## Approved scope`) and `acceptanceTest` into every entry, beside `goalFile` (`bin/factory.ts:782-793`). `start --args-file` writes that whole object to the argsFile and prints a pointer (`bin/factory.ts:1062-1075`).
+- `cmdOwnsCheck` keeps a changed file only when `path.matchesGlob(file, g)` holds for some owned glob (`bin/factory/crew.ts`). On Node v24.22.0, `path.matchesGlob('marketplace/.claude-plugin/marketplace.json', 'marketplace/**')` is `false`, and so is `path.matchesGlob('plugins/truss/.claude-plugin/plugin.json', 'plugins/truss/**')`. `**` does not match a dot segment.
+- `doneTasks` takes the task name from the member's own `result.task` and counts it only when `merge-base --is-ancestor <branch> truss-<slug>` succeeds (`bin/factory/start.ts`).
+- `cmdStartResume` builds the entry with `done: doneTasks(...)` and no answers filter (`bin/factory/start.ts`). `runMembers` skips every name in `done` (`workflows/stage.js:386-392`).
+- `recordRestarts` links a checkpointed member to the next agent of the same crew and role that started after its result (`bin/factory/audit.ts`), not to the next agent of the same task.
+- The merge step refuses a crew whose `redRecord` is missing or has exit 0 (`bin/factory/finish.ts`). An answers resume skips red unless an answer's `at` is `red` (`workflows/stage.js:818-820`).
+- `cmdPlanCheck` compares owns only between crews of the same stage and the same goal (`bin/factory/plan.ts`).
+- `crewEntry` copies `goal`, `scope` (the goal file's `## Approved scope`) and `acceptanceTest` into every entry, beside `goalFile` (`bin/factory/start.ts`). `start --args-file` writes that whole object to the argsFile and prints a pointer (`bin/factory/start.ts` `argsFileOut`).
 - `memberPrompt` puts `Approved scope: ${e.scope}` and `Acceptance test: ${e.acceptanceTest}` in every member brief (`workflows/stage.js:234`). The same fields reach prompts at `:520`, `:567`, `:726` and `:734`.
 - `runFactory` does `JSON.parse(res.stdout)` on the whole stdout (`workflows/stage.js:191`), so one non-JSON line before the result makes `parsed` null.
 - `taskPrompt` emits `Task: ${task.name}` and adds only the answers whose `at` equals that task's name (`workflows/stage.js:264-265`).
-- Two test-path rules exist: `isTestPath` in `workflows/stage.js:273` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory.ts:729-735`, which feeds the guarded set at `:704`.
-- `rolesWithTypes` reads truss.json `roles` whenever it is an object (`bin/factory.ts:309-313`). It never checks whether kit is loaded.
+- Two test-path rules exist: `isTestPath` in `workflows/stage.js:273` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory/crew.ts`, which feeds the guarded set at `:704`.
+- `rolesWithTypes` reads truss.json `roles` whenever it is an object (`bin/factory/shared.ts`). It never checks whether kit is loaded.
 - `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` at `README.md:283`.
 
 ## Decision
@@ -54,7 +54,7 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 
 **Item 2** (runtime-factory). doneTasks reads the task name from the member prompt's `Task: <name>` line (`workflows/stage.js:265`). When the prompt has none, it falls back to `result.task` with a leading `<slug>: ` prefix stripped. The name no longer depends on what a member wrote in its result.
 
-**Item 3** (runtime-factory). `start --resume answers` refuses an answer whose `at` is a step after red while `redRecord` is missing or has exit 0. That resume skips red (`workflows/stage.js:818-820`), and the merge step would refuse the crew anyway (`bin/factory.ts:1494`), so the refusal comes before members are paid.
+**Item 3** (runtime-factory). `start --resume answers` refuses an answer whose `at` is a step after red while `redRecord` is missing or has exit 0. That resume skips red (`workflows/stage.js:818-820`), and the merge step would refuse the crew anyway (`bin/factory/finish.ts` `mergeCrew`), so the refusal comes before members are paid.
 
 **Item 4** (runtime-factory). New command `factory mark-merged --dir --repo --slug`. It sets the crew's status to `merged` only when `truss-<slug>` is an ancestor of the target, and logs a line. It gives a crew merged outside `finish` a true status, which the item 8 rule reads.
 
@@ -62,11 +62,11 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 
 **Item 6** (plugin-meta). The planning engineer prompt (`agents/planning-engineer.md`) gains one rule: builder briefs mark test files read-only, and a guarded edit goes to a tester task.
 
-**Item 7** (runtime-stage, both halves). Lean entries. `goal` is dropped from the crew entry. `scope` and `acceptanceTest` are left out when the goal file has `## Approved scope` and `## Acceptance test`. stage.js points members to `goalFile` for them. On resume, the tasks already in `done` are stubbed. This shrinks the argsFile the PM reads and passes as the Workflow's args (`bin/factory.ts:1062-1064`).
+**Item 7** (runtime-stage, both halves). Lean entries. `goal` is dropped from the crew entry. `scope` and `acceptanceTest` are left out when the goal file has `## Approved scope` and `## Acceptance test`. stage.js points members to `goalFile` for them. On resume, the tasks already in `done` are stubbed. This shrinks the argsFile the PM reads and passes as the Workflow's args (`bin/factory/start.ts` `argsFileOut`).
 
 **Item 8** (runtime-factory). plan-check reports an owns overlap between crews of different goals whenever neither crew is merged or dropped (ruling 6). There is no held-goal exemption and no later-stage exemption. The error names both crews. The fixture uses crewalpha, crewbeta and crewgamma, each matched with `grep -w`: crewalpha and crewbeta are named, a merged crewgamma is not, and the check passes once crewbeta is merged.
 
-**Item 9** (split). One test-path rule. Start side, runtime-factory: `factory start` emits `guarded` (the guarded set of `bin/factory.ts:677-704`) and `ownTests` in each crew entry, from the one rule in `bin/factory.ts`. Reader side, runtime-stage: stage.js drops its own `isTestPath` (`workflows/stage.js:273`) and reads `ownTests`, for example in `testerFiles` (`:277-281`). The acceptance grep `isTestPath *=\|tests\?\|\|__tests__\|\(check\|test\|spec\)` must find nothing in stage.js. It fires on main's `:273`, and it also fires on the `_{2}tests_{2}` evasion that gamed the older grep (ruling 3).
+**Item 9** (split). One test-path rule. Start side, runtime-factory: `factory start` emits `guarded` (the guarded set of `bin/factory/crew.ts` `cmdOwnsCheck`) and `ownTests` in each crew entry, from the one rule in `bin/factory.ts`. Reader side, runtime-stage: stage.js drops its own `isTestPath` (`workflows/stage.js:273`) and reads `ownTests`, for example in `testerFiles` (`:277-281`). The acceptance grep `isTestPath *=\|tests\?\|\|__tests__\|\(check\|test\|spec\)` must find nothing in stage.js. It fires on main's `:273`, and it also fires on the `_{2}tests_{2}` evasion that gamed the older grep (ruling 3).
 
 **Item 10** (dropped). Under `claude plugin test` on main, 290 cases pass and 174 fail across all 17 `*.test.ts` files. Fixing that is a separate goal.
 
@@ -76,7 +76,7 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 
 **Item 13** (split by part).
 - (a) runtime-factory: a test for an agentId with no result before a resumed one, the ADR-0020 rank rule.
-- (b) fixes2-design: ADR-0020 says report lines are deduplicated per crew, label and marker (`bin/factory.ts:1344`). Done in this crew.
+- (b) fixes2-design: ADR-0020 says report lines are deduplicated per crew, label and marker (`bin/factory/audit.ts` `recordRun`). Done in this crew.
 - (c) fixes2-design: the `.run<N>` note, held here (below).
 - (d) **deferred**: resumed QC and stress gate labels, and the retro `QC_FILE` glob. They reverse the gate that `rl 4` pins, and no run has hit it.
 - (e) folded into items 2 and 17.
@@ -91,13 +91,13 @@ The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` fi
 
 **Item 17** (runtime-factory). doneTasks also counts a task whose branch has a full patch-id match on `truss-<slug>`, not only an ancestor, so a task whose commits reached the crew branch under other hashes stays done.
 
-**Item 18** (runtime-factory). `start` and `start --resume` resolve `--dir` and `--repo` to absolute paths, as `heavy` already does for a factory command (`bin/factory.ts:1218`).
+**Item 18** (runtime-factory). `start` and `start --resume` resolve `--dir` and `--repo` to absolute paths, as `heavy` already does for a factory command (`bin/factory/heavy.ts` `heavyMain`).
 
-**Item 19** (runtime-factory). `recordRestarts` links a successor by task name (the `Task: ` line), not by the next agent of the same role (`bin/factory.ts:1367`). Tests: two parallel builders, and a two-crew `finish` leftWorktrees case.
+**Item 19** (runtime-factory). `recordRestarts` links a successor by task name (the `Task: ` line), not by the next agent of the same role (`bin/factory/audit.ts`). Tests: two parallel builders, and a two-crew `finish` leftWorktrees case.
 
-**Item 20** (fixes2-design). ADR-0021's Factory and Roles bullets said the truss.json `roles` mapping applies only when kit is loaded. The code maps whenever configured (`bin/factory.ts:309-313`). The bullets now say it maps whenever configured; the config author owns the kit dependency. Done in this crew.
+**Item 20** (fixes2-design). ADR-0021's Factory and Roles bullets said the truss.json `roles` mapping applies only when kit is loaded. The code maps whenever configured (`bin/factory/shared.ts` `rolesWithTypes`). The bullets now say it maps whenever configured; the config author owns the kit dependency. Done in this crew.
 
-**Item 21** (runtime-factory). `start --resume answers` drops from `done` every task an answer's `at` names. That task reruns, and `taskPrompt` already appends the answer (`workflows/stage.js:264-266`). Today `done` has no answers filter (`bin/factory.ts:947`), so an answered task is skipped (`workflows/stage.js:392`). Test i21: a run stopped at green with every task done and an answer at task X gives `done` without X and with the others.
+**Item 21** (runtime-factory). `start --resume answers` drops from `done` every task an answer's `at` names. That task reruns, and `taskPrompt` already appends the answer (`workflows/stage.js:264-266`). Today `done` has no answers filter (`bin/factory/start.ts` `cmdStartResume`), so an answered task is skipped (`workflows/stage.js:392`). Test i21: a run stopped at green with every task done and an answer at task X gives `done` without X and with the others.
 
 ### Note on ADR-0015 Decision 6 (item 5)
 

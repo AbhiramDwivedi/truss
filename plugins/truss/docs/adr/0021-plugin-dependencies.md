@@ -56,7 +56,7 @@ The client accepted this probe in place of the isolated `CLAUDE_CONFIG_DIR` re-p
 "kit is loaded" means a `kit:` skill is among the session's skills.
 
 - **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json:5-7`) stand.
-- **Factory.** `rolesWithTypes` (`bin/factory.ts:305-318`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
+- **Factory.** `rolesWithTypes` (`bin/factory/shared.ts`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
 - **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts:9-13` pins today.
 - **Init, kit absent.** The kit-absent line stays word for word, because truss loaded alone by `--plugin-dir` still reaches it: `kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)`.
 
@@ -90,13 +90,13 @@ Decided by: the plan, item 5 and item 1's missing-report finding (approved auto,
 
 ### 6. Restart events in events.jsonl
 
-`finish` (`recordRun`, `bin/factory.ts:1276-1336`) appends one `restart` event to `events.jsonl` per restarted member, naming crew, label, n and reason. It learns of restarts from the run's journal, the only place they show (Seams to pin).
+`finish` (`recordRun`, `bin/factory/audit.ts`) appends one `restart` event to `events.jsonl` per restarted member, naming crew, label, n and reason. It learns of restarts from the run's journal, the only place they show (Seams to pin).
 
 Decided by: the plan, item 5; PO ruling F (15:10) for the event shape.
 
 ### 7. finish removes its own run's merged wf_* worktrees
 
-When `finish --transcript T` merges a crew, step 5 (`bin/factory.ts:1489-1500`) already removes the crew's `truss-<slug>-*` member worktrees whose branch is an ancestor of the crew branch. It now also removes the Workflow worktrees of run `T`:
+When `finish --transcript T` merges a crew, step 5 (`bin/factory/finish.ts` `mergeCrew`) already removes the crew's `truss-<slug>-*` member worktrees whose branch is an ancestor of the crew branch. It now also removes the Workflow worktrees of run `T`:
 
 - Only worktrees whose branch is exactly `worktree-<basename of --transcript>-<digits>` and whose path ends `<basename of --transcript>-<digits>`. The basename is already `wf_<id>`, so the branch is `worktree-wf_<id>-<n>`.
 - `git worktree remove` without `--force`, so a dirty worktree stays.

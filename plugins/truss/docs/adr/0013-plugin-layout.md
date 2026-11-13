@@ -21,7 +21,7 @@ Today:
 - The repo has no catalog. README.md:16-17 tells users to install from claude-ops: `claude plugin marketplace add AbhiramDwivedi/claude-ops` and `claude plugin install truss@claude-ops`.
 - `.claude/truss.json` points at `docs/architecture.md` and `docs/adr`.
 
-Every ADR in the ADR dir reaches each later crew: `cmdStart()` in `bin/factory.ts:779-780` lists every `<arch dir>/adr/*.md` into the crew's start context. That is why this ADR opens with a line that says whether the move is done.
+Every ADR in the ADR dir reaches each later crew: `cmdStart()` in `bin/factory/start.ts` lists every `<arch dir>/adr/*.md` into the crew's start context. That is why this ADR opens with a line that says whether the move is done.
 
 ## The client's rulings
 
@@ -82,7 +82,7 @@ main has **no root `.claude-plugin/`**. If the default-branch flip were ever und
 The plugin moves as one directory, so every path the code resolves from the plugin's own location still resolves after the move:
 
 - `pluginDirOf()` in `hooks/register.ts:1145` returns the parent of the hooks module's directory;
-- `const PLUGIN` in `bin/factory.ts:32` is two directories above `bin/factory.ts`, and `bin/factory.ts:331` passes `${PLUGIN}/docs/plan.schema.json` as the plan schema;
+- `const PLUGIN` in `bin/factory/shared.ts` is two directories above `bin/factory.ts`, and `bin/factory/plan.ts` `cmdPlanArgs` passes `${PLUGIN}/docs/plan.schema.json` as the plan schema;
 - `skills/retro/SKILL.md:16` finds `${CLAUDE_PLUGIN_ROOT}/scripts/retro.py`, or `scripts/retro.py` two directories above the skill;
 - `agents/design-engineer.md:78` finds the schema at `<principles skill base dir>/../../docs/plan.schema.json`;
 - `workflowCallVerdict` in `hooks/register.ts:710` matches `${dir}/workflows/plan.js` and `${dir}/workflows/stage.js` (`:722-723`), and `hooks/register.ts:2021` reads both from `${pluginDir}/workflows/`.

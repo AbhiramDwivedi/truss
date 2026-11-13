@@ -114,7 +114,7 @@ Every `why` starts with `budget:`.
 
 `ledgerAppend(repo, row)` (`bin/ledger.ts:9`) appends one JSON line to `<git common dir>/truss/shared/ledger.jsonl` (`store.ts:131`) under the store lock `ledger`, through `appendJsonl` (`store.ts:360`). There is no update and no delete: no `track` command and no `settleDays`. Earlier rows are never rewritten.
 
-`mergeCrew` writes one row per merge, through `finish` or `land`, after the merge is final (`factory.ts:2998-3004`):
+`mergeCrew` writes one row per merge, through `finish` or `land`, after the merge is final (`factory/finish.ts`):
 
 ```
 {v: 1, ts, kind: "merge", session, crew, goal, workType|null, process, qc, red, target, base, head, costUsd|null, costWhy?}

@@ -66,7 +66,7 @@ The contract named `declares()` for the dependency rule. The code reads the four
 
 ### The plan gate
 
-`factory plan-write` collects the results of every `truss-designer*` and `truss-checker*` agent in the plan run and calls `ltcPlan` before it writes `plan.json`, so a guard that throws leaves no plan for `approve` to pass (`bin/factory.ts:454-462`). The revision `rev` is `sha12` of the designer's result text (`bin/factory.ts:428`, `462`). plan-write adds `longTermCosts: ids` to its output (`bin/factory.ts:467`).
+`factory plan-write` collects the results of every `truss-designer*` and `truss-checker*` agent in the plan run and calls `ltcPlan` before it writes `plan.json`, so a guard that throws leaves no plan for `approve` to pass (`bin/factory/plan.ts` `cmdPlanWrite`). The revision `rev` is `sha12` of the designer's result text (`bin/factory/plan.ts` `cmdPlanWrite`, `462`). plan-write adds `longTermCosts: ids` to its output (`bin/factory/plan.ts` `cmdPlanWrite`).
 
 `ltcPlan(repo, dir, texts, rev)` (`bin/guard.ts:118-136`):
 
@@ -80,15 +80,15 @@ Because `rev` changes when the designer's result changes, a re-plan escalates un
 
 ### The crew gate
 
-`mergeCrew` runs the crew gate in step 1, for every crew it merges, through both `factory land` (`bin/factory.ts:3105`) and `factory finish` (`bin/factory.ts:3208`), at `bin/factory.ts:2965-2972`. It passes:
+`mergeCrew` runs the crew gate in step 1, for every crew it merges, through both `factory land` (`bin/factory/finish.ts`) and `factory finish` (`bin/factory/finish.ts`), at `bin/factory/finish.ts`. It passes:
 
 - `qcText`: the newest QC report of the crew since the run started, or `null` when there is none;
 - `base`: `git merge-base refs/heads/<target> refs/heads/truss-<slug>`;
 - `head`: `git rev-parse --verify refs/heads/truss-<slug>`.
 
-When either git call fails or prints nothing, the merge is refused with `long-term cost gate: git … failed` (`bin/factory.ts:2967-2970`), rather than handing the gate an empty range and no triggers.
+When either git call fails or prints nothing, the merge is refused with `long-term cost gate: git … failed` (`bin/factory/finish.ts` `mergeCrew`), rather than handing the gate an empty range and no triggers.
 
-`ltcCrewGate(repo, dir, slug, {qcText, base, head})` (`bin/guard.ts:156-166`) takes the QC's `costly` and `irreversible` lines plus every trigger, and escalates each as a blocking item linked to the crew, with ref `ltc:<sid>:<slug>:<sha12(what)>`. It returns `{refused: "long-term-cost: E-…, E-…"}` until every one of those items is resolved `approve`, and `{}` after that. The merge step returns the refusal as the crew's outcome (`bin/factory.ts:2972`). A `cheap` QC line is dropped here: it neither blocks nor logs (case "a cheap QC line does not block").
+`ltcCrewGate(repo, dir, slug, {qcText, base, head})` (`bin/guard.ts:156-166`) takes the QC's `costly` and `irreversible` lines plus every trigger, and escalates each as a blocking item linked to the crew, with ref `ltc:<sid>:<slug>:<sha12(what)>`. It returns `{refused: "long-term-cost: E-…, E-…"}` until every one of those items is resolved `approve`, and `{}` after that. The merge step returns the refusal as the crew's outcome (`bin/factory/finish.ts` `mergeCrew`). A `cheap` QC line is dropped here: it neither blocks nor logs (case "a cheap QC line does not block").
 
 ### Reuse of an existing item
 
