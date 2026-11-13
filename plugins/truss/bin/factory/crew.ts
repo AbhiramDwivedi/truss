@@ -2,12 +2,16 @@
 // bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { configOf, isObj, need, refuse, repoPathOf, usage, withLock } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { configOf, isObj, need, refuse, repoPathOf, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { withLock } from '../lock.ts'
 import { concludeFrontmatterMerge, docOfFragment } from '../fragments.ts'
 import { knowledgeShas } from './decisions.ts'
 import { gateGit, knowledgeConfigRefusal, preMergeOf } from './knowledge-cmds.ts'
-import { appendDecision, baseOf, crewWorktree, dirOf, docKeysOf, gitOrFail, knowledgeCfgOf, loadPlan, patchPlan, repoOf, run, savePlan, settingsOf } from './shared.ts'
+import { baseOf, crewWorktree, dirOf, gitOrFail, repoOf, run } from './cli.ts'
+import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
+import { docKeysOf, knowledgeCfgOf, settingsOf } from './settings.ts'
+import { appendDecision } from './log.ts'
 
 // The existing crew worktree for --slug, and the repo and target it belongs to.
 function crewCtx(f: Flags): { dir: string; repo: string; slug: string; wt: string; target: string } {

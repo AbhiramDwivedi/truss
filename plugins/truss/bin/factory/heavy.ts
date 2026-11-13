@@ -4,11 +4,11 @@ import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { CliError, flat, isObj, need, readText, usage } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { CliError, flat, isObj, need, readText, usage } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { groupAlive, releaseHeavySlot } from '../../resources/index.ts'
-import { acquireSlot, explicitWaitMs, GROUPS, pidAlive, recordHeavyTime, slotsAt, slotWaitMs } from './resources.ts'
-import { dirOf, FACTORY, parseFlags, run } from './shared.ts'
+import { acquireSlot, explicitWaitMs, GROUPS, pidAlive, recordHeavyTime, slotsAt, slotWaitMs } from './slot.ts'
+import { dirOf, FACTORY, parseFlags, run } from './cli.ts'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
