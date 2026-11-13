@@ -159,19 +159,26 @@ function checkTests(f: Flags, dir: string, slug: string, cwd: string): { exit: n
     return { exit, text, tests }
   }
   if (sel.full === undefined) return { exit: 0, text: '\nno full-suite command is known (set targetedTests.full)\n', tests: { ...tests, why: [...sel.why, 'no full-suite command is known (set targetedTests.full)'] } }
+  const r = suiteRun(f, dir, slug, cwd, sel.full)
+  return r.slot !== undefined ? { exit: 1, text: '', tests, slot: r.slot } : { exit: r.exit, text: `\n$ ${sel.full}\n${r.text}`, tests }
+}
+
+// A full-suite run inside the heavy slot (0.31.0 item 2): takes the slot for exactly its own run, then records its time for
+// slotWaitMs. A slot not free within heavyWaitMs comes back as `slot: {ran: false}` and nothing runs.
+function suiteRun(f: Flags, dir: string, slug: string, cwd: string, command: string): { exit: number; text: string; slot?: Obj } {
   const limit = heavyWaitMs(f, process.env, dir)
   const label = `${slug}-check`
   const a = acquireSlot(dir, { label, slug }, slotsAt(cwd), limit)
-  if (a.token === null) return { exit: 1, text: '', tests, slot: { ran: false, waitedMs: a.waitedMs, waitLimitMs: limit, why: `waited ${a.waitedMs} ms (limit ${limit} ms) for the heavy slot and free memory` } }
+  if (a.token === null) return { exit: 1, text: '', slot: { ran: false, waitedMs: a.waitedMs, waitLimitMs: limit, why: `waited ${a.waitedMs} ms (limit ${limit} ms) for the heavy slot and free memory` } }
   const t1 = Date.now()
   let r: { exit: number; text: string }
   try {
-    r = bashRun(cwd, sel.full)
+    r = bashRun(cwd, command)
   } finally {
     releaseHeavySlot(dir, a.token)
   }
   recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
-  return { exit: r.exit, text: `\n$ ${sel.full}\n${r.text}`, tests }
+  return r
 }
 
 export function cmdCheck(f: Flags): Obj {
@@ -184,17 +191,19 @@ export function cmdCheck(f: Flags): Obj {
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
   if (typeof crew.acceptanceTest !== 'string' || crew.acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
   // 0.31.0 item 1: a trailing whole-suite step (`&& npm test`) is cut; the green check adds the targeted set itself. An acceptance
-  // test that is nothing but the suite stays as it is.
+  // test that is nothing but the suite stays as it is, and since it is the whole suite it runs inside the heavy slot (suiteRun,
+  // item 2); its green run is then the full suite already, so no tests are added after it.
   const cut = stripBlanketSuite(crew.acceptanceTest)
-  const command = cut.blanket && cut.command.trim() !== '' ? cut.command : crew.acceptanceTest
+  const suiteOnly = cut.blanket && cut.command.trim() === ''
+  const command = cut.blanket && !suiteOnly ? cut.command : crew.acceptanceTest
   // a failed install goes into the check text, so the env catalog sees it
   const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
-  const acc = bashRun(cwd, command)
+  const acc = suiteOnly ? suiteRun(f, dir, slug, cwd, command) : bashRun(cwd, command)
   let exit = acc.exit
   let text = installs.map((i) => `npm ci failed in ${i.dir} (exit ${i.status}):\n${i.output}\n`).join('') + acc.text
-  let tests: Obj | undefined
-  let slot: Obj | undefined
-  if (expect === 'green' && exit === 0) {
+  let tests: Obj | undefined = suiteOnly ? { mode: 'full', why: ['the acceptance test is the full suite'], files: [], commands: [command] } : undefined
+  let slot: Obj | undefined = 'slot' in acc ? acc.slot : undefined
+  if (expect === 'green' && exit === 0 && !suiteOnly) {
     const t = checkTests(f, dir, slug, cwd)
     exit = t.exit
     text += t.text

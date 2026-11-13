@@ -1,13 +1,14 @@
 // The decide and goal-check commands. Moved unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose
 // top-level await would make an import cycle.
 import path from 'node:path'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { commonDir, flat, isObj, refuse, str, usage } from '../store.ts'
+import { CliError, commonDir, flat, isObj, refuse, str, usage } from '../store.ts'
 import type { Flags, Obj } from '../store.ts'
 import { localTime } from '../../hooks/register.ts'
-import { appendDecision, appendDecisionLine, dirOf, gitOrFail, loadPlan, repoOf, run, settingsOf } from './shared.ts'
+import { appendDecision, appendDecisionLine, dirOf, FACTORY, gitOrFail, loadPlan, parseFlags, repoOf, run, settingsOf } from './shared.ts'
+import { heavyMain } from './heavy.ts'
 
 // ==== decide ====
 
@@ -75,46 +76,8 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   appendDecisionLine(dir, line)
   return { ok: true, form, line }
 }
-// The goalCheck time limit: 10 minutes, or TRUSS_GOALCHECK_TIMEOUT_MS (a positive integer) when set.
-export function goalCheckLimitMs(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.TRUSS_GOALCHECK_TIMEOUT_MS)
-  return Number.isInteger(n) && n > 0 ? n : 600000
-}
-// goalCheckSupervisor: argv = command, cwd, limit ms. Runs `bash -c command`, keeps the last 4000 characters of its output and, at
-// the limit, kills the whole process tree: the child leads its own process group on POSIX (kill -pid), and on Windows
-// `taskkill /T /F` ends the tree. Prints one JSON line {status, timedOut, tail}.
-const GOALCHECK_SUPERVISOR = `
-const { spawn, spawnSync } = require('node:child_process')
-const [command, cwd, limit] = process.argv.slice(1)
-const win = process.platform === 'win32'
-const c = spawn('bash', ['-c', command], { cwd, detached: !win, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
-let tail = ''
-let timedOut = false
-let done = false
-const add = (b) => { tail = (tail + b).slice(-4000) }
-c.stdout.on('data', add)
-c.stderr.on('data', add)
-const killTree = () => {
-  try {
-    if (win) spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true })
-    else process.kill(-c.pid, 'SIGKILL')
-  } catch {}
-}
-const timer = setTimeout(() => { timedOut = true; killTree() }, Number(limit))
-const finish = (status) => {
-  if (done) return
-  done = true
-  clearTimeout(timer)
-  if (!timedOut) killTree()
-  console.log(JSON.stringify({ status, timedOut, tail }))
-  process.exit(0)
-}
-c.on('error', (e) => { add(e.message + '\\n'); finish(1) })
-c.on('exit', (code) => { setTimeout(() => finish(code === null ? 1 : code), timedOut ? 0 : 50) })
-`
-// `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head in a temporary detached
-// worktree, never in the main checkout, and never pushes or moves a branch. One JSON line, one decision line, ok or not.
-export function cmdGoalCheck(f: Flags): Obj {
+// The goalCheck command a plan names, its label, and the target's commit. Refuses (exit 2) when the plan or goal has no goalCheck.
+function goalCheckOf(f: Flags): { dir: string; repo: string; goalId: string | undefined; command: string; label: string; target: string; sha: string } {
   const dir = dirOf(f)
   const repo = repoOf(f)
   const plan = loadPlan(dir)
@@ -127,42 +90,70 @@ export function cmdGoalCheck(f: Flags): Obj {
   }
   if (typeof command !== 'string' || command.trim() === '') throw usage(goalId === undefined ? 'the plan has no goalCheck' : `goal ${goalId} has no goalCheck`)
   const target = settingsOf(repo).target
-  const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${target}^{commit}`])
+  const at = str(f, 'at')
+  const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${at ?? target}^{commit}`])
+  return { dir, repo, goalId, command, label: goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`, target, sha }
+}
+
+// `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head. A goalCheck is a suite
+// run, so it goes through the heavy background job (heavyMain, the path green's full suite takes): detached, holding a heavy slot,
+// with the slot wait scaled by slotWaitMs, and the caller waits at most HEAVY_ATTACH_MS, under the 600 s Bash limit (0.31.0 item 1).
+// A wait that runs out prints `goalCheck still running after N s` and leaves the job running; the same line, run again, collects
+// its result. Truss kills nothing: a job left behind is stopped by Claude Code's TaskStop. One JSON line, ok or not.
+export async function goalCheckMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  let g: ReturnType<typeof goalCheckOf>
+  try {
+    g = goalCheckOf(parseFlags(argv))
+  } catch (e) {
+    if (e instanceof CliError) return { body: e.body, code: e.code }
+    return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
+  const slug = g.goalId === undefined ? 'goalcheck' : `goalcheck-${g.goalId}`
+  const inner = [process.execPath, ...process.execArgv, FACTORY, 'goal-check-job', '--dir', g.dir, '--repo', g.repo, '--at', g.sha, ...(g.goalId === undefined ? [] : ['--goal', g.goalId])]
+  const r = await heavyMain(['--dir', g.dir, '--repo', g.repo, '--slug', slug, '--label', slug, '--cwd', g.repo, '--', ...inner])
+  const h = isObj(r.body.heavy) ? r.body.heavy : {}
+  const base = { ok: false, goal: g.goalId ?? null, target: g.target, head: g.sha }
+  if (h.pending === true) {
+    const s = Math.round(Number(h.ageMs ?? h.waitedMs ?? 0) / 1000)
+    return { body: { ...base, pending: true, job: h.job, error: `${g.label} still running after ${s} s; run the same goal-check again to wait for its result` }, code: 1 }
+  }
+  if (h.ran === false) return { body: { ...base, error: `${g.label} did not run: ${String(h.why)}` }, code: 1 }
+  const { heavy: _, ...rest } = r.body
+  return { body: rest, code: r.code }
+}
+
+// `goal-check-job --dir D --repo R --at SHA [--goal ID]` (internal, the heavy job goalCheckMain starts): runs the goalCheck with
+// `bash -c` in a temporary detached worktree at SHA, never in the main checkout, removes the worktree, and logs one decision line.
+// It never pushes or moves a branch, and has no time limit of its own: the heavy job runs it in the background.
+export function cmdGoalCheckJob(f: Flags): Obj {
+  if (str(f, 'at') === undefined) throw usage('goal-check-job needs --at <sha>; run goal-check instead')
+  const { dir, repo, goalId, command, label, target, sha } = goalCheckOf(f)
   const wt = flat(path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'truss-goalcheck-'))), 'wt'))
-  const label = goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`
+  const out = `${path.dirname(wt)}/out.txt`
   let status = 1
   let tail = ''
   let added = false
-  let timedOut = false
   try {
     gitOrFail(repo, ['-c', 'core.quotepath=off', 'worktree', 'add', '-q', '--detach', wt, sha])
     added = true
-    const limit = goalCheckLimitMs()
-    // the check runs under a small node supervisor (goalCheckSupervisor), so the whole process tree can be killed at the limit
-    const r = spawnSync(process.execPath, ['-e', GOALCHECK_SUPERVISOR, command, wt, String(limit)], { encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: limit + 30000 })
-    let v: Obj | undefined
+    // a goal-check started under node --test must not hand NODE_TEST_CONTEXT to a node --test the check runs (it would skip every file)
+    const { NODE_TEST_CONTEXT: _, ...env } = process.env
+    const fd = openSync(out, 'w')
+    let r: ReturnType<typeof spawnSync>
     try {
-      v = JSON.parse(r.stdout)
-    } catch {}
-    if (v === undefined) {
-      status = 1
-      tail = `${r.error ? `${r.error.message}\n` : ''}${r.stderr ?? ''}`.slice(-4000)
-    } else {
-      status = typeof v.status === 'number' ? v.status : 1
-      tail = String(v.tail ?? '').slice(-4000)
-      if (v.timedOut === true) {
-        timedOut = true
-        status = 1
-      }
+      r = spawnSync('bash', ['-c', command], { cwd: wt, env, stdio: ['ignore', fd, fd], windowsHide: true })
+    } finally {
+      closeSync(fd)
     }
+    status = r.status ?? 1
+    tail = `${readFileSync(out, 'utf8')}${r.error ? `\n${r.error.message}` : ''}`.slice(-4000)
   } finally {
     if (added) run(repo, ['-c', 'core.quotepath=off', 'worktree', 'remove', '--force', wt])
     run(repo, ['-c', 'core.quotepath=off', 'worktree', 'prune'])
     rmSync(path.dirname(wt), { recursive: true, force: true })
   }
-  const error = timedOut ? `${label} timed out after ${Math.round(goalCheckLimitMs() / 1000)} s and was killed` : undefined
-  appendDecision(dir, `${label} ${status === 0 ? 'passed' : timedOut ? `timed out (${Math.round(goalCheckLimitMs() / 1000)} s)` : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
-  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, ...(error ? { error } : {}), output: tail }
+  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
   if (status !== 0) throw refuse(body)
   return body
 }

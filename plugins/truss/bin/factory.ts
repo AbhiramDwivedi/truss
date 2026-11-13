@@ -14,7 +14,7 @@ import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS } from './worktypes.ts'
 import { cmdCheck } from './factory/check.ts'
 import { cmdIntegrate, cmdMarkMerged, cmdOwnsCheck, cmdOwnsExtend, cmdSync, cmdTestsCheck } from './factory/crew.ts'
-import { cmdDecide, cmdGoalCheck } from './factory/decide.ts'
+import { cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
 import { cmdCrewDecision, cmdCrewLearned, cmdDecisionAck, cmdDecisionCheckpoint, cmdDecisionReplies, cmdDecisionReply, cmdDecisions, cmdKnowledgeCommit } from './factory/decisions.ts'
 import { cmdDoctor } from './factory/doctor.ts'
 import { cmdFinish, cmdLand } from './factory/finish.ts'
@@ -47,7 +47,7 @@ export type { GateStep } from './factory/gates.ts'
 export { mergeHeadVerdict } from './factory/finish.ts'
 export { roleAudit, sessionAudit } from './factory/audit.ts'
 export { OLD_WF_BRANCH, OLD_WF_PATH, OLD_WF_IDLE_MS, ARCHIVE_PREFIX, ARCHIVE_KEEP_MS, SCRATCH_DIRS, worktreeChanges } from './factory/retire.ts'
-export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheck } from './factory/decide.ts'
+export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
 
 // ==== main ====
 
@@ -57,12 +57,15 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check': cmdGoalCheck, 'persona-install': cmdPersonaInstall,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
   gates: () => {
     throw usage('gates is async: run it from the command line')
+  },
+  'goal-check': () => {
+    throw usage('goal-check is async: run it from the command line')
   },
 }
 // A plugin module's command key never replaces a core command or another module's: main refuses and names the keys.
@@ -137,7 +140,8 @@ const isMain = ((): boolean => {
   }
 })()
 // ADR-0022 U5 (item 22): the `truss-status: <short JSON>` line `--status-line` adds after the result. It holds only the
-// booleans ok, merged and admitted, head as a string, env cut to 200 characters, ran from heavy.ran, and pending from heavy.pending.
+// booleans ok, merged and admitted, head as a string, env cut to 200 characters, ran from heavy.ran, and pending (with ageMs and
+// budgetMs) from heavy.
 export function statusLine(body: Obj): string {
   const s: Obj = {}
   for (const k of ['ok', 'merged', 'admitted', 'checkpoint']) if (typeof body[k] === 'boolean') s[k] = body[k]
@@ -145,7 +149,11 @@ export function statusLine(body: Obj): string {
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
   // 0.31.0 item 2: a heavy run still going in the background, which the same line collects when run again
-  if (isObj(body.heavy) && body.heavy.pending === true) s.pending = true
+  // with the job's age and give-up budget (heavyMain), which stage.js polls against
+  if (isObj(body.heavy) && body.heavy.pending === true) {
+    s.pending = true
+    for (const k of ['ageMs', 'budgetMs']) if (typeof body.heavy[k] === 'number') s[k] = body.heavy[k]
+  }
   // ADR-0046 item 1: a gates result also carries each step's met and the step that stopped it
   if (isObj(body.gates)) {
     s.gates = Object.fromEntries(Object.entries(body.gates).filter(([, v]) => typeof v === 'boolean'))
@@ -182,7 +190,7 @@ if (isMain) {
   const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : main(argv)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
