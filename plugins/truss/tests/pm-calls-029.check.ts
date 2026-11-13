@@ -364,6 +364,23 @@ for (const kind of ['pm-question', 'scope-change']) {
   })
 }
 
+// ---- an answer the crew already used must not answer a later, unrelated fix member (ADR-0047 "one item answers one member", R-86)
+
+t('a resolved item the crew already used answers no later fix member on a later resume', async () => {
+  const row = { id: ITEM_ID, ts: '2026-11-12T12:30:00.000Z', kind: 'pm-question', session: 'sess-1', crews: ['a'], ref: 'crew-call:a:green', blocking: true, title: 'Product call for a', state: 'resolved', applied: false, decision: 'answer', by: 'pm', note: 'OLD-ANSWER: drop the legacy CSV column' }
+  const runner = async ({ cmd, key, prompt, n }) => {
+    if (cmd === 'inbox') return rj({ items: /--kind(?:\s+|=)pm-question\b/.test(prompt) ? [row] : [], open: 0 })
+    if (cmd === 'decisions') return rj({ decisions: [{ id: 'd1', question: `Product call for a (inbox item ${ITEM_ID})`, answer: row.note, by: 'program-manager' }] })
+    if (key === 'check:green') return n === 0 ? rj({ ok: false, tail: 'timezone case fails' }, 1) : undefined
+    return undefined
+  }
+  const r = await runStages([entryOf('a', { resume: 'stale', tasks: [TT, TF, TD], done: ['write-tests', 'build-export', 'write-docs'] })], { labels: labelsOf('a', { 'a-builder': done('feat/fix') }), runner })
+  const fix = r.calls.filter((c) => /^a-builder(-\d+)?$/.test(String(c.label)))
+  assert.ok(fix.length >= 1, `a fix builder ran for the timezone failure: ${r.labels.join(',')}`)
+  has(fix[0].prompt, 'timezone case')
+  assert.ok(!fix[0].prompt.includes('OLD-ANSWER'), 'the earlier answer, already used by the crew, is not handed to an unrelated fix member')
+})
+
 // ---- approvedAt makes the crew-call ref unique per run (PM ruling truss-pm5, 2026-11-12)
 
 t('start carries the plan approvedAt in args.truss when it is a string and omits the key otherwise', () => {
