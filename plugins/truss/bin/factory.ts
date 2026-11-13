@@ -235,9 +235,13 @@ export function runsOf(transcriptsDir: string): WfRun[] {
   return readdirSync(root).sort().filter((n) => statSync(`${root}/${n}`).isDirectory()).map((n) => runOf(`${root}/${n}`))
 }
 
-// First and last record timestamp, the model, the request effort and the tool uses of an agent transcript.
-export function transcriptFacts(agentJsonl: string): { firstTs: string | undefined; lastTs: string | undefined; model: string | undefined; effort: string | undefined; tools: { name: string; input: Obj }[] } {
-  const facts = { firstTs: undefined as string | undefined, lastTs: undefined as string | undefined, model: undefined as string | undefined, effort: undefined as string | undefined, tools: [] as { name: string; input: Obj }[] }
+// The model Claude Code writes on an assistant record it made up itself (an API error, an outage): no model ran.
+export const SYNTHETIC_MODEL = '<synthetic>'
+// First and last record timestamp, the model, the request effort and the tool uses of an agent transcript. `model` is the
+// last real model, never SYNTHETIC_MODEL; `synthetic` is true when the transcript has assistant records and every one is synthetic.
+export function transcriptFacts(agentJsonl: string): { firstTs: string | undefined; lastTs: string | undefined; model: string | undefined; effort: string | undefined; tools: { name: string; input: Obj }[]; synthetic: boolean } {
+  const facts = { firstTs: undefined as string | undefined, lastTs: undefined as string | undefined, model: undefined as string | undefined, effort: undefined as string | undefined, tools: [] as { name: string; input: Obj }[], synthetic: false }
+  let fake = 0
   if (!existsSync(agentJsonl)) return facts
   for (const rec of jsonLines(agentJsonl)) {
     if (typeof rec.timestamp === 'string') {
@@ -247,10 +251,12 @@ export function transcriptFacts(agentJsonl: string): { firstTs: string | undefin
     const effort = rec.message?.output_config?.effort ?? rec.output_config?.effort
     if (typeof effort === 'string') facts.effort = effort
     if (rec.type === 'assistant' && isObj(rec.message)) {
-      if (typeof rec.message.model === 'string') facts.model = rec.message.model
+      if (rec.message.model === SYNTHETIC_MODEL) fake++
+      else if (typeof rec.message.model === 'string') facts.model = rec.message.model
       if (Array.isArray(rec.message.content)) for (const c of rec.message.content) if (isObj(c) && c.type === 'tool_use') facts.tools.push({ name: String(c.name), input: isObj(c.input) ? c.input : {} })
     }
   }
+  facts.synthetic = fake > 0 && facts.model === undefined
   return facts
 }
 
@@ -2863,7 +2869,7 @@ export function roleAudit(role: string, agentType: string | undefined, toolNames
 }
 
 // Record step: files each crew agent's result under reports/, appends spawn and report lines (once), and audits every agent of the run.
-function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj): Audit[] {
+function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj, passed?: Audit[]): Audit[] {
   const audits: Audit[] = []
   const events = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
   for (const a of wfRun.agents) {
@@ -2874,7 +2880,8 @@ function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, roles: Obj
     const bad = (why: string): void => void audits.push({ label: a.label, why, ...(slug !== undefined ? { slug } : {}) })
     if (a.meta === undefined || typeof a.meta.model !== 'string' || a.meta.model === '') bad('the meta file has no model')
     const fam = family(facts.model)
-    if (fam !== 'opus' && fam !== 'sonnet') bad(`the transcript model family is ${fam}, not opus or sonnet`)
+    if (facts.synthetic) passed?.push({ label: a.label, why: NO_WORK })
+    else if (fam !== 'opus' && fam !== 'sonnet') bad(`the transcript model family is ${fam}, not opus or sonnet`)
     if (facts.effort === 'max') bad('effort max')
     // ADR-0032: admit --persona and --high put the persona and the wish for effort high on the label's title event. A member
     // that stage.js meant to run at high (a persona, a task effort or a ## Members line) is not an audit finding at high.
@@ -2990,8 +2997,21 @@ function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj
   }
 }
 
+// 0.31.0 item 3: the evidence lines for the transcripts the model audit passes over (no stop on an obvious call).
+const NO_WORK = `no-work transcript: every assistant record has model ${SYNTHETIC_MODEL} (an API error or outage), so no model ran`
+const IN_PROGRESS = 'still in progress: no result and no model yet, and its run wrote within the last 30 minutes; the next finish audits it'
+
+// One decision line `audit passed over <label> | <why>` per entry, once: the evidence line that keeps a passed-over transcript auditable.
+function logPassed(dir: string, passed: Audit[]): void {
+  for (const p of passed) {
+    const line = `audit passed over ${p.label} | ${p.why}`
+    if (!(existsSync(`${dir}/decisions.md`) && readFileSync(`${dir}/decisions.md`, 'utf8').includes(line))) appendDecision(dir, line)
+  }
+}
+
 // Session audit: every Workflow run of the session at or after the run start, in scope as ADR-0009 "finish, session audit" says.
-export function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>): Audit[] {
+// An agent that did no work (NO_WORK) or is still running in another live workflow (IN_PROGRESS) is not an entry; it goes in `passed`.
+export function sessionAudit(dir: string, rootDir: string, thisRunId: string, factorySlugs: Set<string>, waived: Set<string>, passed?: Audit[]): Audit[] {
   const audits: Audit[] = []
   const log = existsSync(`${dir}/decisions.md`) ? readFileSync(`${dir}/decisions.md`, 'utf8') : ''
   const starts = [...log.matchAll(/^## Run (\S+)/gm)].map((m) => Date.parse(m[1] ?? '')).filter((n) => Number.isFinite(n))
@@ -3011,8 +3031,11 @@ export function sessionAudit(dir: string, rootDir: string, thisRunId: string, fa
       if (!trussRun && typeOf(a).startsWith('truss:')) audits.push({ label, why: `${typeOf(a)} agent in a run that is not truss's` })
       if (typeof a.meta?.model !== 'string' || a.meta.model === '') audits.push({ label, why: 'the meta file has no model' })
       else {
-        const fam = family(transcriptFacts(a.transcript).model)
-        if (fam !== 'opus' && fam !== 'sonnet') audits.push({ label, why: `the transcript model family is ${fam}, not opus or sonnet` })
+        const facts = transcriptFacts(a.transcript)
+        const fam = family(facts.model)
+        if (facts.synthetic) passed?.push({ label, why: NO_WORK })
+        else if (facts.model === undefined && !a.hasResult && Date.now() - newestMtime(r.dir) <= STALE_MS) passed?.push({ label, why: IN_PROGRESS })
+        else if (fam !== 'opus' && fam !== 'sonnet') audits.push({ label, why: `the transcript model family is ${fam}, not opus or sonnet` })
       }
     }
   }
@@ -3581,7 +3604,9 @@ function finishRun(f: Flags, held: Map<string, string>): Obj {
     if (!had.includes(what)) appendDecision(dir, what)
   }
 
-  const audits = recordRun(dir, wfRun, factorySlugs, roles)
+  const passed: Audit[] = []
+  const audits = recordRun(dir, wfRun, factorySlugs, roles, passed)
+  logPassed(dir, passed.splice(0))
   for (const a of audits) out.audit.push({ label: a.label, why: a.why })
   recordEscalations(dir, wfRun, inRun, results, plan)
 
@@ -3596,12 +3621,14 @@ function finishRun(f: Flags, held: Map<string, string>): Obj {
 
   // session audit: while an entry stands, nothing merges
   const log = existsSync(`${dir}/decisions.md`) ? readFileSync(`${dir}/decisions.md`, 'utf8') : ''
-  const waived = new Set([...log.matchAll(/^- [^|]*\|\s*audit waived: ([A-Za-z0-9._-]+)/gm)].map((m) => m[1] as string))
-  const stand = sessionAudit(dir, path.dirname(tdir), wfRun.id, new Set(plan.crews.filter((c: Obj) => isObj(c) && factorySpawned(dir, c.slug) !== undefined).map((c: Obj) => c.slug as string)), waived)
+  // a waiver counts only with its evidence: `audit waived: <run id> | <evidence> | ...`, written by the program manager or the client
+  const waived = new Set([...log.matchAll(/^- [^|]*\|\s*audit waived: ([A-Za-z0-9._-]+)\s*\|[^|\n]*[^|\s][^|\n]*\|/gm)].map((m) => m[1] as string))
+  const stand = sessionAudit(dir, path.dirname(tdir), wfRun.id, new Set(plan.crews.filter((c: Obj) => isObj(c) && factorySpawned(dir, c.slug) !== undefined).map((c: Obj) => c.slug as string)), waived, passed)
+  logPassed(dir, passed)
   for (const a of stand) if (!out.audit.some((x) => x.label === a.label && x.why === a.why)) out.audit.push({ label: a.label, why: a.why })
   if (stand.length > 0) {
     const what = `session audit stands, nothing merged: ${stand.map((a) => `${a.label} (${a.why})`).join('; ')}`
-    if (!log.includes(what)) appendDecision(dir, `${what} | the client rules, then a decision line "audit waived: <run id>" or the offending run goes`)
+    if (!log.includes(what)) appendDecision(dir, `${what} | the program manager rules on the evidence: a decision line "audit waived: <run id> | <evidence>" or the offending run goes`)
     for (const c of inRun) out.refused.push({ slug: c.slug, why: 'session audit' })
     return finishWith()
   }
