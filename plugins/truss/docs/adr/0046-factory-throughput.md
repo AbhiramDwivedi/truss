@@ -2,7 +2,7 @@
 
 Status: accepted, 2026-11-12
 Decided by: program manager (auto), resting on the 0.29.0 throughput goal (wave5 `goal-throughput.md`, items 1, 4, 5, 6, 7 and the pricing item)
-Amends: ADR-0009 Decision 4 (step order), ADR-0015 Decision 6 (the reap after each member rides on the next factory call), ADR-0033 (knowledge step order and re-runs), ADR-0022 (UX review now precedes the knowledge step)
+Amends: ADR-0009 Decision 4 (step order), ADR-0015 Decision 3 (the slot count is configurable) and Decision 6 (the reap after each member rides on the next factory call), ADR-0033 (knowledge step order and re-runs), ADR-0022 (UX review now precedes the knowledge step)
 
 ## Context
 
@@ -41,6 +41,12 @@ Each item below records what changed. Items not yet listed here were not done in
 - Same-head skip: `crew.moves` counts merges that changed the crew head (`moved`, from the head `integrate` and `sync` print; a merge that prints none counts as a move). `green`, `scope` (owns-check) and the tests check (`testsGuard`, `testsBackstop`) remember the count they last passed at and skip a re-run while it is unchanged, so a fixer that commits nothing costs no green, no tests check.
 - Measured on the stubbed stage tests (`i1 1`: planner, tester, builder, stress test with one fix, knowledge writer, QC): 32 runner spawns before, 24 after (31 on the code before items 6 and 7).
 
+### Item 4: a configurable heavy slot count
+
+- The slot count is `heavySlots` in `.claude/truss.json` (an integer 1-16, declared in `truss-config.schema.json`), else `TRUSS_HEAVY_SLOTS` (a test seam), else the host default `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` (`defaultHeavySlots` in `resources/index.ts`, from `os.availableParallelism()` and `os.totalmem()`). `heavyMain` in `bin/factory.ts` reads the key from the repo `--cwd` is in (`heavySlotsOf`) and prints it as `heavy.slots`.
+- Slot 1 keeps the lock name `D/resources/heavy.lock/`; slot n > 1 is `D/resources/heavy-<n>.lock/`. `takeHeavySlot(dir, owner, platform, slots)` tries them in order and takes the first free one, with the same stale-lock takeover per slot (ADR-0015 Decision 3). `releaseHeavySlot` removes the one lock whose `owner.json` holds the token, whichever slot it is. The default `slots` is 1, so a caller that passes none keeps the one slot.
+- Not done: running the load case once per stage. Truss cannot tell a project's load case from its other checks; the same-head skip (item 1) is the only saving here.
+
 ### Pricing: the Claude 5.5 family
 
 - The plugin still writes no price (ADR-0038 section 3). This repo's own `.claude/truss.json` gains `pricing` for `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5`, from the claude-api skill's pricing page read 2026-11-12. Every rate there is published; none is derived.
@@ -52,4 +58,5 @@ Each item below records what changed. Items not yet listed here were not done in
 - The repo's prices go stale when Anthropic changes them; the client re-reads the pricing page and edits `.claude/truss.json`. A future model with both a fast mode and a long-context tier would need `fast.longContext`, which the schema does not allow yet.
 - Items 6 and 7 cost spawns: one more writer (Sonnet, `medium`) and one more green per QC fix round on a crew whose step ran, and up to two writers and two greens per QC round whose lint fails. The bound keeps a writer that cannot satisfy the lint from looping; QC still fails the crew on what is left. UX review now also comes before the knowledge step, so the writer documents the reviewed screens.
 - Item 1 delays the reap after a member until the crew's next factory call, so a member's orphaned `<slug>-check` processes can live a little longer (through a PO or judge spawn, which make no factory call). The same-head skip trusts the head `integrate` and `sync` print; a merge that prints none counts as a move, so the skip fails safe.
-- Tests: `plugins/truss/tests/throughput-029.check.ts` (`i5 *`, `i1 3`, `pricing *`), `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`, `i6 *`, `i7 *`); `crew-knowledge.check.ts` knowledge 6, knowledge 22 and replies 9 now pin the new order and re-run; `stage-resources.check.ts` (crew-end reap, failed reap logged, admit title) and `stage-resources-contract.check.ts` (reap after each member) pin the folded reap.
+- Item 4 lets up to `heavySlots` red and green checks run at once; on a host whose memory or CPU the default over-reads (a shared box), the client sets `heavySlots: 1`. The free-memory gate still applies to every slot. Slots are not FIFO, as before.
+- Tests: `plugins/truss/tests/throughput-029.check.ts` (`i5 *`, `i1 3`, `i4 *`, `pricing *`), `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`, `i6 *`, `i7 *`); `crew-knowledge.check.ts` knowledge 6, knowledge 22 and replies 9 now pin the new order and re-run; `stage-resources.check.ts` (crew-end reap, failed reap logged, admit title) and `stage-resources-contract.check.ts` (reap after each member) pin the folded reap.

@@ -194,6 +194,7 @@ Every key but `architecture` and `adr` is optional, and leaving a 0.4.0 key out 
 | `architecture` | `docs/architecture.md` | Path of the architecture doc. |
 | `adr` | `docs/adr` | Directory of the ADRs. |
 | `maxParallelCrews` | `4` | The most crews running at once within a stage. |
+| `heavySlots` | `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` | How many red and green checks (`factory heavy`) run at once across the session (1-16). |
 | `merge` | `sequential` | Merge mode of every run; the PM never asks. `single` also puts every crew on the project manager path. |
 | `target` | the current branch | Target branch of every run; the PM never asks. |
 | `roles` | picked from the session's agent types, as in 0.3.0 | Which agent type does each job: `build`, `test`, `review`, `search`, `docs` or `deploy`, mapped to a full type such as `kit:builder`. The PM uses a listed type when the session can start it. The QC engineer, checking engineer, project manager and design engineer are always Truss's own and can't be mapped. |

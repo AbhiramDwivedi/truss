@@ -106,7 +106,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: `integrate` refuses a non-merge member commit with no Truss trailers unless the target already holds it, and fails closed (a `why` saying trailers are unchecked) when `git log` cannot read the range; `stage.js` `integrateNow` stops BLOCKED on a refusal with a `why` and no `conflicts`, and sends an `inProgress` refusal to the resolver. A `truss-status: {}` line with no fields falls back to the stdout JSON for `met`. The merge gate refuses a non-local target branch with the fix. `check()` in `stage.js` re-waits a busy heavy slot 3 rounds (about 27 min), then stops BLOCKED; `releaseHeavySlot` retries on win32.
 - Entry points: `plugins/truss/bin/factory.ts` (`untrailered`, `mergeCrew`), `plugins/truss/workflows/stage.js` (`check`, `HEAVY_WAIT_ROUNDS`), `plugins/truss/resources/index.ts`, `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node` (bin, resources), `truss-workflow-scripts` (stage.js).
-- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "One heavy slot").
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "Heavy slots").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
 
 ## Resume answers carry forward
@@ -129,6 +129,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/workflows/stage.js` (`runFactory`, `ask`, `reap`, `moved`, `unmoved`, `passedAt`, `green`, `scope`, `testsGuard`, `testsBackstop`), `plugins/truss/bin/factory.ts` (`takeReapFlag`, `reapFirst`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`), `plugins/truss/tests/throughput-029.check.ts` (`i1 3`).
 - Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 1, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 6.
+
+## Configurable heavy slot count
+
+- What: up to `heavySlots` red and green checks (`factory heavy`) run at once across the session. The count is the `.claude/truss.json` key `heavySlots` (1-16), else `TRUSS_HEAVY_SLOTS`, else `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` from the host. Slot 1 is `resources/heavy.lock/`, slot n is `resources/heavy-<n>.lock/`; `heavy` takes the first free slot and prints the count as `heavy.slots`.
+- Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavySlotsOf`), `plugins/truss/resources/index.ts` (`defaultHeavySlots`, `takeHeavySlot`, `releaseHeavySlot`), `plugins/truss/docs/truss-config.schema.json` (`heavySlots`); tests `plugins/truss/tests/throughput-029.check.ts` (`i4 *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 4, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 3, [architecture](../plugins/truss/docs/architecture.md) ("Heavy slots").
 
 ## Long-context price tier (Claude 5.5 prices)
 

@@ -1039,7 +1039,12 @@ t('stage tests: tests-check runs with --slug after owns-check and before every q
   has(r.calls.find((c) => c.runner?.cmd === 'tests-check').prompt, 'tests-check --slug a')
   // bug 28: the fix builder's own backstop run carries a Backstop: line; the guard runs carry none
   const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check' && !c.prompt.includes('Backstop:'))
-  assert.equal(runs.length, 2, 'once before each qc, so a fix builder\'s commits are checked too')
+  // ADR-0046 item 1: the fix builder's backstop run passed on the head qc-2 sees, so the guard before qc-2 is skipped
+  // (same-head skip); the fix builder's commits are still checked, by the backstop run
+  assert.equal(runs.length, 1, 'the guard runs before the first qc; the backstop pass serves the second')
+  const all = r.calls.filter((c) => c.runner?.cmd === 'tests-check')
+  assert.equal(all.length, 2, 'the fix builder\'s commits are checked too')
+  assert.ok(all[1].prompt.includes('Backstop:'))
   assert.ok(idx(r, 'end:runner:a:owns-check') < idx(r, 'start:runner:a:tests-check'))
   assert.ok(idx(r, 'end:runner:a:tests-check') < idx(r, 'start:a-qc'))
 })

@@ -174,4 +174,4 @@ Show the client each proposed key with its value and where it came from, and ask
 2. Tell the client the files are not committed. Crews work in git worktrees, which see only committed files, so a truss run needs these files committed before its crews start.
 3. Stop. Don't commit. When a truss run called this skill, the run skill says what happens next; otherwise don't start a run.
 
-The client can then edit the doc, or add the optional keys to `.claude/truss.json` by hand. Each has a default: `maxParallelCrews` 4, `merge` `sequential`, `target` the current branch. A 0.4.0 key left out keeps 0.3.0 behaviour.
+The client can then edit the doc, or add the optional keys to `.claude/truss.json` by hand. Each has a default: `maxParallelCrews` 4, `heavySlots` sized from the host (1 to 4), `merge` `sequential`, `target` the current branch. A 0.4.0 key left out keeps 0.3.0 behaviour.

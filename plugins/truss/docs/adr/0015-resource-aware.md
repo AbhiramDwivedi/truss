@@ -2,7 +2,7 @@
 
 Status: proposed, 2026-10-31. Written by the design crew `resource-design` (stage 0 of goal `resource-aware`). It becomes accepted when the program manager (PM) merges this crew. The goal's approval is `auto`. It is a PO fix under the client's 05:05 product-owner ruling, triaged by checker-20, and its plan is revision 4 (`plan-resource-aware.md` in the truss dir). This is truss's ADR-0015. It is not [claude-ops ADR-0015](claude-ops/0015-agent-worktree-cleanup.md), the worktree-cleanup record that the architecture doc cites as "ADR-0015 item 9" and "item 11".
 
-Amended by [ADR-0046](0046-factory-throughput.md) item 1 (2026-11-12): the reap after each member (Decision 6) runs inside the crew's next factory call (`--reap-first <slug>`), not as a runner spawn of its own; the crew's end still reaps alone.
+Amended by [ADR-0046](0046-factory-throughput.md) item 1 (2026-11-12): the reap after each member (Decision 6) runs inside the crew's next factory call (`--reap-first <slug>`), not as a runner spawn of its own; the crew's end still reaps alone. Item 4: the one heavy slot (Decision 3) becomes `heavySlots` slots (truss.json, default sized from the host); slot 1 is still `heavy.lock`, slot n is `heavy-<n>.lock`.
 
 Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): `admit` in `stage.js` fails closed, so a runner result that isn't JSON or has no boolean `admitted` stops the crew BLOCKED. G7 survives: a sampler error still admits with `freeMB: null`.
 
