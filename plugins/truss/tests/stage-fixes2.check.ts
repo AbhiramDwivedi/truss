@@ -64,7 +64,7 @@ async function exec(file, args, o = {}) {
         const cut = mh[1].indexOf(' -- ')
         m = cut >= 0 ? mh[1].slice(cut + 4).match(/factory\.ts\s+(check|integrate|owns-check|tests-check|sync)\b([^\n`]*)/) : null
       } else {
-        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions)\b([^\n`]*)/)
+        m = prompt.match(/factory\.ts\s+(admit|reap|check|integrate|owns-check|tests-check|sync|decision-checkpoint|crew-learned|knowledge-commit|knowledge-lint|decision-ack|decisions|inbox|escalate)\b([^\n`]*)/)
       }
       if (!m) {
         unscripted.push(`${opts.label} (no factory.ts command in prompt)`)
