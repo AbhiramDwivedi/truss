@@ -436,7 +436,14 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
     if (r.parsed.budget === true) throw new Stop('BLOCKED', `BLOCKED: budget: ${why}`, at)
-    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
+    if (r.parsed.awaiting === true) {
+      // factory words every open blocking item as "awaiting client:", whatever its kind; a pm-question is the program manager's to answer
+      const id = (/^awaiting client: (\S+)/.exec(why) ?? [])[1]
+      await (crew.callsRead ??= restoreCalls(crew))
+      const row = id ? Object.values(crew.calls).find((c) => c && c.id === id && c.kind === 'pm-question') : null
+      if (row) throw holdStop(row, oneLine(row.title), '', at)
+      throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
+    }
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
 }
@@ -1204,7 +1211,9 @@ async function restoreCalls(crew) {
       for (const row of await callRows(crew, kind)) {
         const at = callAt(crew, row.ref)
         const was = crew.calls[at]
-        if (at && !(was && was.state === 'open' && row.state !== 'open')) crew.calls[at] = row
+        // later over earlier is by the time each item was opened (row.ts), not by kind order
+        const older = was && Date.parse(row.ts) < Date.parse(was.ts)
+        if (at && !(was && was.state === 'open' && row.state !== 'open') && !(older && !(was.state !== 'open' && row.state === 'open'))) crew.calls[at] = row
       }
     } catch (err) {
       if (err instanceof Stop) throw err
