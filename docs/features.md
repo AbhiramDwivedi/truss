@@ -234,3 +234,10 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/bin/factory/runs.ts` (`transcriptFacts`, `SYNTHETIC_MODEL`, `sessionAudit`, `recordRun`, `logPassed`, the waiver regex in `cmdFinish`); `plugins/truss/bin/inbox.ts` (`KINDS`, `resolveItem`); `plugins/truss/skills/run/SKILL.md`; `plugins/truss/agents/project-manager.md`. Tests: `plugins/truss/tests/obvious-calls-031.check.ts`, the "session audit" cases in `plugins/truss/tests/fixtures/workflow-run/finish.cases.ts`.
 - Docs: `plugins/truss/docs/architecture.md` ("Gate grades (0.31.0)"); ADR-0009 "finish, session audit" (amended 2026-11-13).
 - Owner: `truss-plugin-node`.
+
+## Doc fragments and the stitch (0.31.0)
+
+- What: a crew writes its changes to a shared doc that already exists (feature map, product decisions, architecture doc, knowledge docs, rule files) as its own fragment, `<doc>.d/<crew>.md` (rule files: `.claude/rules.d/<area>/<crew>.md`). `factory stitch` folds every committed fragment into its doc, deletes it and commits once; the run skill runs it after the last crew merges. A merge conflict confined to frontmatter (`verified`, `sources`) resolves itself in `finish` and `sync`. Docs cite code by symbol: a default-suite lint fails on any line-number citation.
+- Entry points: `plugins/truss/bin/fragments.ts` (`stitchDoc`, `stitchTree`, `resolveFrontmatterConflicts`, `concludeFrontmatterMerge`); `plugins/truss/bin/factory/knowledge-cmds.ts` (`cmdStitch`, `sharedDocOf`); `plugins/truss/bin/factory/finish.ts` (`mergeCrew`); `plugins/truss/bin/factory/crew.ts` (`mergeIn`, `knowledgeDocs`); `plugins/truss/workflows-src/stage/texts.js` (`fragmentLine`); `plugins/truss/tests/fixtures/citations/line-citations.ts`.
+- Docs: `plugins/truss/docs/architecture.md` ("Doc fragments (0.31.0)"); `plugins/truss/skills/run/SKILL.md` ("Reconcile what the run learned").
+- Owner: `truss-plugin-node`.
