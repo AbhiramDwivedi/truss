@@ -1,12 +1,13 @@
 // The knowledge commands (ADR-0035): knowledge-lint, the knowledge config gate, gated-merge, knowledge-migrate,
-// rules-index. Moved unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an
-// import cycle.
+// rules-index, and `stitch` (doc fragments, 0.31.0 item 4). Moved unchanged from bin/factory.ts (0.31.0 item 5). Never imports
+// factory.ts, whose top-level await would make an import cycle.
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { CliError, isObj, need, refuse, str, usage } from '../store.ts'
+import { CliError, configOf, isObj, need, refuse, repoPathOf, str, usage } from '../store.ts'
 import type { Flags, Obj } from '../store.ts'
 import { lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from '../knowledge.ts'
 import type { KCfg, LintResult } from '../knowledge.ts'
+import { docOfFragment, stitchTree } from '../fragments.ts'
 import { redRecord } from './finish.ts'
 import { SLUG } from './plan.ts'
 import { worktreesOf } from './retire.ts'
@@ -295,4 +296,40 @@ export function cmdKnowledgeMigrate(f: Flags): Obj {
 export function cmdRulesIndex(f: Flags): Obj {
   const repo = repoOf(f)
   return knowledgeRulesIndex(repo, knowledgeCfgOf(repo))
+}
+
+// ==== doc fragments (0.31.0 item 4) ====
+
+// The shared doc a fragment stitches into, or undefined. Shared docs are the feature map, the product decisions file, the
+// architecture doc, every knowledge doc and every rule file. A `.d/` dir beside any other markdown file is no fragment dir.
+export function sharedDocOf(file: string, cfg: KCfg, arch: string): string | undefined {
+  const doc = docOfFragment(file, cfg.rulesDir)
+  if (doc === undefined) return undefined
+  if (doc === cfg.featureMap || doc === cfg.productDecisions || doc === arch) return doc
+  if (doc.startsWith(`${cfg.knowledgeDir}/`) || doc.startsWith(`${cfg.rulesDir}/`)) return doc
+  return undefined
+}
+
+// `stitch [--repo R] [--dry]`: folds every committed doc fragment in the checkout into its shared doc, deletes the fragments and commits
+// the result as one `docs: stitch doc fragments` commit (no commit when there is no fragment). --dry reports and writes
+// nothing. Refuses when a stitched doc or tracked fragment has uncommitted changes, so the commit holds only the stitch.
+export function cmdStitch(f: Flags): Obj {
+  const repo = repoOf(f)
+  const cfg = knowledgeCfgOf(repo)
+  const arch = repoPathOf(configOf(repo).architecture) ?? 'docs/architecture.md'
+  const ls = run(repo, ['-c', 'core.quotepath=off', 'ls-files', '-z', '--cached'])
+  if (ls.status !== 0) throw usage(`git ls-files failed: ${ls.err}`)
+  const frags = ls.out.split('\0').map((s) => s.trim()).filter((p) => p !== '' && sharedDocOf(p, cfg, arch) !== undefined)
+  const plan = stitchTree(repo, frags, { rulesDir: cfg.rulesDir })
+  const touched = [...new Set([...plan.stitched.map((s) => s.doc), ...plan.removed])].sort()
+  if (f.dry === true || touched.length === 0) return { ok: true, dry: f.dry === true, ...plan, committed: false }
+  const dirty = run(repo, ['-c', 'core.quotepath=off', 'status', '--porcelain', '--', ...touched])
+  const unclean = dirty.out.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('?? '))
+  if (unclean.length > 0) throw refuse({ ok: false, why: 'commit or discard the changes to these docs and fragments first', dirty: unclean })
+  const done = stitchTree(repo, frags, { rulesDir: cfg.rulesDir, write: true })
+  const add = run(repo, ['add', '-A', '--', ...touched])
+  if (add.status !== 0) throw usage(`git add failed: ${add.err}`)
+  const c = run(repo, ['commit', '-m', 'docs: stitch doc fragments', '--', ...touched])
+  if (c.status !== 0) throw usage(`git commit failed: ${c.err || c.out}`)
+  return { ok: true, dry: false, ...done, committed: true, head: run(repo, ['rev-parse', 'HEAD']).out }
 }

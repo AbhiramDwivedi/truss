@@ -4,6 +4,7 @@ import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { configOf, isObj, need, refuse, repoPathOf, usage, withLock } from '../store.ts'
 import type { Flags, Obj } from '../store.ts'
+import { concludeFrontmatterMerge, docOfFragment } from '../fragments.ts'
 import { knowledgeShas } from './decisions.ts'
 import { gateGit, knowledgeConfigRefusal, preMergeOf } from './knowledge-cmds.ts'
 import { appendDecision, baseOf, crewWorktree, dirOf, docKeysOf, gitOrFail, knowledgeCfgOf, loadPlan, patchPlan, repoOf, run, savePlan, settingsOf } from './shared.ts'
@@ -20,6 +21,8 @@ function crewCtx(f: Flags): { dir: string; repo: string; slug: string; wt: strin
 // Runs a merge in the worktree; on conflict leaves it in progress and refuses with the conflicting paths.
 export function mergeIn(wt: string, args: string[]): Obj {
   const r = run(wt, ['merge', '--no-edit', ...args])
+  // 0.31.0 item 4 (architecture.md, "Doc fragments"): a conflict confined to YAML frontmatter (two crews re-stamping `verified`, adding `sources`) resolves itself
+  if (r.status !== 0 && concludeFrontmatterMerge(wt).concluded) return { merged: true, head: gitOrFail(wt, ['rev-parse', 'HEAD']), frontmatterResolved: true }
   if (r.status !== 0) {
     const conflicts = run(wt, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
     if (conflicts.length === 0) throw usage(`git merge ${args.join(' ')} failed: ${r.err || r.out}`)
@@ -234,13 +237,17 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const name = (file: string): string => file.split('/').pop() ?? ''
   // free docs: any member may change them with its code, every round
   // (only these: a README, a changelog or any other .md is a crew's to change only when its owns name it)
+  // a doc fragment (`docs/features.d/<crew>.md`, `<rulesDir>.d/<area>/<crew>.md`) has the standing of the doc it stitches into
+  const fragOf = (file: string): string | undefined => docOfFragment(file, kc.rulesDir)
   const isFreeDoc = (file: string): boolean =>
-    file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || file.startsWith(`${kc.knowledgeDir}/`)
+    file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) ||
+    fragOf(file) === featureMap || fragOf(file) === arch
   // skills, agents and personas, the rules dir, the agents index and the product-decisions file: prompts other agents run on,
   // so only the crew's knowledge commit may change them outside its owns
-  const isPrompt = (file: string): boolean =>
+  const isPromptDoc = (file: string): boolean =>
     /(^|\/)skills\/(.+\/)?SKILL\.md$/.test(file) || /^\.claude\/skills\//.test(file) || /(^|\/)agents\/[^/]+\.md$/.test(file) ||
     file.startsWith(`${kc.rulesDir}/`) || file === kc.agentsIndex || file === kc.productDecisions
+  const isPrompt = (file: string): boolean => isPromptDoc(file) || (fragOf(file) !== undefined && isPromptDoc(fragOf(file) as string))
   // an agent or persona that judges (QC, checking, review, product owner): never a crew's to edit, even in its knowledge commit
   const isJudge = (file: string): boolean => /(^|\/)agents\/[^/]+\.md$/.test(file) && /qc|check|review|judge|product-owner/i.test(name(file))
   const isDoc = (file: string): boolean => {
