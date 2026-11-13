@@ -273,17 +273,26 @@ test('plan-write: a missing block, a non-plan block and an unreadable plan write
   assert.equal(existsSync(`${env3.dir}/plan.json`), false)
 })
 
-test('plan-write never overwrites an approved plan, and says why', () => {
+test('plan-write never loses an approved plan: it refuses while a crew runs, else archives it', () => {
   const env = mkEnv()
-  writePlan(env.dir, planObj([crew('keep')], { goal: 'approved goal' }))
+  writePlan(env.dir, planObj([crew('keep', { status: 'running' })], { goal: 'approved goal' }))
   const before = readFileSync(`${env.dir}/plan.json`, 'utf8')
   const res = env.run('plan-write', { transcript: planRun(env, [messageOf()]), label: 'truss-designer' })
   assert.equal(res.status, 1)
   const j = assertOneLine(res)
   assert.equal(j.written, false)
-  assert.match(j.reason, /approved/)
+  assert.match(j.reason, /keep.*running/)
   assert.equal(readFileSync(`${env.dir}/plan.json`, 'utf8'), before)
   assert.equal(existsSync(`${env.dir}/plan.md`), false)
+
+  const done = mkEnv()
+  writePlan(done.dir, planObj([crew('keep', { status: 'merged' })], { goal: 'approved goal' }))
+  const kept = readFileSync(`${done.dir}/plan.json`, 'utf8')
+  const ok = done.run('plan-write', { transcript: planRun(done, [messageOf()]), label: 'truss-designer' })
+  assert.equal(ok.status, 0)
+  assert.notEqual(readFileSync(`${done.dir}/plan.json`, 'utf8'), kept)
+  const archived = readdirSync(done.dir).filter((n) => n !== 'plan.json' && n.endsWith('.json')).map((n) => readFileSync(`${done.dir}/${n}`, 'utf8'))
+  assert.ok(archived.includes(kept), 'the approved plan bytes stay readable under an archived name')
 })
 
 test('plan-write never overwrites an unreadable plan.json', () => {
