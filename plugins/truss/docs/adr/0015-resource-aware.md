@@ -4,7 +4,7 @@ Status: proposed, 2026-10-31. Written by the design crew `resource-design` (stag
 
 Amended by [ADR-0046](0046-factory-throughput.md) item 1 (2026-11-12): the reap after each member (Decision 6) runs inside the crew's next factory call (`--reap-first <slug>`), not as a runner spawn of its own; the crew's end still reaps alone. Item 4: the one heavy slot (Decision 3) becomes `heavySlots` slots (truss.json, default sized from the host); slot 1 is still `heavy.lock`, slot n is `heavy-<n>.lock`.
 
-Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): `admit` in `stage.js` fails closed, so a runner result that isn't JSON or has no boolean `admitted` stops the crew BLOCKED. G7 survives: a sampler error still admits with `freeMB: null`.
+Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): `admit` in `workflows-src/stage/crew.js` fails closed, so a runner result that isn't JSON or has no boolean `admitted` stops the crew BLOCKED. G7 survives: a sampler error still admits with `freeMB: null`.
 
 VERDICT: change. One new module, **resources** (`resources/index.ts`), samples the host and holds the cross-worktree heavy lock. Nothing in the repo does either today: `bin/factory.ts` spawns only git and bash (`bin/factory/shared.ts` `run`, `:510`), and the hooks module gates tool calls in-process. Two modules change. The **factory CLI** gains `admit`, `heavy` and `reap`, and `start` gains a `held` list; the `COMMANDS` table holds none of these today (`bin/factory.ts`). The **stage workflow** admits before each member, runs its checks through `heavy`, and reaps after each member; today `workflows/stage.js` names none of the three words. Two modules extend: **agents** gain `truss:resource-monitor`, and the **PM skill** (`skills/run/SKILL.md`) gains the monitor step. **ui docs** gain one README line.
 
@@ -18,7 +18,7 @@ Truss has no defence against this today:
 
 - `start` counts free slots only against `maxParallelCrews`: `cap = intOr(plan.maxParallelCrews, 4, 1)` and `slots = cap - running` (`bin/factory/start.ts` `cmdStart`). It breaks out of its loop when the slots run out (`:905`). It never looks at the host.
 - `check` runs the acceptance test with `spawnSync('bash', ['-c', crew.acceptanceTest])` (`bin/factory/check.ts` `cmdCheck`). Every crew's check can run at the same moment, and nothing queues them.
-- `stage.js` starts members straight away (`runMember`, `workflows/stage.js:274-285`; `runMembers`, `:323-343`, which runs independent tasks in parallel). Nothing cleans up after a member ends.
+- `stage.js` starts members straight away (`runMember`, `workflows-src/stage/members.js`; `runMembers`, `:323-343`, which runs independent tasks in parallel). Nothing cleans up after a member ends.
 
 The approved scope (checker-20) has five parts: (a) a plain-code sampler; (b) admission control at the start seams; (c) heavy commands queued across worktrees, with the lock in the truss dir; (d) a Haiku monitor that reports to the PM, who sets an effective parallelism; and (e) orphan cleanup by recorded pid or process group, never `pkill -f` or `killall` (F-30). Three limits bind all of it: the cap stays a ceiling, a sampler error fails open, and proof covers Linux only.
 
@@ -156,7 +156,7 @@ The four open items from the plan are decided here.
 
 ### Admit before each member: through the runner
 
-- Before every spawn of a role other than `runner`, `stage.js` runs `admit --slug <slug>` as its own runner call, through `runFactory` (`workflows/stage.js:148-166`) with key `admitted`. That covers testers, builders, writers, resolvers, fix members, a checkpoint's successor, the planner, rca, stress and QC. It is a pre-step in `ask` (`:120-122`), which every non-runner spawn goes through except QC's. The QC spawn calls `spawn` directly (`:691`), so it gets the same pre-step there.
+- Before every spawn of a role other than `runner`, `stage.js` runs `admit --slug <slug>` as its own runner call, through `runFactory` (`workflows-src/stage/runner.js`) with key `admitted`. That covers testers, builders, writers, resolvers, fix members, a checkpoint's successor, the planner, rca, stress and QC. It is a pre-step in `ask` (`:120-122`), which every non-runner spawn goes through except QC's. The QC spawn calls `spawn` directly (`:691`), so it gets the same pre-step there.
 - **Card title.** `stage.js` runs `admit --slug <slug> --label <label> --title <title>` for every non-runner spawn, with the label the spawn is about to get (read without consuming it, so a held admit leaves the label counters as before) and a 3 to 8 word title cut to 60 characters: the task's name for a builder or tester, `QC <slug>`, `Stress test <slug>`, `UX direction <slug>`, `Plan <slug> tasks`, `Resolve merge for <slug>` and the like. When admission is granted, `admit` validates the label (`parseLabel`) and the one-line title (cut to 120) and appends `{"v":1,"ts","event":"title","crew","agent":<label>,"label","title"}` to `events.jsonl` (`events.schema.json`). Without the flags admit is unchanged. Labels do not change; the title is only for the UI. A runner gets no title.
 - It is not the member's first step. A member that starts and then finds the host short has already loaded its context and spent tokens.
 - **Held.** `stage.js` throws `Stop('BLOCKED', 'held by admission: <why>', at)`, with `at` the task's name or the crew's step. It doesn't retry: `admit` returns at once, and a script has no wait between runner calls, so a retry would see the same memory. The stop reaches the PM through `finish`, and the PM resumes the crew (Decision 5).
@@ -166,7 +166,7 @@ The four open items from the plan are decided here.
 
 (b) is decided. Only runner-run commands are queued through `factory heavy`: the red and green `check` runs. A member's own builds and tests aren't queued. They are covered by admission at member start and by the effective parallelism. Nobody probes `factory heavy` from a worktree member. The members' unqueued heavy commands go to the plugin fix goal as a proven gap (checker-24 (b)). [ADR-0017](0017-member-heavy-commands.md) decides it: a member-side heavy path, not yet built.
 
-- `check` (`workflows/stage.js:178`) becomes one runner call of this command:
+- `check` (`workflows-src/stage/check.js`) becomes one runner call of this command:
 
   ```
   node <plugin>/bin/factory.ts heavy --dir D --repo R --slug S --label <slug>-check --cwd W -- node <plugin>/bin/factory.ts check --dir D --repo R --slug S --cwd W --expect red|green

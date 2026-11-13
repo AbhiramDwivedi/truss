@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && node --test checks/*.check.ts",
     "test:ui": "npm --prefix ui test",
+    "build:stage": "node plugins/truss/bin/build-stage.ts",
     "test:real-cli": "node --test checks/real-cli-install.e2e.ts"
   }
 }

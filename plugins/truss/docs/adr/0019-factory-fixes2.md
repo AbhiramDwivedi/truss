@@ -16,14 +16,14 @@ The code facts the items rest on:
 
 - `cmdOwnsCheck` keeps a changed file only when `path.matchesGlob(file, g)` holds for some owned glob (`bin/factory/crew.ts`). On Node v24.22.0, `path.matchesGlob('marketplace/.claude-plugin/marketplace.json', 'marketplace/**')` is `false`, and so is `path.matchesGlob('plugins/truss/.claude-plugin/plugin.json', 'plugins/truss/**')`. `**` does not match a dot segment.
 - `doneTasks` takes the task name from the member's own `result.task` and counts it only when `merge-base --is-ancestor <branch> truss-<slug>` succeeds (`bin/factory/start.ts`).
-- `cmdStartResume` builds the entry with `done: doneTasks(...)` and no answers filter (`bin/factory/start.ts`). `runMembers` skips every name in `done` (`workflows/stage.js:386-392`).
+- `cmdStartResume` builds the entry with `done: doneTasks(...)` and no answers filter (`bin/factory/start.ts`). `runMembers` skips every name in `done` (`workflows-src/stage/tasks.js`).
 - `recordRestarts` links a checkpointed member to the next agent of the same crew and role that started after its result (`bin/factory/audit.ts`), not to the next agent of the same task.
-- The merge step refuses a crew whose `redRecord` is missing or has exit 0 (`bin/factory/finish.ts`). An answers resume skips red unless an answer's `at` is `red` (`workflows/stage.js:818-820`).
+- The merge step refuses a crew whose `redRecord` is missing or has exit 0 (`bin/factory/finish.ts`). An answers resume skips red unless an answer's `at` is `red` (`workflows-src/stage/chain.js` `chain`).
 - `cmdPlanCheck` compares owns only between crews of the same stage and the same goal (`bin/factory/plan.ts`).
 - `crewEntry` copies `goal`, `scope` (the goal file's `## Approved scope`) and `acceptanceTest` into every entry, beside `goalFile` (`bin/factory/start.ts`). `start --args-file` writes that whole object to the argsFile and prints a pointer (`bin/factory/start.ts` `argsFileOut`).
-- `memberPrompt` puts `Approved scope: ${e.scope}` and `Acceptance test: ${e.acceptanceTest}` in every member brief (`workflows/stage.js:234`). The same fields reach prompts at `:520`, `:567`, `:726` and `:734`.
-- `runFactory` does `JSON.parse(res.stdout)` on the whole stdout (`workflows/stage.js:191`), so one non-JSON line before the result makes `parsed` null.
-- `taskPrompt` emits `Task: ${task.name}` and adds only the answers whose `at` equals that task's name (`workflows/stage.js:264-265`).
+- `memberPrompt` puts `Approved scope: ${e.scope}` and `Acceptance test: ${e.acceptanceTest}` in every member brief (`workflows-src/stage/prompts.js`). The same fields reach prompts at `:520`, `:567`, `:726` and `:734`.
+- `runFactory` does `JSON.parse(res.stdout)` on the whole stdout (`workflows-src/stage/runner.js`), so one non-JSON line before the result makes `parsed` null.
+- `taskPrompt` emits `Task: ${task.name}` and adds only the answers whose `at` equals that task's name (`workflows-src/stage/prompts.js`).
 - Two test-path rules exist: `isTestPath` in `workflows/stage.js:273` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory/crew.ts`, which feeds the guarded set at `:704`.
 - `rolesWithTypes` reads truss.json `roles` whenever it is an object (`bin/factory/shared.ts`). It never checks whether kit is loaded.
 - `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` at `README.md:283`.
@@ -46,19 +46,19 @@ flowchart LR
 
 ### Ruling 1: why runtime-stage also owns the entry
 
-Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflows/stage.js:234`, `:520`, `:567`, `:726`, `:734`). If stage 1 shipped lean entries, the old stage.js would brief members with "Approved scope: undefined" until stage 2 merged. So item 7 is runtime-stage's, both halves: the lean entry in `bin/factory.ts` and the goal-file reader in `stage.js` land in one merge. The `guarded` and `ownTests` fields of item 9 only add keys the old stage.js ignores, so they land in stage 1.
+Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflows-src/stage/prompts.js`, `workflows-src/stage/split.js`, `workflows-src/stage/green.js`, `workflows-src/stage/qc.js` `memberPrompt`, `plannerPrompt`, `green`, `qcPrompt`). If stage 1 shipped lean entries, the old stage.js would brief members with "Approved scope: undefined" until stage 2 merged. So item 7 is runtime-stage's, both halves: the lean entry in `bin/factory.ts` and the goal-file reader in `stage.js` land in one merge. The `guarded` and `ownTests` fields of item 9 only add keys the old stage.js ignores, so they land in stage 1.
 
 ### The items
 
 **Item 1** (runtime-factory). owns-check misses dot segments such as `marketplace/.claude-plugin/` under `marketplace/**`, because `path.matchesGlob` does not match them (Context). The fix makes an owned `**` cover dot segments; the case pins `marketplace/**`.
 
-**Item 2** (runtime-factory). doneTasks reads the task name from the member prompt's `Task: <name>` line (`workflows/stage.js:265`). When the prompt has none, it falls back to `result.task` with a leading `<slug>: ` prefix stripped. The name no longer depends on what a member wrote in its result.
+**Item 2** (runtime-factory). doneTasks reads the task name from the member prompt's `Task: <name>` line (`workflows-src/stage/prompts.js` `taskPrompt`). When the prompt has none, it falls back to `result.task` with a leading `<slug>: ` prefix stripped. The name no longer depends on what a member wrote in its result.
 
-**Item 3** (runtime-factory). `start --resume answers` refuses an answer whose `at` is a step after red while `redRecord` is missing or has exit 0. That resume skips red (`workflows/stage.js:818-820`), and the merge step would refuse the crew anyway (`bin/factory/finish.ts` `mergeCrew`), so the refusal comes before members are paid.
+**Item 3** (runtime-factory). `start --resume answers` refuses an answer whose `at` is a step after red while `redRecord` is missing or has exit 0. That resume skips red (`workflows-src/stage/chain.js` `chain`), and the merge step would refuse the crew anyway (`bin/factory/finish.ts` `mergeCrew`), so the refusal comes before members are paid.
 
 **Item 4** (runtime-factory). New command `factory mark-merged --dir --repo --slug`. It sets the crew's status to `merged` only when `truss-<slug>` is an ancestor of the target, and logs a line. It gives a crew merged outside `finish` a true status, which the item 8 rule reads.
 
-**Item 5** (runtime-stage). `memberPrompt` gains the member heavy line of ADR-0017 Decisions 1 and 2, built from the same values as `heavyLine()` (`workflows/stage.js:211-219`). See "Note on ADR-0015 Decision 6" below.
+**Item 5** (runtime-stage). `memberPrompt` gains the member heavy line of ADR-0017 Decisions 1 and 2, built from the same values as `heavyLine()` (`workflows-src/stage/gates.js`). See "Note on ADR-0015 Decision 6" below.
 
 **Item 6** (plugin-meta). The planning engineer prompt (`agents/planning-engineer.md`) gains one rule: builder briefs mark test files read-only, and a guarded edit goes to a tester task.
 
@@ -70,9 +70,9 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 
 **Item 10** (dropped). Under `claude plugin test` on main, 290 cases pass and 174 fail across all 17 `*.test.ts` files. Fixing that is a separate goal.
 
-**Item 11** (runtime-stage). `runFactory` parses the last stdout line that is a JSON object, not the whole stdout (`workflows/stage.js:191`).
+**Item 11** (runtime-stage). `runFactory` parses the last stdout line that is a JSON object, not the whole stdout (`workflows-src/stage/runner.js`).
 
-**Item 12** (runtime-stage). An answer whose `at` is not a task name goes to every member. Today `taskPrompt` passes only answers whose `at` equals the task name (`workflows/stage.js:264`), so an answer at a step reaches no member.
+**Item 12** (runtime-stage). An answer whose `at` is not a task name goes to every member. Today `taskPrompt` passes only answers whose `at` equals the task name (`workflows-src/stage/prompts.js`), so an answer at a step reaches no member.
 
 **Item 13** (split by part).
 - (a) runtime-factory: a test for an agentId with no result before a resumed one, the ADR-0020 rank rule.
@@ -87,7 +87,7 @@ The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` fi
 
 **Item 15** (plugin-meta). Version 0.16.0 becomes 0.17.0 and the subagent-limits dependency `^0.3.1` becomes `^0.3.2` (`.claude-plugin/plugin.json:3`, `:8`), with the compose-manifests pins and a CHANGELOG entry. The nudge is re-proved live in an isolated `CLAUDE_CONFIG_DIR` and recorded in ADR-0021.
 
-**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows/stage.js:457`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry()` fixture (`:145`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
+**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows-src/stage/split.js`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry()` fixture (`:145`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
 
 **Item 17** (runtime-factory). doneTasks also counts a task whose branch has a full patch-id match on `truss-<slug>`, not only an ancestor, so a task whose commits reached the crew branch under other hashes stays done.
 
@@ -97,7 +97,7 @@ The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` fi
 
 **Item 20** (fixes2-design). ADR-0021's Factory and Roles bullets said the truss.json `roles` mapping applies only when kit is loaded. The code maps whenever configured (`bin/factory/shared.ts` `rolesWithTypes`). The bullets now say it maps whenever configured; the config author owns the kit dependency. Done in this crew.
 
-**Item 21** (runtime-factory). `start --resume answers` drops from `done` every task an answer's `at` names. That task reruns, and `taskPrompt` already appends the answer (`workflows/stage.js:264-266`). Today `done` has no answers filter (`bin/factory/start.ts` `cmdStartResume`), so an answered task is skipped (`workflows/stage.js:392`). Test i21: a run stopped at green with every task done and an answer at task X gives `done` without X and with the others.
+**Item 21** (runtime-factory). `start --resume answers` drops from `done` every task an answer's `at` names. That task reruns, and `taskPrompt` already appends the answer (`workflows-src/stage/prompts.js`). Today `done` has no answers filter (`bin/factory/start.ts` `cmdStartResume`), so an answered task is skipped (`workflows-src/stage/tasks.js` `runMembers`). Test i21: a run stopped at green with every task done and an answer at task X gives `done` without X and with the others.
 
 ### Note on ADR-0015 Decision 6 (item 5)
 
@@ -111,7 +111,7 @@ ADR-0015 Decision 6 says only runner-run commands go through `factory heavy`, th
 
 - **Crew entry from `factory start`.** Stage 1 adds `guarded` and `ownTests`. Stage 2 makes `scope` and `acceptanceTest` absent when the goal file holds `## Approved scope` and `## Acceptance test`, and drops `goal`. stage.js accepts both forms: entries without `guarded`, `ownTests` or the lean form still run, because the compose-runtime, compose-runtime-contract, stage-resources, stage-resources-contract and harness-banner checks build entries by hand and runtime-stage doesn't own them.
 - **`factory mark-merged --dir --repo --slug`.** The ancestor check of `truss-<slug>` against the target, the status write, and the log line. Not an ancestor: no status change.
-- **The `Task: <name>` prompt line** (`workflows/stage.js:265`) is the source of the task name for doneTasks and recordRestarts.
+- **The `Task: <name>` prompt line** (`workflows-src/stage/prompts.js` `taskPrompt`) is the source of the task name for doneTasks and recordRestarts.
 - **doneTasks.** A task is done when its branch is an ancestor of `truss-<slug>` or has a full patch-id match there, minus every task an answer's `at` names.
 - **plan-check cross-goal error.** It names both crews and ignores merged and dropped crews.
 

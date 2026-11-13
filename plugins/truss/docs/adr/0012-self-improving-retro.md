@@ -96,7 +96,7 @@ A quiet result's `toolError`, `refusal` and `checkFail` items are kept; only its
 
 `worktree-guard-shell-shape`'s anchor is the guard's own text in the code (`hooks/register.ts:216`). The `tracked-pyc` probe passes when git tracks no `.pyc` file. At this ADR's base commit, `git ls-files -- '*.pyc'` lists 24 files under `tests/__pycache__/`, so the probe fails there and `doctor` puts the entry's fix in the bundle as a standing ruling.
 
-**Who reads it.** The extractor (`catalogHits`), `factory.ts check` (Decision 10), `factory.ts doctor` (probes, Decision 9) and `retro/cli.ts recur` (Decision 7). `workflows/stage.js` reads the `catalog` key that `check` adds (`knownOf`, `workflows/stage.js:168-173`): in a BLOCKED stop text and in a fix builder's brief it names each hit as `known problem <id>: <fix>` (`:445`, `:448`, `:451`, `:665`, `:666`). Whether the crew stops is unchanged: `env` still decides (`workflows/stage.js:444-445`, `:664-665`).
+**Who reads it.** The extractor (`catalogHits`), `factory.ts check` (Decision 10), `factory.ts doctor` (probes, Decision 9) and `retro/cli.ts recur` (Decision 7). `workflows/stage.js` reads the `catalog` key that `check` adds (`knownOf`, `workflows-src/stage/gates.js`): in a BLOCKED stop text and in a fix builder's brief it names each hit as `known problem <id>: <fix>` (`:445`, `:448`, `:451`, `:665`, `:666`). Whether the crew stops is unchanged: `env` still decides (`workflows-src/stage/green.js`, `workflows-src/stage/chain.js` `green`, `redStep`).
 
 ### 4. The judges
 

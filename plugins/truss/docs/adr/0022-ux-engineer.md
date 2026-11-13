@@ -6,16 +6,16 @@ Amended by [ADR-0026](0026-factory-fixes5.md) (proposed 2026-11-03, goal `factor
 
 ## Context
 
-The client, on 2026-11-02: "The ui needs to be impressive, functional. Ensure there is a ux agent spun by truss that provides direction." Today `workflows/stage.js` runs no design role. `chain()` (`stage.js:883`) goes red, split, members, green, stress test, scope, QC, and no step gives builders a design direction or checks the built screens against one.
+The client, on 2026-11-02: "The ui needs to be impressive, functional. Ensure there is a ux agent spun by truss that provides direction." Today `workflows/stage.js` runs no design role. `chain()` (`workflows-src/stage/chain.js`) goes red, split, members, green, stress test, scope, QC, and no step gives builders a design direction or checks the built screens against one.
 
 Two plugin bugs, item 22 and item 23, block the same goal:
 
-- **Item 22.** `runFactory` (`stage.js:201`) asks a Sonnet runner to retype a command's whole stdout into `{exit, stdout}` (`RUNNER_SCHEMA`, `stage.js:32`). On a 1.7 KB reply the runner escaped a quote wrongly, the JSON did not parse, `met` came out false, and crew ui-serve stopped falsely at red (decisions.md, 18:43). Runtime-stage's item 11, `lastJsonObject` (`stage.js:181`), skips chatter lines but still needs the retyped line to be intact.
-- **Item 23.** A goal file's `## Members` model and effort never reach a spawn. `spawn()` (`stage.js:76`) takes model and effort only from the run-level roles table, so web-app's goal file asked for an Opus member and all 7 builders ran on Sonnet (decisions.md, 18:50).
+- **Item 22.** `runFactory` (`workflows-src/stage/runner.js`) asks a Sonnet runner to retype a command's whole stdout into `{exit, stdout}` (`RUNNER_SCHEMA`, `workflows-src/stage/texts.js`). On a 1.7 KB reply the runner escaped a quote wrongly, the JSON did not parse, `met` came out false, and crew ui-serve stopped falsely at red (decisions.md, 18:43). Runtime-stage's item 11, `lastJsonObject` (`workflows-src/stage/runner.js`), skips chatter lines but still needs the retyped line to be intact.
+- **Item 23.** A goal file's `## Members` model and effort never reach a spawn. `spawn()` (`workflows-src/stage/spawn.js`) takes model and effort only from the run-level roles table, so web-app's goal file asked for an Opus member and all 7 builders ran on Sonnet (decisions.md, 18:50).
 
 Constraints that bind the design:
 
-- ADR-0009 (line 9): "no Opus at high or xhigh". `ROLE_EFFORTS` is `['low', 'medium']` (`stage.js:10`), and `finish` audits `effort high or xhigh` on any labelled role (`bin/factory/audit.ts` `recordRun`).
+- ADR-0009 (line 9): "no Opus at high or xhigh". `ROLE_EFFORTS` is `['low', 'medium']` (`workflows-src/stage/args.js`), and `finish` audits `effort high or xhigh` on any labelled role (`bin/factory/audit.ts` `recordRun`).
 - ADR-0009 Decision 1 ("start, engine split"): a crew whose client raised a member to `high` or `xhigh` belongs on the project manager path, and the PM writes `## Engine` `project-manager` for it. Nothing in `factory start` enforces that today.
 - Goal ui-redesign owns `docs/architecture.md`, ADR-0011 and ADR-0018 while it is in flight (U7). The architecture text for this design therefore lives in this ADR.
 
@@ -73,24 +73,24 @@ flowchart TD
   ST --> Q[QC, brief holds the direction and the last review]
 ```
 
-**Direction step.** It runs after `redStep` (`stage.js:875`) and before `split`, at step `ux-direction`, through `ask(crew, 'ux', ...)` like any role. It also runs on a resume that has saved tasks but no direction. Its brief opens `UX direction: crew <slug>`, then gives the goal file, the crew worktree, the approved scope, the architecture doc and ADRs, and the answers whose `at` is `ux-direction`. The reply's first non-empty line decides:
+**Direction step.** It runs after `redStep` (`workflows-src/stage/chain.js`) and before `split`, at step `ux-direction`, through `ask(crew, 'ux', ...)` like any role. It also runs on a resume that has saved tasks but no direction. Its brief opens `UX direction: crew <slug>`, then gives the goal file, the crew worktree, the approved scope, the architecture doc and ADRs, and the answers whose `at` is `ux-direction`. The reply's first non-empty line decides:
 
 - `UX: DIRECTION` gives a direction, kept as `{label, text}`;
 - `QUESTION:`, `BLOCKED:` or `PROPOSAL:` stops the crew with that tag at `ux-direction`;
 - anything else gets one fresh ux agent, then `BLOCKED: no direction from two UX engineers`.
 
-**The direction is a quoted block.** `plannerPrompt` (`stage.js:585`), `memberPrompt` (`stage.js:273`, so every tester, builder, writer and fix member) and `qcPrompt` (`stage.js:786`) each carry it under one heading line, `The crew's UX direction (report <label>), quoted:`, followed by every line of the direction prefixed `> `. No brief gets a path in its place.
+**The direction is a quoted block.** `plannerPrompt` (`workflows-src/stage/split.js`), `memberPrompt` (`workflows-src/stage/prompts.js`, so every tester, builder, writer and fix member) and `qcPrompt` (`workflows-src/stage/qc.js`) each carry it under one heading line, `The crew's UX direction (report <label>), quoted:`, followed by every line of the direction prefixed `> `. No brief gets a path in its place.
 
-**Review step.** It runs after `green` (`stage.js:627`) and before the stress test, scope check and QC, at step `ux-review`. The review comes before the stress test so the stress engineer tests the screens the reviewer passed. Before each review, `guardAllowance(crew, 'ux-review')` runs, as before QC. The brief opens `UX review: crew <slug>`, then gives the goal file, the crew worktree as checkout, the head, the crew branch, the quoted direction, the last green check's output tail (`clip`, 4,000 characters, where an acceptance test prints its screenshot paths), and the previous review on a rework round. The reply's first non-empty line decides:
+**Review step.** It runs after `green` (`workflows-src/stage/green.js`) and before the stress test, scope check and QC, at step `ux-review`. The review comes before the stress test so the stress engineer tests the screens the reviewer passed. Before each review, `guardAllowance(crew, 'ux-review')` runs, as before QC. The brief opens `UX review: crew <slug>`, then gives the goal file, the crew worktree as checkout, the head, the crew branch, the quoted direction, the last green check's output tail (`clip`, 4,000 characters, where an acceptance test prints its screenshot paths), and the previous review on a rework round. The reply's first non-empty line decides:
 
 - `UX: PASS` goes on to the stress test;
-- `UX: REWORK` costs one unit: `crew.fails++`, as QC does at `stage.js:852`. When `spendOf(crew)` is more than `F.reworkAllowance`, the crew stops with `allowanceStop(crew, 'ux-review', text)`. Else the numbered findings go to `fixFindings` under `UX findings`, the same way QC findings do (`stage.js:858`). Then `green`, and a fresh review;
+- `UX: REWORK` costs one unit: `crew.fails++`, as QC does at `workflows-src/stage/qc.js` `qc`. When `spendOf(crew)` is more than `F.reworkAllowance`, the crew stops with `allowanceStop(crew, 'ux-review', text)`. Else the numbered findings go to `fixFindings` under `UX findings`, the same way QC findings do (`workflows-src/stage/fixes.js`). Then `green`, and a fresh review;
 - a stop tag stops the crew at `ux-review`;
-- no verdict gets one fresh reviewer, then `BLOCKED: no verdict from two UX reviews`, as QC does (`stage.js:846-848`).
+- no verdict gets one fresh reviewer, then `BLOCKED: no verdict from two UX reviews`, as QC does (`workflows-src/stage/qc.js` `qc`).
 
-A QC FAIL later does not rerun the review. QC gets the direction and the last review's label, verdict and findings, and checks UI work against the direction itself. A `merge-ready` resume (`stage.js:885-890`) runs no UX step, because its review passed before QC did.
+A QC FAIL later does not rerun the review. QC gets the direction and the last review's label, verdict and findings, and checks UI work against the direction itself. A `merge-ready` resume (`workflows-src/stage/chain.js` `chain`) runs no UX step, because its review passed before QC did.
 
-**The crew result's `ux` field.** `qc()` (`stage.js:840`) adds it only on a ux crew: `ux: {direction: <label>, review: <label> | null, verdict: "PASS" | "REWORK" | null, findings: [<string>]}`. `stopResult` adds it too when the crew stopped after a review.
+**The crew result's `ux` field.** `qc()` (`workflows-src/stage/qc.js`) adds it only on a ux crew: `ux: {direction: <label>, review: <label> | null, verdict: "PASS" | "REWORK" | null, findings: [<string>]}`. `stopResult` adds it too when the crew stopped after a review.
 
 ```mermaid
 sequenceDiagram
@@ -124,7 +124,7 @@ sequenceDiagram
 
 ### Labels, reports and the restart
 
-The direction's label is `<slug>-ux`, and the reviews' labels are `<slug>-ux-<n>`, from `nextLabel` (`stage.js:114`). `parseLabel` (`bin/factory.ts:119`) reads both as role `ux`. Once roles.json has the row, `finish` files them under `reports/<slug>/` (`bin/factory/audit.ts` `recordRun`). A direction that reruns after a stop takes the next free number, so stage.js and factory.ts read a report's kind from its first line, never from its number.
+The direction's label is `<slug>-ux`, and the reviews' labels are `<slug>-ux-<n>`, from `nextLabel` (`workflows-src/stage/crew.js`). `parseLabel` (`bin/factory.ts:119`) reads both as role `ux`. Once roles.json has the row, `finish` files them under `reports/<slug>/` (`bin/factory/audit.ts` `recordRun`). A direction that reruns after a stop takes the next free number, so stage.js and factory.ts read a report's kind from its first line, never from its number.
 
 **Resume rule.** `crewEntry` (`bin/factory/start.ts`) sets the entry's `direction` to `{label, text}` from the crew's newest ux report (highest label number) whose first non-empty line is `UX: DIRECTION`, or `null`. With a direction in the entry, `chain()` runs no second direction pass.
 
@@ -136,7 +136,7 @@ The direction's label is `<slug>-ux`, and the reviews' labels are `<slug>-ux-<n>
 
 ### U5. Item 22: `met` without a retyped stdout
 
-`runFactory` adds `--status-line` to every factory.ts command it builds. `heavyParts` (`stage.js:229`) puts the flag before the `--`. With the flag, factory.ts prints one more line after its JSON result, as the last line of stdout:
+`runFactory` adds `--status-line` to every factory.ts command it builds. `heavyParts` (`workflows-src/stage/gates.js`) puts the flag before the `--`. With the flag, factory.ts prints one more line after its JSON result, as the last line of stdout:
 
 ```
 truss-status: {"ok":true,"head":"<sha>"}
@@ -177,12 +177,12 @@ Ux-agent drops the 0.17.0 "Stage workflow" `TODO:` (CHANGELOG.md:34) after check
 | Brief openings | `agents/ux-engineer.md`, `stage.js` | stage.js sends first lines `UX direction: crew <slug>` and `UX review: crew <slug>`. The agent stops with `BLOCKED:` on any other first line. |
 | Report first lines | same | A direction starts `UX: DIRECTION`. A review starts `UX: PASS` or `UX: REWORK`, then numbered findings `<n>. <screen>: <what is wrong>. Fix: <the fix>`. No first-line match gets one retry, then BLOCKED, as QC does. |
 | Quoted direction | `plannerPrompt`, `memberPrompt`, `qcPrompt` | Heading `The crew's UX direction (report <label>), quoted:`, then each line prefixed `> `. |
-| Labels | `stage.js` `nextLabel`, `bin/factory.ts` `parseLabel` | `<slug>-ux` for the direction, `<slug>-ux-<n>` for reviews, role `ux`. |
+| Labels | `workflows-src/stage/crew.js` `nextLabel`, `bin/factory.ts` `parseLabel` | `<slug>-ux` for the direction, `<slug>-ux-<n>` for reviews, role `ux`. |
 | Crew entry | `crewEntry`, `stage.js`, `ENTRY_KEYS` | New keys `ux` (boolean), `direction` (`{label, text}` or null) and `members` (object). stage.js accepts an entry without them. |
-| Spend | `spentOf`, `stage.js` `qc()` | `UX: REWORK` costs one unit in a run (`crew.fails++`) and across a restart. |
+| Spend | `spentOf`, `workflows-src/stage/qc.js` `qc()` | `UX: REWORK` costs one unit in a run (`crew.fails++`) and across a restart. |
 | `## Members` refusal | `factory start` | Effort high or xhigh refuses the crew with the reason above, which names `## Engine` `project-manager` (R2). |
 | ux audit | `roleAudit` | Role `ux` must run as the ux row's `agentType`; Write or Edit gives a reason (R4). |
-| Crew result | `stage.js` `qc()` | The `ux` field is present only on a ux crew, shaped as above. |
+| Crew result | `workflows-src/stage/qc.js` `qc()` | The `ux` field is present only on a ux crew, shaped as above. |
 | runFactory | `runFactory`, factory.ts `--status-line` | Last stdout line `truss-status: <short JSON>`. `met` comes from it, never from a retyped long stdout (item 22). |
 | Roles row | `roles.json`, `truss-config.schema.json` | The `ux` row above, with no `typeFromProject`. `roles.ux` uses the `agentType` `$ref`. |
 

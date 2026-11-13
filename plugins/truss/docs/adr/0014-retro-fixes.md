@@ -13,7 +13,7 @@ The end-of-run retro of this session (ADR-0012) kept 17 findings to fix now (che
 - **F-25.** The stress test runs as `truss:qc-engineer` (`workflows/roles.json:10`, `agents/project-manager.md:66`), whose tools are `Read, Grep, Glob, Bash` (`agents/qc-engineer.md:6`). It has no Write tool, so it falls back to heredocs and `node -e`, which the worktree guard refuses. One stress test also tried `/usr/bin/time`, which isn't installed (findings.json F-2: exit 127; on this host `ls /usr/bin/time` gives `No such file or directory`).
 - **P-8.** The client asked whether the PM's role should be tightened so it never does the work itself, and ruled "yes, fix it through the retro at the end" (decisions.md, 04:22 and 04:26).
 - **The false reply card.** Every top-level `result` opens a reply card (`ui/server/session/session.ts:99-115`), even while background tasks still run (horoscope feedback 4, decisions.md 07:59).
-- **F-27.** A QC or stress finding that needs a test change goes to a builder. The builder's "Files you may change" is every file the crew owns (`workflows/stage.js:216-221`), but a builder commit that touches a tester's file is a sure QC FAIL (`workflows/stage.js:530-538`).
+- **F-27.** A QC or stress finding that needs a test change goes to a builder. The builder's "Files you may change" is every file the crew owns (`workflows-src/stage/prompts.js` `fixPrompt`), but a builder commit that touches a tester's file is a sure QC FAIL (`workflows-src/stage/scope.js` `testsGuard`).
 - **The Windows orphan.** `watchParent` watches only the direct parent (`ui/server/lifecycle.ts:32-45`). On Windows, `npm --prefix ui start` leaves `ui/server/main.ts` running when the task stops, because npm-cli and `cmd.exe` survive and the server's parent is `cmd.exe` (decisions.md, 06:00).
 
 ## Decision 1: the stress persona, `truss:stress-engineer` (F-25)
@@ -66,9 +66,9 @@ The count is the session's `backgroundTasks` after `foldMessage`. There is no ch
 
 ## Decision 4: test-needing findings go to a tester (F-27)
 
-A QC or stress finding that names a file a tester task owns goes to a tester fix member, labelled `<slug>-tester-<n>` by `nextLabel` (`workflows/stage.js:110-115`). Its commits carry `Truss-Role: test-writer`. Every other finding goes to a builder fix member, as today.
+A QC or stress finding that names a file a tester task owns goes to a tester fix member, labelled `<slug>-tester-<n>` by `nextLabel` (`workflows-src/stage/crew.js`). Its commits carry `Truss-Role: test-writer`. Every other finding goes to a builder fix member, as today.
 
-`fixPrompt`'s "Files you may change" (`workflows/stage.js:218`) leaves out the files of the crew's tester tasks, so a fix builder is never told it may change them. This covers F-4 and F-22, which checker-17 dropped as duplicates. Crew `stage-briefs` builds it and pins it in `tests/stage-briefs.check.ts`, which drives `fixPrompt` and `stressTestPrompt` through the workflows harness.
+`fixPrompt`'s "Files you may change" (`workflows-src/stage/prompts.js`) leaves out the files of the crew's tester tasks, so a fix builder is never told it may change them. This covers F-4 and F-22, which checker-17 dropped as duplicates. Crew `stage-briefs` builds it and pins it in `tests/stage-briefs.check.ts`, which drives `fixPrompt` and `stressTestPrompt` through the workflows harness.
 
 ## Decision 5: the ancestor watch (the Windows orphan)
 

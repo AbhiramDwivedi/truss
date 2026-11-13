@@ -4,6 +4,7 @@ sources:
   - plugins/truss/bin/factory.ts
   - plugins/truss/bin/testmap.ts
   - plugins/truss/workflows/stage.js
+  - plugins/truss/workflows-src/stage/green.js
 verified: 25e4e4d087e6348ba1a0b70a8d8ed0979606aa5a
 ---
 
@@ -36,4 +37,4 @@ Every git call in that file uses its own `GIT_CONFIG_GLOBAL` with `maintenance.a
 
 ## Targeted tests
 
-Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows/stage.js` (`fullSuite`).
+Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows-src/stage/green.js` (`fullSuite`).
