@@ -1288,10 +1288,12 @@ t('stage resume answers: a task whose earlier member stopped with commits on its
   const p = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: build-it')).prompt
   assert.deepEqual(firstMerges(p), ['truss/a', 'worktree-wf_x-15'])
   conflictIsBlocked(p)
-  // the green fix builder of a crew whose earlier `fix, green check` member stopped carries that branch too
+  // 0.31.0 item 6: an earlier `fix, green check` member's stopped branch is integrated before green (stage.js rulingStep), so its
+  // commits reach the crew branch even when no green fix round follows; the green fix builder then merges only the crew branch
+  assert.ok(idx(r, 'end:runner:a:integrate:worktree-wf_x-16') >= 0, 'the stopped fix branch is integrated')
+  assert.ok(idx(r, 'end:runner:a:integrate:worktree-wf_x-16') < idx(r, 'start:runner:a:check:green'), 'before green')
   const f = r.calls.find((c) => /^a-builder(-\d+)?$/.test(c.label) && c.prompt.includes('Task: fix, green check')).prompt
-  assert.deepEqual(firstMerges(f), ['truss/a', 'worktree-wf_x-16'])
-  conflictIsBlocked(f)
+  assert.deepEqual(firstMerges(f), ['truss/a'])
   const plain = await runStage([{ ...e, prior: [] }], { labels: base('a', { 'a-stress': RT0 }) })
   assert.deepEqual(firstMerges(plain.calls.find((c) => c.prompt.includes('Task: build-it')).prompt), ['truss/a'])
 })
