@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { gatesAware } from './fixtures/gates-stub.ts'
-import { REAL_PLUGIN, assertOneLine, crew, flat, mkRepo, planObj, runCli, writePlan } from './fixtures/workflow-run/harness.ts'
+import { REAL_PLUGIN, addCrewWorktree, assertOneLine, crew, flat, mkEnv, mkRepo, planObj, runCli, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const t = (name, fn) => test(name, { timeout: 60000 }, fn)
 
@@ -341,4 +341,49 @@ t('a crew resumed while its fix-step pm-question is still open stops awaiting th
   assert.doesNotMatch(s.text, /awaiting client:/, `the question is the program manager's: ${s.text}`)
   assert.match(s.text, /awaiting program manager:/, s.text)
   has(s.text, row.id)
+})
+
+// ---- approvedAt makes the crew-call ref unique per run (PM ruling truss-pm5, 2026-11-12)
+
+t('start carries the plan approvedAt in args.truss when it is a string and omits the key otherwise', () => {
+  const APPROVED = '2026-11-10T09:30:00.000Z'
+  const env = mkEnv({ config: { merge: 'sequential', target: 'main' }, useRealPlugin: true })
+  writePlan(env.dir, planObj([crew('x')], { approvedAt: APPROVED }))
+  writeGoal(env.dir, 'x', {})
+  addCrewWorktree(env.repo, 'x')
+  const r = env.run('start', { slug: 'x' })
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  assert.equal(r.json.truss.approvedAt, APPROVED, `start output carries approvedAt: ${Object.keys(r.json.truss).join(',')}`)
+  // positive control for the absence half: a plan whose approvedAt is not a string leaves the key out
+  const env2 = mkEnv({ config: { merge: 'sequential', target: 'main' }, useRealPlugin: true })
+  writePlan(env2.dir, planObj([crew('x')], { approvedAt: 12345 }))
+  writeGoal(env2.dir, 'x', {})
+  addCrewWorktree(env2.repo, 'x')
+  const r2 = env2.run('start', { slug: 'x' })
+  assert.equal(r2.status, 0, r2.stderr + r2.stdout)
+  assert.ok(!Object.hasOwn(r2.json.truss, 'approvedAt'), `no approvedAt key for a non-string: ${JSON.stringify(r2.json.truss.approvedAt)}`)
+})
+
+t('two runs in one truss dir with different approvedAt send escalate calls with different refs, each ending in its approvedAt', async () => {
+  const dir = '/proj/.git/truss/sess-1'
+  const refOf = async (approvedAt) => {
+    const args = { truss: { kind: 'stage', dir, repo: '/proj', plugin: REAL_PLUGIN, target: 'main', reworkAllowance: 2, roles: ROLES, scriptPath: STAGE, approvedAt, crews: [entryOf('a')], personas: PERSONAS } }
+    const labels = labelsOf('a', { 'a-builder': ASK, 'a-po': 'PO: ESCALATE\nThe export rule is in scope but the requirements do not settle it.' })
+    const r = await execStage(args, { labels, runner: itemRunner('pm-question') })
+    assert.deepEqual(r.unscripted, [], `unscripted: ${r.unscripted.join(', ')}`)
+    if (r.error) throw r.error
+    const esc = runnerCalls(r, 'escalate')
+    assert.equal(esc.length, 1, `one escalate call; ${JSON.stringify(r.result).slice(0, 300)}`)
+    const m = esc[0].prompt.match(/--ref(?:\s+|=)'?([^\s'`]+)/)
+    assert.ok(m, esc[0].prompt)
+    return m[1]
+  }
+  const A1 = '2026-11-10T09:30:00.000Z'
+  const A2 = '2026-11-12T17:45:00.000Z'
+  const r1 = await refOf(A1)
+  const r2 = await refOf(A2)
+  assert.notEqual(r1, r2, 'the same slug and task in the same truss dir gets one ref per run')
+  assert.ok(r1.endsWith(A1), r1)
+  assert.ok(r2.endsWith(A2), r2)
+  assert.ok(r1.startsWith('crew-call:a:build-export'), r1)
 })
