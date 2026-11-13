@@ -141,7 +141,11 @@ test('0.23.0 prose: plan result, judge host, trigger, scope and reachable knowle
     assert.match(t, /`CLAUDE\.md` \/ `AGENTS\.md` index/)
     assert.match(t, /not a `\.md` file is skipped/)
   }
-  for (const t of [RUN, ADR, QC]) assert.match(t, /only (this commit|the knowledge-step commit)[^.]* may touch files outside the crew's owns/i)
+  // ADR-0046 item 0: the crew owns its docs, so any crew commit (not only the knowledge commit) may touch out-of-owns doc paths.
+  for (const t of [RUN, ADR, QC]) {
+    assert.match(t, /any crew commit[^.]* may touch files outside the crew's owns/i)
+    assert.doesNotMatch(t, /only (this commit|the knowledge-step commit)[^.]* may touch files outside the crew's owns/i)
+  }
   assert.match(ADR, /counts learned items per crew and knowledge steps run versus skipped/)
 })
 

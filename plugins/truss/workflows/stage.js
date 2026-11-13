@@ -668,8 +668,8 @@ function docsLines(crew) {
     `- the feature map (${FEATURE_MAP}): an entry for each user-facing capability you add or move, and every entry whose paths or behaviour you changed;`,
     `- the knowledge docs (${KNOWLEDGE_DIR}/**) and rule files (${RULES_DIR}/*.md) whose \`sources\` you changed: fix the text, then set \`verified\` to the commit your change builds on (git rev-parse HEAD before you commit);`,
     `- the architecture doc (${crew.e.architecture || 'docs/architecture.md'}) and the ADRs in ${ADR_DIR}: the descriptive text and the citations that point at code you moved. Cite code by symbol (a function or constant name), not by line number, and re-point any line citation you touch. Never edit an ADR's Decision or Status: raise a PROPOSAL instead;`,
-    '- the skill and agent prose (SKILL.md, agents/*.md) that describes the behaviour you changed, so it never says the opposite of the code.',
-    'Those .md doc paths are yours to edit even when they are outside your files list; never edit a persona file\'s YAML frontmatter.',
+    '- the skill and agent prose (.claude/skills/*/*.md, .claude/agents/*.md, and any SKILL.md or agents/*.md in your files) that describes the behaviour you changed, so it never says the opposite of the code.',
+    'Those .md doc paths are yours to edit even when they are outside your files list; never edit the YAML frontmatter of a persona or skill file outside your files list.',
     'Tests: add or edit regression tests for your own fixes in the files you may change. Never edit a test a tester wrote (the acceptance test, written before the build, and any regression case a tester wrote first): that is the proof of your work, so it stays read-only to you; when one is wrong, say so in your report.',
   ]
 }

@@ -79,7 +79,7 @@ Rules for every write:
 - **Nothing to record is a valid outcome.** When the code already makes every item obvious, change nothing and say so in your report.
 - **Reachable.** Learning can go to any doc, but a doc that no agent can find is as hidden as code. A new knowledge or rule file is linked, in the same commit, from the feature map entry for its area or from the project's `CLAUDE.md` / `AGENTS.md` index (the agents index, `AGENTS.md` by default); the index holds pointers only, never prose. Rule files are listed in the index when one exists.
 
-You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. Only this commit may touch files outside the crew's owns, and only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the rules dir, `docs/knowledge/**`, the agents index, the product decisions file, `.claude/agents/*.md` (body only: persona frontmatter is never exempt) and `*.md` targets.
+You edit only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in your report, never written. The crew owns the docs of its change (ADR-0046 item 0): any crew commit, the builders' or this one, may touch files outside the crew's owns, but only doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the rules dir, `docs/knowledge/**`, the agents index, the product decisions file, `.claude/agents/*.md` (body only: persona frontmatter is never exempt) and `*.md` targets.
 
 Commit `docs(knowledge): <slug> learned` with the usual trailers.
 ## 5. Commit and report

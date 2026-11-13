@@ -90,7 +90,7 @@ test('drift is reverted and dropped, never proposed', () => {
 test('QC steps 7 and 11: QC never edits; knowledge-commit description edits to the architecture doc are allowed; the knowledge prompt agrees', () => {
   const qc = read('agents', 'qc-engineer.md')
   const s7 = qc.slice(qc.indexOf('\n7. '), qc.indexOf('\n8. '))
-  for (const s of ['`docs(knowledge):` commit', 'only correct descriptions', "existing ADR's Decision or Status", "architecture doc's principles", 'outside the knowledge commit', 'a design crew']) assert.ok(s7.includes(s), `step 7: ${s}`)
+  for (const s of ['`docs(knowledge):` commit', 'only correct descriptions', "existing ADR's Decision or Status", "architecture doc's principles", 'The crew owns the docs of its change', 'a design crew']) assert.ok(s7.includes(s), `step 7: ${s}`)
   assert.ok(!s7.includes('Crews never edit them'), 'step 7 old rule')
   const s11 = qc.slice(qc.indexOf('\n11. '), qc.indexOf('\n12. '))
   assert.ok(s11.includes('Non-goals'), 'Non-goals sentence kept')

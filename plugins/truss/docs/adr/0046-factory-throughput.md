@@ -52,6 +52,50 @@ Each item below records what changed. Items not yet listed here were not done in
 - The plugin still writes no price (ADR-0038 section 3). This repo's own `.claude/truss.json` gains `pricing` for `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5`, from the claude-api skill's pricing page read 2026-11-12. Every rate there is published; none is derived.
 - Haiku 5.5 bills a request whose prompt is over 100,000 tokens at higher rates for the whole request. A `pricing` entry may now hold `longContext: {abovePromptTokens, <the five rates>}` (`$defs.price` in `truss-config.schema.json`). `ratesFor` in `bin/cost.ts` takes the request's prompt size (input, cache read and both cache writes) and uses `longContext` when it is over the bound. Each usage row is one request, priced on its own. A fast row ignores `longContext`: no model has both.
 
+### QC quality and crew doc ownership (builder B items 0, 2, 3, 8-13)
+
+These amend ADR-0033 Scope (the owns exemption) and the QC engineer's steps 7, 8 and 11.
+
+#### Item 0: the crew owns the docs of its change
+
+- Client ruling: builders update the docs their change makes stale in the same change, every round: the feature map, `docs/knowledge/**` with `verified`, architecture and ADR citations, skill and agent prose. `docsLines(crew)` in `workflows/stage.js` puts this in every builder prompt (`memberPrompt` for role `builder`, and the fix rounds). The builder adds and edits its own regression tests.
+- Only the pre-written acceptance test stays read-only (`taskPrompt`'s read-only line, qc-engineer step 8): a tester wrote it before the build as its proof, and a builder that could edit it could pass by weakening it.
+- `knowledgeDocs` in `bin/factory.ts` exempts a `.md` doc path changed by any non-merge crew commit, not only the recorded knowledge commit. The doc paths gain the architecture doc (truss.json `architecture`, default `docs/architecture.md`) and `.claude/skills/*/*.md`. A skill file is guarded like a persona: its YAML frontmatter is never exempt. A non-doc path outside owns still fails `owns-check`.
+
+#### Item 8: the tester writes the regression case first
+
+- `fixFindings` sends each defect to a tester before the fix builder runs: every stress finding, and a QC finding rated `bug` or `risk` (`DEFECT_RE`, `qcDefect`). The tester writes a failing regression case (`regressionDetail`); the fix builder then makes it pass. A nit gets no regression case.
+
+#### Item 3: a stress-fix round that adds no test fails green
+
+- `factory check --expect green --tests-since <sha>` prints `testsSince`: the test files changed since that sha (`testsSinceOf`). `stressTest` passes the head before its fix round; `green(crew, {testsSince})` with an empty list runs one fix builder titled `stress-fix regression tests` (`noTestText`), and when the list is still empty after it, stops `BLOCKED` at green, before QC.
+
+#### Items 2 and 12: the pre-QC step makes the mechanical repairs and checks changed prose
+
+- `knowledgePrompt` tells the writer, before it commits, to cite code by symbol, re-point every `file:line` citation whose code moved, set `verified` on each doc it re-read, and check every added or changed line of skill and agent prose (`SKILL.md`, `agents/*.md`) against the code it describes. The `lintClean` loop (item 6) re-runs the writer on a `stale` lint failure, so a stamp is repaired before QC.
+- Item 12 is a brief line, not a new spawn: it is cheap, but when no builder touched the prose and the knowledge step is skipped, nothing checks changed prose apart from QC step 11.
+
+#### Item 9: stamp drift and line drift do not block QC
+
+- `lintLines` sorts the lint's `stale` failures (`isStamp`) into their own section: QC never fails for the stamp, reads the doc against the diff and fails only on a statement that is now wrong, quoting it. `DOC_DRIFT_LINE` in the `Knowledge:` block says the same of a `file:line` citation whose line moved while the cited code still exists. qc-engineer step 11 agrees.
+
+#### Item 10: from round 2 on, QC gets its previous report and the fix diff
+
+- `qc()` keeps `crew.lastQc = {label, verdict, text, head, round}` before each fix. `reQcLines(crew)` adds to the next QC brief the round number, the previous report fenced, `git diff <old head>..HEAD`, and the order: rule each prior finding CLOSED or OPEN, read the fix diff, then report only real defects in untouched code.
+
+#### Item 11: a known defect on a trust or money path is a FAIL
+
+- `TRUST_PATH_LINE` in `qcPrompt`: a known defect on a trust or money path the diff touches (an auth, permission, approval, proof or audit check that fails open; a charge, budget, spend or payment amount that can be wrong) fails the crew even when an ADR or the goal file permits it; QC quotes the defect and adds a design `QUESTION:` when the ADR is what allows it.
+
+#### Item 13: a logged ruling turns a finding into a QUESTION; nits only when harmless
+
+- qc-engineer step 8: when a PM ruling logged in the brief permits a builder's edit of a guarded file, the touch is a `QUESTION:` quoting the ruling, not a FAIL.
+- `NIT_LINE` in `fixPrompt` (not the tester's): fix a nit only when the fix changes no behaviour; else leave it and list it under "Nits left".
+
+#### Effect on item 1's count
+
+- Item 8 adds one regression tester per stress round with findings, and its admit and integrate: `i1 1` now allows 26 runner spawns, not 24.
+
 ## Consequences
 
 - The program manager (PM)'s answers file holds only new rulings (`skills/run/SKILL.md` section 7). A ruling the PM wants withdrawn must be overridden by a newer ruling at the same `at`; there is no delete command. Long-term cost: step rulings accumulate for the life of the crew and lengthen every resumed brief.
@@ -60,3 +104,4 @@ Each item below records what changed. Items not yet listed here were not done in
 - Item 1 delays the reap after a member until the crew's next factory call, so a member's orphaned `<slug>-check` processes can live a little longer (through a PO or judge spawn, which make no factory call). The same-head skip trusts the head `integrate` and `sync` print; a merge that prints none counts as a move, so the skip fails safe.
 - Item 4 lets up to `heavySlots` red and green checks run at once; on a host whose memory or CPU the default over-reads (a shared box), the client sets `heavySlots: 1`. The free-memory gate still applies to every slot. Slots are not FIFO, as before.
 - Tests: `plugins/truss/tests/throughput-029.check.ts` (`i5 *`, `i1 3`, `i4 *`, `pricing *`), `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`, `i6 *`, `i7 *`); `crew-knowledge.check.ts` knowledge 6, knowledge 22 and replies 9 now pin the new order and re-run; `stage-resources.check.ts` (crew-end reap, failed reap logged, admit title) and `stage-resources-contract.check.ts` (reap after each member) pin the folded reap.
+- Builder B items: builders and the knowledge step may both edit a doc, so two crews can touch the same out-of-owns doc and conflict at merge; the integrator resolves it as for any shared file. Long-term cost: a builder brief is longer (`docsLines`), and a tester runs on every stress round with findings and every QC FAIL with a bug or risk finding. A wrong ADR permission no longer shields a trust-path defect, so such a crew fails until the ADR is changed. Tests: `throughput-029-stage.check.ts` (`q0 1`, `q2 1`, `q3 1`, `q3 2`, `q8 1`, `q8 2`, `q9 1`, `q10 1`, `q11 1`, `q13 1`), `knowledge-scope.check.ts` (`scope 2b`, `scope 3`, `scope 4`, `scope 5`, `scope 5b`, `diff 3`), `knowledge-lint.check.ts` (`exempt 2`); `crew-knowledge-prose.check.ts` and `diff-hygiene.check.ts` pin the new scope wording.
