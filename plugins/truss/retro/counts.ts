@@ -793,7 +793,10 @@ const realOrSelf = (p: string): string => {
   try {
     return realpathSync(p)
   } catch {
-    return resolve(p)
+    // the path is gone: resolve its nearest existing parent, so a symlinked temp dir (macOS /var -> /private/var) still compares equal to git's own canonical path
+    const abs = resolve(p)
+    const parent = dirname(abs)
+    return parent === abs ? abs : join(realOrSelf(parent), basename(abs))
   }
 }
 const normcase = (p: string): string => (process.platform === 'win32' ? p.toLowerCase().replaceAll('/', '\\') : p)
