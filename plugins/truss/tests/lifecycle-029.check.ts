@@ -214,3 +214,12 @@ test('start defaults scriptPath to the session scripts dir and --scripts-dir ove
   assert.equal(flat(assertOneLine(over).truss.scriptPath), `${own}/truss-stage.js`)
   assert.equal(existsSync(other.scripts), false, 'the override leaves the session scripts dir alone')
 })
+
+test('plugin.json and the newest CHANGELOG entry are 0.29.0', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.version, '0.29.0')
+  const log = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
+  const newest = /^## (\d+\.\d+\.\d+)/m.exec(log)
+  assert.ok(newest, 'CHANGELOG.md has a version heading')
+  assert.equal(newest[1], '0.29.0')
+})
