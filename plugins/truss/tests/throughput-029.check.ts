@@ -232,6 +232,26 @@ test('i1 5: factory gates stops at the first unmet step and exits with its code;
   for (const steps of ['owns,bogus', 'owns,owns', '']) assert.equal(env.run('gates', { slug: 's', steps }).status, 2, steps)
 })
 
+test('i1 8 (review 3): a gates call that runs green sends its admit with no wait, so green plus a held admit stays under the runner timeout; admit alone keeps its wait', () => {
+  const { env, wt } = gatesWorld()
+  // a parallelism hold: the crew is planned and another running crew fills maxParallelCrews 1
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'planned' }), crew('o', { owns: ['src/o/**'], status: 'running' })], { maxParallelCrews: 1 }))
+  const steps = (s) => ['--steps', s, '--admit-label', 's-qc', '--admit-title', 'QC s', '--admit-wait-ms', '2500']
+  const t0 = Date.now()
+  const g = env.run('gates', { slug: 's', cwd: wt }, steps('green,admit'))
+  const took = Date.now() - t0
+  const j = JSON.parse(g.stdout.split('\n')[0])
+  assert.deepEqual(j.gates, { green: true, admit: false }, say(g))
+  assert.match(j.steps.admit.why, /fill the parallelism 1/)
+  assert.ok(!('waitedMs' in j.steps.admit), `green's gates call waited on the admit: ${JSON.stringify(j.steps.admit)}`)
+  const a = env.run('gates', { slug: 's', cwd: wt }, steps('admit'))
+  const k = JSON.parse(a.stdout.split('\n')[0])
+  assert.equal(typeof k.steps.admit.waitedMs, 'number', `admit alone waits: ${JSON.stringify(k.steps.admit)}`)
+  assert.ok(k.steps.admit.waitedMs >= 2000, String(k.steps.admit.waitedMs))
+  assert.ok(took < 30000, String(took))
+})
+
+
 // ---------------------------------------------------------------- item 4: a configurable heavy slot count
 
 test('i4 1: the host default is max(1, min(4, floor(cpus/4), floor(totalGB/8)))', async () => {

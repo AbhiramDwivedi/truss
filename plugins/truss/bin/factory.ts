@@ -841,20 +841,37 @@ function cmdCheck(f: Flags): Obj {
   const known = exit === 0 ? [] : catalogHits(text)
   writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const since = ok && expect === 'green' ? testsSinceOf(cwd, f) : undefined
-  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since === undefined ? {} : { testsSince: since }) }
+  const since = ok && expect === 'green' ? testsSinceOf(cwd, f) : {}
+  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since.list === undefined ? {} : { testsSince: since.list }), ...(since.unknown === undefined ? {} : { testsUnknown: since.unknown }) }
   if (!ok) throw refuse(body)
   return body
 }
 
 // ADR-0046 item 3: with --tests-since <sha>, the test files (isTestPath) changed in <sha>..HEAD, so stage.js can fail a stress-fix
 // round that added no regression test. Undefined without the flag, or when the range can't be read (no list, no check).
-function testsSinceOf(cwd: string, f: Flags): string[] | undefined {
+// A test file is one isTestPath names or one a `testGlobs` glob of .claude/truss.json matches. When the list is empty and no
+// tracked file of the worktree is a test file by either rule, truss can't tell the project's tests apart: the list is unknown
+// (undefined, so stage.js checks nothing) and `testsUnknown` says why, for stage.js to log as a warning.
+function testsSinceOf(cwd: string, f: Flags): { list?: string[]; unknown?: string } {
   const sha = typeof f['tests-since'] === 'string' ? f['tests-since'] : ''
-  if (!/^[0-9a-f]{4,40}$/i.test(sha)) return undefined
+  if (!/^[0-9a-f]{4,40}$/i.test(sha)) return {}
   const r = run(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--no-renames', `${sha}..HEAD`])
-  if (r.status !== 0) return undefined
-  return r.out.split('\n').map((l) => l.trim()).filter((p) => p !== '' && isTestPath(p)).sort()
+  if (r.status !== 0) return {}
+  let globs: string[] = []
+  try {
+    const g = configOf(repoOf(f)).testGlobs
+    globs = Array.isArray(g) ? g.filter((x: unknown): x is string => typeof x === 'string' && x !== '') : []
+  } catch {
+    globs = []
+  }
+  const isTest = (p: string): boolean => isTestPath(p) || globs.some((g) => path.matchesGlob(p, g))
+  const list = r.out.split('\n').map((l) => l.trim()).filter((p) => p !== '' && isTest(p)).sort()
+  if (list.length > 0) return { list }
+  const all = run(cwd, ['-c', 'core.quotepath=off', 'ls-files'])
+  if (all.status === 0 && !all.out.split('\n').some((p) => p.trim() !== '' && isTest(p.trim()))) {
+    return { unknown: 'no tracked file is a test file by name or by testGlobs, so the stress-fix round\'s regression tests were not checked; set testGlobs in .claude/truss.json' }
+  }
+  return { list }
 }
 
 // ADR-0033: the non-test source files the crew's diff (merge-base with the target ... HEAD) adds, renames or deletes, from
@@ -1139,43 +1156,71 @@ function cmdOwnsCheck(f: Flags): Obj {
 
 // ADR-0033, as ADR-0046 item 0 amends it: the doc files any crew commit may change outside the crew's owns. Each crew owns the
 // docs of its own work, so a builder updates them in the same change as the code, every round; the knowledge commit is a backstop,
-// not the only doc writer. A file is exempt only when ALL hold: it changed in a non-merge commit of the crew; it is a .md file; it
-// is the feature map (featureMap, default docs/features.md), the architecture doc (`architecture`), a file under the ADR directory
-// (adrDir, default docs/adr), the rules dir, the knowledge dir, the agents index, the product-decisions file, a persona or the
-// product-owner file (.claude/agents/*.md, whose YAML frontmatter is unchanged: tools and model are never a crew's to edit), or
-// the target of a learned item the crew recorded with `crew-learned`. A code file is never exempt.
+// not the only doc writer. A file is exempt only when ALL hold: it changed in a non-merge commit of the crew; it is a .md file;
+// its YAML frontmatter is unchanged (tools, model and descriptions are never a crew's to edit; a knowledge doc's `verified` and
+// `sources` excepted); and either it is a free doc (the feature map, featureMap, default docs/features.md; the architecture doc;
+// a file under the ADR directory or the knowledge dir; never another .md, a README or a changelog), or it is a
+// prompt file (skills/**/SKILL.md, .claude/skills/**, agents/*.md and .claude/agents/*.md, the rules dir, the agents index, the
+// product-decisions file) that only the crew's knowledge commit changed and that is no judge (an agent whose name says QC,
+// checking, review, judge or product owner). A learned item's target widens nothing. A code file is never exempt.
 function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string; target: string }): Set<string> {
   const base = baseOf(c.wt, c.target)
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%H', `${base}..HEAD`])
+  const knowledge = new Set(knowledgeShas(c.dir, c.slug))
   const byCrew = new Set<string>()
+  // the files some commit other than the crew's knowledge commit changed
+  const byMember = new Set<string>()
   for (const chunk of out.split('\0').slice(1)) {
-    for (const file of chunk.split('\n').slice(1).map((l) => l.trim()).filter(Boolean)) byCrew.add(file)
+    const [sha = '', ...files] = chunk.split('\n')
+    for (const file of files.map((l) => l.trim()).filter(Boolean)) {
+      byCrew.add(file)
+      if (!knowledge.has(sha.trim())) byMember.add(file)
+    }
   }
   const arch = repoPathOf(configOf(c.repo).architecture) ?? 'docs/architecture.md'
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
-  const targets = learnedTargets(c.dir, c.slug)
   const frontmatter = (text: string): string => {
     const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
     if (lines[0]?.trim() !== '---') return ''
     const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
     return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
   }
-  // a persona file, or (ADR-0046 item 0) a project skill's markdown: the body is the crew's to keep true, the frontmatter never
-  const isPersona = (file: string): boolean => /^\.claude\/agents\/[^/]+\.md$/.test(file) || /^\.claude\/skills\/[^/]+\/[^/]+\.md$/.test(file)
+  const kc = knowledgeCfgOf(c.repo)
+  // ADR-0046: every exempt file keeps its YAML frontmatter, except a knowledge doc's `verified` stamp and `sources` list, which
+  // knowledge-lint checks and a builder keeps true with its doc change (an indented line under `sources:` belongs to it)
+  const kept = (file: string, text: string): string => {
+    const fm = frontmatter(text)
+    if (!file.startsWith(`${kc.knowledgeDir}/`)) return fm
+    let skip = false
+    return fm.split('\n').filter((l) => {
+      if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
+      return !skip
+    }).join('\n')
+  }
   const frontmatterKept = (file: string): boolean => {
     const was = run(c.wt, ['show', `${base}:${file}`])
     const now = run(c.wt, ['show', `HEAD:${file}`])
-    return frontmatter(was.status === 0 ? was.out : '') === frontmatter(now.status === 0 ? now.out : '')
+    return kept(file, was.status === 0 ? was.out : '') === kept(file, now.status === 0 ? now.out : '')
   }
-  // ADR-0035: the rules dir, the knowledge dir, the agents index and the product-decisions file join the doc set. A persona's
-  // frontmatter is still never the knowledge step's to edit, whatever else names the file.
-  const kc = knowledgeCfgOf(c.repo)
-  const isDoc = (file: string): boolean =>
-    file.toLowerCase().endsWith('.md') &&
-    (file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
-    (!isPersona(file) || frontmatterKept(file))
+  const name = (file: string): string => file.split('/').pop() ?? ''
+  // free docs: any member may change them with its code, every round
+  // (only these: a README, a changelog or any other .md is a crew's to change only when its owns name it)
+  const isFreeDoc = (file: string): boolean =>
+    file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || file.startsWith(`${kc.knowledgeDir}/`)
+  // skills, agents and personas, the rules dir, the agents index and the product-decisions file: prompts other agents run on,
+  // so only the crew's knowledge commit may change them outside its owns
+  const isPrompt = (file: string): boolean =>
+    /(^|\/)skills\/(.+\/)?SKILL\.md$/.test(file) || /^\.claude\/skills\//.test(file) || /(^|\/)agents\/[^/]+\.md$/.test(file) ||
+    file.startsWith(`${kc.rulesDir}/`) || file === kc.agentsIndex || file === kc.productDecisions
+  // an agent or persona that judges (QC, checking, review, product owner): never a crew's to edit, even in its knowledge commit
+  const isJudge = (file: string): boolean => /(^|\/)agents\/[^/]+\.md$/.test(file) && /qc|check|review|judge|product-owner/i.test(name(file))
+  const isDoc = (file: string): boolean => {
+    if (!file.toLowerCase().endsWith('.md')) return false
+    const allowed = isPrompt(file) ? !isJudge(file) && !byMember.has(file) : isFreeDoc(file)
+    return allowed && frontmatterKept(file)
+  }
   return new Set([...byCrew].filter(isDoc))
 }
 
@@ -2661,7 +2706,10 @@ export async function gatesMain(argv: string[]): Promise<{ body: Obj; code: numb
       } else if (s === 'admit') {
         const label = str(f, 'admit-label')
         const title = str(f, 'admit-title')
-        r = main(['admit', '--wait-ms', str(f, 'admit-wait-ms') ?? '0', '--slug', slug, ...(label !== undefined ? ['--label', label] : []), ...(title !== undefined ? ['--title', title] : []), ...dr])
+        // ADR-0046 item 1: a call that ran green (up to HEAVY_WAIT_MS for the slot, then the suite) never adds an admit wait, so
+        // the whole call stays inside the runner's 600 s Bash timeout; stage.js re-runs a held admit alone, with its own wait
+        const admitWait = steps.includes('green') ? '0' : (str(f, 'admit-wait-ms') ?? '0')
+        r = main(['admit', '--wait-ms', admitWait, '--slug', slug, ...(label !== undefined ? ['--label', label] : []), ...(title !== undefined ? ['--title', title] : []), ...dr])
       } else {
         const cmd = s === 'owns' ? 'owns-check' : s === 'tests' ? 'tests-check' : 'knowledge-lint'
         r = main([cmd, '--slug', slug, ...dr])
@@ -3586,15 +3634,6 @@ function learnedOf(dir: string, slug: string): Obj[] {
       return []
     }
   })
-}
-// The repo paths the crew's learned items name as targets, only markdown ones (an item can't send the knowledge step to code).
-function learnedTargets(dir: string, slug: string): Set<string> {
-  const out = new Set<string>()
-  for (const item of learnedOf(dir, slug)) {
-    const t = repoPathOf(item.target)
-    if (t !== undefined && t.toLowerCase().endsWith('.md')) out.add(t)
-  }
-  return out
 }
 function setCrewState(dir: string, slug: string, state: 'finished' | 'stopped' | null): void {
   const p = `${CREW_STATE(dir, slug)}/state.json`

@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { gatesAware, spawnLabels } from './fixtures/gates-stub.ts'
+import { addCrewWorktree, crew, git, mkEnv, planObj, putFile, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
 const STAGE = `${PLUGIN}/workflows/stage.js`
@@ -51,7 +52,15 @@ async function exec(args, o = {}) {
   const unscripted = []
   const counters = {}
   const logs = []
-  const agent = gatesAware(async (prompt, opts = {}) => {
+  // o.gates(prompt): answers a whole `factory.ts gates` runner prompt itself (the real factory's output), past gatesAware
+  const raw = (inner) => (prompt, opts = {}) => {
+    if (o.gates && /-runner(-\d+)?$/.test(String(opts.label)) && /factory\.ts'?\s+gates\b/.test(prompt)) {
+      calls.push({ prompt, opts, label: opts.label, i: calls.length, gates: true })
+      return o.gates(prompt)
+    }
+    return inner(prompt, opts)
+  }
+  const agent = raw(gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -88,7 +97,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await ticks(2)
     return v === null || v === undefined ? v : structuredClone(v)
-  })
+  }))
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   let result
@@ -262,6 +271,52 @@ t('i1 7: gates stops at the first unmet step; the step after it runs alone once 
   assert.equal(indexOf(h, 'a-qc'), -1)
 })
 
+t('i1 9 (review 10): stage.js reads the real factory gates output: the crew goes to QC on its step results and runs no step alone', async () => {
+  // the real factory, in a temp repo whose crew passes every gate
+  const env = mkEnv({ config: { merge: 'sequential', target: 'main' }, useRealPlugin: true })
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'running' })]))
+  writeGoal(env.dir, 's')
+  const wt = addCrewWorktree(env.repo, 's')
+  putFile(wt, 'src/s/a.ts', 'a\n', 'work\n\nTruss-Crew: s\nTruss-Role: builder')
+  const realHead = git(wt, ['rev-parse', 'HEAD']).trim()
+  const sent = []
+  const gates = (prompt) => {
+    sent.push(prompt)
+    const steps = (prompt.match(/--steps\s+(\S+)/) || [])[1]
+    const out = env.run('gates', { slug: 's', cwd: wt, 'status-line': true }, ['--steps', steps, '--admit-label', 's-qc', '--admit-title', 'QC s', '--admit-wait-ms', '0'])
+    const lines = out.stdout.trimEnd().split('\n')
+    return { exit: out.status, stdout: lines.filter((l) => !l.startsWith('truss-status: ')).join('\n'), status: lines.find((l) => l.startsWith('truss-status: ')) }
+  }
+  const qc = `VERDICT: PASS\n\n## Proof checked\nHead: ${realHead}\nPatch: ${PATCH}\n`
+  const r = await runStage([OLD()], { labels: labelsFor({ 'a-qc': qc }), gates })
+  passed(r)
+  assert.ok(sent.length >= 1 && /--steps green,owns,tests,lint,admit\b/.test(sent[0]), sent.join('\n---\n'))
+  // every step's result came from the real gates line: none of them ran again on its own before QC
+  const before = r.calls.slice(r.calls.findIndex((c) => c.gates), indexOf(r, 'a-qc')).filter((c) => c.runner).map((c) => c.runner.key)
+  for (const k of ['check:green', 'owns-check', 'tests-check', 'knowledge-lint', 'admit']) assert.ok(!before.includes(k), `${k} ran alone: ${before.join(',')}`)
+  // and the QC brief carries the real head the gates line reported
+  assert.ok(callOf(r, 'a-qc').prompt.includes(realHead), callOf(r, 'a-qc').prompt.slice(0, 1500))
+})
+
+t('i1 10 (review 3): a gates call with green sends its admit with no wait; a hold there re-runs the admit alone with its 90 s wait, a budget hold does not', async () => {
+  let held = 0
+  const runner = (c) => {
+    if (c.cmd !== 'admit' || !/--label a-qc /.test(c.prompt)) return undefined
+    if (/--wait-ms 0 /.test(c.prompt)) return (held++, rj({ admitted: false, why: 'memory low' }, 1))
+    return rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048 })
+  }
+  const r = await runStage([OLD()], { labels: labelsFor(), runner })
+  passed(r)
+  const qcAdmits = r.calls.filter((c) => c.runner && c.runner.cmd === 'admit' && /--label a-qc /.test(c.prompt)).map((c) => (c.prompt.match(/--wait-ms (\d+)/) || [])[1])
+  assert.deepEqual(qcAdmits, ['0', '90000'], 'the gates admit waits 0, the re-run admit waits 90 s')
+  assert.equal(held, 1)
+  // a budget hold ends the crew at once: no second admit
+  const budget = (c) => (c.cmd === 'admit' && /--label a-qc /.test(c.prompt) ? rj({ admitted: false, budget: true, why: 'over budget' }, 1) : undefined)
+  const b = await runStage([OLD()], { labels: labelsFor(), runner: budget })
+  assert.equal(resultOf(b).state, 'stopped', why(b))
+  assert.equal(b.calls.filter((c) => c.runner && c.runner.cmd === 'admit' && /--label a-qc /.test(c.prompt)).length, 1)
+})
+
 t('i1 2: green and the tests check are skipped while the crew head has not moved', async () => {
   // the QC fixer commits nothing: integrate reports the same head, so the green check and the scope checks are not re-run
   const runner = ({ cmd }) => (cmd === 'integrate' ? rj({ merged: true, head: HEAD }) : undefined)
@@ -359,6 +414,53 @@ t('q3 2: a second stress-fix green with no test stops the crew BLOCKED at green,
   assert.equal(res.at, 'green')
   assert.ok(res.text.includes('changed no test file'), res.text)
   assert.equal(indexOf(r, 'a-qc'), -1)
+})
+
+t('q3 3 (review 1, 7): the no-test fix brief carries the stress findings; a stress-fix round that left the head unmoved fails green the same way', async () => {
+  const labels = { 'a-planner': BUILD_ONLY, 'a-builder': done('feat/b'), 'a-stress': STRESS1, 'a-builder-2': done('feat/sfix'), 'a-builder-3': done('feat/reg'), 'a-qc': PASS }
+  const H0 = '00'.repeat(20)
+  // green 0 is the crew's, green 1 follows a stress-fix round that committed nothing (head still H0, so no test file either)
+  const unmoved = (c) => (c.cmd === 'check' && c.expect === 'green' ? rj(c.n === 0 ? { ok: true, head: H0 } : c.n === 1 ? { ok: true, head: H0, testsSince: [] } : { ok: true, head: '02'.repeat(20), testsSince: ['tests/r.check.ts'] }) : undefined)
+  const r = await runStage([OLD({ stressTest: true })], { labels, runner: unmoved })
+  passed(r)
+  assert.ok(indexOf(r, 'a-builder-3') > 0 && indexOf(r, 'a-builder-3') < indexOf(r, 'a-qc'), r.labels.join(','))
+  const p = callOf(r, 'a-builder-3').prompt
+  assert.ok(p.includes(`left the head at ${H0}`), p.slice(0, 1500))
+  assert.ok(p.includes('The stress test reported these findings:'), p.slice(0, 1500))
+  assert.ok(p.includes('crashes on an empty list'), p.slice(0, 1500))
+  // a moved head with no test file also carries the findings
+  const m = await runStage([OLD({ stressTest: true })], { labels, runner: stressGreen([[], ['tests/r.check.ts']]) })
+  passed(m)
+  assert.ok(callOf(m, 'a-builder-3').prompt.includes('crashes on an empty list'))
+})
+
+t('q3 4 (review 5): an unknown test list (no test file truss can tell) logs a warning and does not block the crew', async () => {
+  const labels = { 'a-planner': BUILD_ONLY, 'a-builder': done('feat/b'), 'a-stress': STRESS1, 'a-builder-2': done('feat/sfix'), 'a-qc': PASS }
+  const why5 = 'no tracked file is a test file by name or by testGlobs'
+  const unknown = (c) => (c.cmd === 'check' && c.expect === 'green' ? rj(c.n === 0 ? { ok: true, head: '00'.repeat(20) } : { ok: true, head: '01'.repeat(20), testsUnknown: why5 }) : undefined)
+  const r = await runStage([OLD({ stressTest: true })], { labels, runner: unknown })
+  passed(r)
+  assert.equal(indexOf(r, 'a-builder-3'), -1, r.labels.join(','))
+  assert.ok(r.logs.some((m) => m.startsWith('warning: green check: crew a:') && m.includes(why5)), r.logs.join('\n'))
+})
+
+t('q8 3 (review 8): a QC finding whose text says "debug" is no bug: a debug-log nit gets no regression tester', async () => {
+  // with no path first, the optional leading word could take "de" and leave "bug" to match without a word boundary
+  const DEBUG = 'VERDICT: FAIL\n\n## Findings\n- debug log left in `src/ui/a.ts:5`\n- `src/ui/a.ts:9`: riskier name than it needs\n'
+  const r = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b'), 'a-qc': DEBUG, 'a-builder-2': done('feat/fix'), 'a-qc-2': PASS }), runner: movingGreen })
+  passed(r)
+  assert.equal(indexOf(r, 'a-tester-2'), -1, r.labels.join(','))
+  // the word itself still counts
+  const BUGGY = 'VERDICT: FAIL\n\n## Findings\n- `src/ui/a.ts:5`: Bug: the export drops the last row\n'
+  const b = await runStage([OLD()], { labels: labelsFor({ 'a-builder': done('feat/b'), 'a-qc': BUGGY, 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/fix'), 'a-qc-2': PASS }), runner: movingGreen })
+  passed(b)
+  assert.ok(indexOf(b, 'a-tester-2') > 0, b.labels.join(','))
+})
+
+t('q0 2 (review 9): the builder\'s read-only test files line has a space after the colon', async () => {
+  const r = await runStage([OLD()], { labels: labelsFor() })
+  passed(r)
+  assert.ok(callOf(r, 'a-builder').prompt.includes('in your files): tests/a.check.ts'), callOf(r, 'a-builder').prompt.slice(0, 2500))
 })
 
 t('q9 1: a stale `verified` stamp left after the writer rounds reaches QC as non-blocking; other new failures still FAIL', async () => {

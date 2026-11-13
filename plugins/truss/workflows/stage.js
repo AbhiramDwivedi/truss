@@ -424,7 +424,9 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
   const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
-  let r = pre ?? (await runFactory(crew, cmd, 'admitted'))
+  // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
   if (r.exit === 2 && /store busy/.test(r.out)) {
@@ -591,7 +593,10 @@ async function gates(crew, want) {
   const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
   const parts = [`node ${bin} gates --slug ${slug} --steps ${steps.join(',')}`]
   if (steps.includes('green')) parts.push(`--cwd ${cwd} --expect green --label ${sh(`${crew.slug}-check`)}`)
-  if (admitLabel) parts.push(`--admit-label ${sh(admitLabel)} --admit-title ${sh(admitTitle)} --admit-wait-ms 90000`)
+  // a call that runs green may already spend HEAVY_WAIT_MS (540 s) on the slot: its admit waits 0, so the call stays under the
+  // 600 s Bash timeout, and a memory hold there is re-run alone by admit() with its own 90 s wait
+  const admitWait = steps.includes('green') ? 0 : 90000
+  if (admitLabel) parts.push(`--admit-label ${sh(admitLabel)} --admit-title ${sh(admitTitle)} --admit-wait-ms ${admitWait}`)
   parts.push(`${dr} --status-line`)
   // the tests check's extra lines (Attempt, Head) ride along, so a resumed call keeps its own cache key
   const extra = steps.includes('tests') ? testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null) : null
@@ -611,7 +616,7 @@ async function gates(crew, want) {
     if (!isPlainObject(body)) break
     const exit = Number.isInteger(codes[s]) ? codes[s] : r.exit
     // met as the step's own runFactory call would judge it (the same key); gates' own met only says where it stopped
-    results[s] = { met: body[GATE_KEY[s]] === true, parsed: body, exit, out: `exit ${exit}\n${JSON.stringify(body)}` }
+    results[s] = { met: body[GATE_KEY[s]] === true, parsed: body, exit, out: `exit ${exit}\n${JSON.stringify(body)}`, ...(s === 'admit' && admitWait === 0 ? { noWait: true } : {}) }
     if (typeof met[s] === 'boolean' && !met[s]) break
   }
   crew.gates = { moves: crew.moves || 0, order: steps, results, admitLabel, admitTitle, attempt }
@@ -816,7 +821,7 @@ function taskPrompt(crew, task, note) {
   if (task.role === 'builder') {
     const tf = testerFiles(crew)
     const ro = tf.length ? tf : ownTestsOf(crew)
-    if (ro.length) body.push(`Test files, read-only to you (a tester wrote them before your build as the proof of it; never edit them, and add any regression test of your own in your files):${ro.join(', ')}`)
+    if (ro.length) body.push(`Test files, read-only to you (a tester wrote them before your build as the proof of it; never edit them, and add any regression test of your own in your files): ${ro.join(', ')}`)
   }
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
@@ -1408,7 +1413,7 @@ function findingsOf(text) {
 
 // ADR-0046 item 8: the defects of a findings list, which get a regression case from the tester before the builder fixes them.
 // Every stress-test finding is a real defect (test gaps go under ## Notes); a QC finding is one when it is rated bug or risk.
-const DEFECT_RE = /^-\s*(?:`[^`]*`|\S+)?\s*:?\s*(?:\*\*)?(?:bug|risk)\b/i
+const DEFECT_RE = /^-\s*(?:`[^`]*`|\S+)?\s*:?\s*(?:\*\*)?\b(?:bug|risk)\b/i
 const qcDefect = (f) => DEFECT_RE.test(f)
 
 // the tester's part of a fix round: the findings that name its files, and a regression case first for each defect
@@ -1649,7 +1654,8 @@ async function split(crew) {
 // ---------------------------------------------------------------- green, stress test, scope, QC
 
 // ADR-0046 item 3: the stress-fix round's message when its diff adds or changes no test file
-const noTestText = (since, head) => `The stress-fix round (${since}..${head}) changed no test file: every defect fix carries a regression test that fails before the fix and passes after it (R-71). Add a regression case for each defect the stress test reported, and name each in your report.`
+// The defects themselves go along, as stressTest gives them to fixFindings, so the fix member knows which cases to add.
+const noTestText = (since, head, findings) => `${since === head ? `The stress-fix round left the head at ${head}: it committed no fix and no test file` : `The stress-fix round (${since}..${head}) changed no test file`}: every defect fix carries a regression test that fails before the fix and passes after it (R-71). Add a regression case for each defect the stress test reported, and name each in your report.${findings ? `\nThe stress test reported these findings:\n${findings}` : ''}`
 
 // opts.testsSince (ADR-0046 item 3): the head before a stress-fix round. The green check then lists the test files changed since
 // it, and a pass with none is a failure: a fix member adds the cases (the tester when the crew has tester files), once; a second
@@ -1672,9 +1678,12 @@ async function green(crew, opts = {}) {
       crew.head = g.parsed.head
       crew.sourceChanges = sourceChangesOf(g.parsed)
       passedAt(crew, 'greenAt')
-      // an old factory prints no testsSince: no list, no check
-      if (since && g.parsed.head !== since && Array.isArray(g.parsed.testsSince) && g.parsed.testsSince.length === 0) {
-        const text = noTestText(since, g.parsed.head)
+      // a project whose test files truss can't recognise: unknown, so a warning, never a stop (ADR-0046 item 3, testGlobs)
+      if (since && typeof g.parsed.testsUnknown === 'string' && g.parsed.testsUnknown) log(`warning: green check: crew ${crew.slug}: ${g.parsed.testsUnknown}`)
+      // an old factory prints no testsSince (and an unknown one none either): no list, no check. A head that did not move after
+      // a stress test that reported defects (green only gets testsSince then) fixed nothing: the same failure as no test.
+      if (since && Array.isArray(g.parsed.testsSince) && g.parsed.testsSince.length === 0) {
+        const text = noTestText(since, g.parsed.head, typeof opts.findings === 'string' ? opts.findings.trim() : '')
         if (noTest++ >= 1) throw new Stop('BLOCKED', text, 'green')
         log(`green check: crew ${crew.slug}, stress-fix round added no test`)
         await fixBuilder(crew, 'stress-fix regression tests', text, testerFiles(crew).length ? 'tester' : 'builder')
@@ -1796,7 +1805,7 @@ async function stressTest(crew) {
   const from = crew.head
   await fixFindings(crew, 'stress-test findings', 'A stress test reported these findings:', findings, `A stress test reported these findings:\n${findings}`, () => true)
   // ADR-0046 item 3: the round's diff must add or change a test, checked at green, before QC
-  await green(crew, { testsSince: from })
+  await green(crew, { testsSince: from, findings })
 }
 
 async function scope(crew) {

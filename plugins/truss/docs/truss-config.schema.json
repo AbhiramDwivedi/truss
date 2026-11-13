@@ -87,6 +87,11 @@
       "minimum": 1,
       "maximum": 16
     },
+    "testGlobs": {
+      "description": "ADR-0046 item 3: globs (repo-relative, path.matchesGlob) naming the project's test files beyond truss's built-in names (*.test|spec|check.*, test_*.py, *_test.py|go, tests/ test/ __tests__/ spec/ checks/ e2e/ fixtures/ dirs). The green check after a stress-fix round lists the test files changed; when no tracked file is a test file by either rule, the list is unknown and the crew gets a warning, not a stop.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "merge": {
       "description": "Merge mode of every run; the PM never asks. Default sequential.",
       "enum": ["sequential", "single"]

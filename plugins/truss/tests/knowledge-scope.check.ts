@@ -57,14 +57,16 @@ const ownsFull = (env) => {
   return { status: r.status, outside: r.json.outside ?? [], exempt: r.json.exempt ?? [] }
 }
 
-t('scope 1: a recorded knowledge commit that edits the feature map, an ADR, a persona body, the product-owner file and an item target passes, and owns-check lists them as exempt', () => {
+t('scope 1: a recorded knowledge commit that edits the feature map, an ADR, a persona body and a knowledge doc passes them as exempt; the product-owner file and an item target off the doc paths are not', () => {
   const { env, wt } = world(undefined, { 'a.txt': 'base\n', ...PERSONA_BASE })
   putFile(wt, 'src/s/a.ts', 'export {}\n', 'work')
-  commitAll(wt, { 'docs/features.md': 'map\n', 'docs/adr/0040-x.md': 'adr\n', '.claude/agents/dev.md': `${FM()}## Standards\n\n- old rule\n- new rule\n`, '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new call\n`, 'AGENTS.md': 'agents\n', 'docs/knowledge/export.md': 'k\n' }, KNOWLEDGE)
-  record(env, wt, ['AGENTS.md', 'docs/knowledge/export.md'])
+  commitAll(wt, { 'docs/features.md': 'map\n', 'docs/adr/0040-x.md': 'adr\n', '.claude/agents/dev.md': `${FM()}## Standards\n\n- old rule\n- new rule\n`, '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new call\n`, 'AGENTS.md': 'agents\n', 'NOTES.md': 'n\n', 'docs/knowledge/export.md': 'k\n' }, KNOWLEDGE)
+  record(env, wt, ['NOTES.md', 'docs/knowledge/export.md'])
   const r = ownsFull(env)
-  assert.deepEqual({ status: r.status, outside: r.outside }, { status: 0, outside: [] })
-  assert.deepEqual([...r.exempt].sort(), ['.claude/agents/dev.md', '.claude/agents/product-owner.md', 'AGENTS.md', 'docs/adr/0040-x.md', 'docs/features.md', 'docs/knowledge/export.md'])
+  // ADR-0046 review: a judge persona is never a crew's to edit, and a learned item's target (NOTES.md) widens nothing;
+  // the configured agents index changed by the knowledge commit alone is a prompt file the knowledge member may write
+  assert.deepEqual({ status: r.status, outside: [...r.outside].sort() }, { status: 1, outside: ['.claude/agents/product-owner.md', 'NOTES.md'] })
+  assert.deepEqual([...r.exempt].sort(), ['.claude/agents/dev.md', 'AGENTS.md', 'docs/adr/0040-x.md', 'docs/features.md', 'docs/knowledge/export.md'])
 })
 
 t('scope 2: a knowledge commit that edits a .ts target fails; the doc files in the same commit still pass', () => {
@@ -85,34 +87,39 @@ t('scope 2b (ADR-0046 item 0): the exemption needs no knowledge-commit record: a
   assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/features.md'] }, 'with a record')
 })
 
-t('scope 2c (review 6): only .md files are exempt: a featureMap or adrDir file of another extension is not; CLAUDE.md and AGENTS.md are only as item targets', () => {
+t('scope 2c (review 6): only .md files are exempt: a featureMap or adrDir file of another extension is not; CLAUDE.md is not, item target or not; AGENTS.md is only as the agents index changed by the knowledge commit alone', () => {
   const cfg = { merge: 'sequential', target: 'main', featureMap: 'docs/capabilities.yaml', adrDir: 'decisions' }
   const { env, wt } = world(cfg)
   commitAll(wt, { 'docs/capabilities.yaml': 'x: 1\n', 'decisions/0001-q.txt': 'q\n', 'decisions/0002-q.md': 'q\n', 'CLAUDE.md': 'rules\n', 'AGENTS.md': 'r\n' }, KNOWLEDGE)
-  record(env, wt, ['AGENTS.md'])
+  record(env, wt, ['CLAUDE.md'])
   const r = ownsFull(env)
   assert.deepEqual([...r.outside].sort(), ['CLAUDE.md', 'decisions/0001-q.txt', 'docs/capabilities.yaml'])
   assert.deepEqual([...r.exempt].sort(), ['AGENTS.md', 'decisions/0002-q.md'])
+  const b = world()
+  putFile(b.wt, 'AGENTS.md', 'builder rewrites the index\n', 'builder edits the agents index')
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['AGENTS.md'], exempt: [] })
 })
 
 t('scope 2d (review 6): a change to a persona\'s YAML frontmatter is never exempt, a body-only change is; a new persona file with frontmatter is not', () => {
-  const { env, wt } = world(undefined, { 'a.txt': 'base\n', ...PERSONA_BASE })
+  const UI = `${FM().replace('name: dev', 'name: ui')}## Standards\n\n- old\n`
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', ...PERSONA_BASE, '.claude/agents/ui.md': UI })
   commitAll(wt, {
     '.claude/agents/dev.md': `${FM('tools: Read, Write, Edit, Bash\n')}## Standards\n\n- old rule\n`, // frontmatter gains a tools line
-    '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new\n`, // body only
+    '.claude/agents/ui.md': `${UI}- new\n`, // body only
+    '.claude/agents/product-owner.md': `${FM().replace('name: dev', 'name: product-owner')}## Standards\n\n- old\n- new\n`, // body only, but a judge
     '.claude/agents/fresh.md': `${FM().replace('name: dev', 'name: fresh')}## Standards\n\n- x\n`,
   }, KNOWLEDGE)
   record(env, wt)
   const r = ownsFull(env)
-  assert.deepEqual([...r.outside].sort(), ['.claude/agents/dev.md', '.claude/agents/fresh.md'])
-  assert.deepEqual(r.exempt, ['.claude/agents/product-owner.md'])
+  assert.deepEqual([...r.outside].sort(), ['.claude/agents/dev.md', '.claude/agents/fresh.md', '.claude/agents/product-owner.md'])
+  assert.deepEqual(r.exempt, ['.claude/agents/ui.md'])
 })
 
 t('scope 2e (review 6): a non-ASCII doc path is exempt: owns-check and the exemption read paths with the same core.quotepath=off', () => {
   const { env, wt } = world()
-  commitAll(wt, { 'docs/übersicht.md': 'k\n', 'docs/adr/0041-ünï.md': 'adr\n' }, KNOWLEDGE)
-  record(env, wt, ['docs/übersicht.md'])
-  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/adr/0041-ünï.md', 'docs/übersicht.md'] })
+  commitAll(wt, { 'docs/knowledge/übersicht.md': 'k\n', 'docs/adr/0041-ünï.md': 'adr\n' }, KNOWLEDGE)
+  record(env, wt)
+  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/adr/0041-ünï.md', 'docs/knowledge/übersicht.md'] })
 })
 
 t('scope 3 (ADR-0046 item 0): a member code change outside owns still fails; a member edit of a doc path is exempt (the crew owns its docs)', () => {
@@ -125,13 +132,14 @@ t('scope 3 (ADR-0046 item 0): a member code change outside owns still fails; a m
   assert.deepEqual(r.exempt, ['docs/features.md'])
 })
 
-t('scope 4 (ADR-0046 item 0): a doc both a member and the knowledge commit changed is exempt; a doc that is not on a doc path is not', () => {
+t('scope 4 (ADR-0046 item 0): a doc both a member and the knowledge commit changed is exempt; a .md off the doc paths is not, under docs/ or not', () => {
   const { env, wt } = world()
   putFile(wt, 'docs/features.md', 'member\n', 'member edits the map')
   putFile(wt, 'docs/features.md', 'member\nknowledge\n', KNOWLEDGE)
   putFile(wt, 'docs/a.md', 'x\n', 'member writes a loose doc')
+  putFile(wt, 'notes/a.md', 'x\n', 'member writes a note off the doc paths')
   record(env, wt)
-  assert.deepEqual(ownsFull(env), { status: 1, outside: ['docs/a.md'], exempt: ['docs/features.md'] })
+  assert.deepEqual(ownsFull(env), { status: 1, outside: ['docs/a.md', 'notes/a.md'], exempt: ['docs/features.md'] })
 })
 
 t('scope 5 (ADR-0046 item 0): the architecture doc (truss.json `architecture`, default docs/architecture.md) is a doc path', () => {
@@ -140,16 +148,47 @@ t('scope 5 (ADR-0046 item 0): the architecture doc (truss.json `architecture`, d
   assert.deepEqual(ownsFull(a.env), { status: 0, outside: [], exempt: ['docs/architecture.md'] })
   const b = world({ merge: 'sequential', target: 'main', architecture: 'arch/ARCH.md' })
   putFile(b.wt, 'arch/ARCH.md', 'x\n', 'builder updates the module map')
-  putFile(b.wt, 'docs/architecture.md', 'x\n', 'not the configured doc')
-  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['docs/architecture.md'], exempt: ['arch/ARCH.md'] })
+  putFile(b.wt, 'ARCHITECTURE.md', 'x\n', 'not the configured doc')
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['ARCHITECTURE.md'], exempt: ['arch/ARCH.md'] })
 })
 
-t('scope 5b (ADR-0046 item 0): a project skill\'s markdown body is a doc path for the builder; its frontmatter is never exempt', () => {
+t('scope 5b (ADR-0046 review): a builder edit of a skill it does not own is never exempt, body or frontmatter; the knowledge commit may change a body only', () => {
   const SK = (desc, body) => `---\nname: export\ndescription: ${desc}\n---\n\n${body}`
-  const { env, wt } = world(undefined, { 'a.txt': 'base\n', '.claude/skills/export/SKILL.md': SK('exports', 'old\n'), '.claude/skills/ship/SKILL.md': SK('ships', 'old\n') })
-  putFile(wt, '.claude/skills/export/SKILL.md', SK('exports', 'new behaviour\n'), 'builder keeps the skill true to the code')
-  putFile(wt, '.claude/skills/ship/SKILL.md', SK('ships everything', 'old\n'), 'builder changes when the skill loads')
-  assert.deepEqual(ownsFull(env), { status: 1, outside: ['.claude/skills/ship/SKILL.md'], exempt: ['.claude/skills/export/SKILL.md'] })
+  const base = { 'a.txt': 'base\n', '.claude/skills/export/SKILL.md': SK('exports', 'old\n'), '.claude/skills/ship/SKILL.md': SK('ships', 'old\n'), 'plugins/p/skills/run/SKILL.md': SK('runs', 'old\n') }
+  const a = world(undefined, base)
+  putFile(a.wt, '.claude/skills/export/SKILL.md', SK('exports', 'new behaviour\n'), 'builder keeps the skill true to the code')
+  putFile(a.wt, 'plugins/p/skills/run/SKILL.md', SK('runs', 'new behaviour\n'), 'builder edits a plugin skill body')
+  putFile(a.wt, '.claude/skills/ship/SKILL.md', SK('ships everything', 'old\n'), 'builder changes when the skill loads')
+  assert.deepEqual(ownsFull(a.env), { status: 1, outside: ['.claude/skills/export/SKILL.md', '.claude/skills/ship/SKILL.md', 'plugins/p/skills/run/SKILL.md'], exempt: [] })
+  const b = world(undefined, base)
+  commitAll(b.wt, { '.claude/skills/export/SKILL.md': SK('exports', 'new behaviour\n'), 'plugins/p/skills/run/SKILL.md': SK('runs', 'new\n'), '.claude/skills/ship/SKILL.md': SK('ships everything', 'old\n') }, KNOWLEDGE)
+  record(b.env, b.wt)
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['.claude/skills/ship/SKILL.md'], exempt: ['.claude/skills/export/SKILL.md', 'plugins/p/skills/run/SKILL.md'] })
+})
+
+t('scope 5c (ADR-0046 review): every exempt file keeps its frontmatter: an ADR body edit is exempt, an ADR frontmatter edit is not; a knowledge doc\'s verified and sources may change; a README or CHANGELOG is never a free doc', () => {
+  const D = (fm, body) => `---\n${fm}---\n\n${body}`
+  const K = (v, src) => D(`verified: ${v}\nsources:\n${src.map((s) => `  - ${s}\n`).join('')}kind: area\n`, 'k\n')
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', 'docs/adr/0001-guide.md': D('title: Guide\n', 'old\n'), 'docs/adr/0002-how.md': D('title: How\n', 'old\n'), 'docs/knowledge/x.md': K('aaa', ['src/a.ts']), 'docs/knowledge/y.md': K('aaa', ['src/a.ts']) })
+  putFile(wt, 'docs/adr/0001-guide.md', D('title: Guide\n', 'new\n'), 'builder updates the ADR body')
+  putFile(wt, 'docs/adr/0002-how.md', D('title: How it really works\n', 'old\n'), 'builder retitles an ADR')
+  putFile(wt, 'docs/knowledge/x.md', K('bbb', ['src/a.ts', 'src/b.ts']), 'builder re-stamps the knowledge doc')
+  putFile(wt, 'docs/knowledge/y.md', K('aaa', ['src/a.ts']).replace('kind: area', 'kind: flow'), 'builder changes another key')
+  putFile(wt, 'pkg/README.md', 'r\n', 'builder writes a package readme')
+  putFile(wt, 'CHANGELOG.md', 'c\n', 'builder adds a changelog line')
+  assert.deepEqual(ownsFull(env), { status: 1, outside: ['CHANGELOG.md', 'docs/adr/0002-how.md', 'docs/knowledge/y.md', 'pkg/README.md'], exempt: ['docs/adr/0001-guide.md', 'docs/knowledge/x.md'] })
+})
+
+t('scope 5d (ADR-0046 review): an agent file is a prompt file at any depth: a builder edit of a non-owned agents/*.md is not exempt, a QC or checking agent never is', () => {
+  const A = (name, body) => `---\nname: ${name}\n---\n\n${body}`
+  const base = { 'a.txt': 'base\n', 'plugins/p/agents/writer.md': A('writer', 'old\n'), 'plugins/p/agents/qc-engineer.md': A('qc', 'old\n'), 'plugins/p/agents/checking-engineer.md': A('checking', 'old\n') }
+  const a = world(undefined, base)
+  putFile(a.wt, 'plugins/p/agents/writer.md', A('writer', 'new\n'), 'builder edits an agent body')
+  assert.deepEqual(ownsFull(a.env), { status: 1, outside: ['plugins/p/agents/writer.md'], exempt: [] })
+  const b = world(undefined, base)
+  commitAll(b.wt, { 'plugins/p/agents/writer.md': A('writer', 'new\n'), 'plugins/p/agents/qc-engineer.md': A('qc', 'new\n'), 'plugins/p/agents/checking-engineer.md': A('checking', 'new\n') }, KNOWLEDGE)
+  record(b.env, b.wt)
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['plugins/p/agents/checking-engineer.md', 'plugins/p/agents/qc-engineer.md'], exempt: ['plugins/p/agents/writer.md'] })
 })
 
 t('scope 6: the configured featureMap and adrDir (as .md) are doc paths of the recorded knowledge commit; without the key they are not', () => {
@@ -209,7 +248,7 @@ t('diff 2: a crew that changed no source file has an empty sourceChanges, and a 
 
 // ADR-0046 item 3: a stress-fix round's green check names the test files changed since the round's start head
 t('diff 3: check --expect green --tests-since <sha> lists the test files changed since that sha, and [] when none', () => {
-  const { env, wt } = world()
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', 'tests/old.check.ts': 'x\n' })
   git(wt, ['merge', '-q', 'main'], true)
   putFile(wt, 'src/s/a.ts', 'x\n', 'work')
   const since = git(wt, ['rev-parse', 'HEAD']).trim()
@@ -224,6 +263,29 @@ t('diff 3: check --expect green --tests-since <sha> lists the test files changed
   // without the flag, or with one that is not a sha, the field is absent: an old stage.js sees no change
   assert.equal('testsSince' in assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green' })), false)
   assert.equal('testsSince' in assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': 'HEAD~1;x' })), false)
+})
+
+t('diff 3b (ADR-0046 review): with no tracked file a test by name or by testGlobs, the list is unknown: testsUnknown says so, testsSince is absent', () => {
+  const { env, wt } = world(undefined, { 'a.txt': 'base\n', 'lib/a_spec.rb': 'x\n' })
+  putFile(wt, 'src/s/a.ts', 'x\n', 'work')
+  const since = git(wt, ['rev-parse', 'HEAD']).trim()
+  putFile(wt, 'src/s/a.ts', 'y\n', 'fix, no test')
+  const j = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': since }))
+  assert.equal(j.ok, true, JSON.stringify(j))
+  assert.equal('testsSince' in j, false)
+  assert.match(j.testsUnknown, /no tracked file is a test file.*testGlobs/)
+})
+
+t('diff 3c (ADR-0046 review): testGlobs in .claude/truss.json names the project\'s test files, so a file of its own layout counts', () => {
+  const { env, wt } = world({ merge: 'sequential', target: 'main', testGlobs: ['lib/**/*_spec.rb'] }, { 'a.txt': 'base\n', 'lib/a_spec.rb': 'x\n' })
+  putFile(wt, 'src/s/a.ts', 'x\n', 'work')
+  const since = git(wt, ['rev-parse', 'HEAD']).trim()
+  putFile(wt, 'src/s/a.ts', 'y\n', 'fix, no test')
+  const none = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': since }))
+  assert.deepEqual({ list: none.testsSince, unknown: 'testsUnknown' in none }, { list: [], unknown: false })
+  putFile(wt, 'lib/s/b_spec.rb', 'x\n', 'regression case')
+  const some = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': since }))
+  assert.deepEqual(some.testsSince, ['lib/s/b_spec.rb'])
 })
 
 // ---------------------------------------------------------------- config keys
