@@ -2043,6 +2043,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const rebuild = kind !== 'merge-ready' && !noWork
   // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
   const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+  // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
+  answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
   const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
   // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
   // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
@@ -2072,7 +2074,55 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
   }
   const out = stageOut(c, [entry], [], [], [], [])
+  saveAnswers(c.dir, slug, answers as Answer[], runs)
   return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
+}
+
+// 0.29.0 item 5: the crew's answers store, <dir>/crews/<slug>/answers.json. Each row is one ruling {at, text} plus `after`, the
+// id of the crew's newest Workflow run when the ruling was given (null when the resume had no runs), and `ts`.
+type Answer = { at: string; text: string }
+type StoredAnswer = Answer & { after: string | null; ts: string }
+const ANSWERS_FILE = (dir: string, slug: string): string => `${CREW_STATE(dir, slug)}/answers.json`
+const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text
+function storedAnswers(dir: string, slug: string): StoredAnswer[] {
+  const v = readQuiet(ANSWERS_FILE(dir, slug))
+  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
+}
+
+// The answers a resume hands stage.js: the new ones first, then each stored one that is still unbuilt and not repeated. A stored
+// answer at a task name is built once a run that started after it finished that task (doneTasks over the runs after `after`); a
+// built one is dropped, since re-sending it would re-run a finished task. An answer at a step name (red, split, green, qc, a
+// stress or UX step) is a standing ruling and always rides along. When `after` names no run of the crew, the answer counts as
+// unbuilt: carrying a ruling twice costs one rerun, losing one costs a QC round.
+function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[], from: number, wt: string, target: string, rebuild: boolean): Answer[] {
+  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text }))
+  const taskNames = new Set(rebuild ? plannerTasks(runs, slug).tasks.filter(isObj).map((t: Obj) => String(t.name)) : [])
+  const builtAfter = new Map<string, string[]>()
+  for (const a of storedAnswers(dir, slug)) {
+    if (out.some((x) => sameAnswer(x, a))) continue
+    if (taskNames.has(a.at)) {
+      const at = a.after === null ? -1 : runs.findIndex((r) => r.id === a.after)
+      if (at >= 0) {
+        const key = String(at)
+        if (!builtAfter.has(key)) builtAfter.set(key, doneTasks(runs.slice(Math.max(from, at + 1)), slug, wt, target))
+        if ((builtAfter.get(key) ?? []).includes(a.at)) continue
+      }
+    }
+    out.push({ at: a.at, text: a.text })
+  }
+  return out
+}
+
+// Writes the answers this resume used back to the store: a row already stored keeps its `after` and `ts`, a new one gets the
+// newest run's id. Rows a resume dropped as built are dropped from the store too.
+function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): void {
+  const old = storedAnswers(dir, slug)
+  const newest = runs.length > 0 ? runs[runs.length - 1].id : null
+  const now = new Date().toISOString()
+  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, after: newest, ts: now })
+  if (rows.length === 0 && old.length === 0) return
+  mkdirSync(CREW_STATE(dir, slug), { recursive: true })
+  writeJsonAtomic(ANSWERS_FILE(dir, slug), rows)
 }
 
 function cmdStart(f: Flags): Obj {

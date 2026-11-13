@@ -109,6 +109,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "One heavy slot").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
 
+## Resume answers carry forward
+
+- What: every crew resume (`start --slug S --resume answers|stale|merge-ready`) merges the crew's earlier rulings into `entry.answers`, so a PM's new `--answers` file never drops one. The store is `<truss dir>/crews/<slug>/answers.json`, rows `{at, text, after, ts}` (`after` is the id of the crew's newest Workflow run when the ruling was given). The new answers come first, then each stored one not repeated. A stored answer at a task name drops once a run after `after` finished that task (it is built; re-sending it would re-run the task); until then it rides along and keeps the task out of `done`. An answer at a step name (red, split, green, qc, stress, UX) always rides along. The refused-resume checks (red record) look only at the new answers.
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdStartResume`, `carriedAnswers`, `saveAnswers`, `storedAnswers`); tests `plugins/truss/tests/throughput-029.check.ts` (`i5 *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
+
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
