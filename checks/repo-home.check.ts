@@ -1,21 +1,19 @@
 // Root contract for the standalone truss repo home (ADR 0013). Node built-ins only.
-// Root: REPO_HOME_ROOT, else git rev-parse --show-toplevel. The install suite redirects GitHub URLs with git insteadOf.
-import { describe, it, before, after } from 'node:test'
+// Root: REPO_HOME_ROOT, else the directory above this file.
+// The install suite does not run the claude CLI. It computes what an install holds from the rules the files encode:
+// the catalog entry's git-subdir path on its ref (main), and the marketplace branch, which is main:marketplace (ADR-0013).
+// A real `claude plugin install` run is opt-in: checks/real-cli-install.e2e.ts.
+import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, execFile, spawn } from 'node:child_process'
-import { promisify } from 'node:util'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs'
-import http from 'node:http'
-import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const run = promisify(execFile)
-const ROOT = process.env.REPO_HOME_ROOT ?? execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+const ROOT = process.env.REPO_HOME_ROOT ?? dirname(dirname(fileURLToPath(import.meta.url)))
 const txt = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const rd = (p: string) => JSON.parse(txt(p))
 const git = (...a: string[]) => execFileSync('git', ['-C', ROOT, ...a], { encoding: 'utf8' })
-const ID = ['-c', 'user.name=repo-home', '-c', 'user.email=repo-home@invalid']
 const INSTALL = ['claude plugin marketplace add AbhiramDwivedi/truss', 'truss@truss']
 
 describe('repo-home hygiene', () => {
@@ -83,106 +81,43 @@ describe('repo-home marketplace', () => {
   })
 })
 
-// Copy the tracked and unignored files of `from` (under `sub`, if given) into a fresh repo on `branch`.
-function snapshot(from: string, sub: string, to: string, branch: string) {
-  const files = execFileSync('git', ['-C', from, 'ls-files', '-co', '--exclude-standard', '-z', '--', sub || '.'], { encoding: 'utf8' }).split('\0').filter(Boolean)
-  mkdirSync(to, { recursive: true })
-  execFileSync('git', ['init', '-q', '-b', branch, to])
-  for (const f of files) {
-    const src = join(from, f)
-    if (!existsSync(src) || statSync(src).isDirectory()) continue
-    const dst = join(to, sub ? f.slice(sub.length + 1) : f)
-    mkdirSync(dirname(dst), { recursive: true })
-    cpSync(src, dst)
-  }
-  execFileSync('git', ['-C', to, 'add', '-A'])
-  execFileSync('git', ['-C', to, ...ID, 'commit', '-qm', branch])
+// The files main holds under `prefix` (tracked plus unignored), relative to it: what a fetch of main:<prefix> gets.
+function filesUnder(prefix: string): string[] {
+  const out = git('ls-files', '-co', '--exclude-standard', '-z', '--', prefix || '.').split('\0').filter(Boolean)
+  return out.filter((f) => existsSync(join(ROOT, f))).map((f) => (prefix ? f.slice(prefix.length + 1) : f)).sort()
+}
+const tops = (files: string[]) => [...new Set(files.map((f) => f.split('/')[0]))].sort()
+const dirsNamed = (files: string[], name: string) => files.filter((f) => f.split('/').slice(0, -1).includes(name))
+
+// The install as Claude Code builds it: the plugin cache is the catalog entry's git-subdir path on its ref (main),
+// and the marketplace clone is the default branch, which the release makes with `git subtree split --prefix=marketplace main`.
+function computedInstall(entry = rd('marketplace/.claude-plugin/marketplace.json').plugins[0]) {
+  assert.equal(entry.source.source, 'git-subdir', 'the truss entry is not a git-subdir source')
+  assert.equal(entry.source.ref, 'main', 'the truss entry does not fetch main')
+  return { cache: filesUnder(entry.source.path), clone: filesUnder('marketplace') }
 }
 
 describe('repo-home install', () => {
-  let cfg = ''
-  let cache = ''
-  let vs: string[] = []
-  let server: http.Server | undefined
-  let t = ''
-  before(async () => {
-    t = mkdtempSync(join(tmpdir(), 'repo-home-'))
-    snapshot(ROOT, '', join(t, 'main'), 'main')
-    snapshot(ROOT, 'marketplace', join(t, 'mk'), 'marketplace')
-    const bare = join(t, 'srv', 'truss.git')
-    execFileSync('git', ['clone', '-q', '--bare', join(t, 'main'), bare])
-    execFileSync('git', ['-C', bare, 'fetch', '-q', join(t, 'mk'), 'marketplace:marketplace'])
-    execFileSync('git', ['-C', bare, 'symbolic-ref', 'HEAD', 'refs/heads/marketplace'])
-    server = http.createServer((req, res) => {
-      const u = new URL(req.url ?? '/', 'http://x')
-      const p = spawn('git', ['http-backend'], { env: { ...process.env, GIT_PROJECT_ROOT: join(t, 'srv'), GIT_HTTP_EXPORT_ALL: '1',
-        PATH_INFO: decodeURIComponent(u.pathname), QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method ?? 'GET',
-        CONTENT_TYPE: req.headers['content-type'] ?? '', GIT_PROTOCOL: String(req.headers['git-protocol'] ?? ''), REMOTE_ADDR: '127.0.0.1' } })
-      req.pipe(p.stdin)
-      let buf = Buffer.alloc(0)
-      let head = false
-      p.stdout.on('data', (d: Buffer) => {
-        if (head) { res.write(d); return }
-        buf = Buffer.concat([buf, d])
-        const i = buf.indexOf('\r\n\r\n')
-        if (i < 0) return
-        head = true
-        let status = 200
-        for (const l of buf.subarray(0, i).toString().split('\r\n')) {
-          const k = l.indexOf(':')
-          const n = l.slice(0, k)
-          const v = l.slice(k + 1).trim()
-          if (/^status$/i.test(n)) status = parseInt(v)
-          else res.setHeader(n, v)
-        }
-        res.writeHead(status)
-        res.write(buf.subarray(i + 4))
-      })
-      p.stdout.on('end', () => res.end())
-    })
-    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()))
-    const port = (server.address() as AddressInfo).port
-    const gc = join(t, 'gitconfig')
-    writeFileSync(gc, `[url "http://127.0.0.1:${port}/truss.git"]\n\tinsteadOf = https://github.com/AbhiramDwivedi/truss.git\n\tinsteadOf = https://github.com/AbhiramDwivedi/truss\n\tinsteadOf = git@github.com:AbhiramDwivedi/truss.git\n\tinsteadOf = git@github.com:AbhiramDwivedi/truss\n\tinsteadOf = ssh://git@github.com/AbhiramDwivedi/truss.git\n`)
-    cfg = join(t, 'config')
-    mkdirSync(cfg)
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg, GIT_CONFIG_GLOBAL: gc, GIT_TERMINAL_PROMPT: '0' }
-    // claude is looked up on PATH; a missing claude or a failing command rejects here, so every it fails.
-    await run('claude', ['plugin', 'marketplace', 'add', 'AbhiramDwivedi/truss'], { env })
-    await run('claude', ['plugin', 'install', 'truss@truss'], { env })
-    vs = readdirSync(join(cfg, 'plugins', 'cache', 'truss', 'truss'))
-    cache = join(cfg, 'plugins', 'cache', 'truss', 'truss', vs[0] ?? 'none')
+  const { cache, clone } = computedInstall()
+  it('cache holds plugin.json at the plugins/truss version', () => {
+    assert.ok(cache.includes('.claude-plugin/plugin.json'), 'plugin cache lacks .claude-plugin/plugin.json')
+    assert.match(rd('plugins/truss/.claude-plugin/plugin.json').version, /^\d+\.\d+\.\d+$/)
   })
-  after(() => {
-    server?.close()
-    if (t) rmSync(t, { recursive: true, force: true })
-  })
-  it('cache holds one version equal to plugins/truss', () => {
-    assert.equal(vs.length, 1, `plugin cache holds ${vs.length} version dirs`)
-    assert.equal(JSON.parse(readFileSync(join(cache, '.claude-plugin/plugin.json'), 'utf8')).version, rd('plugins/truss/.claude-plugin/plugin.json').version, 'cache version differs from plugins/truss')
-  })
-  it('plugin cache has agents/', () => assert.ok(existsSync(join(cache, 'agents')), 'plugin cache lacks agents/'))
-  it('plugin cache has no ui/', () => assert.ok(!existsSync(join(cache, 'ui')), 'plugin cache holds ui/'))
+  it('plugin cache has agents/', () => assert.ok(tops(cache).includes('agents'), 'plugin cache lacks agents/'))
+  it('plugin cache has no ui/', () => assert.ok(!tops(cache).includes('ui'), 'plugin cache holds ui/'))
   it('plugin cache has no checks/, plugins/ or package.json', () => {
-    for (const n of ['checks', 'plugins', 'package.json']) assert.ok(!existsSync(join(cache, n)), `plugin cache holds ${n}`)
+    for (const n of ['checks', 'plugins', 'package.json']) assert.ok(!tops(cache).includes(n), `plugin cache holds ${n}`)
   })
   it('marketplace clone has the catalog and no ui/', () => {
-    const m = join(cfg, 'plugins', 'marketplaces', 'truss')
-    assert.ok(existsSync(join(m, '.claude-plugin', 'marketplace.json')), 'no marketplace clone')
-    assert.ok(!existsSync(join(m, 'ui')), 'marketplace clone holds ui/')
+    assert.ok(clone.includes('.claude-plugin/marketplace.json'), 'no catalog in the marketplace clone')
+    assert.ok(!tops(clone).includes('ui'), 'marketplace clone holds ui/')
   })
-  it('no ui dir anywhere under the config', () => {
-    const hits: string[] = []
-    const walk = (d: string) => {
-      for (const e of readdirSync(d, { withFileTypes: true })) {
-        if (!e.isDirectory()) continue
-        const p = join(d, e.name)
-        if (e.name === 'ui') hits.push(p)
-        else walk(p)
-      }
-    }
-    walk(cfg)
-    assert.deepEqual(hits, [], 'config holds ui/')
+  it('no ui dir anywhere in the cache or the clone', () => {
+    assert.deepEqual([...dirsNamed(cache, 'ui'), ...dirsNamed(clone, 'ui')], [], 'install holds ui/')
+  })
+  it('control: an entry with path "" would install ui/ and checks/, so the cases above can fail', () => {
+    const wide = computedInstall({ source: { source: 'git-subdir', path: '', ref: 'main' } }).cache
+    assert.ok(dirsNamed(wide, 'ui').length > 0 && tops(wide).includes('checks'), `a whole-repo install lacks ui/ or checks/: ${tops(wide).join(', ')}`)
   })
 })
 

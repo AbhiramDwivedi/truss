@@ -26,6 +26,14 @@ Pins `goal-check` (`cmdGoalCheck`), `plan-write` archiving a second run (`keepEx
 
 `npm test` takes over 600 s, so one foreground Bash call can hit its 600 s timeout. A bare `exit -1` with an empty tail is then a timeout or kill, not a failing test. Run it with output redirected to a file and read the tail. `lifecycle-029.check.ts` alone runs 8 cases in about 20 s.
 
+## Root contract checks
+
+`checks/*.check.ts` needs only node and git. It reads truss's own files and never reads claude-ops, the home directory, the network or the `claude` CLI. `checks/compose-manifests.check.ts` checks the `dependencies` list in `plugin.json`, the catalog's `allowCrossMarketplaceDependenciesOn` and the READMEs against each other. `checks/repo-home.check.ts` "repo-home install" computes what an install holds (`computedInstall`) from the catalog entry's git-subdir path on main and from `marketplace/`. Its last case is a control: a whole-repo entry would install `ui/` and `checks/`, so the cases can fail.
+
+`checks/real-cli-install.e2e.ts` is opt-in, and the `checks/*.check.ts` glob does not pick it up. Run it with `npm run test:real-cli` or `node --test checks/real-cli-install.e2e.ts`. It runs the real `claude plugin marketplace add AbhiramDwivedi/truss` and `claude plugin install truss@truss` against a local smart-HTTP copy of the repo, in its own `CLAUDE_CONFIG_DIR`. Without `claude` on PATH it exits 1 with a message that names the missing CLI.
+
+Every git call in that file uses its own `GIT_CONFIG_GLOBAL` with `maintenance.auto=false` and `gc.auto=0`, and sets `GIT_CONFIG_NOSYSTEM`. Git 2.54 starts a detached auto-maintenance after a commit in a fresh repo of about 900 objects. It repacks and deletes the loose objects while the next `git clone --bare` hardlinks them, or while `git http-backend` serves them. The clone then fails with "failed to copy file" or "hardlink different from source", and the served fetch fails with "bad tree object".
+
 ## Targeted tests
 
 Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`), `plugins/truss/bin/factory.ts` (`checkTests`), `plugins/truss/workflows/stage.js` (`fullSuite`).

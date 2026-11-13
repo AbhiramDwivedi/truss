@@ -1424,7 +1424,7 @@ flowchart TB
     plugin["truss plugin<br/>[plugins/truss/**]<br/>agents, bin, brief, docs, evals, hooks, resources,<br/>retro, scripts, skills, tests, types, workflows,<br/>.claude-plugin, LICENSE copy"]
     ui["Local web UI<br/>[ui/**]<br/>Optional; never installed by the plugin"]
     mdir["Catalog source<br/>[marketplace/.claude-plugin/marketplace.json,<br/>marketplace/README.md]"]
-    checks["Root contract<br/>[checks/repo-home.check.ts]"]
+    checks["Root contract<br/>[checks/repo-home.check.ts, checks/compose-manifests.check.ts]"]
     root["Root files<br/>[package.json, LICENSE, .gitignore, .claude/truss.json]"]
   end
   subgraph mbranch["branch marketplace (GitHub default)"]
@@ -1439,14 +1439,14 @@ flowchart TB
   cat -.->|"git-subdir entry: url https://github.com/AbhiramDwivedi/truss.git,<br/>path plugins/truss, ref main"| plugin
   ui -->|"--plugin, default ui/../plugins/truss<br/>(ui/server/main.ts)"| plugin
   root -->|"architecture, adr = plugins/truss/docs/..."| plugin
-  checks -->|"reads, runs the install commands"| mdir
+  checks -->|"reads, computes the install"| mdir
   checks -->|"reads"| plugin
   cat -->|"claude plugin marketplace add"| mclone
   plugin -->|"claude plugin install truss@truss<br/>(sparse fetch)"| cache
 ```
 
 *The layout after the move. main holds the plugin, the UI and the catalog source; the `marketplace` branch holds only the published catalog. Solid arrows are writes, reads or fetches; the dotted arrow is the catalog entry's reference into main. Neither box under the config dir gets `ui/`.*
-Traces to: ADR-0013 Decision 1 and 2, and its "Architecture-doc text for the later goal"; ADR-0013 "Amendment (goal plugin-move)"; `checks/repo-home.check.ts:47-84`, `:160-168`.
+Traces to: ADR-0013 Decision 1 and 2, and its "Architecture-doc text for the later goal"; ADR-0013 "Amendment (goal plugin-move)"; `checks/repo-home.check.ts:45-82`, `:84-122`.
 
 ### Install flow
 
@@ -1469,9 +1469,9 @@ sequenceDiagram
 ```
 
 *The two documented commands. Neither step downloads `ui/`. The entry's `ref` `main` is required: without it, the git-subdir fetch would land on the default branch, which is the two-file `marketplace` branch (ADR-0013 Decision 2).*
-Traces to: ADR-0013 Decision 2 and "Install flow"; `checks/repo-home.check.ts:151-152` (the two commands, run literally), `:77-80` (the entry), `:160-168` (the cache).
+Traces to: ADR-0013 Decision 2 and "Install flow"; `checks/real-cli-install.e2e.ts` `before` (the two commands, run literally; opt-in), `checks/repo-home.check.ts:75-78` (the entry), `:84-122` (the cache, computed from the entry).
 
-The install flow is proven against a local smart-HTTP copy of the repo, not against github.com (ADR-0013, "Scope of the proof"). The PM's real-GitHub check after the ship steps proves it there.
+The default suite proves the install contents without the `claude` CLI: `computedInstall` in `checks/repo-home.check.ts` lists what main holds under the catalog entry's git-subdir path and under `marketplace/`. The opt-in `checks/real-cli-install.e2e.ts` (`npm run test:real-cli`) runs the real install flow against a local smart-HTTP copy of the repo, not against github.com (ADR-0013, "Scope of the proof"). The PM's real-GitHub check after the ship steps proves it there.
 
 ### Seams the move pins
 
