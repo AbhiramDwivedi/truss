@@ -17,9 +17,8 @@ sources:
   - plugins/truss/tests/gates-026-regress.check.ts
   - plugins/truss/tests/fixes-026.check.ts
   - plugins/truss/tests/release-026.check.ts
-verified: a419884c5ef1c878c8c94b84153d537fa523b7a6
+verified: 9ebda642451e4c2e780868d2ad6b25b4f79e9be6
 ---
-
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
 - Copy the plugin with `pluginCopy()` into your own tmp dir (`cpSync(pluginCopy(), d, {recursive: true})`); never write inside the shared copy.
 - `store.ts` test seam, pinned by `store.check.ts`: `withLock(dir, name, fn, {waitMs, platform, fs, host, now})`, `writeJsonAtomic`/`createExclusive(p, obj, {fs})`, `transcriptsOf(sid, env)`. The `fs` option holds `node:fs`-named sync functions; an omitted one falls back to `node:fs`. The lock is `<dir>/locks/<name>.lock/owner.json` with a millisecond-number `since`. A stale lock is removed only by one breaker at a time, which holds the mutex dir `<name>.lock.break` (an abandoned one, over `OWNERLESS_MS` = 3 s old, is cleared) and removes the lock only if its owner token is still the one judged stale; a lock is never renamed aside; an ownerless lock's age is re-checked under that mutex (`store.ts:204-211`). `StoreBusy` is a `CliError` with code 2 and body `{error: 'store busy: <name>'}`.
