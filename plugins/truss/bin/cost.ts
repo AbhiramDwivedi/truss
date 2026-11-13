@@ -6,8 +6,10 @@
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { absDirOf, budgetRaises } from './inbox.ts'
-import { StoreBusy, configOf, createExclusive, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
-import type { Flags, Obj } from './store.ts'
+import { configOf, flat, isObj, need, parseLabel, readJson, str } from './core.ts'
+import { StoreBusy, createExclusive, readJsonl, withLock, writeJsonAtomic } from './lock.ts'
+import { transcriptsOf } from './transcripts.ts'
+import type { Flags, Obj } from './core.ts'
 
 export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string; ref?: string }
 export type SweepOut = { rows: number; files: number; bad: number; found: number; busy?: true }

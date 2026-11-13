@@ -2,8 +2,9 @@
 // Imports node: builtins and relative paths only, and never factory.ts (its top-level await would make an import cycle).
 
 import { mkdirSync } from 'node:fs'
-import { appendJsonl, sharedDir } from './store.ts'
-import type { Obj } from './store.ts'
+import { sharedDir } from './core.ts'
+import { appendJsonl } from './lock.ts'
+import type { Obj } from './core.ts'
 
 /** Appends one merge row to S/ledger.jsonl. */
 export function ledgerAppend(repo: string, row: Obj): void {
