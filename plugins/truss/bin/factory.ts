@@ -3733,14 +3733,14 @@ export function cmdGoalCheck(f: Flags): Obj {
   let tail = ''
   let added = false
   try {
-    gitOrFail(repo, ['worktree', 'add', '-q', '--detach', wt, sha])
+    gitOrFail(repo, ['-c', 'core.quotepath=off', 'worktree', 'add', '-q', '--detach', wt, sha])
     added = true
     const r = spawnSync('bash', ['-c', command], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
     status = r.error ? 1 : (r.status ?? 1)
     tail = `${r.error ? `${r.error.message}\n` : ''}${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000)
   } finally {
-    if (added) run(repo, ['worktree', 'remove', '--force', wt])
-    run(repo, ['worktree', 'prune'])
+    if (added) run(repo, ['-c', 'core.quotepath=off', 'worktree', 'remove', '--force', wt])
+    run(repo, ['-c', 'core.quotepath=off', 'worktree', 'prune'])
     rmSync(path.dirname(wt), { recursive: true, force: true })
   }
   appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
