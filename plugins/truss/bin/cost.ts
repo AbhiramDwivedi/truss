@@ -1,12 +1,12 @@
 // Spend, budgets and the cost command (contract-025 section 4, ADR-0038).
-// The meter is a sweep of the session's transcripts into D/usage.jsonl under the lock D/locks/usage; attribution to a crew is resolved at read time.
+// The meter is a sweep of the transcripts of every session that ran the run (sessionsOf) into D/usage.jsonl under the lock D/locks/usage; attribution to a crew is resolved at read time.
 // No price is written here: prices come from the client's `pricing` config. Imports node: builtins and relative paths only, and never factory.ts
 // (its top-level await would make an import cycle).
 
-import { appendFileSync, closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { absDirOf, budgetRaises } from './inbox.ts'
-import { StoreBusy, configOf, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
+import { StoreBusy, configOf, createExclusive, flat, isObj, need, parseLabel, readJson, readJsonl, str, transcriptsOf, withLock, writeJsonAtomic } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 
 export type BudgetVerdict = { held: false } | { held: true; scope: 'run' | 'crew' | 'workType' | 'session'; spentUsd: number | null; limitUsd: number; why: string; ref?: string }
@@ -51,6 +51,56 @@ function rowOf(line: Obj, sid: string, agentId: string | null): Obj | undefined 
   return row.msgId === '' ? 'bad' : row
 }
 
+// ==== the sessions of a run ====
+
+// A run dir D is named after the session that started it. Another session that resumes the run (a second PM after a handoff) is
+// recorded in D/sessions/<sid>.json when it first runs a state-changing factory command on D (ATTACH_COMMANDS, called from factory.ts
+// main), so the sweep reads its transcripts too. A read (cost, inbox, decisions) never attaches: a session that only looks at a run
+// keeps its spend out of the run's.
+export const ATTACH_COMMANDS: readonly string[] = ['plan-args', 'plan-write', 'approve', 'start', 'admit', 'sync', 'check', 'integrate', 'mark-merged', 'finish', 'land', 'reap', 'decide', 'crew-decision', 'owns-extend']
+const SID_RE = /^[A-Za-z0-9._-]+$/
+const safeSid = (s: unknown): s is string => typeof s === 'string' && SID_RE.test(s) && s !== '.' && s !== '..'
+
+/** Records session `sid` as one that ran the run in `dir`, once: D/sessions/<sid>.json is created exclusively and never rewritten.
+ * The session D is named after, and a sid that is not a safe file name, are never recorded. Returns whether a record was written. */
+export function recordSession(dir: string, sid: string | undefined, by: string, now: Date = new Date()): boolean {
+  if (!safeSid(sid) || sid === path.basename(flat(dir)) || !existsSync(flat(dir))) return false
+  const p = `${flat(dir)}/sessions/${sid}.json`
+  if (existsSync(p)) return false
+  mkdirSync(`${flat(dir)}/sessions`, { recursive: true })
+  return createExclusive(p, { v: 1, sid, ts: now.toISOString(), by })
+}
+
+/** The sessions whose transcripts belong to the run in `dir`: the session D is named after, then each recorded one in name order. */
+export function sessionsOf(dir: string): string[] {
+  const own = path.basename(flat(dir))
+  const out = [own]
+  let names: string[]
+  try {
+    names = readdirSync(`${flat(dir)}/sessions`).sort()
+  } catch {
+    names = []
+  }
+  for (const n of names) {
+    const s = n.endsWith('.json') ? n.slice(0, -5) : ''
+    if (safeSid(s) && !out.includes(s)) out.push(s)
+  }
+  return out
+}
+
+/** Every transcript of every session of the run, main threads first per session; `main` is the first session's main transcript. */
+function runTranscripts(dir: string): { main: string | null; list: { path: string; sid: string; agentId: string | null; meta: any }[] } {
+  const list: { path: string; sid: string; agentId: string | null; meta: any }[] = []
+  let main: string | null = null
+  for (const [i, sid] of sessionsOf(dir).entries()) {
+    const tr = transcriptsOf(sid)
+    if (i === 0) main = tr.main
+    if (tr.main !== null) list.push({ path: tr.main, sid, agentId: null, meta: null })
+    for (const a of tr.agents) list.push({ path: a.path, sid, agentId: agentIdOf(a.path), meta: a.meta })
+  }
+  return { main, list }
+}
+
 const agentIdOf = (p: string): string => path.basename(p).replace(/^agent-/, '').replace(/\.jsonl$/, '')
 
 /** Whether the file exists, is not empty and its last byte is not a newline. */
@@ -71,10 +121,11 @@ function endsTorn(p: string): boolean {
   }
 }
 
-/** Reads every transcript of the session `dir` names from its cursor and appends the new usage rows to D/usage.jsonl, once per msgId. Throws StoreBusy when the lock stays busy. */
+/** Reads every transcript of every session of the run in `dir` (sessionsOf) from its cursor and appends the new usage rows to D/usage.jsonl,
+ * once per msgId; each row carries the sid of the transcript it came from. Throws StoreBusy when the lock stays busy. */
 export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOut {
   const platform = opts.platform ?? process.platform
-  const sid = path.basename(flat(dir))
+  const own = path.basename(flat(dir))
   const keyOf = (p: string): string => (platform === 'win32' ? flat(p).toLowerCase() : flat(p))
   return withLock(
     dir,
@@ -94,17 +145,25 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
       }
       const old: Obj = isObj(cursor.files) ? cursor.files : {}
       const files: Obj = {}
-      let estimate: { usd: number; ts: number } | undefined
-      const prev = isObj(cursor.ccEstimate) ? cursor.ccEstimate : undefined
-      if (prev !== undefined && typeof prev.usd === 'number') estimate = { usd: prev.usd, ts: typeof prev.ts === 'number' ? prev.ts : 0 }
-      const tr = transcriptsOf(sid)
-      const list: { path: string; agentId: string | null }[] = []
-      if (tr.main !== null) list.push({ path: tr.main, agentId: null })
-      for (const a of tr.agents) list.push({ path: a.path, agentId: agentIdOf(a.path) })
+      // Claude Code's estimate is per session (the newest cost-state line of each), and the run's is their sum. A cursor written
+      // before 0.31.0 holds one ccEstimate, which is the own session's.
+      const estimates = new Map<string, { usd: number; ts: number }>()
+      const est = (v: unknown): { usd: number; ts: number } | undefined => (isObj(v) && typeof v.usd === 'number' ? { usd: v.usd, ts: typeof v.ts === 'number' ? v.ts : 0 } : undefined)
+      if (isObj(cursor.ccEstimates)) {
+        for (const [s, v] of Object.entries(cursor.ccEstimates)) {
+          const e = est(v)
+          if (e !== undefined) estimates.set(s, e)
+        }
+      } else {
+        const e = est(cursor.ccEstimate)
+        if (e !== undefined) estimates.set(own, e)
+      }
+      const tr = runTranscripts(dir)
+      const list = tr.list
       const fresh: Obj[] = []
       let bad = 0
       let read = 0
-      const take = (text: string, agentId: string | null): void => {
+      const take = (text: string, sid: string, agentId: string | null): void => {
         for (const raw of text.split('\n')) {
           const l = raw.endsWith('\r') ? raw.slice(0, -1) : raw
           if (l.trim() === '') continue
@@ -122,7 +181,8 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
           if (line.type === 'cost-state' && typeof line.totalCostUSD === 'number' && Number.isFinite(line.totalCostUSD)) {
             const t = Date.parse(String(line.timestamp))
             const ts = Number.isFinite(t) ? t : 0
-            if (estimate === undefined || ts >= estimate.ts) estimate = { usd: line.totalCostUSD, ts }
+            const e = estimates.get(sid)
+            if (e === undefined || ts >= e.ts) estimates.set(sid, { usd: line.totalCostUSD, ts })
             continue
           }
           const row = rowOf(line, sid, agentId)
@@ -158,7 +218,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
             pending = Buffer.concat([pending, buf.subarray(0, n)])
             const nl = pending.lastIndexOf(10)
             if (nl >= 0) {
-              take(pending.subarray(0, nl + 1).toString('utf8'), t.agentId)
+              take(pending.subarray(0, nl + 1).toString('utf8'), t.sid, t.agentId)
               committed += nl + 1
               pending = pending.subarray(nl + 1)
             }
@@ -172,7 +232,9 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
       // rows first, then the cursor: a crash between the two is repaired by the msgId set
       // a torn tail (a writer died mid-row) is closed with a newline first, so the new rows start on a fresh line
       if (fresh.length > 0) appendFileSync(usagePath, (endsTorn(usagePath) ? '\n' : '') + fresh.map((r) => JSON.stringify(r)).join('\n') + '\n')
-      writeJsonAtomic(cursorPath, { files, project: tr.main === null ? null : path.basename(path.dirname(tr.main)), ccEstimate: estimate ?? null })
+      let estimate: { usd: number; ts: number } | null = null
+      for (const e of estimates.values()) estimate = estimate === null ? { ...e } : { usd: estimate.usd + e.usd, ts: Math.max(estimate.ts, e.ts) }
+      writeJsonAtomic(cursorPath, { files, project: tr.main === null ? null : path.basename(path.dirname(tr.main)), ccEstimate: estimate, ccEstimates: Object.fromEntries(estimates) })
       return { rows: fresh.length, files: read, bad, found: list.length }
     },
     opts.waitMs === undefined ? {} : { waitMs: opts.waitMs },
@@ -185,8 +247,7 @@ function sweepOrRead(dir: string, repo: string, opts: SweepOpts): SweepOut {
     return sweep(dir, repo, opts)
   } catch (e) {
     if (!(e instanceof StoreBusy)) throw e
-    const tr = transcriptsOf(path.basename(flat(dir)))
-    const out: SweepOut = { rows: 0, files: 0, bad: 0, found: (tr.main === null ? 0 : 1) + tr.agents.length }
+    const out: SweepOut = { rows: 0, files: 0, bad: 0, found: runTranscripts(dir).list.length }
     out.busy = true
     return out
   }
@@ -219,8 +280,7 @@ function attributor(dir: string, repo: string, slugs: string[], platform: NodeJS
   const trees = new Map(slugs.map((s) => [norm(crewWorktree(repo, s)), s]))
   const spawns = new Map<string, string>()
   for (const e of readJsonl(`${flat(dir)}/events.jsonl`).rows) if (e.event === 'spawn' && typeof e.agentId === 'string' && typeof e.crew === 'string') spawns.set(e.agentId, e.crew)
-  const tr = transcriptsOf(path.basename(flat(dir)))
-  const agents = new Map(tr.agents.map((a) => [agentIdOf(a.path), a]))
+  const agents = new Map(runTranscripts(dir).list.filter((a) => a.agentId !== null).map((a) => [a.agentId as string, a]))
   const slugOfLabel = (d: unknown): string | undefined => {
     const p = typeof d === 'string' ? parseLabel(d) : undefined
     return p !== undefined && plan.has(p.slug) ? p.slug : undefined
