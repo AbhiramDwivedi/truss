@@ -386,7 +386,7 @@ test('i18 1: start with relative --dir and --repo run from a parent cwd emits ab
   const env = mkEnv({ config: CFG })
   writePlan(env.dir, planObj([crew('x')]))
   writeGoal(env.dir, 'x')
-  const cwd = tmpdir()
+  const cwd = realpathSync(tmpdir()) // the child's real cwd; a relative path from a symlinked TMPDIR (/var on macOS) would climb one level too far
   const r = runCli(env.factory, 'start', ['--dir', relFrom(cwd, env.dir), '--repo', relFrom(cwd, env.repo), '--stage', 'next'], cwd)
   assert.equal(r.status, 0, say(r))
   const e = r.json.truss.crews[0]
@@ -402,7 +402,7 @@ test('i18 2: start --resume with relative --dir and --repo emits absolute paths 
   const { env, wt } = runningWorld('x')
   memberBranch(wt, 'truss-x', 'member-a', true)
   const run = deadRun(env, 'wf_i18', [{ label: 'x-builder', result: member('t1', 'member-a') }])
-  const cwd = tmpdir()
+  const cwd = realpathSync(tmpdir()) // the child's real cwd; a relative path from a symlinked TMPDIR (/var on macOS) would climb one level too far
   const r = runCli(env.factory, 'start', ['--dir', relFrom(cwd, env.dir), '--repo', relFrom(cwd, env.repo), '--slug', 'x', '--resume', 'merge-ready', '--transcript', run.dir], cwd)
   assert.equal(r.status, 0, say(r))
   const e = r.json.truss.crews[0]
