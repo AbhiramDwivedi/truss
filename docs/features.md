@@ -171,6 +171,12 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
 
+## Goal check (goal-check)
+
+- What: `factory goal-check --dir D --repo R [--goal ID]` runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, removed after the check, never in the main checkout. It prints one JSON line with the head sha and the output tail (exit 1 when the check fails), logs one decision line either way, and never pushes or moves a branch. A plan or goal with no `goalCheck` is a usage error (`cmdGoalCheck`).
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdGoalCheck`).
+- Owner: `truss-plugin-node`.
+
 ## Role names (ADR-0042)
 
 - What: the full-crew lead is the project manager (`truss:project-manager`) and the main session the program manager; no alias reads the old crew-lead name. Contract values: `promptOverrides` and role key `project-manager`, start key `projectManagers`, stall kind `idle-project-manager`, retro key `stalls.idleProjectManager`.
