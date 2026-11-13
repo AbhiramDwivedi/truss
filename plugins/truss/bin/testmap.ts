@@ -83,7 +83,11 @@ function usedBy(tracked: string[], read: (p: string) => string | null): Map<stri
         if (hit !== undefined) edge(a, hit)
       }
       const name = base(lit)
-      if (testSide && name.length >= 3 && name.includes('.')) for (const b of byName.get(name) ?? []) edge(a, b)
+      if (!testSide || name.length < 3 || !name.includes('.')) continue
+      // a literal with a dir part names files whose path ends in it (`../resources/index.ts` is not every index.ts); a bare
+      // file name names every file of that name
+      const tail = lit.includes('/') ? lit.split('/').filter((s) => s !== '' && s !== '.' && s !== '..').join('/') : name
+      for (const b of byName.get(name) ?? []) if (tail === name || b === tail || b.endsWith(`/${tail}`)) edge(a, b)
     }
   }
   return rev

@@ -55,6 +55,18 @@ test('testmap: a file name in a source module makes no reach, and a nested packa
   assert.deepEqual(tree(files, ['src/c.ts']).files, ['tests/c.check.ts'])
 })
 
+test('testmap: a literal with a dir part names only the files whose path ends in it, not every file of that name', () => {
+  const files = {
+    'lib/index.ts': 'export const l = 1\n',
+    'app/index.ts': 'export const p = 1\n',
+    'tests/lib.check.ts': "import { l } from '../lib/index.ts'\n",
+    'tests/app.check.ts': "import { p } from '../app/index.ts'\n",
+    'tests/read.check.ts': "const t = readFileSync(join(root, 'lib/index.ts'), 'utf8')\n",
+  }
+  assert.deepEqual(tree(files, ['app/index.ts']).files, ['tests/app.check.ts'])
+  assert.deepEqual(tree(files, ['lib/index.ts']).files, ['tests/lib.check.ts', 'tests/read.check.ts'])
+})
+
 test('testmap: a changed test file selects itself', () => {
   const s = tree(BASE, ['tests/c.check.ts'])
   assert.equal(s.mode, 'targeted')
