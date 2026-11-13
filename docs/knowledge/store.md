@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 62d1a83e0fd4fd6eff9e380a33f79d1c4b8e5dfa
+verified: dc9dc911401c3e3458a8366eb5f474077aa82936
 ---
 
 # Store, holds and contract-025 stubs
@@ -38,17 +38,17 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `<truss dir>/crews/<slug>/answers.json` (0.29.0, ADR-0046 item 5) is a JSON array of `{at, text, after, ts}`, rewritten whole by `saveAnswers` (`writeJsonAtomic`) on every resume. `after` is the id of the crew's newest Workflow run when the ruling was first given, or null; a stored row keeps its first `after` and `ts`. `carriedAnswers` drops a row at a task name once a run after `after` (or after the resume start, whichever is later) finished that task; a row at a step name never drops. An `after` the run list no longer holds counts as unbuilt.
 
-`plan.schema.json` forbids a crew `workType` below version 4 through the existing crew `not`/`anyOf` list (line 126). The text `workType is version 4 only` comes from `cmdPlanCheck` in `factory.ts`, not the schema. `cmdPlanCheck` also owns the enum and the unattended-required rules and de-duplicates against `workTypeErrors()`. The enum `WORK_TYPES` lives in `factory.ts:558`, not in `worktypes.ts`.
+`plan.schema.json` forbids a crew `workType` below version 4 through the existing crew `not`/`anyOf` list (line 126). The text `workType is version 4 only` comes from `cmdPlanCheck` in `factory.ts`, not the schema. `cmdPlanCheck` also owns the enum and the unattended-required rules and de-duplicates against `workTypeErrors()`. The enum `WORK_TYPES` lives in `factory.ts:562`, not in `worktypes.ts`.
 
 ## Admission holds
 
-`admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (factory.ts:2401-2406). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field. The budget escalate's `ref` is the verdict's own `v.ref` when it is a non-empty string, else `budget:<sid>:<scope>:<run|slug>`.
+`admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (factory.ts:2489-2494). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field. The budget escalate's `ref` is the verdict's own `v.ref` when it is a non-empty string, else `budget:<sid>:<scope>:<run|slug>`.
 
 Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/factory.ts) re-reads `plan.json` under the `plan` lock before it edits and saves. `approve`, `start`, `mark-merged`, the merge gate, `plan-write` and `owns-extend` all write the plan that way, so none drops another's edit. `stage.js` `check()` runs `heavy` up to 3 times (`HEAVY_WAIT_ROUNDS`) before it stops `heavy slot busy`.
 
-`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-428). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2464-2481). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:2202, 2305).
+`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-428). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2542-2559). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:2202, 2305).
 
-`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1371-1378, `stageOut`).
+`start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1457-1464, `stageOut`).
 
 ## Cost meter (`bin/cost.ts`)
 
