@@ -81,6 +81,17 @@
       "type": "integer",
       "minimum": 1
     },
+    "heavySlots": {
+      "description": "ADR-0046 item 4: how many red and green checks (`factory heavy`) run at once across the session. Default from the host: max(1, min(4, floor(cpus/4), floor(totalGB/8))).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
+    "testGlobs": {
+      "description": "ADR-0046 item 3: globs (repo-relative, path.matchesGlob) naming the project's test files beyond truss's built-in names (*.test|spec|check.*, test_*.py, *_test.py|go, tests/ test/ __tests__/ spec/ checks/ e2e/ fixtures/ dirs). The green check after a stress-fix round lists the test files changed; when no tracked file is a test file by either rule, the list is unknown and the crew gets a warning, not a stop.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "merge": {
       "description": "Merge mode of every run; the PM never asks. Default sequential.",
       "enum": ["sequential", "single"]
@@ -220,7 +231,21 @@
         "cacheReadPerMTok": { "type": "number", "minimum": 0 },
         "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
         "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 },
-        "fast": { "$ref": "#/$defs/rates" }
+        "fast": { "$ref": "#/$defs/rates" },
+        "longContext": {
+          "description": "0.29.0. Rates for a request whose prompt (input, cache reads and cache writes) is over abovePromptTokens tokens, such as Claude Haiku 5.5 over 100,000. A fast row never uses them.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["abovePromptTokens", "inputPerMTok", "outputPerMTok", "cacheReadPerMTok", "cacheWrite5mPerMTok", "cacheWrite1hPerMTok"],
+          "properties": {
+            "abovePromptTokens": { "type": "integer", "minimum": 0 },
+            "inputPerMTok": { "type": "number", "minimum": 0 },
+            "outputPerMTok": { "type": "number", "minimum": 0 },
+            "cacheReadPerMTok": { "type": "number", "minimum": 0 },
+            "cacheWrite5mPerMTok": { "type": "number", "minimum": 0 },
+            "cacheWrite1hPerMTok": { "type": "number", "minimum": 0 }
+          }
+        }
       }
     },
     "workTypeBudget": {

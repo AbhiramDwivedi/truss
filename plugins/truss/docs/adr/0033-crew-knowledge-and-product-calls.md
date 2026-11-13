@@ -1,6 +1,7 @@
 # ADR-0033: crew knowledge capture, crew-level product calls and a product-owner plan review
 
 Amended by ADR-0035 (path-scoped knowledge): crew product calls go to `docs/knowledge/product-decisions.md`, not `product-owner.md`, and the knowledge step routes, reconciles and is linted as that ADR says.
+Amended by ADR-0046 (items 6 and 7): the knowledge step now runs after the stress test, and re-runs (with its lint) after every QC fix round, so fixer items are recorded rather than left `unrecorded`.
 
 Status: accepted, 2026-11-09
 Decided by: client ruling, 2026-11-09 (learning is captured automatically and kept in the repo; product calls are made at crew level; the plan is reviewed before any work starts)
@@ -59,7 +60,9 @@ The writer keeps entries terse and edits or merges existing entries instead of a
 
 The step edits only markdown. A learned item whose `target` is not a `.md` file is skipped and listed in the report, never written. **Reachable knowledge:** learning can go to any doc, but a doc that no agent can find is as hidden as code. Whenever the step writes an item outside the feature map, it makes sure that doc is reachable from the feature map entry for the area (a doc pointer) or from the project's `CLAUDE.md` / `AGENTS.md` index.
 
-**Scope.** Only the knowledge-step commit may touch files outside the crew's owns, and only `.md` files on the listed doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and an item's `target`. The exemption keys on the knowledge commit SHA recorded with `factory knowledge-commit`, never on the commit subject, and a file counts only if it changed in that commit and in no other non-merge commit of the crew. A change to the YAML frontmatter of a persona file is never exempt. `owns-check` reports the exempt paths as `exempt`.
+**Scope.** As first decided (superseded below), only the knowledge-step commit could touch files outside the crew's owns, and only `.md` files on the listed doc paths: the feature map, the ADR dir (`adrDir` in `.claude/truss.json`, default `docs/adr`), the product-owner file, `.claude/agents/*.md` and an item's `target`. The exemption keys on the knowledge commit SHA recorded with `factory knowledge-commit`, never on the commit subject, and a file counts only if it changed in that commit and in no other non-merge commit of the crew. A change to the YAML frontmatter of a persona file is never exempt. `owns-check` reports the exempt paths as `exempt`.
+
+**Amended by ADR-0046 item 0.** The crew owns the docs of its change: any crew commit, a builder's or the knowledge step's, may touch files outside the crew's owns, but only `.md` files on the listed doc paths, now including the architecture doc and `.claude/skills/*/*.md`. The exemption keys on the files any non-merge crew commit changed (`knowledgeDocs` in `bin/factory.ts`), no longer on the knowledge commit alone. Persona and skill frontmatter is still never exempt. The 0.29.0 review narrowed it again (ADR-0046 item 0): free docs (feature map, architecture doc, ADR dir, knowledge dir; no README, CHANGELOG or other `.md`) are exempt for any crew commit; prompt files (skills, agents and personas, the rules dir, the agents index, the product decisions file) only when the knowledge commit alone changed them; a judge's agent file never; and an item's target widens nothing.
 
 The QC engineer's brief carries a `Knowledge:` block. QC fails a diff that adds or moves user-facing functionality without a feature-map entry, and a crew product call missing from `product-owner.md`. It never fails for missing optional learning.
 

@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { takeOver } from '../bin/store.ts'
 
@@ -102,7 +103,17 @@ export function sample(opts: { worktreesRoot?: string } = {}): Sample {
 
 // --- the heavy slot (Decision 3) ---
 
-const lockDir = (dir: string) => `${dir}/resources/heavy.lock`
+// ADR-0046 item 4: slot 1 is heavy.lock (the name before 0.29.0), slot n > 1 is heavy-<n>.lock.
+const lockDir = (dir: string, n = 1) => path.join(dir, 'resources', n === 1 ? 'heavy.lock' : `heavy-${n}.lock`)
+const SLOT_LOCK = /^heavy(-[1-9]\d*)?\.lock$/
+
+export const MAX_HEAVY_SLOTS = 4
+
+/** ADR-0046 item 4: the host's default slot count, max(1, min(4, floor(cpus/4), floor(totalGB/8))). */
+export function defaultHeavySlots(cpus: number = os.availableParallelism(), totalBytes: number = os.totalmem()): number {
+  const n = Math.min(MAX_HEAVY_SLOTS, Math.floor(cpus / 4), Math.floor(totalBytes / 2 ** 33))
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
 
 function pidDead(pid: unknown): boolean {
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return true
@@ -124,10 +135,18 @@ function readOwner(lock: string): any {
 
 // A stale lock is removed by store.ts takeOver: one breaker at a time holds <lock>.break and removes the lock only while its
 // token is still the one judged stale. It never renames the lock aside, which could move a lock that has just turned live.
-/** Takes the one heavy slot. Returns the owner's token, or null while someone else holds it. */
-export function takeHeavySlot(dir: string, owner: { label?: string; slug?: string; pid?: number } = {}, platform: string = process.platform): string | null {
-  const lock = lockDir(dir)
+/** Takes the first free of `slots` heavy slots (heavy.lock, heavy-2.lock, ...). Returns the owner's token, or null while every slot is held. */
+export function takeHeavySlot(dir: string, owner: { label?: string; slug?: string; pid?: number } = {}, platform: string = process.platform, slots = 1): string | null {
   mkdirSync(`${dir}/resources`, { recursive: true })
+  const n = Number.isInteger(slots) && slots >= 1 ? slots : 1
+  for (let i = 1; i <= n; i++) {
+    const token = takeSlot(lockDir(dir, i), owner, platform)
+    if (token !== null) return token
+  }
+  return null
+}
+
+function takeSlot(lock: string, owner: { label?: string; slug?: string; pid?: number }, platform: string): string | null {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       mkdirSync(lock)
@@ -156,11 +175,22 @@ export function takeHeavySlot(dir: string, owner: { label?: string; slug?: strin
   return null
 }
 
-/** Removes the lock when token is the owner's. Any other token leaves it. */
+/** Removes the slot lock whose owner holds token, whichever slot it is. Any other token leaves every lock. */
 export function releaseHeavySlot(dir: string, token: string, platform: string = process.platform, rm: typeof rmSync = rmSync): void {
-  const lock = lockDir(dir)
-  const o = readOwner(lock)
-  if (o && o.token === token) rm(lock, platform === 'win32' ? { recursive: true, force: true, maxRetries: 5, retryDelay: 20 } : { recursive: true, force: true })
+  let names: string[] = []
+  try {
+    names = readdirSync(path.join(dir, 'resources')).filter((n) => SLOT_LOCK.test(n))
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const lock = path.join(dir, 'resources', name)
+    const o = readOwner(lock)
+    if (o && o.token === token) {
+      rm(lock, platform === 'win32' ? { recursive: true, force: true, maxRetries: 5, retryDelay: 20 } : { recursive: true, force: true })
+      return
+    }
+  }
 }
 
 // --- process groups (Decision 4): signal a recorded group, never a pattern ---

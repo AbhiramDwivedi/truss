@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { REAL_PLUGIN, appendEvent, assertOneLine, crew, factorySpawn, git, mkEnv, planObj, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const CFG = { merge: 'sequential', target: 'main' }
@@ -345,7 +346,7 @@ async function exec(args, o = {}) {
   const unscripted = []
   const timeline = []
   const counters = {}
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -399,7 +400,7 @@ async function exec(args, o = {}) {
       timeline.push(`end:${opts.label}`)
     }
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {

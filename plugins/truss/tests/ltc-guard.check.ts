@@ -40,6 +40,18 @@ function blockedThenApproved(w: any, cw: any, id: string): void {
   assert.equal(cw.merged(), true)
 }
 
+/** `approve --by client` with a typed client proof (ADR-0045): a client-trigger item for the plan (ref run), resolved approve by the client; `item` reuses one. */
+function approveClient(w: any, item?: string) {
+  let id = item
+  if (id === undefined) {
+    const e = cli(w, 'escalate', ['--kind', 'client-trigger', '--title', 'approve the plan', '--ref', 'run'])
+    assert.equal(e.status, 0, say(e))
+    id = e.json.id
+    clientResolves(w, id, 'approve')
+  }
+  return cli(w, 'approve', ['--by', 'client', '--item', id])
+}
+
 test('ltc guard: plan-write escalates a costly line and approve refuses', () => {
   const w = mkWorld()
   const pw = planWrite(w, 'wf_ltcplan1-aaa', designerResult([COSTLY]))
@@ -54,7 +66,7 @@ test('ltc guard: plan-write escalates a costly line and approve refuses', () => 
   assert.equal(items[0].state, 'open')
   assert.equal(items[0].blocking, true)
   assert.match(items[0].title, /public REST route/)
-  const r = cli(w, 'approve', ['--by', 'client'])
+  const r = approveClient(w)
   assert.equal(r.status, 1, say(r))
   const j = assertOneLine(r)
   assert.equal(j.error, 'long-term cost awaiting the client')
@@ -67,13 +79,13 @@ test('ltc guard: approve passes after a client approve', () => {
   assert.equal(pw.status, 0, say(pw))
   const ids = pw.json.longTermCosts
   assert.equal(ids.length, 2, `the designer's and the checker's lines each escalate: ${say(pw)}`)
-  assert.equal(cli(w, 'approve', ['--by', 'client']).status, 1, 'approve is refused while both are open')
+  assert.equal(approveClient(w).status, 1, 'approve is refused while both are open')
   clientResolves(w, ids[0], 'approve')
-  const half = cli(w, 'approve', ['--by', 'client'])
+  const half = approveClient(w)
   assert.equal(half.status, 1, `one open item still blocks: ${say(half)}`)
   assert.deepEqual(half.json.ids, [ids[1]])
   clientResolves(w, ids[1], 'approve')
-  const r = cli(w, 'approve', ['--by', 'client'])
+  const r = approveClient(w)
   assert.equal(r.status, 0, say(r))
   assert.equal(typeof r.json.approvedAt, 'string')
   const items = ltcItems(w)
@@ -87,7 +99,7 @@ test('ltc guard: a re-plan clears a rejection', () => {
   const id = first.json.longTermCosts[0]
   assert.match(String(id), ID_RE, say(first))
   clientResolves(w, id, 'reject')
-  const refused = cli(w, 'approve', ['--by', 'client'])
+  const refused = approveClient(w)
   assert.equal(refused.status, 1, `a rejected item still blocks approve: ${say(refused)}`)
   assert.equal(refused.json.error, 'long-term cost awaiting the client')
   assert.deepEqual(refused.json.ids, [id])
@@ -95,7 +107,7 @@ test('ltc guard: a re-plan clears a rejection', () => {
   const second = planWrite(w, 'wf_ltcplan3-bbb', designerResult([CHEAP], 'v2'))
   assert.equal(second.status, 0, say(second))
   assert.deepEqual(second.json.longTermCosts, [], say(second))
-  const ok = cli(w, 'approve', ['--by', 'client'])
+  const ok = approveClient(w)
   assert.equal(ok.status, 0, say(ok))
   assert.equal(ltcItems(w).find((i) => i.id === id).decision, 'reject', 'the rejection itself stays on record')
 })
@@ -142,7 +154,7 @@ test('ltc guard: a cheap line only logs', () => {
   assert.deepEqual(pw.json.longTermCosts, [], say(pw))
   assert.equal(ltcItems(w).length, 0, 'a cheap line opens no inbox item')
   assert.match(decisionsOf(w), /a renamed internal helper/, 'a cheap line is logged in decisions.md')
-  const r = cli(w, 'approve', ['--by', 'client'])
+  const r = approveClient(w)
   assert.equal(r.status, 0, `a cheap line never blocks approve: ${say(r)}`)
 })
 
@@ -158,7 +170,7 @@ test('ltc guard: a line with no valid reversal counts as costly', () => {
   const pw = planWrite(w, 'wf_ltcplan5-aaa', designerResult(['LONG-TERM-COST: a new queue service | later: ops carry it | reversal: unsure']))
   assert.equal(pw.status, 0, say(pw))
   assert.equal(pw.json.longTermCosts.length, 1, say(pw))
-  assert.equal(cli(w, 'approve', ['--by', 'client']).status, 1)
+  assert.equal(approveClient(w).status, 1)
 })
 
 // ltcLinesOf of workflows/stage.js, loaded from its source so the two line regexes cannot drift apart
@@ -220,7 +232,7 @@ test('ltc guard: a bare LONG-TERM-COST line is kept and blocks (814f9f9, fail cl
   const pw = planWrite(w, 'wf_ltcplan6-aaa', designerResult(['LONG-TERM-COST:']))
   assert.equal(pw.status, 0, say(pw))
   assert.equal(pw.json.longTermCosts.length, 1, say(pw))
-  assert.equal(cli(w, 'approve', ['--by', 'client']).status, 1)
+  assert.equal(approveClient(w).status, 1)
 })
 
 test('ltc guard: a qc:false crew adding Data/Migrations/x.cs is blocked at land', () => {

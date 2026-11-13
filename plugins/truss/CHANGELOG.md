@@ -2,6 +2,22 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names. Since 0.27.0, every entry uses the role names of [ADR-0042](docs/adr/0042-project-manager-rename.md): the project manager leads a crew, and the program manager (PM) is the main session.
 
+## 0.29.0 (2026-11-12)
+
+The factory runs with fewer runner spawns, and QC rules on better evidence ([ADR-0046](docs/adr/0046-factory-throughput.md), R-99 to R-115). Update with `claude plugin install truss@truss`.
+
+- **Resume keeps every unbuilt ruling.** `start --resume` merges the crew's stored rulings into the new answers, not just the newest `--answers` file. A ruling at a task drops once a later run built that task.
+- **Claude 5.5 pricing.** `factory cost` prices Opus, Sonnet and Haiku 5.5 from this repo's `pricing` key. A `pricing` entry may hold `longContext` rates for requests over a prompt-size bound (Haiku 5.5, 100K).
+- **Stress before knowledge.** Order is reply checkpoint, UX review, stress test, knowledge step, green, scope check, QC. Stress fixes no longer stale the docs.
+- **Knowledge lint before every QC round, and after fix rounds.** A new lint failure re-runs the knowledge writer (at most 2 writer runs per QC round). A QC fix round re-runs the writer on the fix diff.
+- **Fewer runner spawns.** Same-head skip: green, owns check and tests check do not re-run on an unchanged head. The reap after a member rides on the next factory call (`--reap-first`). `factory gates --steps green,owns,tests,lint,admit` runs the pre-QC checks as one call. On the stubbed crew, runner spawns go from 31 to 22.
+- **`heavySlots`.** The number of heavy-check slots is set in `.claude/truss.json` (1-16), else the host default. Caution: concurrent checks can make timing-sensitive tests flake; set `heavySlots: 1` if they do. The trial covered Linux only.
+- **Builders own their docs.** A builder updates the feature map, knowledge docs, architecture and ADR citations, and skill and agent prose with its change. The pre-written acceptance test stays read-only: a tester wrote it as the proof, and a builder that could edit it could pass by weakening it.
+- **Tester writes the regression case first.** Each stress finding, and each QC bug or risk finding, gets a failing test before the fix builder runs.
+- **A stress-fix round must add a test, or BLOCK.** Green fails when the round changed no test file.
+- **`testGlobs` key.** Names the project's test files the built-in patterns miss. `truss init` detects the test layout and proposes it. Without a way to tell tests apart, green warns and goes on.
+- **QC.** Stamp and line drift do not block QC. From round 2, QC gets its previous report and the fix diff. A known defect on a trust or money path fails the crew, even when an ADR allows it. When a logged ruling permits a builder's edit of an acceptance test, that is a QUESTION, not a FAIL. A nit is fixed only when the fix changes no behaviour.
+
 ## 0.28.0 (2026-11-12)
 
 Crews may edit the same files and merge in turn, and the plan splits work by need instead of by fixed stages. Update with `claude plugin install truss@truss`.

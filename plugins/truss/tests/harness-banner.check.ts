@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
@@ -40,7 +41,7 @@ async function exec(args, labels, o = {}) {
   const body = readFileSync(STAGE, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
   const unscripted = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label }
     calls.push(call)
     await tick()
@@ -73,7 +74,7 @@ async function exec(args, labels, o = {}) {
     }
     const v = labels[opts.label]
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {
