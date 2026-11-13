@@ -5,6 +5,8 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { facts, idents } from './testmap-parse.ts'
+import type { Facts, Span } from './testmap-parse.ts'
 
 export type MapEntry = { paths: string[]; tests?: string[]; run?: string }
 /** `.claude/truss.json` `targetedTests` (docs/truss-config.schema.json). */
@@ -126,6 +128,396 @@ function usedBy(tracked: string[], read: (p: string) => string | null): Map<stri
   return rev
 }
 
+/** A literal that is the first argument of a write (`writeFileSync(`${d}/workflows/stage.js`, stub)`) names a file the test makes,
+ * not one it reads. */
+/** an edge that is not an import: a path literal, a name, a generated bundle's module, with where it sits in the text */
+type Edge = { node: string; at: number }
+const WRITE_TARGET = /\b(?:writeFileSync|writeFile|appendFileSync|rmSync|unlinkSync)\(\s*$/
+const LITERALS = /'([^'\n]{1,300})'|"([^"\n]{1,300})"|`([^`\n]{1,300})`/g
+/** a literal tested against text (`cmd.includes('factory.ts')`, `x === 'factory.ts'`): it matches the name, it never runs the file */
+const COMPARED = /(?:\.(?:includes|startsWith|endsWith|indexOf)\(\s*|[!=]==?\s*)$/
+
+/** What each test depends on, at symbol level. Nodes:
+ * - `W|F` the whole file F: F and everything it imports, by the names it imports.
+ * - `X|F|n` export n of F. For a plain module that is `W|F` (the module that defines a name, with all its own imports). For a
+ *   re-export barrel or a CLI dispatcher it is the barrel's load-time code (`B|F`) plus the module n comes from, or n's own
+ *   top-level declaration and the names that declaration uses (`L|F|n`).
+ * - `C|D` a run of dispatcher D's CLI: D's load-time code and its entry block (`G|D`). The commands the run reaches come from the
+ *   test's literals (`K|D|<command>`, the handler's names in D's command table).
+ * - `T|D` code that indexes D's command table by a variable (`main`): it can run any command, so whoever reaches it is a CLI user
+ *   of D like `C|D`. */
+export function symbolGraph(tracked: string[], read: (p: string) => string | null) {
+  const set = new Set(tracked)
+  const byName = new Map<string, string[]>()
+  for (const p of tracked) byName.set(base(p), [...(byName.get(base(p)) ?? []), p])
+  const factsMemo = new Map<string, Facts | null>()
+  const factsOf = (f: string): Facts | null => {
+    if (!factsMemo.has(f)) {
+      const text = JS.test(f) ? read(f) : null
+      let fa: Facts | null = null
+      try {
+        fa = text === null ? null : facts(text)
+      } catch {
+        fa = null
+      }
+      factsMemo.set(f, fa)
+    }
+    return factsMemo.get(f) ?? null
+  }
+  const resolve = (from: string, spec: string): string | undefined => {
+    if (!spec.startsWith('.')) return undefined
+    const r = path.posix.normalize(path.posix.join(path.posix.dirname(from), spec))
+    const cands = [r, ...RESOLVE_EXTS.map((e) => r + e), ...(r.endsWith('.js') ? [r.slice(0, -3) + '.ts'] : []), ...RESOLVE_EXTS.map((e) => `${r}/index${e}`)]
+    return cands.find((c) => set.has(c))
+  }
+  /** a local table of D: a `[NAME_]COMMANDS` const D declares (not one it imports) */
+  const localTable = (fa: Facts, id: string): boolean => fa.tables.has(id) && !fa.bindings.has(id)
+  /** a file whose import() or require() may load f (by its name, or by a variable the scanner can't trace) */
+  const loads = (fa: Facts | null, f: string): boolean => fa === null || fa.dynamic.unknown || fa.dynamic.text.includes(base(f))
+  const isDispatcher = (f: string): boolean => {
+    const fa = factsOf(f)
+    return fa !== null && fa.guard !== null && [...fa.tables.values()].some((t) => t.entries.size > 0)
+  }
+  const symbolic = (f: string): boolean => {
+    const fa = factsOf(f)
+    return fa !== null
+  }
+  // a file's import edges as nodes, and its other edges (path literals, generated bundle, names in a test-side file)
+  const edgeMemo = new Map<string, { imports: string[]; other: Edge[] }>()
+  const edgesOf = (a: string): { imports: string[]; other: Edge[] } => {
+    const hit = edgeMemo.get(a)
+    if (hit) return hit
+    const out = { imports: [] as string[], other: [] as Edge[] }
+    edgeMemo.set(a, out)
+    const text = JS.test(a) ? read(a) : null
+    if (text === null) return out
+    const fa = factsOf(a)
+    const consumed = new Set<number>()
+    for (const s of fa?.imports ?? []) {
+      const g = resolve(a, s.spec)
+      consumed.add(s.at)
+      if (g === undefined) continue
+      if (s.names === 'all' || s.names.length === 0) out.imports.push(`W|${g}`)
+      else for (const n of s.names) out.imports.push(`X|${g}|${n}`)
+    }
+    const dir = path.posix.dirname(a)
+    const gen = GENERATED.exec(text)
+    if (gen) {
+      const under = `${path.posix.normalize(path.posix.join(dir, gen[1] as string)).replace(/\/+$/, '')}/`
+      for (const t of tracked) if (t.startsWith(under) && JS.test(t) && t !== a) out.other.push({ node: `W|${t}`, at: 0 })
+    }
+    const testSide = RUNNABLE.test(a) || inTestDir(a)
+    for (const m of text.matchAll(LITERALS)) {
+      const at = m.index as number
+      if (consumed.has(at) || WRITE_TARGET.test(text.slice(Math.max(0, at - 40), at))) continue
+      const lit = (m[1] ?? m[2] ?? (m[3] ?? '').replace(/\$\{[^}]*\}/g, '/')).trim()
+      if (lit.startsWith('.')) {
+        const r = resolve(a, lit)
+        if (r !== undefined && r !== a) out.other.push({ node: isDispatcher(r) && !loads(fa, r) ? `C|${r}` : `W|${r}`, at })
+      }
+      const name = base(lit)
+      if (name.length < 3 || !name.includes('.')) continue
+      const tail = lit.includes('/') ? lit.split('/').filter((s) => s !== '' && s !== '.' && s !== '..').join('/') : name
+      for (const b of byName.get(name) ?? []) {
+        if (b === a || !(tail === name || b === tail || b.endsWith(`/${tail}`))) continue
+        // a source module's file names are data paths, except the dispatcher's: a module that names it runs its CLI
+        if (isDispatcher(b)) {
+          if (!COMPARED.test(text.slice(Math.max(0, at - 40), at))) out.other.push({ node: testSide && loads(fa, b) ? `W|${b}` : `C|${b}`, at })
+        } else if (testSide) out.other.push({ node: `W|${b}`, at })
+      }
+    }
+    return out
+  }
+  /** D's command keys, each with the nodes of its handler */
+  const keyMemo = new Map<string, Map<string, string[]>>()
+  const commandsOf = (d: string): Map<string, string[]> => {
+    const hit = keyMemo.get(d)
+    if (hit) return hit
+    const out = new Map<string, string[]>()
+    keyMemo.set(d, out)
+    const fa = factsOf(d)
+    if (fa === null) return out
+    const add = (k: string, nodes: string[]): void => {
+      out.set(k, [...(out.get(k) ?? []), ...nodes])
+    }
+    for (const [name, t] of fa.tables) {
+      if (!localTable(fa, name)) continue
+      for (const [k, span] of t.entries) add(k, [...idents(fa.masked, span)].map((id) => `L|${d}|${id}`))
+      for (const item of t.items) {
+        const b = fa.bindings.get(item)
+        const g = b ? resolve(d, b.spec) : undefined
+        const pfa = g ? factsOf(g) : null
+        const pt = pfa?.tables.get(b?.orig ?? '')
+        // a listed table the scanner can't read: its module joins every CLI run
+        if (!g || !pt) {
+          add('', g ? [`W|${g}`] : [])
+          continue
+        }
+        for (const k of pt.entries.keys()) add(k, [`X|${g}|${b?.orig}`])
+      }
+    }
+    for (const [k, h] of fa.direct) add(k, [`L|${d}|${h}`])
+    return out
+  }
+  type Step = { files: string[]; next: string[]; cli?: string; any?: string }
+  const succMemo = new Map<string, Step>()
+  const succ = (node: string): Step => {
+    let s = succMemo.get(node)
+    if (s === undefined) succMemo.set(node, (s = step(node)))
+    return s
+  }
+  const step = (node: string): Step => {
+    const [kind, f, n] = node.split('|') as [string, string, string | undefined]
+    const fa = factsOf(f)
+    switch (kind) {
+      case 'W': {
+        const e = edgesOf(f)
+        return { files: [f], next: [...e.imports, ...e.other.map((x) => x.node)] }
+      }
+      case 'X': {
+        if (fa === null || !symbolic(f)) return { files: [f], next: [`W|${f}`] }
+        const next = [`B|${f}`]
+        let found = false
+        for (const s of fa.imports) {
+          if (s.reexports === null || s.reexports === '*') continue
+          const orig = s.reexports.get(n as string)
+          if (orig === undefined) continue
+          found = true
+          const g = resolve(f, s.spec)
+          if (g) next.push(orig === '*' ? `W|${g}` : `X|${g}|${orig}`)
+        }
+        if (fa.exports.has(n as string)) {
+          found = true
+          next.push(`L|${f}|${fa.exports.get(n as string)}`)
+        }
+        if (!found) {
+          const stars = fa.imports.filter((s) => s.reexports === '*').map((s) => resolve(f, s.spec)).filter((g): g is string => g !== undefined)
+          next.push(...(stars.length ? stars.map((g) => `X|${g}|${n}`) : [`W|${f}`]))
+        }
+        return { files: [f], next }
+      }
+      case 'L':
+      case 'M': {
+        if (fa === null) return { files: [f], next: [`W|${f}`] }
+        const id = n as string
+        const b = fa.bindings.get(id)
+        if (b) {
+          const g = resolve(f, b.spec)
+          return { files: [f], next: g === undefined ? [] : [b.orig === '*' ? `W|${g}` : `X|${g}|${b.orig}`] }
+        }
+        // a command table is reached only by command (K nodes); a declaration that indexes it can run any command
+        if (localTable(fa, id)) return kind === 'L' ? { files: [], next: [`T|${f}`] } : { files: [], next: [] }
+        const d = fa.decls.get(id)
+        if (!d) {
+          // a top-level name the statement scan missed (odd layout): the whole file, never nothing
+          return fa.top.has(id) ? { files: [f], next: [`W|${f}`] } : { files: [], next: [] }
+        }
+        const next = [...idents(fa.masked, d)].filter((x) => x !== id).map((x) => `${kind}|${f}|${x}`)
+        for (const e of edgesOf(f).other) if (e.at >= d.start && e.at < d.end) next.push(e.node)
+        return { files: [f], next }
+      }
+      case 'B': {
+        if (fa === null) return { files: [f], next: [`W|${f}`] }
+        const next: string[] = []
+        for (const s of fa.loose) for (const x of idents(fa.masked, s)) next.push(`M|${f}|${x}`)
+        for (const s of fa.imports) if (s.names === 'all' && s.bindings.length === 0 && s.reexports === null) {
+          const g = resolve(f, s.spec)
+          if (g) next.push(`W|${g}`)
+        }
+        const decls = [...fa.decls.values()]
+        for (const e of edgesOf(f).other) if (!decls.some((d) => e.at >= d.start && e.at < d.end)) next.push(e.node)
+        return { files: [f], next }
+      }
+      case 'C':
+        return { files: [f], next: [`B|${f}`, `G|${f}`], cli: f }
+      case 'T':
+        return { files: [], next: [], cli: f, any: f }
+      case 'G': {
+        if (fa?.guard == null) return { files: [f], next: [`W|${f}`] }
+        const direct = new Set(fa.direct.values())
+        return { files: [f], next: [...idents(fa.masked, fa.guard)].filter((x) => !direct.has(x)).map((x) => `M|${f}|${x}`) }
+      }
+      case 'K': {
+        const cmds = commandsOf(f)
+        return { files: [f], next: [...(cmds.get(n as string) ?? []), ...(cmds.get('') ?? [])] }
+      }
+      default:
+        return { files: [], next: [] }
+    }
+  }
+  const walk = (from: string[], seen: Set<string>, files: Set<string>, cli: Set<string>, via?: Map<string, string>, any?: Set<string>): void => {
+    const stack = [...from]
+    while (stack.length) {
+      const node = stack.pop() as string
+      if (seen.has(node)) continue
+      seen.add(node)
+      const s = succ(node)
+      for (const x of s.files) {
+        files.add(x)
+        if (via && !via.has(x)) via.set(x, node)
+      }
+      if (s.cli) cli.add(s.cli)
+      if (s.any) any?.add(s.any)
+      for (const x of s.next) {
+        if (seen.has(x)) continue
+        if (via && !via.has(x)) via.set(x, node)
+        stack.push(x)
+      }
+    }
+  }
+  /** The commands a command's handler runs back through D's table (`gates` hands its steps to main): null when it never indexes
+   * the table, else the commands named anywhere its handler reaches, or every command when it names none (a computed command). */
+  const anyMemo = new Map<string, Set<string> | null>()
+  const runsAny = (d: string, k: string): Set<string> | null => {
+    const key = `${d}|${k}`
+    if (!anyMemo.has(key)) {
+      const any = new Set<string>()
+      const seen = new Set<string>()
+      walk([`K|${d}|${k}`], seen, new Set(), new Set(), undefined, any)
+      if (!any.has(d)) anyMemo.set(key, null)
+      else {
+        const runs = named(seen, d, true)
+        anyMemo.set(key, runs.size > 0 ? runs : new Set([...commandsOf(d).keys()].filter((c) => c !== '')))
+      }
+    }
+    return anyMemo.get(key) as Set<string> | null
+  }
+  /** the commands of D a file names: a literal that is a command, a word after D's file name (`factory.ts heavy`, also in a doc or
+   * a regex `factory\.ts\s+(admit|reap)`) or after a template's ${} (`${bin} check`) */
+  const litMemo = new Map<string, { word: string; at: number }[]>()
+  const litsOf = (f: string, d: string): { word: string; at: number }[] => {
+    const key = `${f}|${d}`
+    const hit = litMemo.get(key)
+    if (hit) return hit
+    const keys = commandsOf(d)
+    const out: { word: string; at: number }[] = []
+    litMemo.set(key, out)
+    // D itself and a command table anywhere list commands, they do not run them; a doc a test reads is prose
+    const text = f === d || !JS.test(f) ? null : read(f)
+    const fa = text === null ? null : factsOf(f)
+    // a command table, a type and a comment name commands without running them
+    const tables = fa === null ? [] : [...[...fa.tables.keys()].map((t) => fa.decls.get(t)).filter((s): s is Span => s !== undefined), ...fa.types, ...fa.comments]
+    if (text !== null) {
+      const name = base(d)
+      const words = (s: string | undefined, at: number): void => {
+        if (tables.some((s) => at >= s.start && at < s.end)) return
+        for (const w of (s ?? '').split('|')) if (keys.has(w)) out.push({ word: w, at })
+      }
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      for (const m of text.matchAll(new RegExp(String.raw`${esc}[\s'"\x60)}]*\s+([\w-]+)`, 'g'))) words(m[1], m.index as number)
+      for (const m of text.matchAll(new RegExp(String.raw`${name.split('.').join(String.raw`\\\.`)}\\s[+*]?\((?:\?:)?([\w|-]+)\)`, 'g'))) words(m[1], m.index as number)
+      for (const m of text.matchAll(LITERALS)) words((m[1] ?? m[2] ?? m[3] ?? '').trim(), m.index as number)
+      for (const m of text.matchAll(/\$\{[^}\n]*\}\s+([\w-]+)/g)) words(m[1], m.index as number)
+    }
+    return out
+  }
+  /** The commands of D that a test's reach names. Only text that leads to a run of D's CLI counts: a node from which a C|D or T|D
+   * node is reachable, plus the same-file declarations such a node reads (a `const CMDS = ['admit']` handed to a spawn helper).
+   * So a data literal in a module the run merely loads names nothing. A whole file (W) counts whole, a declaration (L, M) its own
+   * text, a file's load-time code (B) its text outside every declaration. */
+  const named = (seen: Set<string>, d: string, everywhere = false): Set<string> => {
+    const reach = everywhere ? new Set(seen) : leadsTo(seen, d)
+    const want = new Set<string>()
+    for (const n of reach) {
+      const [kind, f, id] = n.split('|') as [string, string, string | undefined]
+      const lits = litsOf(f, d)
+      if (lits.length === 0) continue
+      const fa = factsOf(f)
+      let inside: (at: number) => boolean
+      if (kind === 'W' || fa === null) inside = () => true
+      else if (kind === 'L' || kind === 'M') {
+        const s = fa.decls.get(id as string)
+        if (!s) continue
+        inside = (at) => at >= s.start && at < s.end
+      } else if (kind === 'B') {
+        const decls = [...fa.decls.values()]
+        inside = (at) => !decls.some((s) => at >= s.start && at < s.end)
+      } else continue
+      for (const l of lits) if (inside(l.at)) want.add(l.word)
+    }
+    return want
+  }
+  /** the nodes of `seen` that lead to a run of D (C|D or T|D), plus the same-file declarations they read */
+  const leadsTo = (seen: Set<string>, d: string): Set<string> => {
+    const rev = new Map<string, string[]>()
+    for (const n of seen) for (const x of succ(n).next) if (seen.has(x)) {
+      const ps = rev.get(x)
+      if (ps) ps.push(n)
+      else rev.set(x, [n])
+    }
+    const reach = new Set<string>()
+    const stack = [`C|${d}`, `T|${d}`].filter((n) => seen.has(n))
+    while (stack.length) {
+      const n = stack.pop() as string
+      if (reach.has(n)) continue
+      reach.add(n)
+      for (const p of rev.get(n) ?? []) if (!reach.has(p)) stack.push(p)
+    }
+    const fileOf = (n: string): string => n.split('|')[1] as string
+    const local = [...reach]
+    while (local.length) {
+      const n = local.pop() as string
+      for (const x of succ(n).next) {
+        if (reach.has(x) || !/^[LM]\|/.test(x) || fileOf(x) !== fileOf(n)) continue
+        reach.add(x)
+        local.push(x)
+      }
+    }
+    return reach
+  }
+  /** every file test t depends on */
+  const depsOf = (t: string, via?: Map<string, string>): Set<string> => {
+    const seen = new Set<string>()
+    const files = new Set<string>()
+    const cli = new Set<string>()
+    walk([`W|${t}`], seen, files, cli, via)
+    const ran = new Map<string, Set<string>>()
+    for (let changed = true; changed; ) {
+      changed = false
+      for (const d of [...cli]) {
+        const all = [...commandsOf(d).keys()].filter((k) => k !== '')
+        const done = ran.get(d) ?? new Set<string>()
+        ran.set(d, done)
+        let want = named(seen, d)
+        // a CLI run with no command named in what leads to it runs some command the scanner can't see: all of them
+        if (want.size === 0) want = new Set(all)
+        for (const k of [...want]) for (const r of runsAny(d, k) ?? []) want.add(r)
+        const fresh = [...want].filter((k) => !done.has(k))
+        if (fresh.length === 0) continue
+        changed = true
+        for (const k of fresh) done.add(k)
+        walk(fresh.map((k) => `K|${d}|${k}`), seen, files, cli, via)
+      }
+    }
+    return files
+  }
+  /** the node path from `to` (a file or a node) back to `from`, for a why-was-this-selected question */
+  const trace = (from: string, to: string): string[] => {
+    const via = new Map<string, string>()
+    walk([from], new Set(), new Set(), new Set(), via)
+    const out: string[] = []
+    for (let x: string | undefined = to; x !== undefined && out.length < 60; x = via.get(x)) out.push(x)
+    return out
+  }
+  return { depsOf, trace }
+}
+
+/** The test-file globs a `node --test a/*.check.ts b/*.check.ts && node --test c/*.check.ts` script runs, or null when it names
+ * none (a bare `node --test`, another runner): then every tracked test file outside a nested package is a candidate. */
+export function suiteGlobs(script: string | null): string[] | null {
+  if (script === null || !/\bnode\s+--test\b/.test(script)) return null
+  const globs: string[] = []
+  for (const part of script.split(/&&|\|\||;/)) {
+    if (!/\bnode\s+--test\b/.test(part)) continue
+    for (const raw of part.trim().split(/\s+/)) {
+      const tok = raw.replace(/^['"]|['"]$/g, '')
+      if (tok.startsWith('-') || tok === 'node') continue
+      if (tok.includes('*') || RUNNABLE.test(tok)) globs.push(tok.replace(/^\.\//, ''))
+    }
+  }
+  return globs.length ? globs : null
+}
+
 /** The selection for one diff: the targeted set and why, or the full suite and why. */
 export function selectTests(input: SelectInput): Selection {
   const { config } = input
@@ -139,10 +531,15 @@ export function selectTests(input: SelectInput): Selection {
   const changed = input.changed.filter((c) => c.path !== '')
   if (changed.length > max) fullWhy.push(`the diff changes ${changed.length} files, over the limit of ${max} (targetedTests.maxFiles)`)
   let rev: Map<string, Set<string>> | undefined
+  let deps: Map<string, Set<string>> | undefined
   // a test inside a nested package (a dir with its own package.json) is that package's: the root runner can't run it, so only a
   // targetedTests.map entry reaches it
   const roots = input.tracked.filter((t) => t !== 'package.json' && base(t) === 'package.json').map((t) => t.slice(0, -'package.json'.length))
   const nested = (x: string): boolean => roots.some((r) => x.startsWith(r))
+  // only a file the real suite runs is a candidate: package.json's `node --test` globs when it names them, so a stray
+  // roles.test.ts outside them (which can't even load under that runner) is never picked
+  const globs = suiteGlobs(input.packageTest)
+  const runnable = (x: string): boolean => RUNNABLE.test(x) && !nested(x) && (globs === null || globs.some((g) => path.posix.matchesGlob(x, g)))
   const map = Array.isArray(config.map) ? config.map.filter((e) => e && Array.isArray(e.paths)) : []
   for (const { path: p, deleted } of fullWhy.length ? [] : changed) {
     const name = base(p)
@@ -166,6 +563,10 @@ export function selectTests(input: SelectInput): Selection {
       if ((JS.test(p) || OTHER_CODE.test(p)) && !RUNNABLE.test(p) && !covered) fullWhy.push(`${p} was deleted, so what used it can't be traced`)
       continue
     }
+    if (RUNNABLE.test(p) && !nested(p) && !runnable(p)) {
+      if (!covered) why.push(`${p}: not in the suite package.json's test script runs, so not run`)
+      continue
+    }
     if (inTestDir(p) && !RUNNABLE.test(p) && !covered) {
       fullWhy.push(`${p} is a shared test helper or fixture`)
       continue
@@ -174,13 +575,23 @@ export function selectTests(input: SelectInput): Selection {
       if (!covered) fullWhy.push(`${p}: no targetedTests.map entry covers this file`)
       continue
     }
-    rev ??= usedBy(input.tracked, input.read)
-    const seen = new Set<string>([p])
-    const queue = [p]
-    while (queue.length) for (const u of rev.get(queue.shift() as string) ?? []) if (!seen.has(u)) (seen.add(u), queue.push(u))
-    const tests = [...seen].filter((x) => RUNNABLE.test(x) && !nested(x)).sort()
+    if (deps === undefined) {
+      const g = symbolGraph(input.tracked, input.read)
+      deps = new Map(input.tracked.filter(runnable).map((t) => [t, g.depsOf(t)]))
+    }
+    let tests = [...deps].filter(([, d]) => d.has(p)).map(([t]) => t).sort()
+    let how = ''
+    if (tests.length === 0) {
+      // no test reaches it by the names it exports (a module only a barrel loads): fall back to the file-level graph
+      rev ??= usedBy(input.tracked, input.read)
+      const seen = new Set<string>([p])
+      const queue = [p]
+      while (queue.length) for (const u of rev.get(queue.shift() as string) ?? []) if (!seen.has(u)) (seen.add(u), queue.push(u))
+      tests = [...seen].filter(runnable).sort()
+      how = ' (file-level: no test uses a name it exports)'
+    }
     for (const t of tests) files.add(t)
-    if (tests.length) why.push(`${p}: reached by ${tests.join(', ')}`)
+    if (tests.length) why.push(`${p}: reached by ${tests.join(', ')}${how}`)
     else if (JS.test(p) && !covered) fullWhy.push(`${p} is code that no test reaches`)
   }
   const sorted = [...files].sort()

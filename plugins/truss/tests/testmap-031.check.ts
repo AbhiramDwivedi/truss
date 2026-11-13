@@ -8,9 +8,9 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { DEFAULT_MAX_FILES, selectForCheckout, selectTests, stripBlanketSuite } from '../bin/testmap.ts'
+import { DEFAULT_MAX_FILES, selectForCheckout, selectTests, stripBlanketSuite, suiteGlobs, symbolGraph } from '../bin/testmap.ts'
 
-const NODE_TEST = 'node --test lib/*.check.ts'
+const NODE_TEST = 'node --test tests/*.check.ts'
 /** A tree as {path: text}; read() serves it, tracked lists it. */
 function tree(files: Record<string, string>, changed: string[], extra: Record<string, unknown> = {}) {
   return selectTests({
@@ -83,7 +83,7 @@ test('testmap: on this repo a change to a workflows-src/stage/ module selects th
       }
     },
     config: {},
-    packageTest: 'node --test plugins/truss/tests/*.check.ts',
+    packageTest: JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts.test,
   })
   assert.equal(s.mode, 'targeted', s.why.join('\n'))
   for (const t of ['workflows.check.ts', 'ruling-031.check.ts', 'stage-bundle.check.ts']) assert.ok(s.files.includes(`plugins/truss/tests/${t}`), `${t} selected`)
@@ -218,4 +218,175 @@ test('testmap: selectForCheckout reads the diff from git and the runner from pac
   assert.equal(s.mode, 'targeted')
   assert.deepEqual(s.files, ['tests/c.check.ts'])
   assert.equal(s.full, 'npm test')
+})
+
+// Symbol-level selection (0.31.0 targeted-tests follow-up): a test depends on the names it uses, not on whole files.
+const BARREL = {
+  'src/m1.ts': 'export const x = 1\n',
+  'src/m2.ts': 'export const y = 2\n',
+  'src/barrel.ts': "export { x } from './m1.ts'\nexport { y } from './m2.ts'\n",
+  'tests/x.check.ts': "import { x } from '../src/barrel.ts'\nconsole.log(x)\n",
+  'tests/y.check.ts': "import { y } from '../src/barrel.ts'\nconsole.log(y)\n",
+}
+
+test('testmap: an import through a re-export barrel reaches only the module that defines the name', () => {
+  assert.deepEqual(tree(BARREL, ['src/m1.ts']).files, ['tests/x.check.ts'])
+  assert.deepEqual(tree(BARREL, ['src/m2.ts']).files, ['tests/y.check.ts'])
+  // the barrel itself is still the file both tests load
+  assert.deepEqual(tree(BARREL, ['src/barrel.ts']).files, ['tests/x.check.ts', 'tests/y.check.ts'])
+})
+
+test('testmap: a namespace import used only as ns.name reaches those names; any other use takes the whole barrel', () => {
+  const members = { ...BARREL, 'tests/ns.check.ts': "import * as b from '../src/barrel.ts'\nconsole.log(b.x)\n" }
+  assert.deepEqual(tree(members, ['src/m2.ts']).files, ['tests/y.check.ts'])
+  assert.deepEqual(tree(members, ['src/m1.ts']).files, ['tests/ns.check.ts', 'tests/x.check.ts'])
+  const passed = { ...BARREL, 'tests/ns.check.ts': "import * as b from '../src/barrel.ts'\nconst all = b\nconsole.log(all)\n" }
+  assert.deepEqual(tree(passed, ['src/m2.ts']).files, ['tests/ns.check.ts', 'tests/y.check.ts'])
+})
+
+test('testmap: a dynamic import of a barrel takes the whole barrel', () => {
+  const files = { ...BARREL, 'tests/dyn.check.ts': "const b = await import('../src/barrel.ts')\nconsole.log(b.x)\n" }
+  assert.deepEqual(tree(files, ['src/m2.ts']).files, ['tests/dyn.check.ts', 'tests/y.check.ts'])
+})
+
+// a dispatcher shaped like bin/factory.ts: a COMMANDS table and an isMain guard built from process.argv
+const CLI = {
+  'src/cli.ts': [
+    "import { cmdAlpha } from './alpha.ts'",
+    "import { cmdBeta } from './beta.ts'",
+    'const COMMANDS = {',
+    '  alpha: cmdAlpha,',
+    '  beta: cmdBeta,',
+    '}',
+    'export function main(argv) {',
+    '  return COMMANDS[argv[0]](argv.slice(1))',
+    '}',
+    "const isMain = process.argv[1] !== undefined && process.argv[1].endsWith('cli.ts')",
+    'if (isMain) {',
+    '  main(process.argv.slice(2))',
+    '}',
+    '',
+  ].join('\n'),
+  'src/alpha.ts': 'export function cmdAlpha() {\n  return 1\n}\n',
+  'src/beta.ts': 'export function cmdBeta() {\n  return 2\n}\n',
+  'tests/alpha.check.ts': "import { spawnSync } from 'node:child_process'\nconst cli = path.join(root, 'src', 'cli.ts')\nspawnSync('node', [cli, 'alpha'])\n",
+}
+
+const runs = (cmd: string) => `import { spawnSync } from 'node:child_process'\nconst cli = path.join(root, 'src', 'cli.ts')\nspawnSync('node', [cli, ${cmd}])\n`
+const CLI2 = { ...CLI, 'tests/beta.check.ts': runs("'beta'") }
+
+test('testmap: a test that runs a CLI command reaches that command handler module, not the others', () => {
+  const s = tree(CLI2, ['src/alpha.ts'])
+  assert.equal(s.mode, 'targeted', s.why.join('\n'))
+  assert.deepEqual(s.files, ['tests/alpha.check.ts'])
+  assert.deepEqual(tree(CLI2, ['src/beta.ts']).files, ['tests/beta.check.ts'])
+  // the dispatcher itself is loaded by every run
+  assert.deepEqual(tree(CLI2, ['src/cli.ts']).files, ['tests/alpha.check.ts', 'tests/beta.check.ts'])
+})
+
+test('testmap: a CLI run whose command is not a literal reaches every command handler', () => {
+  const files = { ...CLI2, 'tests/any.check.ts': runs('process.env.CMD') }
+  assert.deepEqual(tree(files, ['src/beta.ts']).files, ['tests/any.check.ts', 'tests/beta.check.ts'])
+  assert.deepEqual(tree(files, ['src/alpha.ts']).files, ['tests/alpha.check.ts', 'tests/any.check.ts'])
+})
+
+test('testmap: a command named only in a comment does not count as a run; a literal does, even in a comparison', () => {
+  const files = { ...CLI2, 'tests/alpha.check.ts': runs("'alpha'") + "// the 'beta' command is not run here\n" }
+  assert.deepEqual(tree(files, ['src/beta.ts']).files, ['tests/beta.check.ts'])
+  // `if (cmd === 'beta') spawn(cli, [cmd])` runs it, so a compared literal stays a command
+  const compared = { ...CLI2, 'tests/alpha.check.ts': runs("'alpha'") + "const pick = (c) => c === 'beta'\n" }
+  assert.deepEqual(tree(compared, ['src/beta.ts']).files, ['tests/alpha.check.ts', 'tests/beta.check.ts'])
+})
+
+test('testmap: a source module that only compares text with the dispatcher file name does not run it', () => {
+  const files = {
+    ...CLI2,
+    'src/scan.ts': "export const isCli = (cmd) => cmd.includes('cli.ts')\n",
+    'tests/scan.check.ts': "import { isCli } from '../src/scan.ts'\nconsole.log(isCli('x'))\n",
+  }
+  assert.deepEqual(tree(files, ['src/alpha.ts']).files, ['tests/alpha.check.ts'])
+})
+
+test('testmap: a file name a test only writes to is not a file the test reads', () => {
+  const files = {
+    ...BASE,
+    'tests/stub.check.ts': "import { writeFileSync } from 'node:fs'\nwriteFileSync('flow.js', 'stub')\n",
+  }
+  assert.deepEqual(tree(files, ['src/flow.js']).files, ['tests/flow.check.ts'])
+})
+
+test('testmap: a module no test reaches by the names it exports falls back to the file-level graph, and says so', () => {
+  // no test runs `beta`, but alpha.check.ts loads cli.ts, which imports beta.ts: the old file-level reach still selects it
+  const s = tree(CLI, ['src/beta.ts'])
+  assert.equal(s.mode, 'targeted', s.why.join('\n'))
+  assert.deepEqual(s.files, ['tests/alpha.check.ts'])
+  assert.ok(s.why.some((w) => /file-level/.test(w)), s.why.join('\n'))
+})
+
+
+test('testmap: only files the package.json test script runs are candidates', () => {
+  assert.deepEqual(suiteGlobs('node --test plugins/truss/tests/*.check.ts plugins/truss/tests/*/*.check.ts && node --test checks/*.check.ts'), [
+    'plugins/truss/tests/*.check.ts',
+    'plugins/truss/tests/*/*.check.ts',
+    'checks/*.check.ts',
+  ])
+  assert.equal(suiteGlobs('node --test'), null)
+  assert.equal(suiteGlobs('jest'), null)
+  const files = { ...BASE, 'tests/roles.test.ts': "import { c } from '../src/c.ts'\n", 'checks/c.check.ts': "import { c } from '../src/c.ts'\n" }
+  assert.deepEqual(tree(files, ['src/c.ts']).files, ['tests/c.check.ts'])
+  assert.deepEqual(tree(files, ['src/c.ts'], { packageTest: 'node --test tests/*.check.ts && node --test checks/*.check.ts' }).files, ['checks/c.check.ts', 'tests/c.check.ts'])
+  // a bare `node --test` names no globs: every test file outside a nested package stays a candidate
+  assert.deepEqual(tree(files, ['src/c.ts'], { packageTest: 'node --test' }).files, ['checks/c.check.ts', 'tests/c.check.ts', 'tests/roles.test.ts'])
+  // a changed test file the suite never runs is not run, and needs no full suite
+  const own = tree(files, ['tests/roles.test.ts'])
+  assert.equal(own.mode, 'targeted')
+  assert.deepEqual(own.files, [])
+})
+
+test('testmap: on this repo every test that imports a name a bin/factory module exports depends on that module', () => {
+  const root = path.resolve(import.meta.dirname, '..', '..', '..')
+  const r = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  const tracked = r.stdout.split('\n').filter(Boolean)
+  const read = (p: string) => {
+    try {
+      return readFileSync(path.join(root, p), 'utf8')
+    } catch {
+      return null
+    }
+  }
+  const globs = suiteGlobs(JSON.parse(read('package.json')).scripts.test)
+  assert.ok(globs, 'package.json names its test globs')
+  const tests = tracked.filter((t) => globs.some((g) => path.posix.matchesGlob(t, g)))
+  const modules = tracked.filter((t) => /^plugins\/truss\/bin\/factory\/[^/]+\.ts$/.test(t))
+  assert.ok(modules.length > 10, 'the factory modules are tracked')
+  // what a module exports, and what bin/factory.ts re-exports from it, read here with plain regexes (not the selector's parser)
+  const exported = (m: string) => new Set([...read(m).matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|class)\s+([\w$]+)/gm)].map((x) => x[1]))
+  const dispatcher = 'plugins/truss/bin/factory.ts'
+  const reexported = new Map<string, Set<string>>()
+  for (const x of read(dispatcher).matchAll(/export\s*\{([^}]*)\}\s*from\s*'\.\/factory\/([\w-]+)\.ts'/g)) {
+    reexported.set(`plugins/truss/bin/factory/${x[2]}.ts`, new Set(x[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()).filter(Boolean)))
+  }
+  const g = symbolGraph(tracked, read)
+  const missed: string[] = []
+  let pairs = 0
+  for (const t of tests) {
+    const src = read(t)
+    if (src === null) continue
+    let deps: Set<string> | undefined
+    for (const x of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+      if (!x[2].startsWith('.')) continue
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(t), x[2]))
+      const names = x[1].split(',').map((s) => s.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]).filter(Boolean)
+      for (const m of modules) {
+        const own = target === m ? exported(m) : target === dispatcher ? (reexported.get(m) ?? new Set()) : null
+        if (own === null || !names.some((n) => own.has(n))) continue
+        pairs++
+        deps ??= g.depsOf(t)
+        if (!deps.has(m)) missed.push(`${t} imports from ${m}`)
+      }
+    }
+  }
+  assert.ok(pairs >= 5, `found ${pairs} test-to-module imports`)
+  assert.deepEqual(missed, [])
 })
