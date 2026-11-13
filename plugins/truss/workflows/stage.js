@@ -1647,6 +1647,7 @@ async function testsBackstop(crew, what) {
 // ---------------------------------------------------------------- split
 
 function globToRegExp(glob) {
+  if (glob.endsWith('/')) glob += '**' // a bare `dir/` owns entry means `dir/**`
   let s = ''
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i]

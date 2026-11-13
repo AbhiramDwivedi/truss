@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 971343f7c62eb6ad61165e5e706116d364793975
+verified: 67e446cd5d4b26d16dd19ac4ce52dbaa2c5af604
 ---
 
 # Store, holds and contract-025 stubs
@@ -56,6 +56,7 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 - `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts:75). `platform` is a parameter so tests cover win32.
 - `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:84, 78). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:86-87, 134).
 - Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (store.ts:528-549). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts:57, 174).
+- `factory cost` (`costOf`) and the inbox commands `escalate`, `resolve`, `mark-applied` and `list` take `--dir` through `absDirOf` (`bin/inbox.ts`): a relative `--dir` is a usage error, so `sessionOf` never sees a relative basename.
 - Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
 - Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:312-319). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
 - A busy usage lock is handled by `budgetVerdict` in two ways. With a `usage.jsonl` it reads that file as it stands and accepts the lag. With no `usage.jsonl` the spend is unknown, so it sweeps once more with the store's default wait and lets `StoreBusy` through (exit 2, never an admit; ADR-0038 amendment 2026-11-11). `factory start` wraps its admission in `heldOnBusy`, which holds that crew with `why` `store busy: usage` and still reports the crews already started in the call. `crewCost` gives `usd: null` on any busy lock (`sweepOrRead`, `crewCost` in cost.ts). `factory cost` reads through `sweepOrRead` too: on a busy lock it prints `sweep.busy: true`, and with no `usage.jsonl` and no cursor `run.usd` and `session.usd` are null with `session.why` `usage sweep busy and no earlier reading exists` (`cmdCost` area of cost.ts).
