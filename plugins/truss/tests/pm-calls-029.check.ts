@@ -302,3 +302,43 @@ t('a product call with no scope conflict is logged as a crew decision and never 
   has(d[0].prompt, '--task build-export')
   has(callOf(r, 'a-builder-2').prompt, 'Include archived items, flagged.')
 })
+
+// ---- stress-test regressions (crew-decisions, head e30060ad)
+
+t('a resume whose pm-question is newer than a resolved client scope-change item for the same task answers with the program manager note', async () => {
+  const base = { ref: REF, blocking: true, session: 'sess-1', crews: ['a'], applied: false, state: 'resolved' }
+  const X = { ...base, id: 'E-20261112-aaaaaa', kind: 'scope-change', ts: '2026-11-12T12:00:00.000Z', title: 'Product call for a', decision: 'answer', by: 'client', note: 'CLIENT-ANSWER-X' }
+  const Y = { ...base, id: 'E-20261112-bbbbbb', kind: 'pm-question', ts: '2026-11-12T13:00:00.000Z', title: 'Follow-up for a', decision: 'answer', by: 'pm', note: 'PM-ANSWER-Y' }
+  const runner = async ({ cmd, prompt }) => {
+    if (cmd !== 'inbox') return undefined
+    const kind = (prompt.match(/--kind(?:\s+|=)(\S+)/) || [])[1]
+    const items = kind === 'scope-change' ? [X] : kind === 'pm-question' ? [Y] : []
+    return rj({ items, open: 0 })
+  }
+  const again = { 'a-builder': done('feat/b2'), 'a-builder-2': done('feat/b3'), 'a-po': 'PO: ESCALATE\nsame question' }
+  const r = await runStages([entryOf('a', { resume: 'stale', tasks: [TT, TF, TD], done: ['write-tests'] })], { labels: labelsOf('a', again), runner })
+  assert.equal(resOf(r).state, 'passed', JSON.stringify(resOf(r)))
+  const builders = r.calls.filter((c) => /^a-builder(-\d+)?$/.test(String(c.label)))
+  assert.ok(builders.length >= 1, 'a builder ran')
+  assert.ok(builders.every((c) => c.prompt.includes('PM-ANSWER-Y')), 'the asking member carries the newer program manager answer Y')
+  assert.ok(builders.every((c) => !c.prompt.includes('CLIENT-ANSWER-X')), 'and not the older client answer X')
+  const d = runnerCalls(r, 'crew-decision')
+  assert.equal(d.length, 1, 'the program manager answer is logged as one crew decision')
+  has(d[0].prompt, 'PM-ANSWER-Y')
+})
+
+t('a crew resumed while its fix-step pm-question is still open stops awaiting the program manager, not the client', async () => {
+  const row = { id: 'E-20261112-bbbbbb', ts: '2026-11-12T12:30:00.000Z', kind: 'pm-question', session: 'sess-1', crews: ['a'], ref: 'crew-call:a:qc', blocking: true, title: 'QC fix question for a', state: 'open', applied: false }
+  const runner = async ({ cmd, prompt }) => {
+    if (cmd === 'inbox') return rj({ items: /--kind(?:\s+|=)pm-question\b/.test(prompt) ? [row] : [], open: 1 })
+    // the real factory admit prints the client wording for any open blocking item, whatever its kind (bin/factory.ts holdOf)
+    if (cmd === 'admit') return rj({ admitted: false, awaiting: true, why: `awaiting client: ${row.id}` })
+    return undefined
+  }
+  const r = await runStages([entryOf('a', { resume: 'stale', tasks: [TT, TF, TD], done: ['write-tests', 'build-export', 'write-docs'], answers: [] })], { labels: labelsOf('a'), runner })
+  const s = resOf(r)
+  assert.equal(s.state, 'stopped', JSON.stringify(s))
+  assert.doesNotMatch(s.text, /awaiting client:/, `the question is the program manager's: ${s.text}`)
+  assert.match(s.text, /awaiting program manager:/, s.text)
+  has(s.text, row.id)
+})
