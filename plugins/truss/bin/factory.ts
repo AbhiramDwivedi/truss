@@ -4290,7 +4290,7 @@ const isMain = ((): boolean => {
 // booleans ok, merged and admitted, head as a string, env cut to 200 characters, and ran from heavy.ran.
 export function statusLine(body: Obj): string {
   const s: Obj = {}
-  for (const k of ['ok', 'merged', 'admitted']) if (typeof body[k] === 'boolean') s[k] = body[k]
+  for (const k of ['ok', 'merged', 'admitted', 'checkpoint']) if (typeof body[k] === 'boolean') s[k] = body[k]
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
