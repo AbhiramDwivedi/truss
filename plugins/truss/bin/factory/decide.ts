@@ -75,6 +75,43 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   appendDecisionLine(dir, line)
   return { ok: true, form, line }
 }
+// The goalCheck time limit: 10 minutes, or TRUSS_GOALCHECK_TIMEOUT_MS (a positive integer) when set.
+export function goalCheckLimitMs(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.TRUSS_GOALCHECK_TIMEOUT_MS)
+  return Number.isInteger(n) && n > 0 ? n : 600000
+}
+// goalCheckSupervisor: argv = command, cwd, limit ms. Runs `bash -c command`, keeps the last 4000 characters of its output and, at
+// the limit, kills the whole process tree: the child leads its own process group on POSIX (kill -pid), and on Windows
+// `taskkill /T /F` ends the tree. Prints one JSON line {status, timedOut, tail}.
+const GOALCHECK_SUPERVISOR = `
+const { spawn, spawnSync } = require('node:child_process')
+const [command, cwd, limit] = process.argv.slice(1)
+const win = process.platform === 'win32'
+const c = spawn('bash', ['-c', command], { cwd, detached: !win, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+let tail = ''
+let timedOut = false
+let done = false
+const add = (b) => { tail = (tail + b).slice(-4000) }
+c.stdout.on('data', add)
+c.stderr.on('data', add)
+const killTree = () => {
+  try {
+    if (win) spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true })
+    else process.kill(-c.pid, 'SIGKILL')
+  } catch {}
+}
+const timer = setTimeout(() => { timedOut = true; killTree() }, Number(limit))
+const finish = (status) => {
+  if (done) return
+  done = true
+  clearTimeout(timer)
+  if (!timedOut) killTree()
+  console.log(JSON.stringify({ status, timedOut, tail }))
+  process.exit(0)
+}
+c.on('error', (e) => { add(e.message + '\\n'); finish(1) })
+c.on('exit', (code) => { setTimeout(() => finish(code === null ? 1 : code), timedOut ? 0 : 50) })
+`
 // `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head in a temporary detached
 // worktree, never in the main checkout, and never pushes or moves a branch. One JSON line, one decision line, ok or not.
 export function cmdGoalCheck(f: Flags): Obj {
@@ -96,19 +133,36 @@ export function cmdGoalCheck(f: Flags): Obj {
   let status = 1
   let tail = ''
   let added = false
+  let timedOut = false
   try {
     gitOrFail(repo, ['-c', 'core.quotepath=off', 'worktree', 'add', '-q', '--detach', wt, sha])
     added = true
-    const r = spawnSync('bash', ['-c', command], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
-    status = r.error ? 1 : (r.status ?? 1)
-    tail = `${r.error ? `${r.error.message}\n` : ''}${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000)
+    const limit = goalCheckLimitMs()
+    // the check runs under a small node supervisor (goalCheckSupervisor), so the whole process tree can be killed at the limit
+    const r = spawnSync(process.execPath, ['-e', GOALCHECK_SUPERVISOR, command, wt, String(limit)], { encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: limit + 30000 })
+    let v: Obj | undefined
+    try {
+      v = JSON.parse(r.stdout)
+    } catch {}
+    if (v === undefined) {
+      status = 1
+      tail = `${r.error ? `${r.error.message}\n` : ''}${r.stderr ?? ''}`.slice(-4000)
+    } else {
+      status = typeof v.status === 'number' ? v.status : 1
+      tail = String(v.tail ?? '').slice(-4000)
+      if (v.timedOut === true) {
+        timedOut = true
+        status = 1
+      }
+    }
   } finally {
     if (added) run(repo, ['-c', 'core.quotepath=off', 'worktree', 'remove', '--force', wt])
     run(repo, ['-c', 'core.quotepath=off', 'worktree', 'prune'])
     rmSync(path.dirname(wt), { recursive: true, force: true })
   }
-  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
-  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
+  const error = timedOut ? `${label} timed out after ${Math.round(goalCheckLimitMs() / 1000)} s and was killed` : undefined
+  appendDecision(dir, `${label} ${status === 0 ? 'passed' : timedOut ? `timed out (${Math.round(goalCheckLimitMs() / 1000)} s)` : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, ...(error ? { error } : {}), output: tail }
   if (status !== 0) throw refuse(body)
   return body
 }

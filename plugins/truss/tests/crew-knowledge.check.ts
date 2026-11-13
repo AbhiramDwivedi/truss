@@ -925,3 +925,16 @@ t('product 10: the product-answer resume names the asking member earlier branch'
   passed(r)
   has(callOf(r, 'a-builder-2').prompt, 'Its branch was feat/b.')
 })
+
+t('scope 1: a QC fixer that edits outside the crew owns stops at the scope check, before the next QC is paid for', async () => {
+  const FAIL = 'VERDICT: FAIL\n\n## Findings\n- src/ui/a.ts: wrong\n'
+  const labels = labelsFor({ 'a-qc': FAIL, 'a-qc-2': PASS, 'a-builder-2': done('feat/fix'), 'a-writer-2': done('feat/k2') })
+  // owns-check passes on the first head and refuses the head the fix round produced
+  const owns = ({ cmd, n }) => (cmd === 'owns-check' && n >= 1 ? rj({ ok: false, outside: ['src/other.ts'] }, 2) : undefined)
+  const r = await runStage([OLD()], { personas: PERSONAS, labels, runner: owns })
+  const s = r.result.find((x) => x.slug === 'a')
+  assert.equal(s.state, 'stopped', JSON.stringify(s).slice(0, 300))
+  assert.equal(s.at, 'scope')
+  has(s.text, 'src/other.ts')
+  assert.ok(!r.labels.includes('a-qc-2'), 'no second QC was spawned')
+})

@@ -77,6 +77,34 @@ test('goal-check exits non-zero with the command output when goalCheck fails', (
   assert.equal(decisionLines(env.dir).length, before + 2, 'each run logs one decision line')
 })
 
+test('goal-check times out, kills the whole process tree and says so in one line', () => {
+  const pidFile = `${tmp('lc-hang-')}/pid`
+  const { env } = checkWorld({ goalCheck: `node hang.cjs ${pidFile}` })
+  git(env.repo, ['checkout', '-q', 'main'])
+  putFile(env.repo, 'hang.cjs', "const { spawn } = require('node:child_process')\nconst c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })\nrequire('node:fs').writeFileSync(process.argv[2], String(c.pid))\nsetInterval(() => {}, 1000)\n", 'add hanging check')
+  git(env.repo, ['checkout', '-q', 'topic'])
+  const t0 = Date.now()
+  const res = runCli(env.factory, 'goal-check', ['--dir', env.dir, '--repo', env.repo], env.repo, { TRUSS_TRANSCRIPTS_ROOT: tmp('lc-root-'), CLAUDE_CONFIG_DIR: '', TRUSS_GOALCHECK_TIMEOUT_MS: '1500' })
+  assert.ok(Date.now() - t0 < 20000, 'the command returned after the limit, not after the hang')
+  assert.notEqual(res.status, 0)
+  const j = assertOneLine(res)
+  assert.equal(j.ok, false)
+  assert.match(String(j.error), /^goalCheck timed out after 2 s/)
+  assert.ok(decisionLines(env.dir).some((l) => /goalCheck timed out/.test(l)), 'the decision line says it timed out')
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  assert.ok(Number.isInteger(pid) && pid > 0)
+  let alive = true
+  for (let i = 0; i < 50 && alive; i++) {
+    try {
+      process.kill(pid, 0)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+    } catch {
+      alive = false
+    }
+  }
+  assert.equal(alive, false, `the grandchild ${pid} was killed with the tree`)
+})
+
 test('goal-check runs in a temporary worktree, leaves the main checkout unchanged and never pushes', () => {
   const { env, targetHead } = checkWorld({ goalCheck: 'node check.cjs' })
   const bare = tmp('lc-bare-')
@@ -232,7 +260,7 @@ test('start defaults scriptPath to the session scripts dir and --scripts-dir ove
   assert.equal(existsSync(other.scripts), false, 'the override leaves the session scripts dir alone')
 })
 
-test('plugin.json and the newest CHANGELOG entry are 0.29.0', () => {
+test('plugin.json and the newest CHANGELOG entry agree and are a released version', () => {
   // the release is the program manager's bump: assert the two agree and are at least 0.29.0, never one pinned version
   const manifest = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'))
   const log = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
