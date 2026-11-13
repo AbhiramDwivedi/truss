@@ -932,7 +932,8 @@ t('stage resume answers: an answer at red runs the red check again; other answer
   const atRed = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'red', text: 'host fixed' }] })], { labels: base() })
   // a resume first asks factory decisions --crew for the crew's earlier product calls, then runs the red check
   assert.deepEqual(atRed.timeline.slice(0, 2), ['start:runner:a:decisions', 'end:runner:a:decisions'])
-  assert.equal(atRed.timeline[2], 'start:runner:a:check:red')
+  assert.equal(atRed.timeline[2], 'start:runner:a:sync')
+  assert.equal(atRed.timeline[4], 'start:runner:a:check:red')
   passedShape(atRed.res[0], 'a', HEAD, 'a-qc')
   const atSplit = await runStage([entry('a', { resume: 'answers', answers: [{ at: 'split', text: 'x' }] })], { labels: base() })
   assert.ok(noRunner(atSplit, 'check:red'))
@@ -1342,7 +1343,8 @@ t('stage resume stale: with invalid tasks it stops BLOCKED at split and never ru
 t('stage resume stale: with no tasks the chain starts at the red check', async () => {
   const r = await runStage([entry('a', { resume: 'stale' })], { labels: base() })
   assert.equal(r.timeline[0], 'start:runner:a:decisions')
-  assert.equal(r.timeline[2], 'start:runner:a:check:red')
+  assert.equal(r.timeline[2], 'start:runner:a:sync')
+  assert.equal(r.timeline[4], 'start:runner:a:check:red')
   assert.ok(had(r, 'a-planner'))
 })
 t('stage resume merge-ready: sync, green, owns-check, qc in that order; no red, planner, member or stress test', async () => {

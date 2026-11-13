@@ -109,6 +109,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "Heavy slots").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
 
+## Finisher lease (resume guard)
+
+- What: `finish` and `start --resume` hold a lease `finisher-<slug>` (`store.ts` `takeLease`/`refreshLease`/`releaseLease`) so two finishers never run one crew; a held live lease refuses the second (a live pid on the same host keeps its lease however long the acceptance test runs; only another host's lease goes stale, after 300 s). `finish` takes it per crew before writing, refreshes it before each merge and releases it in a `finally`. `start --resume` takes it before `ensureWorktree`, merges the target via `mergeIn`, and on a conflict runs `git merge --abort` and records `syncConflicts: [paths]` on the crew entry instead of refusing.
+- Entry points: `plugins/truss/bin/store.ts` (`takeLease`), `plugins/truss/bin/factory.ts` (`cmdStartResume`, `cmdFinish`, `finishRun`, `mergeIn`), `plugins/truss/tests/resume-029.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0048](../plugins/truss/docs/adr/0048-resume-guard.md), [store notes](knowledge/store.md).
+
 ## Resume answers carry forward
 
 - What: every crew resume (`start --slug S --resume answers|stale|merge-ready`) merges the crew's earlier rulings into `entry.answers`, so a PM's new `--answers` file never drops one. The store is `<truss dir>/crews/<slug>/answers.json`, rows `{at, text, after, ts}` (`after` is the id of the crew's newest Workflow run when the ruling was given). The new answers come first, then each stored one not repeated. A stored answer at a task name drops once a run after `after` finished that task (it is built; re-sending it would re-run the task); until then it rides along and keeps the task out of `done`. An answer at a step name (red, split, green, qc, stress, UX) always rides along. The refused-resume checks (red record) look only at the new answers.

@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: 31e38234699a58641abcf670ecebf9e9899e977e
+verified: 0f9ae4698616b3a3085fee1e8f92d93eeed77144
 ---
 
 # Product decisions
@@ -33,6 +33,13 @@ verified: 31e38234699a58641abcf670ecebf9e9899e977e
 - Answer: no. `budgetVerdict` reads `usage.jsonl` as it stands and holds only on: not priced, found 0 with a budget set, limit reached. `crewCost` returns `usd: null` ('usage sweep busy') while the usage lock stays busy, so the ledger never records a cost too low. The test at `cost.check.ts` asserts `held: false` for that case.
 - Reason: contract-025 section 4 lists only those holds; the first-sweep hold BLOCKED 3 of 4 crews started together (ADR-0038, `plugins/truss/bin/cost.ts` `budgetVerdict`). Known limit: no budget is enforced until the first sweep lands.
 - Decided by: product-owner persona (crew b-cost).
+
+## resume-guard: finisher lease format and staleness
+
+- Decision: the lease `<truss dir>/locks/finisher-<slug>.lease` holds `{pid, host, since, refreshed, token}`. On the same host a live pid keeps its lease however old (the finisher blocks in spawnSync during the acceptance test and cannot refresh); another host's lease goes stale after 5 minutes without a refresh.
+- Reason: R-89 (one finisher per crew) must hold while a long acceptance test runs; a timer cannot refresh a blocked thread.
+- Cost: other tools and older plugin versions must agree on the format, and cross-host judgement relies on agreeing clocks. Reversal is cheap.
+- Decided by: builder, ADR-0048 (crew resume-guard).
 
 ## crew-decisions: who answers a crew product call
 
