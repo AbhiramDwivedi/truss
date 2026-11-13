@@ -212,3 +212,10 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: `plugins/truss/hooks/register.ts` (`isLeadType`, `leadStartName`, `stopperIsLead`); `plugins/truss/agents/project-manager.md` (moved there by the rename-plugin crew in 0.27.0).
 - Docs: `plugins/truss/docs/adr/0042-project-manager-rename.md`; `plugins/truss/docs/architecture.md` ("Role names (ADR-0042)").
 - Owner: `truss-plugin-node`.
+
+## Gate grades: no stops on obvious calls (0.31.0)
+
+- What: every gate is graded by risk. Production, money, secrets and permissions, untrusted input, force-push, deleting delivered work, frozen scope and the plan approval stay client-only. The session audit passes over `<synthetic>` (outage, no-work) transcripts and another workflow's agent still in progress, logging `audit passed over <label> | <why>`; a standing entry is the program manager's to waive with `audit waived: <run id> | <evidence>`. An `allowance-spent` item is resolved `--by pm` with evidence in `--note`. The program manager and project manager prompts say the role is brave, empowered and accountable, and that gates stay gates.
+- Entry points: `plugins/truss/bin/factory.ts` (`transcriptFacts`, `SYNTHETIC_MODEL`, `sessionAudit`, `recordRun`, `logPassed`, the waiver regex in `cmdFinish`); `plugins/truss/bin/inbox.ts` (`KINDS`, `resolveItem`); `plugins/truss/skills/run/SKILL.md`; `plugins/truss/agents/project-manager.md`. Tests: `plugins/truss/tests/obvious-calls-031.check.ts`, the "session audit" cases in `plugins/truss/tests/fixtures/workflow-run/finish.cases.ts`.
+- Docs: `plugins/truss/docs/architecture.md` ("Gate grades (0.31.0)"); ADR-0009 "finish, session audit" (amended 2026-11-13).
+- Owner: `truss-plugin-node`.

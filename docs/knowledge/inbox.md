@@ -9,6 +9,7 @@ verified: f43974cc965a8760286c175febcbf4e48f1aae72
 
 # Inbox: crew product calls
 
+- Kinds: `allowance-spent` is `{by: 'any', blocking: true, evidence: true}` since 0.31.0: a `--by pm` resolve of it needs a non-empty `--note`, else `a --by pm resolve of allowance-spent needs its evidence in --note`. The grade of every kind is in architecture.md "Gate grades (0.31.0)".
 - Kinds: `pm-question` is `{by: 'any', blocking: true}`; `scope-change` is client-only (`KINDS` in `bin/inbox.ts`). `resolve --by pm` on a client-only kind is refused with `<kind> is resolved by the client, not by pm`, before any code is checked, so a refusal test needs no real client code.
 - Dedupe: `escalate` on an open item with the same kind and `--ref` links the crew and returns `deduped: true` (the CLI prints `code: null`; `bin/inbox.ts` escalate). A listing row is `{id, kind, crews, ref, blocking, state, decision, by, note}`, plus `noteUnbound: true` when set. A crew-call wait can therefore escalate again on a resume and re-read through `inbox --kind <kind> --crew <slug>` without opening a second item.
 - Ref: `crew-call:<slug>:<task>@<truss dir under .git/truss>[@<plan approvedAt>]` (`RUN_KEY`, `callRef`, `callAt` in `workflows/stage.js`). Inbox and dedupe span sessions, so the run key keeps another session's item with the same slug and task from answering this run's call. The stage reads `approvedAt` from `args.truss.approvedAt`; `bin/factory.ts` (`stageOut`) passes `plan.approvedAt` when it is a string, so the key is the dir path plus that stamp.
