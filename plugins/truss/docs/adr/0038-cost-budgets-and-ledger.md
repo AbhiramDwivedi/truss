@@ -108,7 +108,7 @@ The verdict holds when:
 
 Every `why` starts with `budget:`.
 
-**Where it is checked.** `holdOf` (`factory.ts`) runs inside `admission`, which `factory start` calls for each crew and `factory admit` calls before each member spawn (`admit` in `workflows/stage.js`). It runs after the blocking-inbox check and only when `truss.json` has a `budget`. A held verdict appends one `budget-hold` event and raises one blocking `budget` escalation with the ref above. If `escalate` throws, the hold still stands and the error rides on the answer as `escalateError`. `admit --wait-ms` doesn't wait on a budget hold: it refuses at once (`factory admit`), so the stage stops the crew.
+**Where it is checked.** `holdOf` (`factory.ts`) runs inside `admission`, which `factory start` calls for each crew and `factory admit` calls before each member spawn (`admit` in `workflows/stage/crew.js`). It runs after the blocking-inbox check and only when `truss.json` has a `budget`. A held verdict appends one `budget-hold` event and raises one blocking `budget` escalation with the ref above. If `escalate` throws, the hold still stands and the error rides on the answer as `escalateError`. `admit --wait-ms` doesn't wait on a budget hold: it refuses at once (`factory admit`), so the stage stops the crew.
 
 ### 6. The merge ledger
 

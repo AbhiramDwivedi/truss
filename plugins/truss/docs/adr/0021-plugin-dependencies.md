@@ -66,23 +66,23 @@ Decided by: the plan, items 2 and 3 (approved auto, checker-41); PM ruling D (14
 
 ### 4. split-work is loaded unconditionally
 
-The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:42` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`stage.js:495-511`) doesn't name it.
+The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:42` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`workflows/stage/split.js`) doesn't name it.
 
 Decided by: the plan, item 4 (approved auto, checker-41).
 
 ### 5. A CHECKPOINT or a missing report restarts a fresh member
 
-Today `runMember` (`stage.js:319-331`) starts one fresh member after a `CHECKPOINT` and stops `BLOCKED` on the next non-DONE, and `reportOf` stops `BLOCKED` on a missing report.
+Today `runMember` (`workflows/stage/members.js`) starts one fresh member after a `CHECKPOINT` and stops `BLOCKED` on the next non-DONE, and `reportOf` stops `BLOCKED` on a missing report.
 
 The new rule, for every `runMember` chain (tester, builder and writer tasks, and fix builders):
 
 - A member that returns `CHECKPOINT`, or returns no report (its result is not an object), is restarted: a fresh member of the same role, with a new label, from the same task.
 - A chain restarts at most `max(1, reworkAllowance)` times.
-- Restarts add no rework spend: no QC FAIL is counted, `spendOf` (`stage.js:152`) is unchanged, and no `guardAllowance` call runs per restart.
+- Restarts add no rework spend: no QC FAIL is counted, `spendOf` (`workflows/stage/crew.js`) is unchanged, and no `guardAllowance` call runs per restart.
 - A successor's `QUESTION`, `BLOCKED` or `PROPOSAL` stops the crew with that tag and text. A `DONE` goes on as usual.
 - Running out of restarts stops the crew `BLOCKED`.
 
-Each restart carries the previous member's note and is told to read the branch's commits. MEMBER_SCHEMA (`stage.js:33-44`) and the stage.js result shapes don't change.
+Each restart carries the previous member's note and is told to read the branch's commits. MEMBER_SCHEMA (`workflows/stage/schemas.js` `MEMBER_SCHEMA`) and the stage.js result shapes don't change.
 
 **Worst case.** A task runs at most `(1 + reworkAllowance) x (1 + restarts)` member runs per task: one first member and up to `reworkAllowance` fix builders, each chain restarted up to `restarts = max(1, reworkAllowance)` times. With `reworkAllowance` 2 that is 3 x 3 = 9 member runs.
 

@@ -8,9 +8,9 @@ VERDICT: change. The **stage workflow** changes: `admit` fails closed, reversing
 
 Retro 2 (2026-11-03) triaged five findings fix now, and the PO added two catalog narrowings (decisions.md 13:42). Line numbers are those of this crew's base, main at `9caa6f1`.
 
-- **F-67.** `runFactory` (stage.js:255-256) puts `--dir ${sh(F.dir)}` on the runner's line unresolved, while `heavyParts` (stage.js:306-309) resolves a relative `F.dir` against `F.repo`. In run wf_25e6716a-c99 at least 17 runner calls of `factory.ts admit --dir .git/truss/<id>` exited 2 with "cannot read .git/truss/<id>/plan.json". `admit` (stage.js:187-194) stops a crew only on `admitted === false`, so admission was silently off for the stage. [ADR-0019](0019-factory-fixes2.md) item 18 already makes `start` and `start --resume` resolve `--dir`, so no current caller makes a relative `F.dir`; the live bug is the fail-open admit.
-- **F-70.** `green` (stage.js:793-815) sends every failure to `fixBuilder` with the builder role and runs no `testsBackstop`. `fixFindings` (stage.js:596-610) does both. A green failure in a tester-owned file reached a builder, who ended BLOCKED.
-- **F-72.** `memberPrompt` carries the foreground rule (stage.js:392); `qcPrompt` (stage.js:974-1010) does not. A QC engineer backgrounded the acceptance run and was blocked on `sleep 240`.
+- **F-67.** `runFactory` (`workflows/stage/runner.js`) puts `--dir ${sh(F.dir)}` on the runner's line unresolved, while `heavyParts` (`workflows/stage/gates.js`) resolves a relative `F.dir` against `F.repo`. In run wf_25e6716a-c99 at least 17 runner calls of `factory.ts admit --dir .git/truss/<id>` exited 2 with "cannot read .git/truss/<id>/plan.json". `admit` (`workflows/stage/crew.js`) stops a crew only on `admitted === false`, so admission was silently off for the stage. [ADR-0019](0019-factory-fixes2.md) item 18 already makes `start` and `start --resume` resolve `--dir`, so no current caller makes a relative `F.dir`; the live bug is the fail-open admit.
+- **F-70.** `green` (`workflows/stage/green.js`) sends every failure to `fixBuilder` with the builder role and runs no `testsBackstop`. `fixFindings` (`workflows/stage/fixes.js`) does both. A green failure in a tester-owned file reached a builder, who ended BLOCKED.
+- **F-72.** `memberPrompt` carries the foreground rule (`workflows/stage/prompts.js`); `qcPrompt` (`workflows/stage/qc.js`) does not. A QC engineer backgrounded the acceptance run and was blocked on `sleep 240`.
 - **F-73.** The PM's Edits to `decisions.md` failed as "not found" or "Found 24 matches". `appendDecision` (factory.ts:181-186) can write only `- HH:MM | <text> | none | followed`, so it can't carry the grammar architecture.md declares: the four-field decision line, the `checker-` line, continuation lines and the `## Run` heading.
 - **F-74.** The PM ran `node retro/cli.ts scrub ... 2>&1 | tail -5; git push origin main`. Scrub exits 1 on a hit and 2 on an unreadable file (retro/cli.ts:2-3), but `;` ignores that, and a pipeline's status is `tail`'s, so a home path reached origin main. R-32 (requirements.md:223) keeps committed files clean; SKILL.md:432 asks for the scrub, and base register.ts has no `Bash` handler to enforce it.
 - **Catalog.** `trailers-format-unquoted` (catalog.json:148-162) matches `--format=%\(trailers`, which also hits the quoted form the fix asks for. `webkit-host-missing-dependencies` (catalog.json:120-133) matches the `ENV_LINE` constant in factory test fixtures (for example factory-fixes6.check.ts:441). Each false hit reports a recurrence that isn't one.
@@ -19,7 +19,7 @@ Retro 2 (2026-11-03) triaged five findings fix now, and the PO added two catalog
 
 ### F-67: the `--dir` split, and admit fails closed
 
-1. **`runFactory` resolves `F.dir`** the way `heavyParts` does (stage.js:309): an absolute `F.dir` as is, else `${F.repo}/${F.dir}`. One helper serves both, so the two can't drift.
+1. **`runFactory` resolves `F.dir`** the way `heavyParts` does (`workflows/stage/gates.js`): an absolute `F.dir` as is, else `${F.repo}/${F.dir}`. One helper serves both, so the two can't drift.
 2. **factory.ts refuses a relative `--dir`** on every command except `start` and `start --resume`, with a usage error, exit 2 (`usage`, factory.ts:40). The check sits in `dirOf` (factory.ts:100), which every command shares; `cmdStart` and the resume path keep resolving it themselves (factory.ts:1457, :1637), as ADR-0019 item 18 left them.
 3. **`admit` fails closed.** A runner result with no parsed JSON object, or whose `admitted` isn't a boolean, stops the crew BLOCKED. The stop text starts `admission check failed:` and carries `r.out`, the runner's exit code and stdout. It must not start `held by admission:`, because the run skill reads that prefix as a memory hold and starts the resource monitor (SKILL.md:254). `admitted: false` stops as today, with `held by admission: <why>`. `admitted: true` admits.
 4. **G7 is kept.** ADR-0015 Decision 2 (adr/0015-resource-aware.md:60) admits on a sampler error and prints `freeMB: null`. That result is still JSON with `admitted: true`, so it admits. Fail-closed covers a result truss can't read, not a host truss can't sample.
@@ -45,9 +45,9 @@ sequenceDiagram
 
 ### F-70: the narrow trigger, the both-named order and the backstop
 
-1. **The builder still goes first** on every green failure, as `green` does today. Routing on "the output names a tester file" would send nearly every failure to a tester, since a failing case always names its test file, and `testerFiles` (stage.js:431-435) includes the guarded acceptance-test files.
-2. **The trigger.** When a green fix builder ends BLOCKED or QUESTION (`runMember` throws a `Stop`, stage.js:509-511) and the stop text names a tester file (`namesFile` against `testerFiles`, stage.js:448), `green` catches it and runs a fix member with the tester role on that text instead of stopping the crew. Any other stop still stops the crew.
-3. **Both named.** When that text names a tester file and also a code file (`namesCode`, stage.js:450), the tester fix runs first, then a builder fix for the code half, in the order `fixFindings` uses (stage.js:604-609).
+1. **The builder still goes first** on every green failure, as `green` does today. Routing on "the output names a tester file" would send nearly every failure to a tester, since a failing case always names its test file, and `testerFiles` (`workflows/stage/prompts.js`) includes the guarded acceptance-test files.
+2. **The trigger.** When a green fix builder ends BLOCKED or QUESTION (`runMember` throws a `Stop`, `workflows/stage/members.js`) and the stop text names a tester file (`namesFile` against `testerFiles`, `workflows/stage/prompts.js`), `green` catches it and runs a fix member with the tester role on that text instead of stopping the crew. Any other stop still stops the crew.
+3. **Both named.** When that text names a tester file and also a code file (`namesCode`, `workflows/stage/prompts.js`), the tester fix runs first, then a builder fix for the code half, in the order `fixFindings` uses (`workflows/stage/fixes.js`).
 4. **The backstop.** `testsBackstop` runs after each green fix: after the builder fix, and after each fix of a re-route.
 5. **The control.** A green failure whose output names the acceptance test file and a code assertion goes to the builder, as today.
 
@@ -55,7 +55,7 @@ The tester gets only a case a builder has declared not code, and the QC engineer
 
 ### F-72: where the foreground rule goes
 
-Both places. `qcPrompt` gains the line `memberPrompt` carries (stage.js:392), word for word: foreground, a Bash timeout up to 600000, no `run_in_background`, no `Monitor`, no `sleep` or polling. `agents/qc-engineer.md` gains the rule as plain prose in its body, so a QC engineer started outside `stage.js` gets it too. The prose adds no code snippet ahead of the fenced `git diff --no-color` that contract-evals.check.ts:104 expects first.
+Both places. `qcPrompt` gains the line `memberPrompt` carries (`workflows/stage/prompts.js`), word for word: foreground, a Bash timeout up to 600000, no `run_in_background`, no `Monitor`, no `sleep` or polling. `agents/qc-engineer.md` gains the rule as plain prose in its body, so a QC engineer started outside `stage.js` gets it too. The prose adds no code snippet ahead of the fenced `git diff --no-color` that contract-evals.check.ts:104 expects first.
 
 ### F-73: `factory.ts decide`
 

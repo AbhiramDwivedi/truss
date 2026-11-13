@@ -12,15 +12,15 @@ Decided by: amend brief item 5 (`amend-brief-plugin-fixes.md:10`), the plan's mo
 
 The gap is still there in the code:
 
-- `stage.js` builds the one `factory heavy` line in `heavyLine()` (`workflows/stage.js:209-215`). Only `check()` (`:217-222`) uses it, through a runner call.
+- `stage.js` builds the one `factory heavy` line in `heavyLine()` (`workflows/stage/gates.js`). Only `check()` (`:217-222`) uses it, through a runner call.
 - No member prompt holds the plugin path or the truss dir. `stage.js` reads `F.plugin`, `F.dir` and `F.repo` only for runner lines (`:177`, `:210-211`) and for QC report paths (`:681`). So a member can't call `factory heavy` today without guessing the paths.
-- `reap` after each member (`workflows/stage.js:143-150`) kills only recorded groups with label `<slug>-check` (`bin/factory.ts:1118`). A member's own processes are never recorded (`0015-resource-aware.md:179`).
+- `reap` after each member (`workflows/stage/crew.js`) kills only recorded groups with label `<slug>-check` (`bin/factory.ts:1118`). A member's own processes are never recorded (`0015-resource-aware.md:179`).
 
-The plan says the worktree guard "refuses the multi-part shell a member would need to call `factory heavy` itself" (`plan-plugin-fixes.md:18`). The worktree guard is Claude Code's own, not a truss hook (`workflows/stage.js:16-17`). The member brief's `SHELL` rule (`workflows/stage.js:18`) lists the shapes it refuses: heredoc writes, `&&`, `;`, `cd`, for-loops, `$VAR` arguments, and inline scripts that name git. truss's hooks only classify a guard refusal by its text, through `refusalOf` and `WORKTREE_GUARD` (ADR-0012, `0012-self-improving-retro.md:61`). The open question was whether the guard lets through the one shape a member actually needs: a single plain command whose absolute paths (the plugin's `bin/factory.ts` and the truss dir) lie outside the worktree.
+The plan says the worktree guard "refuses the multi-part shell a member would need to call `factory heavy` itself" (`plan-plugin-fixes.md:18`). The worktree guard is Claude Code's own, not a truss hook (`workflows/stage/texts.js` `SHELL`). The member brief's `SHELL` rule (`workflows/stage/texts.js`) lists the shapes it refuses: heredoc writes, `&&`, `;`, `cd`, for-loops, `$VAR` arguments, and inline scripts that name git. truss's hooks only classify a guard refusal by its text, through `refusalOf` and `WORKTREE_GUARD` (ADR-0012, `0012-self-improving-retro.md:61`). The open question was whether the guard lets through the one shape a member actually needs: a single plain command whose absolute paths (the plugin's `bin/factory.ts` and the truss dir) lie outside the worktree.
 
 ### The shape a member would run
 
-From `heavyLine()` (`workflows/stage.js:209-215`) and `heavyMain()` (`bin/factory.ts:1137-1207`):
+From `heavyLine()` (`workflows/stage/gates.js`) and `heavyMain()` (`bin/factory.ts:1137-1207`):
 
 ```
 node <plugin>/bin/factory.ts heavy --dir D --repo R --slug S --label L --cwd W -- <cmd...>
@@ -41,7 +41,7 @@ Every argument in this line is a literal. It needs no `&&`, `;`, `cd` or `$VAR`,
 
 What a build crew would change, and nothing else:
 
-1. **`workflows/stage.js`, member prompts.** A helper beside `heavyLine()` builds the member line from the same values: `F.plugin`, `F.dir`, `F.repo`, `crew.slug` and `crew.e.worktree`, each quoted through `sh()` (`workflows/stage.js:171-174`). Its label is `<slug>-check`, so the existing `reap` after each member (`:143-150`) also cleans up a member run's orphans, with no new reap call. `memberPrompt` (`:226`) adds one line next to `SHELL`. It gives the literal prefix, ending in ` -- `, and says:
+1. **`workflows/stage.js`, member prompts.** A helper beside `heavyLine()` builds the member line from the same values: `F.plugin`, `F.dir`, `F.repo`, `crew.slug` and `crew.e.worktree`, each quoted through `sh()` (`workflows/stage/runner.js`). Its label is `<slug>-check`, so the existing `reap` after each member (`:143-150`) also cleans up a member run's orphans, with no new reap call. `memberPrompt` (`:226`) adds one line next to `SHELL`. It gives the literal prefix, ending in ` -- `, and says:
    - run a build, a browser test or a whole test suite through it, as the program and its arguments after `--`, with no shell;
    - use a Bash timeout of 600000, because the slot wait counts against it;
    - a result with `"ran": false` means the slot was busy; report it, don't retry it another way.
@@ -65,7 +65,7 @@ The path changes no hook. It doesn't change how hooks treat the worktree guard: 
 ## Consequences
 
 - A member's builds and heavy test runs share the one heavy slot with every crew's red and green checks, so they run one at a time across the session. On a host like the horoscope one, that guards against the memory spike ADR-0015 opened with.
-- A long member run can make a waiting check stop. A runner check that waits past `HEAVY_WAIT_MS` (240000 ms) stops its crew `BLOCKED` with `heavy slot busy:` (`workflows/stage.js:220`). It never gets a fix builder, and the PM resumes it. A member build that holds the slot longer than 4 minutes can cause that.
+- A long member run can make a waiting check stop. A runner check that waits past `HEAVY_WAIT_MS` (240000 ms) stops its crew `BLOCKED` with `heavy slot busy:` (`workflows/stage/check.js` `check`). It never gets a fix builder, and the PM resumes it. A member build that holds the slot longer than 4 minutes can cause that.
 - A member's own run waits too, and the wait counts against its Bash call's 600000 ms limit. So the brief must name the timeout.
 - A member sees only the last 40 lines of a non-JSON output (`bin/factory.ts:1196-1198`). A member that needs the full log writes it to a file from a script run through `heavy`.
 - `reap` with `--label <slug>-check` covers member runs too. It skips a record whose `heavy` process is still alive (`bin/factory.ts:1119-1121`), so a reap after one member can't kill a sibling member's live run.

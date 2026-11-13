@@ -8,7 +8,7 @@ Amends: ADR-0033 (where the knowledge step writes, what it must cite, how QC che
 
 ADR-0033 made each crew record what it learned and made product calls at crew level. Three problems showed up in how it stored them:
 
-- **Product calls were appended to an always-loaded file.** `productOwnerFile()` in `workflows/stage.js` returned the product-owner persona file (`.claude/agents/product-owner.md`). A persona file is loaded into every agent's system prompt, so each crew product call made every later agent's prompt longer, for every turn, whether or not the agent had any product question. This is a bug in 0.23.0, not a design choice.
+- **Product calls were appended to an always-loaded file.** `productOwnerFile()` in `workflows/stage/knowledge.js` returned the product-owner persona file (`.claude/agents/product-owner.md`). A persona file is loaded into every agent's system prompt, so each crew product call made every later agent's prompt longer, for every turn, whether or not the agent had any product question. This is a bug in 0.23.0, not a design choice.
 - **Persona Standards were the only home for stack rules.** A rule that holds for one area of the code (the export UI, the billing module) had nowhere to live except a persona, which every agent of that persona loads wherever it works.
 - **Nothing checked the knowledge step.** A rule could name a path that no longer exists, a doc could go stale after its sources changed, and a doc nobody linked was as hidden as code. QC saw a diff and a feature map, and caught none of this.
 
@@ -50,7 +50,7 @@ We looked at Capital One Context Specs. We did not adopt it: it is a competing h
 
 ### B. The product-calls fix
 
-`productOwnerFile()` in `stage.js` returns the `productDecisions` stage arg (default `docs/knowledge/product-decisions.md`). The `Product call:` brief, the knowledge brief and the QC `Knowledge:` rule ("a crew product call missing") all read that file. `factory knowledge-migrate` moves the entries a 0.23.0 project already has in the persona to the decisions file, leaving one pointer line (`--apply` writes; without it, it prints the proposed moves and writes nothing; it never commits).
+`productOwnerFile()` in `workflows/stage/knowledge.js` returns the `productDecisions` stage arg (default `docs/knowledge/product-decisions.md`). The `Product call:` brief, the knowledge brief and the QC `Knowledge:` rule ("a crew product call missing") all read that file. `factory knowledge-migrate` moves the entries a 0.23.0 project already has in the persona to the decisions file, leaving one pointer line (`--apply` writes; without it, it prints the proposed moves and writes nothing; it never commits).
 
 ### C. Routing, reconcile and the writer's rules
 
