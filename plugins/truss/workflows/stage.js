@@ -727,10 +727,11 @@ const testsCheckExtra = (crew, ...lines) => {
   return all.length ? all.join('\n') : null
 }
 
-// Starvation bound (gates item 8): the heavy slot is not FIFO. One heavy run waits for the slot inside factory's background job,
-// up to slotWaitMs (twice the longest recent suite, 540 s to 2 h, bin/factory/resources.ts), not inside this Bash call. check()
-// runs heavy up to HEAVY_WAIT_ROUNDS = 3 times when the job reports the slot busy (ran: false). Non-FIFO: a crew can still lose
-// every round and block. No sleep between rounds, since each run already waits inside factory.
+// Starvation bound (gates item 8): the heavy slot is not FIFO. check() runs heavy up to HEAVY_WAIT_ROUNDS = 3 times when the job
+// reports the slot busy (ran: false). In 0.26.0 each round waited HEAVY_WAIT_MS (540 s, then inside the 600 s Bash call), so a
+// crew waited about 27 minutes in all. Since 0.31.0 the wait happens in factory's background job, not inside this Bash call, and
+// a round lasts slotWaitMs: twice the longest recent suite, 540 s to 2 h (bin/factory/resources.ts). Non-FIFO: a crew can still
+// lose every round and block. No sleep between rounds, since each run already waits inside factory.
 const HEAVY_WAIT_ROUNDS = 3
 // 0.31.0 item 2: a heavy run longer than the 540 s attach budget (HEAVY_ATTACH_MS) goes on in the background in factory
 // (heavyJobMain) and comes back {heavy: {pending: true, ageMs, budgetMs}}; the same line, run again, waits up to 540 s more. The
