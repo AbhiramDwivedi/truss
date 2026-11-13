@@ -2,6 +2,19 @@
 
 Newest first. The [README](README.md) covers what Truss does and how to use it. Truss was called foundry before 0.12.0; entries below 0.12.0 use the old names. Since 0.27.0, every entry uses the role names of [ADR-0042](docs/adr/0042-project-manager-rename.md): the project manager leads a crew, and the program manager (PM) is the main session.
 
+## 0.30.0 (2026-11-13)
+
+Wave-3 plugin fixes: crew decisions reach the program manager, resumes are guarded, and the run lifecycle has factory commands ([ADR-0047](docs/adr/0047-crew-decisions-reach-pm.md), [ADR-0048](docs/adr/0048-resume-guard.md), R-85 to R-98). Update with `claude plugin install truss@truss`.
+
+- **Crew decisions reach the program manager.** A product call the product owner does not decide opens an inbox item instead of auto-accepting: `PO: ESCALATE` opens a `pm-question` (answer it with `factory.ts resolve --by pm`, then resume), and `PO: SCOPE-CHANGE` goes to the client. Only the asking crew stops.
+- **Resume guard.** A resume merges the target into the crew branch first, and a duplicate finisher or resume can no longer race a resumed crew agent.
+- **`factory goal-check`.** Runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, prints JSON, logs one decision line and never pushes.
+- **Second run in one session dir.** `plan-write` archives a finished run's approved plan as `plan-<stamp>.json/.md` and refuses while a crew of it is running or planned. `decisions.md` and `usage.jsonl` stay shared.
+- **Session scripts dir by default.** `plan-args` and `start` default `scriptPath` to the session's `workflows/scripts` dir when the session is found; `--scripts-dir` still overrides.
+- **Factory gaps.** `plan-write` writes the full plan on every path; a bare-directory owns entry (`dir/`) matches the files under it; every factory command takes a relative `--dir`; stage green installs missing `node_modules` (`npm ci`) before it runs.
+- **Hygiene.** The `inbox.check.ts` notify-kill timing test has a derived bound and no longer flakes under load; docs cite by symbol to stop line-citation churn; deferred nits fixed.
+- The run skill says the program manager fast-forwards the main checkout after a crew's `gh pr merge`.
+
 ## 0.29.0 (2026-11-12)
 
 The factory runs with fewer runner spawns, and QC rules on better evidence ([ADR-0046](docs/adr/0046-factory-throughput.md), R-99 to R-115). Update with `claude plugin install truss@truss`.
