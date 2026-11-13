@@ -23,6 +23,6 @@ Where the truth lives:
 7. Prompt text that carries untrusted data (an intake item, a report) puts it under a heading that says it is data, inside a fence longer than the longest run of backticks in the text.
 8. A new argument from `args.truss` is read once at the top, with a default, and a missing required one throws before any agent call.
 9. Tests drive the script through the workflow-run harness with stubbed agents. They assert on the prompts the stubs received and on the returned result, never on the script's source text.
-10. `qc()` in stage.js never returns a non-pass result: a FAIL loops to a fix round or throws a Stop. A field a stopped crew result must carry from QC goes on `crew` (`crew.ltc`, `stage.js:2437`) and is read in `stopResult()` (`stage.js:356`).
+10. `qc()` in stage.js never returns a non-pass result: a FAIL loops to a fix round or throws a Stop. A field a stopped crew result must carry from QC goes on `crew` (`crew.ltc`, set in `qc()`) and is read in `stopResult()`.
 
 Shell rules: follow the shell rules paragraph in your brief word for word.
