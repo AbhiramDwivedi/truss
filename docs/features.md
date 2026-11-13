@@ -123,6 +123,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
 
+## A ruling at QC is built on resume
+
+- What: `start --resume` puts the count of the PM's new answers on the entry as `freshAnswers` (the carried ones follow them). Before green, a resumed `stage.js` crew first integrates every earlier fix member's stopped branch (`entry.prior` at `fix, <what>`), so commits made before a PROPOSAL or BLOCKED stop reach the crew branch or the merge stops the crew naming the branch. Then, on an answers resume where every saved task was done (no task member ran to carry it), a new answer at `qc` goes to a fix builder (`Task: fix, the program manager ruling at qc`), whose branch is integrated before green, so green and QC see it. A carried ruling at `qc` spawns no builder, since an earlier run had it. A ruling at `qc` that orders no change belongs on a `merge-ready` resume.
+- Entry points: `plugins/truss/workflows/stage.js` (`rulingStep`, `freshAnswers`, `priorOf`, `chain`), `plugins/truss/bin/factory.ts` (`cmdStartResume`); tests `plugins/truss/tests/ruling-031.check.ts`.
+- Owner: `truss-workflow-scripts`.
+- Docs: [goal 0.31.0-speed](../plugins/truss/docs/goals/0.31.0-speed.md) item 6, [architecture](../plugins/truss/docs/architecture.md) "Resume".
+
 ## Knowledge after stress and every fix round
 
 - What: a workflow crew runs its stress test (and UX review) before the knowledge step, so the writer records the stress fixer's `learned` items. Before every QC round the knowledge lint runs; new failures send the writer back with them (at most twice, stopping when it commits nothing), then green and the lint re-run. After a QC fix round the writer runs again on the fix diff with the fixer's items, when the step ran before or the fixer learned something; so `unrecorded` holds only items a stop left behind.

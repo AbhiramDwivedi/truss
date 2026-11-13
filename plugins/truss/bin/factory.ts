@@ -2185,6 +2185,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
     const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
     // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
+    // 0.31.0 item 6: the new answers come first and their count goes on the entry, so stage.js builds a new ruling at qc once
+    const fresh = answers.length
     answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
     const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
     // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
@@ -2197,6 +2199,7 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     // it; a result read earlier no longer holds for a crew that runs again
     entry.learned = learnedOf(c.dir, slug)
     if (syncConflicts !== undefined) entry.syncConflicts = syncConflicts
+    entry.freshAnswers = fresh
     setCrewState(c.dir, slug, null)
     // ADR-0024 item 35: a resume before `finish` has no ux report yet; the direction comes from the crew's agent results
     if (entry.direction === null) entry.direction = runDirectionOf(runs, slug)
