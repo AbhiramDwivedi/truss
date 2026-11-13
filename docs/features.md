@@ -180,7 +180,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Second run in one truss dir
 
-- What: `plan-write` over an approved plan renames `plan.json` and `plan.md` to `plan-<stamp>.json` and `.md` (`<stamp>`: the first 20 letters and digits of `approvedAt`, `-<n>` added on a clash) and writes the new plan; it refuses, writing nothing, while a crew of the earlier plan is `running`. An unapproved plan is still overwritten. `decisions.md` and `usage.jsonl` stay shared.
+- What: `plan-write` over an approved plan renames `plan.json` and `plan.md` to `plan-<stamp>.json` and `.md` (`<stamp>`: the first 20 letters and digits of `approvedAt`, `-<n>` added on a clash) and writes the new plan; it refuses, writing nothing, while a crew of the earlier plan is `running` or still `planned` (a planned crew counts as a live run). An unapproved plan is still overwritten. `decisions.md` and `usage.jsonl` stay shared.
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdPlanWrite`, `keepExisting`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` section 4 ("Draft the plan", step 4); [architecture](../plugins/truss/docs/architecture.md) ("Plan (step 4)").
