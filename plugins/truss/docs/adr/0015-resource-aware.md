@@ -6,7 +6,7 @@ Amended by [ADR-0046](0046-factory-throughput.md) item 1 (2026-11-12): the reap 
 
 Amended by [ADR-0027](0027-retro-fixes2.md) (proposed 2026-11-03, goal `retro-fixes2`): `admit` in `stage.js` fails closed, so a runner result that isn't JSON or has no boolean `admitted` stops the crew BLOCKED. G7 survives: a sampler error still admits with `freeMB: null`.
 
-VERDICT: change. One new module, **resources** (`resources/index.ts`), samples the host and holds the cross-worktree heavy lock. Nothing in the repo does either today: `bin/factory.ts` spawns only git and bash (`bin/factory.ts:82`, `:510`), and the hooks module gates tool calls in-process. Two modules change. The **factory CLI** gains `admit`, `heavy` and `reap`, and `start` gains a `held` list; the `COMMANDS` table holds none of these today (`bin/factory.ts:1320-1323`). The **stage workflow** admits before each member, runs its checks through `heavy`, and reaps after each member; today `workflows/stage.js` names none of the three words. Two modules extend: **agents** gain `truss:resource-monitor`, and the **PM skill** (`skills/run/SKILL.md`) gains the monitor step. **ui docs** gain one README line.
+VERDICT: change. One new module, **resources** (`resources/index.ts`), samples the host and holds the cross-worktree heavy lock. Nothing in the repo does either today: `bin/factory.ts` spawns only git and bash (`bin/factory/shared.ts` `run`, `:510`), and the hooks module gates tool calls in-process. Two modules change. The **factory CLI** gains `admit`, `heavy` and `reap`, and `start` gains a `held` list; the `COMMANDS` table holds none of these today (`bin/factory.ts`). The **stage workflow** admits before each member, runs its checks through `heavy`, and reaps after each member; today `workflows/stage.js` names none of the three words. Two modules extend: **agents** gain `truss:resource-monitor`, and the **PM skill** (`skills/run/SKILL.md`) gains the monitor step. **ui docs** gain one README line.
 
 Decided by: the client's (d) ruling, checker-20's approved scope, and checker-23, checker-24 and checker-25 as followed in plan revision 4. The PM settled the open (a) and (b) items there.
 
@@ -16,8 +16,8 @@ The horoscope test session (feedback 6) ran on a Windows 11 host with 15.6 GB of
 
 Truss has no defence against this today:
 
-- `start` counts free slots only against `maxParallelCrews`: `cap = intOr(plan.maxParallelCrews, 4, 1)` and `slots = cap - running` (`bin/factory.ts:897-898`). It breaks out of its loop when the slots run out (`:905`). It never looks at the host.
-- `check` runs the acceptance test with `spawnSync('bash', ['-c', crew.acceptanceTest])` (`bin/factory.ts:510`). Every crew's check can run at the same moment, and nothing queues them.
+- `start` counts free slots only against `maxParallelCrews`: `cap = intOr(plan.maxParallelCrews, 4, 1)` and `slots = cap - running` (`bin/factory/start.ts` `cmdStart`). It breaks out of its loop when the slots run out (`:905`). It never looks at the host.
+- `check` runs the acceptance test with `spawnSync('bash', ['-c', crew.acceptanceTest])` (`bin/factory/check.ts` `cmdCheck`). Every crew's check can run at the same moment, and nothing queues them.
 - `stage.js` starts members straight away (`runMember`, `workflows/stage.js:274-285`; `runMembers`, `:323-343`, which runs independent tasks in parallel). Nothing cleans up after a member ends.
 
 The approved scope (checker-20) has five parts: (a) a plain-code sampler; (b) admission control at the start seams; (c) heavy commands queued across worktrees, with the lock in the truss dir; (d) a Haiku monitor that reports to the PM, who sets an effective parallelism; and (e) orphan cleanup by recorded pid or process group, never `pkill -f` or `killall` (F-30). Three limits bind all of it: the cap stays a ceiling, a sampler error fails open, and proof covers Linux only.
@@ -67,7 +67,7 @@ Run as a script, `node <plugin>/resources/index.ts [--worktrees <root>]` prints 
   {"v":1,"ts":"2026-10-31T12:00:00.000Z","event":"sampler-error","crew":"q","agent":"q","command":"admit","error":"TRUSS_SAMPLE=error"}
   ```
 
-  `command` is the factory command that sampled (`admit`, `heavy` or `start`). `error` is the error's message, cut to 200 characters. The line is written through `appendEvent` (`bin/factory.ts:177-179`), which adds `v` and `ts`. The schema branch is additive (Seams to pin, section 3).
+  `command` is the factory command that sampled (`admit`, `heavy` or `start`). `error` is the error's message, cut to 200 characters. The line is written through `appendEvent` (`bin/factory/shared.ts`), which adds `v` and `ts`. The schema branch is additive (Seams to pin, section 3).
 
 ### The effective parallelism file
 
@@ -81,7 +81,7 @@ The PM writes the file (Decision 5). No factory command writes it.
 
 `start` applies the same admission to each crew it would start, on both engines (workflow and project manager), after its existing slot check:
 
-1. The `maxParallelCrews` break at `bin/factory.ts:905` stays first, and stays silent, as today.
+1. The `maxParallelCrews` break at `bin/factory/start.ts` `cmdStart` stays first, and stays silent, as today.
 2. Then admission runs for the crew. A held crew goes under a new top-level key, `held: [{ "slug", "why" }]`. It stays `planned`, gets no worktree and no spawn line, and takes no slot.
 3. A sampler error admits the crew and logs `sampler-error` with `command: "start"`.
 
@@ -95,7 +95,7 @@ With no parallelism file the effective parallelism equals `maxParallelCrews`, so
 
 ### Argument split
 
-`parseFlags` throws on any argument that doesn't start with `--` (`bin/factory.ts:53`), and a bare `--` would become the key `''`. So `heavy` splits its argv at the first `--` before it parses flags. It parses only the part before. The part after is the command, run as given, with no shell.
+`parseFlags` throws on any argument that doesn't start with `--` (`bin/factory/shared.ts`), and a bare `--` would become the key `''`. So `heavy` splits its argv at the first `--` before it parses flags. It parses only the part before. The part after is the command, run as given, with no shell.
 
 ### The lock
 
@@ -109,9 +109,9 @@ With no parallelism file the effective parallelism equals `maxParallelCrews`, so
 
 ### The run and its record
 
-- `heavy` starts the command with `spawn(..., { detached: true, cwd: W })`, so the command leads a new process group whose pgid is its pid. It must be the async `spawn`: the record below has to be on disk while the command runs, and `spawnSync` gives the pid only after the child ends. So `heavy` is the one async command; `main` (`bin/factory.ts:1326`) stays synchronous for the rest.
+- `heavy` starts the command with `spawn(..., { detached: true, cwd: W })`, so the command leads a new process group whose pgid is its pid. It must be the async `spawn`: the record below has to be on disk while the command runs, and `spawnSync` gives the pid only after the child ends. So `heavy` is the one async command; `main` (`bin/factory.ts`) stays synchronous for the rest.
 - Before it waits on the child, `heavy` writes `D/resources/groups/<pgid>.json`: `{ pgid, heavyPid, label, slug, since }`.
-- The child's stdout and stderr go to two files in an `mkdtemp` scratch dir, as `check` does (`bin/factory.ts:505-516`), and `heavy` removes the dir when it ends.
+- The child's stdout and stderr go to two files in an `mkdtemp` scratch dir, as `check` does (`bin/factory/check.ts` `cmdCheck`), and `heavy` removes the dir when it ends.
 - `heavy` ends when the group leader exits. It then releases the slot. It deletes the group record when the group has no live process left; otherwise the record stays until `reap` (G5-b).
 - Every file `heavy` writes is under `D/resources/` or the scratch dir. It writes nothing in the repo or in `W` (G5-a).
 
@@ -145,7 +145,7 @@ The monitor is `truss:resource-monitor`, in `agents/resource-monitor.md`. Its fr
 - **What it does.** It runs `node <plugin>/resources/index.ts --worktrees <repo>/.claude/worktrees`, reads `D/resources/parallelism.json` and `D/plan.json`, and writes nothing. Its last line is `RECOMMEND parallelism <n>`, with `n` from 1 to `maxParallelCrews`.
 - **Its rule** (chosen, not measured). Start from the current effective parallelism. Go down one when `freeMB` is below twice `minFreeMB`, or when `load1` is above `cpus`. Go up one when `freeMB` is above four times `minFreeMB` and `load1`, where present, is below half of `cpus`. Otherwise keep it.
 - **When the PM starts it.** At each stage start, and when a threshold crossing reaches the PM. Never on a loop.
-- **How a crossing reaches the PM.** Through what factory already returns, with no hook wake: `start`'s `held` list, and a `stopped` entry in `finish`'s output whose `why` starts `held by admission:` (Decision 6). `finish` sets `why` to the stop text's first non-empty line (`bin/factory.ts:1250-1253`).
+- **How a crossing reaches the PM.** Through what factory already returns, with no hook wake: `start`'s `held` list, and a `stopped` entry in `finish`'s output whose `why` starts `held by admission:` (Decision 6). `finish` sets `why` to the stop text's first non-empty line (`bin/factory/finish.ts` `finishRun`).
 - **What the PM does with it.** The PM decides. It writes `D/resources/parallelism.json` with Write and logs a decision line. The truss dir is exempt from the main-thread edit gate (`hooks/register.ts:975`, ADR-0014 Decision 2), so the Write goes through. Then it re-runs `start`, or resumes a held crew with `start --slug <s> --resume answers`.
 
 The monitor-wiring crew writes the agent and the `skills/run/SKILL.md` step. The run skill names `truss:resource-monitor`, `parallelism` and `held`.
@@ -273,7 +273,7 @@ Each stage.js stub fails its own case and passes the other two, which it impleme
 
 - Stage 1: resources-core, monitor-wiring and ui-readme. They need only these contracts.
 - Stage 2: factory-resources, because `bin/factory.ts` imports `resources/index.ts`.
-- Stage 3: stage-resources. factory runs `stage.js` from its own checkout (`PLUGIN`, `bin/factory.ts:45`), so a `stage.js` that called `admit` or `reap` before factory had them would fail every runner call.
+- Stage 3: stage-resources. factory runs `stage.js` from its own checkout (`PLUGIN`, `bin/factory/shared.ts`), so a `stage.js` that called `admit` or `reap` before factory had them would fail every runner call.
 
 Proof covers Linux only. Windows proof comes from the horoscope session, and macOS stays an open gap.
 

@@ -14,24 +14,24 @@ The gap is still there in the code:
 
 - `stage.js` builds the one `factory heavy` line in `heavyLine()` (`workflows/stage.js:209-215`). Only `check()` (`:217-222`) uses it, through a runner call.
 - No member prompt holds the plugin path or the truss dir. `stage.js` reads `F.plugin`, `F.dir` and `F.repo` only for runner lines (`:177`, `:210-211`) and for QC report paths (`:681`). So a member can't call `factory heavy` today without guessing the paths.
-- `reap` after each member (`workflows/stage.js:143-150`) kills only recorded groups with label `<slug>-check` (`bin/factory.ts:1118`). A member's own processes are never recorded (`0015-resource-aware.md:179`).
+- `reap` after each member (`workflows/stage.js:143-150`) kills only recorded groups with label `<slug>-check` (`bin/factory/resources.ts` `admission`). A member's own processes are never recorded (`0015-resource-aware.md:179`).
 
 The plan says the worktree guard "refuses the multi-part shell a member would need to call `factory heavy` itself" (`plan-plugin-fixes.md:18`). The worktree guard is Claude Code's own, not a truss hook (`workflows/stage.js:16-17`). The member brief's `SHELL` rule (`workflows/stage.js:18`) lists the shapes it refuses: heredoc writes, `&&`, `;`, `cd`, for-loops, `$VAR` arguments, and inline scripts that name git. truss's hooks only classify a guard refusal by its text, through `refusalOf` and `WORKTREE_GUARD` (ADR-0012, `0012-self-improving-retro.md:61`). The open question was whether the guard lets through the one shape a member actually needs: a single plain command whose absolute paths (the plugin's `bin/factory.ts` and the truss dir) lie outside the worktree.
 
 ### The shape a member would run
 
-From `heavyLine()` (`workflows/stage.js:209-215`) and `heavyMain()` (`bin/factory.ts:1137-1207`):
+From `heavyLine()` (`workflows/stage.js:209-215`) and `heavyMain()` (`bin/factory/heavy.ts`):
 
 ```
 node <plugin>/bin/factory.ts heavy --dir D --repo R --slug S --label L --cwd W -- <cmd...>
 ```
 
-- `heavy` splits its argv at the first `--` and parses flags only before it (`bin/factory.ts:1139-1141`). It needs `--dir`, `--slug`, `--label` and `--cwd` (`:1142-1145`), and a command after `--` (`:1146`).
+- `heavy` splits its argv at the first `--` and parses flags only before it (`bin/factory/resources.ts` `cmdReap`). It needs `--dir`, `--slug`, `--label` and `--cwd` (`:1142-1145`), and a command after `--` (`:1146`).
 - It runs the command with `spawn(cmd[0], cmd.slice(1), { cwd, detached: true })`, with no shell (`:1174`). A spawn error gives exit 127 (`:1175`).
 - It records the group under `D/resources/groups/<pgid>.json` (`:1178-1179`) and deletes the record once the group is empty (`:1186`).
 - A JSON stdout passes through with a `heavy` key added (`:1195`). Any other output comes back as `tail`, the last 40 lines of stdout then stderr (`:1196-1198`).
-- It waits for the slot up to `HEAVY_WAIT_MS` = 240000 (`bin/factory.ts:1043`, `:1162-1163`), then prints `ran: false` and exits 1.
-- `heavy` is the one async command. `main` refuses it (`bin/factory.ts:1570-1571`), and the entry point sends it to `heavyMain` (`:1597`).
+- It waits for the slot up to `HEAVY_WAIT_MS` = 240000 (`bin/factory/resources.ts`, `:1162-1163`), then prints `ran: false` and exits 1.
+- `heavy` is the one async command. `main` refuses it (`bin/factory.ts`), and the entry point sends it to `heavyMain` (`:1597`).
 
 Every argument in this line is a literal. It needs no `&&`, `;`, `cd` or `$VAR`, so it breaks none of the `SHELL` rule's shapes.
 
@@ -57,7 +57,7 @@ The path changes no hook. It doesn't change how hooks treat the worktree guard: 
 
 - Building any of it. This goal decides; the PM amends a build crew if it takes the decision (`plan-plugin-fixes.md:18`).
 - Any change to `bin/factory.ts`, `resources/index.ts` or `hooks/register.ts`. `heavy` already takes any command after `--`.
-- A shell after `--`. `heavy` spawns with no shell (`bin/factory.ts:1174`). A member that needs a pipeline puts it in a script file and runs that.
+- A shell after `--`. `heavy` spawns with no shell (`bin/factory/heavy.ts` `heavyMain`). A member that needs a pipeline puts it in a script file and runs that.
 - Raising the one heavy slot, or a member-only slot. ADR-0015 Decision 3 keeps one slot (`0015-resource-aware.md:90`).
 - The project manager path (`agents/project-manager.md`). ADR-0015 already leaves it out (`0015-resource-aware.md:194`).
 - macOS and Windows proof.
@@ -67,8 +67,8 @@ The path changes no hook. It doesn't change how hooks treat the worktree guard: 
 - A member's builds and heavy test runs share the one heavy slot with every crew's red and green checks, so they run one at a time across the session. On a host like the horoscope one, that guards against the memory spike ADR-0015 opened with.
 - A long member run can make a waiting check stop. A runner check that waits past `HEAVY_WAIT_MS` (240000 ms) stops its crew `BLOCKED` with `heavy slot busy:` (`workflows/stage.js:220`). It never gets a fix builder, and the PM resumes it. A member build that holds the slot longer than 4 minutes can cause that.
 - A member's own run waits too, and the wait counts against its Bash call's 600000 ms limit. So the brief must name the timeout.
-- A member sees only the last 40 lines of a non-JSON output (`bin/factory.ts:1196-1198`). A member that needs the full log writes it to a file from a script run through `heavy`.
-- `reap` with `--label <slug>-check` covers member runs too. It skips a record whose `heavy` process is still alive (`bin/factory.ts:1119-1121`), so a reap after one member can't kill a sibling member's live run.
+- A member sees only the last 40 lines of a non-JSON output (`bin/factory/heavy.ts` `heavyMain`). A member that needs the full log writes it to a file from a script run through `heavy`.
+- `reap` with `--label <slug>-check` covers member runs too. It skips a record whose `heavy` process is still alive (`bin/factory/resources.ts` `admission`), so a reap after one member can't kill a sibling member's live run.
 - Proof covers Linux only, and only this session's permission settings. TODO: a project whose permission settings prompt for a `node` command outside the worktree is untested; the probe can't show that.
 
 ## Probes behind this ADR
@@ -89,7 +89,7 @@ Run from this crew's worktree, `<repo>/.claude/worktrees/<member worktree>`, on 
    {"heavy":{"label":"member-heavy-design-probe","waitedMs":0,"exit":0},"tail":"v24.22.0"}
    ```
 
-3. What it left behind: the lock released and the group record deleted, as `heavyMain` does (`bin/factory.ts:1185-1186`, `:1200`):
+3. What it left behind: the lock released and the group record deleted, as `heavyMain` does (`bin/factory/heavy.ts`, `:1200`):
 
    ```
    $ find <tmp truss dir>

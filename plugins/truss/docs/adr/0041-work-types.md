@@ -40,7 +40,7 @@ R-62 asks for a crew field that names the kind of work and sets the least proces
 | `dependency` | `lean` | nothing |
 | `migration` | `full` | `stressTest: true` |
 
-A crew names its work type in the optional `plan.json` field `workType`. It is valid only at plan version 4 (`bin/factory.ts:623`), and its value must be one of the six names (`bin/factory.ts:540`, `:627`).
+A crew names its work type in the optional `plan.json` field `workType`. It is valid only at plan version 4 (`bin/factory/plan.ts` `cmdPlanCheck`), and its value must be one of the six names (`bin/factory/plan.ts` `WORK_TYPES`, `:627`).
 
 ### 2. The config only tightens
 
@@ -66,13 +66,13 @@ A config cannot add a work type; it can only tighten the six.
 3. `<slug>: process <p> is below the <wt> minimum <min>`. An absent or unknown `process` counts as `full`, matching ADR-0031 Decision 1.
 4. `<slug>: <wt> requires red`, when the profile has `red: true` and the crew's `red` is not `true`.
 
-A crew without `workType` gets no error outside an unattended run. A run is unattended when `<truss dir>/unattended.json` exists (`bin/factory.ts:551`).
+A crew without `workType` gets no error outside an unattended run. A run is unattended when `<truss dir>/unattended.json` exists (`bin/factory/plan.ts` `cmdPlanCheck`).
 
 ### 4. Where the rules apply
 
-- `plan-check` loads the repo's profiles (`bin/factory.ts:561`), adds each `workTypeErrors` message once per crew (`bin/factory.ts:629`) and adds the config's `profilesOf` errors too (`bin/factory.ts:656`). A malformed `.claude/truss.json` is a usage error there, never a silent fall back to the built-ins (`bin/factory.ts:559-560`). In an unattended run, a crew on a plan below version 4 that has no `workType` is refused with a message that says unattended runs need a version 4 plan (`bin/factory.ts:625`).
-- The crew entry that `start` and its resume path hand to `stage.js` (`crewEntry`, called at `bin/factory.ts:1939` and `:2094`) switches the stress test on when the profile says `stressTest: true`, whatever the goal file's `## Stress test` section says. A profile can turn the stress test on, never off (`bin/factory.ts:1243-1251`).
-- `plan-args` hands the profiles to `plan.js` as `workTypes` (`cmdPlanArgs`, `bin/factory.ts:411`), so the plan design engineer sees them when it sizes crews.
+- `plan-check` loads the repo's profiles (`bin/factory/plan.ts` `cmdPlanCheck`), adds each `workTypeErrors` message once per crew (`bin/factory/plan.ts` `cmdPlanCheck`) and adds the config's `profilesOf` errors too (`bin/factory/plan.ts` `cmdPlanCheck`). A malformed `.claude/truss.json` is a usage error there, never a silent fall back to the built-ins (`bin/factory/plan.ts` `cmdPlanCheck`). In an unattended run, a crew on a plan below version 4 that has no `workType` is refused with a message that says unattended runs need a version 4 plan (`bin/factory/plan.ts` `cmdPlanCheck`).
+- The crew entry that `start` and its resume path hand to `stage.js` (`crewEntry`, called at `bin/factory/start.ts` and `:2094`) switches the stress test on when the profile says `stressTest: true`, whatever the goal file's `## Stress test` section says. A profile can turn the stress test on, never off (`bin/factory/start.ts` `crewEntry`).
+- `plan-args` hands the profiles to `plan.js` as `workTypes` (`cmdPlanArgs`, `bin/factory/plan.ts`), so the plan design engineer sees them when it sizes crews.
 
 ### 5. `factory worktypes` and the sizing engineer
 
@@ -85,6 +85,6 @@ The PM and sizing-engineer prompt lines that pass `factory worktypes` output are
 - An unattended run cannot merge a bug fix without a red test, or a migration without the full process and a stress test, unless the plan lies about the work type.
 - Attended runs are unchanged: a v4 plan without `workType` still passes `plan-check` (`tests/worktypes.check.ts:111`).
 - **Mislabelled work types.** The floor trusts the label. A behaviour change labelled `refactor` or `docs` gets the `solo` floor, and only the checking engineer can catch the wrong label (contract-025 section 9, risk 11).
-- **A full-process bugfix crew counts as red.** `bugfix` requires `red: true` on the crew, but ADR-0031 Decision 1 allows `red` only on a lean crew (`bin/factory.ts:609`), and a full crew always runs a red check. `workTypeErrors` (`bin/worktypes.ts:63`) therefore does not ask for `red` when the process is `full` (or absent, which counts as `full`). A lean bugfix crew still needs `red: true`. The case is in 'worktypes: bugfix requires red' (`tests/worktypes.check.ts:56`).
-- The work-type list lives in two places: `WORK_TYPES` in `bin/factory.ts:540` and the keys of the built-ins in `bin/worktypes.ts:10-17`. Adding a work type means changing both, and the message text in `bin/worktypes.ts:58`.
+- **A full-process bugfix crew counts as red.** `bugfix` requires `red: true` on the crew, but ADR-0031 Decision 1 allows `red` only on a lean crew (`bin/factory/plan.ts` `cmdPlanCheck`), and a full crew always runs a red check. `workTypeErrors` (`bin/worktypes.ts:63`) therefore does not ask for `red` when the process is `full` (or absent, which counts as `full`). A lean bugfix crew still needs `red: true`. The case is in 'worktypes: bugfix requires red' (`tests/worktypes.check.ts:56`).
+- The work-type list lives in two places: `WORK_TYPES` in `bin/factory/plan.ts` and the keys of the built-ins in `bin/worktypes.ts:10-17`. Adding a work type means changing both, and the message text in `bin/worktypes.ts:58`.
 - Tests: `tests/worktypes.check.ts` covers each built-in rule, each loosening refusal, unknown keys and work types, `factory worktypes`, the R-62 example and its unattended pair.

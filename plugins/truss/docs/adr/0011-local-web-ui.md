@@ -238,7 +238,7 @@ A POST body must be `application/json` (else `415`), at most 1 MiB (else `413`),
 - On each crew branch `truss-<slug>` that exists: `git diff --diff-filter=A --name-only <target>...truss-<slug>`.
 - Only `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` and `.svg` count.
 
-`truss-<slug>` is the branch name on the Workflow path (`bin/factory.ts:541`). TODO: the branch name of a project-manager-path crew isn't fixed in the code; until it is, those crews' images show only once merged into the target.
+`truss-<slug>` is the branch name on the Workflow path (`bin/factory/check.ts` `cmdCheck`). TODO: the branch name of a project-manager-path crew isn't fixed in the code; until it is, those crews' images show only once merged into the target.
 
 ### 8. `ui/server/main.ts`
 
