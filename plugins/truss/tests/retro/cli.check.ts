@@ -166,117 +166,6 @@ const linesOf = (out: string) => out.split('\n').filter(Boolean)
 // ---------- findings: bad blocks beside good ones ----------
 
 describe('retro/cli.ts findings: only a block that parses and passes $defs.judged is kept', () => {
-  test('a non-JSON block, a block failing judged and a valid block in one report: the valid ones are kept as F-1, F-2; the rest drop by block position', async () => {
-    const a = await prepared()
-    const { main } = await cliMod()
-    const tA = `A${hex(3)}`
-    const tB = `B${hex(3)}`
-    const tL = `longquote ${hex(3)}`
-    const label = `judge-${hex(3)}`
-    const { cost: _cost, ...noCost } = judged(`nocost ${hex(3)}`, a.main, 3)
-    const report = join(a.root, 'report.md')
-    writeFileSync(
-      report,
-      [
-        `Prose from the judge. ${hex(3)}\n`,
-        block(`{ this is not json ${hex(4)}`), // 1
-        block(noCost), // 2: missing a required field
-        block(judged(tA, a.main, 3)), // 3: valid
-        '```json\n' + JSON.stringify(judged(`notfinding ${hex(3)}`, a.main, 3)) + '\n```\n', // not a finding block: no number, no keep
-        block(judged(`withid ${hex(3)}`, a.main, 3, { id: 'F-9' })), // 4: a judge may not pick its own id
-        block(judged(tB, a.main, 6)), // 5: valid
-        block(judged(tL, a.main, 3, { evidence: [{ file: a.main, line: 3, quote: 'q'.repeat(201) }] })), // 6: quote over 200 is cut to 200, not dropped
-        'closing prose\n',
-      ].join('\n'),
-    )
-    const r = await main(['findings', a.trussDir, label, report])
-    const lines = linesOf(r.out)
-    assert.ok([0, 1].includes(r.code), `exit ${r.code}: ${r.out}`)
-    assert.ok(lines.includes(`KEPT: F-1 | ${tA}`), r.out)
-    assert.ok(lines.includes(`KEPT: F-2 | ${tB}`), r.out)
-    assert.ok(lines.indexOf(`KEPT: F-1 | ${tA}`) < lines.indexOf(`KEPT: F-2 | ${tB}`), 'kept in report order')
-    assert.ok(lines.includes(`KEPT: F-3 | ${tL}`), `block 6 is kept, its quote cut: ${r.out}`)
-    assert.ok(lines.indexOf(`KEPT: F-2 | ${tB}`) < lines.indexOf(`KEPT: F-3 | ${tL}`), 'kept in report order')
-    for (const n of [1, 2, 4]) assert.ok(lines.some(l => new RegExp(`^DROPPED: ${n} \\| .+`).test(l)), `block ${n} is dropped, with a reason: ${r.out}`)
-    for (const n of [3, 5, 6]) assert.ok(!lines.some(l => l.startsWith(`DROPPED: ${n} |`)), `block ${n} was valid`)
-    assert.equal(lines.filter(l => l.startsWith('KEPT: ')).length, 3)
-    assert.equal(lines.filter(l => l.startsWith('DROPPED: ')).length, 3, 'the json block is not a finding block')
-    assert.equal(lines[lines.length - 1], 'OK: 3 kept, 3 dropped')
-    const saved = readFindings(a.trussDir)
-    assertSchema('findings', saved)
-    assert.deepEqual(saved.findings.map((f: any) => `${f.id}|${f.judge}|${f.title}`), [`F-1|${label}|${tA}`, `F-2|${label}|${tB}`, `F-3|${label}|${tL}`])
-    assert.equal(saved.findings[2].evidence[0].quote, 'q'.repeat(200), 'the quote is cut to exactly 200')
-
-    // a later batch from another judge continues the numbering and appends
-    const tC = `C${hex(3)}`
-    writeFileSync(report, block(judged(`nope ${hex(3)}`, a.main, 99)) + block(judged(tC, a.main, 2)))
-    const r2 = await main(['findings', a.trussDir, 'judge-two', report])
-    assert.ok(linesOf(r2.out).includes(`KEPT: F-4 | ${tC}`), `a dropped block takes no number: ${r2.out}`)
-    const saved2 = readFindings(a.trussDir)
-    assertSchema('findings', saved2)
-    assert.deepEqual(saved2.findings.map((f: any) => f.id), ['F-1', 'F-2', 'F-3', 'F-4'])
-    assert.equal(saved2.findings[3].judge, 'judge-two')
-  })
-
-  test('a title and a quote of 250 random characters each are cut to their first 200, and the finding is kept (ADR-0012 Decision 5)', async () => {
-    const a = await prepared()
-    const { main } = await cliMod()
-    const title = hex(125)
-    const quote = hex(125)
-    assert.equal(title.length, 250)
-    assert.equal(quote.length, 250)
-    const report = join(a.root, 'report.md')
-    writeFileSync(report, block(judged(title, a.main, 3, { evidence: [{ file: a.main, line: 3, quote }] })))
-    const r = await main(['findings', a.trussDir, 'j', report])
-    const lines = linesOf(r.out)
-    assert.equal(r.code, 0, r.out)
-    assert.ok(lines.includes(`KEPT: F-1 | ${title.slice(0, 200)}`), r.out)
-    assert.ok(!lines.some(l => l.startsWith('DROPPED: ')), r.out)
-    assert.equal(lines[lines.length - 1], 'OK: 1 kept, 0 dropped')
-    const saved = readFindings(a.trussDir)
-    assertSchema('findings', saved)
-    assert.equal(saved.findings.length, 1)
-    assert.equal(saved.findings[0].title, title.slice(0, 200))
-    assert.equal(saved.findings[0].evidence[0].quote, quote.slice(0, 200))
-  })
-
-  test('parseFindings: 250-character title and quote are cut to 200 and kept; exactly 200 is unchanged; other problems still drop', async () => {
-    const a = await prepared()
-    const { parseFindings } = await cliMod()
-    const files = a.x.files
-    const title = hex(125)
-    const quote = hex(125)
-    const r = parseFindings(block(judged(title, a.main, 3, { evidence: [{ file: a.main, line: 3, quote }] })), files)
-    assert.equal(r.kept.length, 1, JSON.stringify(r.dropped))
-    assert.equal(r.dropped.length, 0)
-    assert.equal(r.kept[0].finding.title, title.slice(0, 200))
-    assert.equal(r.kept[0].finding.evidence[0].quote, quote.slice(0, 200))
-
-    const t200 = hex(100)
-    const q200 = hex(100)
-    assert.equal(t200.length, 200)
-    const r2 = parseFindings(block(judged(t200, a.main, 3, { evidence: [{ file: a.main, line: 3, quote: q200 }] })), files)
-    assert.equal(r2.kept.length, 1, JSON.stringify(r2.dropped))
-    assert.equal(r2.kept[0].finding.title, t200)
-    assert.equal(r2.kept[0].finding.evidence[0].quote, q200)
-
-    const { cost: _c, ...noCost } = judged(hex(125), a.main, 3)
-    const r3 = parseFindings(block(judged('', a.main, 3)) + block(noCost), files)
-    assert.equal(r3.kept.length, 0, 'an empty title and a missing cost are still dropped')
-    assert.equal(r3.dropped.length, 2)
-  })
-
-  test('a report with no finding block gives OK: 0 kept, 0 dropped', async () => {
-    const a = await prepared()
-    const { main } = await cliMod()
-    const report = join(a.root, 'report.md')
-    writeFileSync(report, `Nothing found. ${hex(4)}\n\n\`\`\`\nnot a finding either\n\`\`\`\n`)
-    const r = await main(['findings', a.trussDir, 'j', report])
-    assert.equal(r.code, 0, r.out)
-    assert.equal(linesOf(r.out).pop(), 'OK: 0 kept, 0 dropped')
-    assert.ok(!r.out.includes('KEPT') && !r.out.includes('DROPPED'))
-  })
-
   // ADR-0051 Decision 6 replaces the extract line-count check: evidence is a counted measure and its value
   const counted = (title: string, measure: string, value: number, extra: any = {}) => ({
     category: 'time',
@@ -288,6 +177,132 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     ...extra,
   })
   const MEASURES = { 'time.slotWaitMs.alpha': 900, 'cost.tokens.alpha.builder': 5000 }
+  const withProblems = (a: any, measures: Record<string, number> = MEASURES) => {
+    mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
+    writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures, findings: [] }, null, 2) + '\n')
+  }
+  // findings.json holds the ADR-0051 finding shape; docs/findings.schema.json still describes the old one (ADR-0051 Consequences), so the shape is asserted by hand
+  const assertNewShape = (saved: any) => {
+    assert.equal(saved.v, 1)
+    for (const f of saved.findings) {
+      assert.match(f.id, /^F-\d+$/)
+      assert.equal(typeof f.judge, 'string')
+      assert.equal(typeof f.category, 'string')
+      assert.ok(f.title.length >= 1 && f.title.length <= 200, `title length ${f.title.length}`)
+      assert.ok(Array.isArray(f.evidence) && f.evidence.length > 0 && f.evidence.every((e: any) => typeof e.measure === 'string' && typeof e.value === 'number'), JSON.stringify(f.evidence))
+      for (const k of ['wallMs', 'tokens', 'usd']) assert.ok(f.cost[k] === null || typeof f.cost[k] === 'number', `cost.${k}`)
+      assert.equal(typeof f.fix, 'string')
+      assert.ok(['plugin', 'project-config', 'proposed-goal'].includes(f.target.kind), f.target.kind)
+    }
+  }
+
+  test('a non-JSON block, a block failing the finding shape and a valid block in one report: the valid ones are kept as F-1, F-2; the rest drop by block position', async () => {
+    const a = await prepared()
+    withProblems(a)
+    const { main } = await cliMod()
+    const tA = `A${hex(3)}`
+    const tB = `B${hex(3)}`
+    const tL = `newcategory ${hex(3)}`
+    const label = `judge-${hex(3)}`
+    const { cost: _cost, ...noCost } = counted(`nocost ${hex(3)}`, 'time.slotWaitMs.alpha', 900)
+    const report = join(a.root, 'report.md')
+    writeFileSync(
+      report,
+      [
+        `Prose from the judge. ${hex(3)}\n`,
+        block(`{ this is not json ${hex(4)}`), // 1
+        block(noCost), // 2: missing a required field
+        block(counted(tA, 'time.slotWaitMs.alpha', 900)), // 3: valid
+        '```json\n' + JSON.stringify(counted(`notfinding ${hex(3)}`, 'time.slotWaitMs.alpha', 900)) + '\n```\n', // not a finding block: no number, no keep
+        block(counted(`withid ${hex(3)}`, 'time.slotWaitMs.alpha', 900, { id: 'F-9' })), // 4: a judge may not pick its own id
+        block(counted(tB, 'cost.tokens.alpha.builder', 5000)), // 5: valid
+        block(counted(tL, 'time.slotWaitMs.alpha', 900, { category: `brand new ${hex(3)}` })), // 6: a category outside CHECKLIST is kept
+        block(counted(`ghost ${hex(3)}`, 'time.slotWaitMs.ghost', 900)), // 7: the measure is not counted
+        'closing prose\n',
+      ].join('\n'),
+    )
+    const r = await main(['findings', a.trussDir, label, report])
+    const lines = linesOf(r.out)
+    assert.ok([0, 1].includes(r.code), `exit ${r.code}: ${r.out}`)
+    assert.ok(lines.includes(`KEPT: F-1 | ${tA}`), r.out)
+    assert.ok(lines.includes(`KEPT: F-2 | ${tB}`), r.out)
+    assert.ok(lines.indexOf(`KEPT: F-1 | ${tA}`) < lines.indexOf(`KEPT: F-2 | ${tB}`), 'kept in report order')
+    assert.ok(lines.includes(`KEPT: F-3 | ${tL}`), `block 6 is kept, its category is new: ${r.out}`)
+    assert.ok(lines.indexOf(`KEPT: F-2 | ${tB}`) < lines.indexOf(`KEPT: F-3 | ${tL}`), 'kept in report order')
+    for (const n of [1, 2, 4]) assert.ok(lines.some(l => new RegExp(`^DROPPED: ${n} \\| .+`).test(l)), `block ${n} is dropped, with a reason: ${r.out}`)
+    assert.ok(lines.some(l => l.startsWith('DROPPED: 7 | ') && l.includes('time.slotWaitMs.ghost')), `block 7 is dropped, naming its measure: ${r.out}`)
+    for (const n of [3, 5, 6]) assert.ok(!lines.some(l => l.startsWith(`DROPPED: ${n} |`)), `block ${n} was valid`)
+    assert.equal(lines.filter(l => l.startsWith('KEPT: ')).length, 3)
+    assert.equal(lines.filter(l => l.startsWith('DROPPED: ')).length, 4, 'the json block is not a finding block')
+    assert.equal(lines[lines.length - 1], 'OK: 3 kept, 4 dropped')
+    const saved = readFindings(a.trussDir)
+    assertNewShape(saved)
+    assert.deepEqual(saved.findings.map((f: any) => `${f.id}|${f.judge}|${f.title}`), [`F-1|${label}|${tA}`, `F-2|${label}|${tB}`, `F-3|${label}|${tL}`])
+    assert.ok(saved.findings[2].category.startsWith('brand new '), 'the new category is stored as the judge wrote it')
+
+    // a later batch from another judge continues the numbering and appends
+    const tC = `C${hex(3)}`
+    writeFileSync(report, block(counted(`nope ${hex(3)}`, 'time.slotWaitMs.alpha', 901)) + block(counted(tC, 'time.slotWaitMs.alpha', 900)))
+    const r2 = await main(['findings', a.trussDir, 'judge-two', report])
+    assert.ok(linesOf(r2.out).includes(`KEPT: F-4 | ${tC}`), `a dropped block takes no number: ${r2.out}`)
+    const saved2 = readFindings(a.trussDir)
+    assertNewShape(saved2)
+    assert.deepEqual(saved2.findings.map((f: any) => f.id), ['F-1', 'F-2', 'F-3', 'F-4'])
+    assert.equal(saved2.findings[3].judge, 'judge-two')
+  })
+
+  test('a title of 250 random characters is cut to its first 200, and the finding is kept (ADR-0012 Decision 5)', async () => {
+    const a = await prepared()
+    withProblems(a)
+    const { main } = await cliMod()
+    const title = hex(125)
+    assert.equal(title.length, 250)
+    const report = join(a.root, 'report.md')
+    writeFileSync(report, block(counted(title, 'time.slotWaitMs.alpha', 900)))
+    const r = await main(['findings', a.trussDir, 'j', report])
+    const lines = linesOf(r.out)
+    assert.equal(r.code, 0, r.out)
+    assert.ok(lines.includes(`KEPT: F-1 | ${title.slice(0, 200)}`), r.out)
+    assert.ok(!lines.some(l => l.startsWith('DROPPED: ')), r.out)
+    assert.equal(lines[lines.length - 1], 'OK: 1 kept, 0 dropped')
+    const saved = readFindings(a.trussDir)
+    assertNewShape(saved)
+    assert.equal(saved.findings.length, 1)
+    assert.equal(saved.findings[0].title, title.slice(0, 200))
+  })
+
+  test('parseFindings: a 250-character title is cut to 200 and kept; exactly 200 is unchanged; other problems still drop', async () => {
+    const { parseFindings } = await cliMod()
+    const title = hex(125)
+    const r = parseFindings(block(counted(title, 'time.slotWaitMs.alpha', 900)), MEASURES)
+    assert.equal(r.kept.length, 1, JSON.stringify(r.dropped))
+    assert.equal(r.dropped.length, 0)
+    assert.equal(r.kept[0].finding.title, title.slice(0, 200))
+
+    const t200 = hex(100)
+    assert.equal(t200.length, 200)
+    const r2 = parseFindings(block(counted(t200, 'time.slotWaitMs.alpha', 900)), MEASURES)
+    assert.equal(r2.kept.length, 1, JSON.stringify(r2.dropped))
+    assert.equal(r2.kept[0].finding.title, t200)
+
+    const { cost: _c, ...noCost } = counted(hex(125), 'time.slotWaitMs.alpha', 900)
+    const r3 = parseFindings(block(counted('', 'time.slotWaitMs.alpha', 900)) + block(noCost), MEASURES)
+    assert.equal(r3.kept.length, 0, 'an empty title and a missing cost are still dropped')
+    assert.equal(r3.dropped.length, 2)
+  })
+
+  test('a report with no finding block gives OK: 0 kept, 0 dropped', async () => {
+    const a = await prepared()
+    withProblems(a)
+    const { main } = await cliMod()
+    const report = join(a.root, 'report.md')
+    writeFileSync(report, `Nothing found. ${hex(4)}\n\n\`\`\`\nnot a finding either\n\`\`\`\n`)
+    const r = await main(['findings', a.trussDir, 'j', report])
+    assert.equal(r.code, 0, r.out)
+    assert.equal(linesOf(r.out).pop(), 'OK: 0 kept, 0 dropped')
+    assert.ok(!r.out.includes('KEPT') && !r.out.includes('DROPPED'))
+    assert.equal(existsSync(join(a.trussDir, 'retro', 'findings.json')), false, 'nothing kept, nothing written')
+  })
 
   test('parseFindings(report, measures): evidence naming a measure with its value is kept; a missing measure, a different value and one bad entry among good ones are dropped, naming the measure', async () => {
     const { parseFindings } = await cliMod()
