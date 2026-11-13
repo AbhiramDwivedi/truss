@@ -2,7 +2,7 @@
 sources:
   - plugins/truss/tests/lifecycle-029.check.ts
   - plugins/truss/bin/factory.ts
-verified: cd39ae2581819be03e57724458faa09e9b5ca815
+verified: a1f65558c0ba1e4f69ec8e1a8350ed5f13deb498
 ---
 
 # Plugin test notes
