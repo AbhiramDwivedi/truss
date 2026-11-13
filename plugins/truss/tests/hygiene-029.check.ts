@@ -121,3 +121,29 @@ test('factory cost prices claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-
     for (const p of [repo, dir, root]) rmSync(p, { recursive: true, force: true })
   }
 })
+
+// ---- QC findings: stale knowledge text and stale retro citations (regression cases) -----------------------------------
+test('product-decisions.md does not call the Haiku 5.5 prompt tier inexpressible while the config prices it', () => {
+  const cfg = JSON.parse(readFileSync(path.join(ROOT, '.claude', 'truss.json'), 'utf8'))
+  const tier = cfg.pricing?.['claude-haiku-5-5']?.longContext
+  assert.ok(tier && tier.abovePromptTokens === 100000, 'the repo config prices the Haiku 5.5 tier through longContext')
+  const text = readFileSync(path.join(ROOT, 'docs', 'knowledge', 'product-decisions.md'), 'utf8')
+  const line = text.split('\n').find((l) => l.startsWith('- Pricing:')) ?? ''
+  assert.ok(line, 'the Pricing line exists')
+  assert.doesNotMatch(line, /cannot express|known limit/, 'the Pricing line still says the tier cannot be expressed')
+  assert.doesNotMatch(line, /derived from the general 0\.1x rule|lists no per-model write price/, 'the Pricing line contradicts features.md, which takes the rates from the claude-api skill pricing page')
+})
+
+test('retro SKILL.md cites typedText and OUTPUT_TAG at the lines they have in bin/inbox.ts', () => {
+  const src = readFileSync(path.join(PLUGIN, 'bin', 'inbox.ts'), 'utf8').split('\n')
+  const at = (re) => src.findIndex((l) => re.test(l)) + 1
+  const fnLine = at(/^function typedText\b/)
+  const tagLine = at(/^const OUTPUT_TAG\b/)
+  assert.ok(fnLine > 0 && tagLine > 0, 'typedText and OUTPUT_TAG exist in inbox.ts')
+  const skill = readFileSync(path.join(PLUGIN, 'skills', 'retro', 'SKILL.md'), 'utf8')
+  const fn = /`typedText` in `bin\/inbox\.ts:(\d+)(?:-(\d+))?`/.exec(skill)
+  const tag = /`OUTPUT_TAG`, `bin\/inbox\.ts:(\d+)`/.exec(skill)
+  assert.ok(fn && tag, 'the retro skill cites both symbols with a bin/inbox.ts line')
+  assert.ok(Number(fn[1]) <= fnLine && fnLine <= Number(fn[2] ?? fn[1]), `typedText is at ${fnLine}, the skill cites ${fn[1]}-${fn[2] ?? fn[1]}`)
+  assert.equal(Number(tag[1]), tagLine, `OUTPUT_TAG is at ${tagLine}, the skill cites ${tag[1]}`)
+})
