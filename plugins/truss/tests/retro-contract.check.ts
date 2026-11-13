@@ -608,14 +608,56 @@ describe('retro/cli.ts findings: a finding with no cited line is dropped, a vali
     assertSchema('findings', null, saved)
   })
 
-  test('a finding whose kind is not one of the seven is dropped', async () => {
+  // ADR-0051 Decisions 2 and 6 replace the seven kinds: any category is kept; evidence is a counted measure and its value
+  const counted = (title: string, category: string, measure: string, value: number, extra: any = {}) => ({
+    category,
+    title,
+    evidence: [{ measure, value }],
+    cost: { wallMs: 1200, tokens: null, usd: null },
+    fix: `change the prompt for ${title}`,
+    target: { kind: 'plugin', path: 'agents/project-manager.md' },
+    signature: [`${title}: planted`],
+    ...extra,
+  })
+  const withProblems = (a: any, measures: Record<string, number>) => {
+    mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
+    writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures, findings: [] }, null, 2) + '\n')
+  }
+
+  test('a finding with a category outside CHECKLIST is kept, beside one inside it', async () => {
     const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200 })
     const { main } = await cliMod()
     const report = join(a.root, 'report.md')
-    writeFileSync(report, block(judged(a.t.ERR, a.s.main, 7, { kind: 'cosmetic' })) + block(judged(a.t.CMD, a.s.main, 7, { kind: 'missing hook or gate' })))
+    const outside = `outside ${a.t.ERR}`
+    const inside = `inside ${a.t.CMD}`
+    writeFileSync(report, block(counted(outside, 'cosmetic', 'time.slotWaitMs.alpha', 1200)) + block(counted(inside, 'time', 'time.slotWaitMs.alpha', 1200)))
     const r = await main(['findings', a.trussDir, 'j', report])
-    assert.ok(r.out.includes('DROPPED: 1 | '), r.out)
-    assert.ok(r.out.includes(`KEPT: F-1 | finding ${a.t.CMD}`), r.out)
+    const lines = r.out.split('\n').filter(Boolean)
+    assert.ok(lines.includes(`KEPT: F-1 | ${outside}`), r.out)
+    assert.ok(lines.includes(`KEPT: F-2 | ${inside}`), r.out)
+    assert.equal(lines[lines.length - 1], 'OK: 2 kept, 0 dropped')
+    const saved = JSON.parse(readFileSync(join(a.trussDir, 'retro', 'findings.json'), 'utf8'))
+    assert.deepEqual(saved.findings.map((f: any) => f.category), ['cosmetic', 'time'])
+  })
+
+  test('evidence must name a counted measure with its value: a missing measure and a different value are dropped, naming the measure', async () => {
+    const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200 })
+    const { main } = await cliMod()
+    const report = join(a.root, 'report.md')
+    writeFileSync(
+      report,
+      block(counted(`good ${a.t.ERR}`, 'time', 'time.slotWaitMs.alpha', 1200)) +
+        block(counted(`nomeasure ${a.t.CMD}`, 'time', 'time.slotWaitMs.ghost', 1200)) +
+        block(counted(`wrongvalue ${a.t.HOOK}`, 'time', 'time.slotWaitMs.alpha', 1201)),
+    )
+    const r = await main(['findings', a.trussDir, 'j', report])
+    const lines = r.out.split('\n').filter(Boolean)
+    assert.ok(lines.includes(`KEPT: F-1 | good ${a.t.ERR}`), r.out)
+    assert.ok(lines.some((l) => l.startsWith('DROPPED: 2 | ') && l.includes('time.slotWaitMs.ghost')), `block 2 dropped naming its measure: ${r.out}`)
+    assert.ok(lines.some((l) => l.startsWith('DROPPED: 3 | ') && l.includes('time.slotWaitMs.alpha')), `block 3 dropped naming its measure: ${r.out}`)
+    assert.equal(lines[lines.length - 1], 'OK: 1 kept, 2 dropped')
   })
 })
 
