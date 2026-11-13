@@ -96,7 +96,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Owns extension
 
-- What: `factory owns-extend --slug S --glob G --reason R` adds the glob to the crew's `owns` in `plan.json` under the `plan` lock (once; a glob already there is not added twice), whatever other crews own, and appends a decision line; it replaces hand-editing owns. Crews may share files ([ADR-0043](../plugins/truss/docs/adr/0043-crews-share-files.md)): `plan-check` compares no crew's owns with another's and has no rule-file ownership rule; `owns-check` still refuses a crew diff outside the crew's own `owns`. Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically.
+- What: `factory owns-extend --slug S --glob G --reason R` adds the glob to the crew's `owns` in `plan.json` under the `plan` lock (once; a glob already there is not added twice), whatever other crews own, and appends a decision line; it replaces hand-editing owns. Crews may share files ([ADR-0043](../plugins/truss/docs/adr/0043-crews-share-files.md)): `plan-check` compares no crew's owns with another's and has no rule-file ownership rule; `owns-check` still refuses a crew diff outside the crew's own `owns`, except `.md` doc paths any non-merge crew commit changed (ADR-0046 item 0: the crew owns the docs of its change). Plan version 3 needs `goals` rows when a crew carries `goal`. Every `plan.json` writer (`patchPlan`, `owns-extend`, `plan-write`) takes the `plan` lock; `savePlan` writes atomically.
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdOwnsExtend`, `cmdOwnsCheck`, `cmdPlanCheck`), `plugins/truss/agents/design-engineer.md` (crews rule 4), `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers").
@@ -106,7 +106,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: `integrate` refuses a non-merge member commit with no Truss trailers unless the target already holds it, and fails closed (a `why` saying trailers are unchecked) when `git log` cannot read the range; `stage.js` `integrateNow` stops BLOCKED on a refusal with a `why` and no `conflicts`, and sends an `inProgress` refusal to the resolver. A `truss-status: {}` line with no fields falls back to the stdout JSON for `met`. The merge gate refuses a non-local target branch with the fix. `check()` in `stage.js` re-waits a busy heavy slot 3 rounds (about 27 min), then stops BLOCKED; `releaseHeavySlot` retries on win32.
 - Entry points: `plugins/truss/bin/factory.ts` (`untrailered`, `mergeCrew`), `plugins/truss/workflows/stage.js` (`check`, `HEAVY_WAIT_ROUNDS`), `plugins/truss/resources/index.ts`, `plugins/truss/tests/gates-026.check.ts`.
 - Owner: `truss-plugin-node` (bin, resources), `truss-workflow-scripts` (stage.js).
-- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "One heavy slot").
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Owns and trailers", "Heavy slots").
 - Resume: a resumed stage reuses the dead run's labels (`entry.runLabels`), so a restarted `x-builder` is `x-builder-2` in a stubbed-agent test; answers feed `stage.js` through `entry.prior` and `entry.answers` (`gates-026.check.ts` product-answer case).
 
 ## Finisher lease (resume guard)
@@ -116,6 +116,49 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0047](../plugins/truss/docs/adr/0047-resume-guard.md), [store notes](knowledge/store.md).
 
+## Resume answers carry forward
+
+- What: every crew resume (`start --slug S --resume answers|stale|merge-ready`) merges the crew's earlier rulings into `entry.answers`, so a PM's new `--answers` file never drops one. The store is `<truss dir>/crews/<slug>/answers.json`, rows `{at, text, after, ts}` (`after` is the id of the crew's newest Workflow run when the ruling was given). The new answers come first, then each stored one not repeated. A stored answer at a task name drops once a run after `after` finished that task (it is built; re-sending it would re-run the task); until then it rides along and keeps the task out of `done`. An answer at a step name (red, split, green, qc, stress, UX) always rides along. The refused-resume checks (red record) look only at the new answers.
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdStartResume`, `carriedAnswers`, `saveAnswers`, `storedAnswers`); tests `plugins/truss/tests/throughput-029.check.ts` (`i5 *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 5.
+
+## Knowledge after stress and every fix round
+
+- What: a workflow crew runs its stress test (and UX review) before the knowledge step, so the writer records the stress fixer's `learned` items. Before every QC round the knowledge lint runs; new failures send the writer back with them (at most twice, stopping when it commits nothing), then green and the lint re-run. After a QC fix round the writer runs again on the fix diff with the fixer's items, when the step ran before or the fixer learned something; so `unrecorded` holds only items a stop left behind.
+- Entry points: `plugins/truss/workflows/stage.js` (`chain`, `qc`, `lintClean`, `LINT_FIX_ROUNDS`, `knowledgeAgain`, `knowledge`, `knowledgePrompt`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i6 *`, `i7 *`).
+- Owner: `truss-workflow-scripts`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) items 6 and 7, [ADR-0033](../plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md).
+
+## Crews own their docs; QC converges
+
+- What: every builder prompt says to update the docs the change makes stale in the same change (feature map, knowledge docs with `verified`, architecture and ADR citations by symbol, skill and agent prose); only the pre-written acceptance test is read-only. `owns-check` exempts `.md` free docs (feature map, architecture doc, ADR dir, knowledge dir; no README, CHANGELOG or other `.md`) that any crew commit changed, and prompt files (skills, agents and personas, rules dir, agents index, product decisions file) only when the knowledge commit alone changed them and they are no judge's agent file; frontmatter never, a knowledge doc's `verified` and `sources` excepted. Each stress finding and each QC `bug` or `risk` finding (whole word) goes to a tester for a failing regression case before the fix builder runs; a stress-fix round that changed no test file, or left the head unmoved, gets one more fix builder with the findings, then stops BLOCKED at green. Test files are truss's built-in names plus the `testGlobs` key of `.claude/truss.json`, which `truss init` proposes from the project's test layout; when no tracked file is a test file by either, the crew gets a `warning: green check:` line, not a stop. QC never fails for a stale `verified` stamp or a moved line citation, only for a wrong statement; from round 2 it gets its previous report and the fix diff; a known defect on a trust or money path fails even when an ADR permits it; a logged PM ruling turns a guarded-file touch into a QUESTION; fix builders fix a nit only when the fix changes no behaviour.
+- Entry points: `plugins/truss/workflows/stage.js` (`docsLines`, `NIT_LINE`, `fixFindings`, `regressionDetail`, `DEFECT_RE`, `green`, `noTestText`, `stressTest`, `lintLines`, `isStamp`, `DOC_DRIFT_LINE`, `knowledgePrompt`, `TRUST_PATH_LINE`, `reQcLines`, `qc`), `plugins/truss/bin/factory.ts` (`knowledgeDocs`, `testsSinceOf`), `plugins/truss/agents/qc-engineer.md` (steps 7, 8, 11, Knowledge scope); `plugins/truss/skills/init/SKILL.md` (`testGlobs`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`q*`), `plugins/truss/tests/knowledge-scope.check.ts` (`scope 1`-`scope 6`, `diff 3`-`diff 3c`).
+- Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) items 0, 2, 3, 8-13, [ADR-0033](../plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md) (Scope, amended).
+
+## Fewer runner spawns (reap fold, same-head skip)
+
+- What: the reap after each member spawn rides on the crew's next factory call as `--reap-first <slug>`; `factory.ts` reaps `<slug>-check` before running the command and adds `reapedFirst: {error}` to its output only when that reap failed. Only the crew-end reap is a runner call of its own. Green, owns-check and the tests check skip a re-run while the crew head has not moved since they passed. A stubbed crew with a stress fix went from 32 runner spawns to 24 (26 since ADR-0046 item 8 adds the regression tester's admit and integrate).
+- What (0.29.0, gates): the checks before QC (green, owns-check, tests check, knowledge lint, QC admit) go out as one runner call, `factory gates --slug S --steps ...`, which runs the due steps in order, stops at the first unmet one and prints each step's own output under `steps` with `gates`, `codes` and `stopped`. stage.js takes each step's result from that call and falls back to the single command when it has none. The same stubbed crew now costs 22 runner spawns; a real crew saves about 4 at the end of its member chain and about 3 per QC fix round.
+- Entry points: `plugins/truss/workflows/stage.js` (`runFactory`, `ask`, `reap`, `moved`, `unmoved`, `passedAt`, `green`, `scope`, `testsGuard`, `testsBackstop`, `gates`, `takeGate`, `dropGates`), `plugins/truss/bin/factory.ts` (`takeReapFlag`, `reapFirst`, `gatesMain`, `gateMet`, `statusLine`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`, `i1 6`, `i1 7`), `plugins/truss/tests/throughput-029.check.ts` (`i1 3`, `i1 4`, `i1 5`), stub helper `plugins/truss/tests/fixtures/gates-stub.ts` (`gatesAware`).
+- Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 1, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 6.
+
+## Configurable heavy slot count
+
+- What: up to `heavySlots` red and green checks (`factory heavy`) run at once across the session. The count is the `.claude/truss.json` key `heavySlots` (1-16), else `TRUSS_HEAVY_SLOTS`, else `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` from the host. Slot 1 is `resources/heavy.lock/`, slot n is `resources/heavy-<n>.lock/`; `heavy` takes the first free slot and prints the count as `heavy.slots`.
+- Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavySlotsOf`), `plugins/truss/resources/index.ts` (`defaultHeavySlots`, `takeHeavySlot`, `releaseHeavySlot`), `plugins/truss/docs/truss-config.schema.json` (`heavySlots`); tests `plugins/truss/tests/throughput-029.check.ts` (`i4 *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 4, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 3, [architecture](../plugins/truss/docs/architecture.md) ("Heavy slots").
+
+## Long-context price tier (Claude 5.5 prices)
+
+- What: a `pricing` entry may hold `longContext: {abovePromptTokens, <the five rates>}`. A standard-speed request whose prompt (input plus cache read plus both cache writes) is over `abovePromptTokens` is priced wholly at the `longContext` rates; each request is judged on its own. A fast row ignores `longContext`. This repo's own `.claude/truss.json` prices `claude-opus-5-5` (with `fast`), `claude-sonnet-5-5` and `claude-haiku-5-5` (with its long-context tier), from the claude-api skill's pricing page read 2026-11-12. The plugin still writes no price.
+- Entry points: `plugins/truss/bin/cost.ts` (`ratesFor`, `sumOf`), `plugins/truss/docs/truss-config.schema.json` (`$defs.price.longContext`); tests `plugins/truss/tests/throughput-029.check.ts` (`pricing *`).
+- Owner: `truss-plugin-node`.
+- Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) "Pricing", [ADR-0038](../plugins/truss/docs/adr/0038-cost-budgets-and-ledger.md) section 3.
+
 ## Plan spawn labels
 
 - What: a plan.js spawn label must parse (`parseLabel` in factory.ts) to the slug truss, or `sessionAudit` flags the run. The PO-revised designer is truss-designer-2 (fix run truss-designer-4), the re-check truss-checker-2 (fix run truss-checker-4); a -po or -2 suffix on a numbered label reads as another slug.
@@ -124,7 +167,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Decision log line (decide)
 
-- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3428`).
+- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3515`).
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
 

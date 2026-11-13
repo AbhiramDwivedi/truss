@@ -16,6 +16,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as reg from '../hooks/register.ts'
 import { parseLabel } from '../bin/factory.ts'
+import { gatesAware } from './fixtures/gates-stub.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, qcRuling } = reg
 
@@ -67,7 +68,7 @@ async function exec(file, args, o = {}) {
   const maxInflight = {}
   const phases = []
   const logs = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -125,7 +126,7 @@ async function exec(file, args, o = {}) {
       timeline.push(`end:${opts.label}`)
     }
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {
@@ -147,18 +148,24 @@ async function exec(file, args, o = {}) {
     error = e
   }
   // admit and reap are their own runner calls around every non-runner spawn; `labels` and `timeline` leave them out so the
-  // assertions about members and the other runner commands keep their meaning. allLabels/allTimeline keep everything.
+  // assertions about members and the other runner commands keep their meaning. allLabels/allTimeline keep everything, but
+  // allLabels holds one label per spawn: the later steps of one gates call (fixtures/gates-stub.ts) share its spawn.
   const isAR = (c) => c.runner?.cmd === 'admit' || c.runner?.cmd === 'reap'
+  const laterStep = (c, k) => c.opts.gatesStep && k > 0 && calls[k - 1].label === c.label && calls[k - 1].opts.gatesStep
   const arNames = new Set(calls.filter(isAR).map((c) => c.runner.name))
   const notAR = (e) => !arNames.has(e.replace(/^(start|end):/, ''))
-  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, maxInflight, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.map((c) => c.label) }
+  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, maxInflight, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.filter((c, k) => !laterStep(c, k)).map((c) => c.label) }
 }
 
 function checkSpawns(calls, roles) {
   const seen = new Set()
+  const gatesLabels = new Set()
   for (const c of calls) {
     const o = c.opts
     assert.equal(typeof o.label, 'string', 'every agent() call has a label')
+    // the steps of one gates call (fixtures/gates-stub.ts) are one spawn under one label
+    if (o.gatesStep && gatesLabels.has(o.label)) continue
+    if (o.gatesStep) gatesLabels.add(o.label)
     assert.ok(!seen.has(o.label), `duplicate label ${o.label}`)
     seen.add(o.label)
     assert.ok(!/write-tests|build-it/.test(o.label), `a task name is in label ${o.label}`)
@@ -940,6 +947,8 @@ t('stage green: a fix builder that is not DONE stops the crew with its tag at gr
 // ---------------------------------------------------------------- stage.js: stress test
 
 const rtCrew = (o = {}) => entry('a', { stressTest: true, ...o })
+// a stress finding is a defect: the crew's tester writes its regression case before the fix builder runs (0.29.0 item 8)
+const rtFixers = { ...fixers, 'a-tester-2': done('feat/rt') }
 t('stage stress: runs a-stress with the prompt first line exactly "Stress test:" then head, branch, goal file, adrs, high-impact', async () => {
   const r = await runStage([rtCrew()], { labels: base('a', { 'a-stress': RT0 }) })
   const p = call(r, 'a-stress').prompt
@@ -960,7 +969,7 @@ t('stage stress: stressTest false runs no stress test', async () => {
 })
 t('stage stress: findings run one fix builder with them, integrate, green, then the qc; no second stress test', async () => {
   const r = await runStage([rtCrew()], {
-    labels: { ...base('a', { 'a-stress': RTN(2, 'ONE') }), ...fixers },
+    labels: { ...base('a', { 'a-stress': RTN(2, 'ONE') }), ...rtFixers },
     runner: greenSeq(gOk(HEAD), gOk(HEAD2)),
   })
   has(call(r, 'a-builder-2').prompt, 'ONE-finding-1')
@@ -977,19 +986,19 @@ t('stage stress: STRESSTEST 0 runs no fix builder', async () => {
   assert.ok(!had(r, 'a-stress-2'))
 })
 t('stage stress: one round adds no spend: a finding round with reworkAllowance 0 still passes', async () => {
-  const labels = { ...base('a', { 'a-stress': RTN(1, 'R1') }), 'a-builder-2': done('feat/f1') }
+  const labels = { ...base('a', { 'a-stress': RTN(1, 'R1') }), 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/f1') }
   const r = await runStage([rtCrew()], { reworkAllowance: 0, labels })
   assert.equal(r.calls.filter((c) => /stress/.test(c.label)).length, 1)
   assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
 })
 const NOTES = 'STRESSTEST: 1 findings\n## Findings\n- REAL-defect-1\n## Notes\n- GAP-note-1\n- GAP-note-2\nprose line, not a bullet\n## Other\n- not-a-note\n'
 t('stage stress: test gaps under ## Notes never reach a fix builder prompt', async () => {
-  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...fixers } })
+  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...rtFixers } })
   has(call(r, 'a-builder-2').prompt, 'REAL-defect-1')
   for (const c of r.calls.filter((c) => /builder/.test(c.label))) assert.ok(!c.prompt.includes('GAP-note-1'), `${c.label} prompt carries a test gap`)
 })
 t('stage stress: deferred holds the ## Notes bullets in order, "- " removed, up to the next ## heading', async () => {
-  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...fixers } })
+  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...rtFixers } })
   passedShape(r.res[0], 'a', HEAD, 'a-qc', rtCrew(), ['GAP-note-1', 'GAP-note-2'])
 })
 t('stage stress: deferred reads ## Notes to the end of the report and works with STRESSTEST 0', async () => {
@@ -1007,7 +1016,7 @@ t('stage stress: a crew with no stress test has no deferred key', async () => {
   assert.ok(!('deferred' in r.res[0]))
 })
 t('stage stress: the qc FAIL after a stress test fix is spend 1', async () => {
-  const labels = { ...base('a', { 'a-stress': RTN(1), 'a-qc': FAIL() }), 'a-builder-2': done('feat/f1') }
+  const labels = { ...base('a', { 'a-stress': RTN(1), 'a-qc': FAIL() }), 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/f1') }
   const r = await runStage([rtCrew()], { reworkAllowance: 0, labels })
   stopped(r.res[0], 'BLOCKED', 'qc')
   assert.ok(r.res[0].text.startsWith('BLOCKED: rework allowance spent: a, spend 1, reworkAllowance 0'), r.res[0].text)
@@ -1040,7 +1049,12 @@ t('stage tests: tests-check runs with --slug after owns-check and before every q
   has(r.calls.find((c) => c.runner?.cmd === 'tests-check').prompt, 'tests-check --slug a')
   // bug 28: the fix builder's own backstop run carries a Backstop: line; the guard runs carry none
   const runs = r.calls.filter((c) => c.runner?.cmd === 'tests-check' && !c.prompt.includes('Backstop:'))
-  assert.equal(runs.length, 2, 'once before each qc, so a fix builder\'s commits are checked too')
+  // ADR-0046 item 1: the fix builder's backstop run passed on the head qc-2 sees, so the guard before qc-2 is skipped
+  // (same-head skip); the fix builder's commits are still checked, by the backstop run
+  assert.equal(runs.length, 1, 'the guard runs before the first qc; the backstop pass serves the second')
+  const all = r.calls.filter((c) => c.runner?.cmd === 'tests-check')
+  assert.equal(all.length, 2, 'the fix builder\'s commits are checked too')
+  assert.ok(all[1].prompt.includes('Backstop:'))
   assert.ok(idx(r, 'end:runner:a:owns-check') < idx(r, 'start:runner:a:tests-check'))
   assert.ok(idx(r, 'end:runner:a:tests-check') < idx(r, 'start:a-qc'))
 })

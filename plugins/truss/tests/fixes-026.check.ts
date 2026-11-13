@@ -10,6 +10,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, re
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { isSessionDirUnderCommon } from '../bin/factory.ts'
 import { killTree } from '../bin/notify-run.ts'
 import { createExclusive, sharedDir, withLock, writeJsonAtomic } from '../bin/store.ts'
@@ -425,7 +426,7 @@ async function runStage026(labels: Record<string, any>) {
   const body = readFileSync(stagePath, 'utf8').replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const rj = (obj: any) => ({ exit: 0, stdout: JSON.stringify(obj) })
   const unscripted: string[] = []
-  const agent = async (prompt: string, opts: any = {}) => {
+  const agent = gatesAware(async (prompt: string, opts: any = {}) => {
     await new Promise((r) => setImmediate(r))
     if (/-runner(-\d+)?$/.test(String(opts.label))) {
       const mh = prompt.match(/factory\.ts\s+heavy\b([^\n`]*)/)
@@ -451,7 +452,7 @@ async function runStage026(labels: Record<string, any>) {
       throw new Error(`unscripted label: ${opts.label}`)
     }
     return structuredClone(labels[opts.label])
-  }
+  })
   const parallel = async (thunks: any[]) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (list: any[], ...stages: any[]) => Promise.all(list.map(async (item, i) => {
     try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null }

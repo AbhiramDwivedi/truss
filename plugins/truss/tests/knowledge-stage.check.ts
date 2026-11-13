@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
@@ -191,7 +192,7 @@ const CLEAN = { ok: true, failures: [], warnings: [] }
 async function exec(args, o = {}) {
   const body = SRC.replace(/^\s*export\s+const\s+meta\b/m, 'const meta')
   const calls = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -217,7 +218,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await ticks(2)
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   let result

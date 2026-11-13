@@ -14,7 +14,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 9439b62de2d708c960a6a7cb59a745ca1ab83f95
+verified: 62d1a83e0fd4fd6eff9e380a33f79d1c4b8e5dfa
 ---
 
 # Store, holds and contract-025 stubs
@@ -37,15 +37,17 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `state.schema.json` holds `inboxOp`, `ledgerRow`, `usageRow`, `usageCursor`, `queueItem`, `unattended` and `ltcPlan` as `$defs`. The contract left ledger field types open: `process`, `qc`, `red`, `goal` and `workType` are nullable, `target`, `base` and `head` are strings. Treat them as append-only once rows exist.
 
+`<truss dir>/crews/<slug>/answers.json` (0.29.0, ADR-0046 item 5) is a JSON array of `{at, text, after, ts}`, rewritten whole by `saveAnswers` (`writeJsonAtomic`) on every resume. `after` is the id of the crew's newest Workflow run when the ruling was first given, or null; a stored row keeps its first `after` and `ts`. `carriedAnswers` drops a row at a task name once a run after `after` (or after the resume start, whichever is later) finished that task; a row at a step name never drops. An `after` the run list no longer holds counts as unbuilt.
+
 `plan.schema.json` forbids a crew `workType` below version 4 through the existing crew `not`/`anyOf` list (line 126). The text `workType is version 4 only` comes from `cmdPlanCheck` in `factory.ts`, not the schema. `cmdPlanCheck` also owns the enum and the unattended-required rules and de-duplicates against `workTypeErrors()`. The enum `WORK_TYPES` lives in `factory.ts:558`, not in `worktypes.ts`.
 
 ## Admission holds
 
-`admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (factory.ts:2361-2366). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field. The budget escalate's `ref` is the verdict's own `v.ref` when it is a non-empty string, else `budget:<sid>:<scope>:<run|slug>`.
+`admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (factory.ts:2511-2512). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field. The budget escalate's `ref` is the verdict's own `v.ref` when it is a non-empty string, else `budget:<sid>:<scope>:<run|slug>`.
 
 Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/factory.ts) re-reads `plan.json` under the `plan` lock before it edits and saves. `approve`, `start`, `mark-merged`, the merge gate, `plan-write` and `owns-extend` all write the plan that way, so none drops another's edit. `stage.js` `check()` runs `heavy` up to 3 times (`HEAVY_WAIT_ROUNDS`) before it stops `heavy slot busy`.
 
-`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-425). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2381-2398). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:1956, 2033).
+`stage.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (stage.js:421-428). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, bin/factory.ts:2464-2481). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (stage.js:2202, 2305).
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (factory.ts:1371-1378, `stageOut`).
 
@@ -55,9 +57,9 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/fac
 - `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts:84, 78). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts:86-87, 134).
 - Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (store.ts:528-549). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts:57, 174).
 - Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
-- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:303-310). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
+- Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts:312-319). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
 - A busy usage lock is handled by `budgetVerdict` in two ways. With a `usage.jsonl` it reads that file as it stands and accepts the lag. With no `usage.jsonl` the spend is unknown, so it sweeps once more with the store's default wait and lets `StoreBusy` through (exit 2, never an admit; ADR-0038 amendment 2026-11-11). `factory start` wraps its admission in `heldOnBusy`, which holds that crew with `why` `store busy: usage` and still reports the crews already started in the call. `crewCost` gives `usd: null` on any busy lock (`sweepOrRead`, `crewCost` in cost.ts). `factory cost` reads through `sweepOrRead` too: on a busy lock it prints `sweep.busy: true`, and with no `usage.jsonl` and no cursor `run.usd` and `session.usd` are null with `session.why` `usage sweep busy and no earlier reading exists` (`cmdCost` area of cost.ts).
-- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:249-256). Pricing web search needs a new rate field.
+- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts:279-286). Pricing web search needs a new rate field. A price's optional `longContext` tier (0.29.0) prices a standard-speed row whose prompt (in + cache read + both cache writes) is over `abovePromptTokens` wholly at its rates (`ratesFor`, cost.ts:257).
 - Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
 
 ## Inbox transcript proof
@@ -76,7 +78,7 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 
 - `tests/fixtures/ltc/e2e.ts` holds `mkE2eWorld` (the ltc world plus a bare origin and a test-only price table), `originRefs`, `layBudgetCrew` and `runUnattendedFlow`: the program manager's end-of-run flow of `/truss:run --next` through real factory processes (intake, unattended `--on`, queue-next, plan-write, plan-check, approve `--by auto`, start, crew commit, land, escalate push-pr, queue-set running then done, unattended `--off`). Reuse it for any later e2e case.
 - `tests/fixtures/cost/lock-holder.ts` (args: store.ts path, session dir, hold ms) holds the usage lock from a spawned process and prints `{"held":true}` when it has it. Spawn it and await that line before calling `budgetVerdict`: the verdict blocks the test's event loop, so an in-process holder can never release.
-- A solo crew with a version 4 plan and workType `docs` starts direct through `factory start --slug S --stage next` (creates worktree `truss-S`, sets running); `land --slug S` merges it locally and writes one row to `<common>/truss/shared/ledger.jsonl` (factory.ts:2151-2163, 3110-3116). The session needs `goals/S.md` (test helper `writeGoal`).
+- A solo crew with a version 4 plan and workType `docs` starts direct through `factory start --slug S --stage next` (creates worktree `truss-S`, sets running); `land --slug S` merges it locally and writes one row to `<common>/truss/shared/ledger.jsonl` (factory.ts:2201-2213, 3110-3116). The session needs `goals/S.md` (test helper `writeGoal`).
 
 ## Stub modules
 

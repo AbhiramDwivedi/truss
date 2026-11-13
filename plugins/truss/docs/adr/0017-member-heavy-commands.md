@@ -49,7 +49,7 @@ What a build crew would change, and nothing else:
    - every member prompt holds a `factory.ts heavy` line;
    - that line's `--dir`, `--repo`, `--slug`, `--label` and `--cwd` equal the runner's `heavyLine()` values, with `--label <slug>-check`;
    - the line holds no `$`, `&&`, `;` or `cd`.
-3. **Docs.** ADR-0015's Decision 6 and Out of scope, and the architecture doc's "One heavy slot" bullet, then say that member runs share the slot.
+3. **Docs.** ADR-0015's Decision 6 and Out of scope, and the architecture doc's "Heavy slots" bullet, then say that member runs share the slot.
 
 The path changes no hook. It doesn't change how hooks treat the worktree guard: the guard is Claude Code's, `refusalOf` keeps classifying its text as before, and the probe ran with the hooks as they are. So checker-28's trigger ("recheck client triggers if member-heavy-design changes worktree-guard hook handling", `plan-plugin-fixes.md:92`) does not fire.
 
@@ -110,4 +110,4 @@ So the guard refuses git aimed outside the worktree, and the shapes the `SHELL` 
 ## Documents this ADR amends
 
 - [ADR-0015](0015-resource-aware.md): a link at Decision 6 "Checks through heavy" and at Out of scope. Its text doesn't change until a build crew builds the path.
-- `docs/architecture.md`: a link at the "One heavy slot" bullet.
+- `docs/architecture.md`: a link at the "Heavy slots" bullet.

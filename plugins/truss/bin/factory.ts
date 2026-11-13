@@ -841,9 +841,37 @@ function cmdCheck(f: Flags): Obj {
   const known = exit === 0 ? [] : catalogHits(text)
   writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}) }
+  const since = ok && expect === 'green' ? testsSinceOf(cwd, f) : {}
+  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since.list === undefined ? {} : { testsSince: since.list }), ...(since.unknown === undefined ? {} : { testsUnknown: since.unknown }) }
   if (!ok) throw refuse(body)
   return body
+}
+
+// ADR-0046 item 3: with --tests-since <sha>, the test files (isTestPath) changed in <sha>..HEAD, so stage.js can fail a stress-fix
+// round that added no regression test. Undefined without the flag, or when the range can't be read (no list, no check).
+// A test file is one isTestPath names or one a `testGlobs` glob of .claude/truss.json matches. When the list is empty and no
+// tracked file of the worktree is a test file by either rule, truss can't tell the project's tests apart: the list is unknown
+// (undefined, so stage.js checks nothing) and `testsUnknown` says why, for stage.js to log as a warning.
+function testsSinceOf(cwd: string, f: Flags): { list?: string[]; unknown?: string } {
+  const sha = typeof f['tests-since'] === 'string' ? f['tests-since'] : ''
+  if (!/^[0-9a-f]{4,40}$/i.test(sha)) return {}
+  const r = run(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--no-renames', `${sha}..HEAD`])
+  if (r.status !== 0) return {}
+  let globs: string[] = []
+  try {
+    const g = configOf(repoOf(f)).testGlobs
+    globs = Array.isArray(g) ? g.filter((x: unknown): x is string => typeof x === 'string' && x !== '') : []
+  } catch {
+    globs = []
+  }
+  const isTest = (p: string): boolean => isTestPath(p) || globs.some((g) => path.matchesGlob(p, g))
+  const list = r.out.split('\n').map((l) => l.trim()).filter((p) => p !== '' && isTest(p)).sort()
+  if (list.length > 0) return { list }
+  const all = run(cwd, ['-c', 'core.quotepath=off', 'ls-files'])
+  if (all.status === 0 && !all.out.split('\n').some((p) => p.trim() !== '' && isTest(p.trim()))) {
+    return { unknown: 'no tracked file is a test file by name or by testGlobs, so the stress-fix round\'s regression tests were not checked; set testGlobs in .claude/truss.json' }
+  }
+  return { list }
 }
 
 // ADR-0033: the non-test source files the crew's diff (merge-base with the target ... HEAD) adds, renames or deletes, from
@@ -1132,48 +1160,74 @@ function cmdOwnsCheck(f: Flags): Obj {
   return { ok: true, exempt }
 }
 
-// ADR-0033: the files the crew's knowledge commit may change outside the crew's owns. The commit is the one recorded by
-// `knowledge-commit` (its subject never counts: anyone can write a subject). A file is exempt only when ALL hold: it changed in a
-// recorded knowledge commit and in no other non-merge commit of the crew; it is a .md file; it is the feature map (featureMap,
-// default docs/features.md), a file under the ADR directory (adrDir, default docs/adr), a persona or the product-owner file
-// (.claude/agents/*.md, whose YAML frontmatter is unchanged: tools and model are never the knowledge step's to edit), or the
-// target of a learned item the crew recorded with `crew-learned`. A code file, or a file another commit changed, is not exempt.
+// ADR-0033, as ADR-0046 item 0 amends it: the doc files any crew commit may change outside the crew's owns. Each crew owns the
+// docs of its own work, so a builder updates them in the same change as the code, every round; the knowledge commit is a backstop,
+// not the only doc writer. A file is exempt only when ALL hold: it changed in a non-merge commit of the crew; it is a .md file;
+// its YAML frontmatter is unchanged (tools, model and descriptions are never a crew's to edit; a knowledge doc's `verified` and
+// `sources` excepted); and either it is a free doc (the feature map, featureMap, default docs/features.md; the architecture doc;
+// a file under the ADR directory or the knowledge dir; never another .md, a README or a changelog), or it is a
+// prompt file (skills/**/SKILL.md, .claude/skills/**, agents/*.md and .claude/agents/*.md, the rules dir, the agents index, the
+// product-decisions file) that only the crew's knowledge commit changed and that is no judge (an agent whose name says QC,
+// checking, review, judge or product owner). A learned item's target widens nothing. A code file is never exempt.
 function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string; target: string }): Set<string> {
-  const shas = knowledgeShas(c.dir, c.slug)
-  if (shas.length === 0) return new Set()
   const base = baseOf(c.wt, c.target)
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%H', `${base}..HEAD`])
-  const byKnowledge = new Set<string>()
-  const byOthers = new Set<string>()
+  const knowledge = new Set(knowledgeShas(c.dir, c.slug))
+  const byCrew = new Set<string>()
+  // the files some commit other than the crew's knowledge commit changed
+  const byMember = new Set<string>()
   for (const chunk of out.split('\0').slice(1)) {
-    const lines = chunk.split('\n')
-    const files = lines.slice(1).map((l) => l.trim()).filter(Boolean)
-    for (const file of files) (shas.includes((lines[0] as string).trim()) ? byKnowledge : byOthers).add(file)
+    const [sha = '', ...files] = chunk.split('\n')
+    for (const file of files.map((l) => l.trim()).filter(Boolean)) {
+      byCrew.add(file)
+      if (!knowledge.has(sha.trim())) byMember.add(file)
+    }
   }
+  const arch = repoPathOf(configOf(c.repo).architecture) ?? 'docs/architecture.md'
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
-  const targets = learnedTargets(c.dir, c.slug)
   const frontmatter = (text: string): string => {
     const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
     if (lines[0]?.trim() !== '---') return ''
     const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
     return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
   }
-  const isPersona = (file: string): boolean => /^\.claude\/agents\/[^/]+\.md$/.test(file)
+  const kc = knowledgeCfgOf(c.repo)
+  // ADR-0046: every exempt file keeps its YAML frontmatter, except a knowledge doc's `verified` stamp and `sources` list, which
+  // knowledge-lint checks and a builder keeps true with its doc change (an indented line under `sources:` belongs to it)
+  const kept = (file: string, text: string): string => {
+    const fm = frontmatter(text)
+    if (!file.startsWith(`${kc.knowledgeDir}/`)) return fm
+    let skip = false
+    return fm.split('\n').filter((l) => {
+      if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
+      return !skip
+    }).join('\n')
+  }
   const frontmatterKept = (file: string): boolean => {
     const was = run(c.wt, ['show', `${base}:${file}`])
     const now = run(c.wt, ['show', `HEAD:${file}`])
-    return frontmatter(was.status === 0 ? was.out : '') === frontmatter(now.status === 0 ? now.out : '')
+    return kept(file, was.status === 0 ? was.out : '') === kept(file, now.status === 0 ? now.out : '')
   }
-  // ADR-0035: the rules dir, the knowledge dir, the agents index and the product-decisions file join the doc set. A persona's
-  // frontmatter is still never the knowledge step's to edit, whatever else names the file.
-  const kc = knowledgeCfgOf(c.repo)
-  const isDoc = (file: string): boolean =>
-    file.toLowerCase().endsWith('.md') &&
-    (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
-    (!isPersona(file) || frontmatterKept(file))
-  return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
+  const name = (file: string): string => file.split('/').pop() ?? ''
+  // free docs: any member may change them with its code, every round
+  // (only these: a README, a changelog or any other .md is a crew's to change only when its owns name it)
+  const isFreeDoc = (file: string): boolean =>
+    file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || file.startsWith(`${kc.knowledgeDir}/`)
+  // skills, agents and personas, the rules dir, the agents index and the product-decisions file: prompts other agents run on,
+  // so only the crew's knowledge commit may change them outside its owns
+  const isPrompt = (file: string): boolean =>
+    /(^|\/)skills\/(.+\/)?SKILL\.md$/.test(file) || /^\.claude\/skills\//.test(file) || /(^|\/)agents\/[^/]+\.md$/.test(file) ||
+    file.startsWith(`${kc.rulesDir}/`) || file === kc.agentsIndex || file === kc.productDecisions
+  // an agent or persona that judges (QC, checking, review, product owner): never a crew's to edit, even in its knowledge commit
+  const isJudge = (file: string): boolean => /(^|\/)agents\/[^/]+\.md$/.test(file) && /qc|check|review|judge|product-owner/i.test(name(file))
+  const isDoc = (file: string): boolean => {
+    if (!file.toLowerCase().endsWith('.md')) return false
+    const allowed = isPrompt(file) ? !isJudge(file) && !byMember.has(file) : isFreeDoc(file)
+    return allowed && frontmatterKept(file)
+  }
+  return new Set([...byCrew].filter(isDoc))
 }
 
 // Guarded = every file a `Truss-Role: test-writer` commit in <base>..HEAD touched, whatever its name, plus every existing path
@@ -2066,6 +2120,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     const rebuild = kind !== 'merge-ready' && !noWork
     // done counts only from the run of the chosen plan on, so a re-split's task names never match an older plan's members
     const plan = rebuild ? plannerTasks(runs, slug) : { tasks: [], from: 0 }
+    // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
+    answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
     const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
     // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
     // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
@@ -2096,10 +2152,58 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
       appendDecision(c.dir, `restarted stale workflow crew ${slug} | its stage.js run died; same worktree and branch; ${entry.spent} repair round(s) already spent`)
     }
     const out = stageOut(c, [entry], [], [], [], [])
+    saveAnswers(c.dir, slug, answers as Answer[], runs)
     return missing.length > 0 ? { ...out, missingWorktrees: missing } : out
   } finally {
     releaseLease(c.dir, `finisher-${slug}`, lease.token)
   }
+}
+
+// 0.29.0 item 5: the crew's answers store, <dir>/crews/<slug>/answers.json. Each row is one ruling {at, text} plus `after`, the
+// id of the crew's newest Workflow run when the ruling was given (null when the resume had no runs), and `ts`.
+type Answer = { at: string; text: string }
+type StoredAnswer = Answer & { after: string | null; ts: string }
+const ANSWERS_FILE = (dir: string, slug: string): string => `${CREW_STATE(dir, slug)}/answers.json`
+const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text
+function storedAnswers(dir: string, slug: string): StoredAnswer[] {
+  const v = readQuiet(ANSWERS_FILE(dir, slug))
+  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
+}
+
+// The answers a resume hands stage.js: the new ones first, then each stored one that is still unbuilt and not repeated. A stored
+// answer at a task name is built once a run that started after it finished that task (doneTasks over the runs after `after`); a
+// built one is dropped, since re-sending it would re-run a finished task. An answer at a step name (red, split, green, qc, a
+// stress or UX step) is a standing ruling and always rides along. When `after` names no run of the crew, the answer counts as
+// unbuilt: carrying a ruling twice costs one rerun, losing one costs a QC round.
+function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[], from: number, wt: string, target: string, rebuild: boolean): Answer[] {
+  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text }))
+  const taskNames = new Set(rebuild ? plannerTasks(runs, slug).tasks.filter(isObj).map((t: Obj) => String(t.name)) : [])
+  const builtAfter = new Map<string, string[]>()
+  for (const a of storedAnswers(dir, slug)) {
+    if (out.some((x) => sameAnswer(x, a))) continue
+    if (taskNames.has(a.at)) {
+      const at = a.after === null ? -1 : runs.findIndex((r) => r.id === a.after)
+      if (at >= 0) {
+        const key = String(at)
+        if (!builtAfter.has(key)) builtAfter.set(key, doneTasks(runs.slice(Math.max(from, at + 1)), slug, wt, target))
+        if ((builtAfter.get(key) ?? []).includes(a.at)) continue
+      }
+    }
+    out.push({ at: a.at, text: a.text })
+  }
+  return out
+}
+
+// Writes the answers this resume used back to the store: a row already stored keeps its `after` and `ts`, a new one gets the
+// newest run's id. Rows a resume dropped as built are dropped from the store too.
+function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): void {
+  const old = storedAnswers(dir, slug)
+  const newest = runs.length > 0 ? runs[runs.length - 1].id : null
+  const now = new Date().toISOString()
+  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, after: newest, ts: now })
+  if (rows.length === 0 && old.length === 0) return
+  mkdirSync(CREW_STATE(dir, slug), { recursive: true })
+  writeJsonAtomic(ANSWERS_FILE(dir, slug), rows)
 }
 
 function cmdStart(f: Flags): Obj {
@@ -2320,7 +2424,7 @@ function argsFileOut(f: Flags, out: Obj): Obj {
 // ==== resources (ADR-0015): admit, heavy, reap ====
 
 import { spawn } from 'node:child_process'
-import { admits, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
+import { admits, defaultHeavySlots, groupAlive, killGroup, minFreeMB, releaseHeavySlot, sample, takeHeavySlot } from '../resources/index.ts'
 
 // How long a heavy command waits for the slot and free memory: --wait-ms N, else TRUSS_HEAVY_WAIT_MS, else 540 s (under the 600000 ms Bash timeout stage.js sets, leaving room for the command).
 export const HEAVY_WAIT_MS = 540000
@@ -2330,6 +2434,16 @@ export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = 
     if (Number.isInteger(n) && n >= 0) return n
   }
   return HEAVY_WAIT_MS
+}
+
+// ADR-0046 item 4: how many heavy commands may run at once. truss.json `heavySlots` (a whole number 1-16) of the repo the
+// command runs in, else TRUSS_HEAVY_SLOTS, else the host default (defaultHeavySlots: max(1, min(4, cpus/4, totalGB/8))).
+export function heavySlotsOf(cfg: Obj, env: Record<string, string | undefined> = process.env, host: () => number = defaultHeavySlots): number {
+  const ok = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 16
+  if (ok(cfg.heavySlots)) return cfg.heavySlots
+  const e = env.TRUSS_HEAVY_SLOTS
+  if (typeof e === 'string' && /^\d+$/.test(e) && ok(Number(e))) return Number(e)
+  return host()
 }
 const sleepSync = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 // True while pid runs: process.kill(pid, 0), which works on every OS. On Linux a zombie counts as gone; elsewhere a live answer
@@ -2500,10 +2614,12 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     const cwd = flat(need(f, 'cwd'))
     if (cmd.length === 0) throw usage('heavy needs a command after --')
     const waitLimit = heavyWaitMs(f)
+    const top = run(cwd, ['rev-parse', '--show-toplevel'])
+    const slots = heavySlotsOf(configOf(top.status === 0 ? flat(top.out) : cwd))
     const t0 = Date.now()
     let token: string | null = null
     for (;;) {
-      token = takeHeavySlot(dir, { label, slug, pid: process.pid })
+      token = takeHeavySlot(dir, { label, slug, pid: process.pid }, process.platform, slots)
       if (token !== null) {
         let low = false
         try {
@@ -2547,7 +2663,7 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       releaseHeavySlot(dir, token)
       if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
       const stdout = readFileSync(`${scratch}/out.txt`, 'utf8')
-      const meta = { label, waitedMs, exit }
+      const meta = { label, waitedMs, exit, slots }
       let parsed: unknown
       try {
         // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone
@@ -2563,6 +2679,79 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       releaseHeavySlot(dir, token)
       rmSync(scratch, { recursive: true, force: true })
     }
+  } catch (e) {
+    if (e instanceof CliError) return { body: e.body, code: e.code }
+    return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
+}
+
+// ==== gates (ADR-0046 item 1, batching) ====
+
+// The steps `gates` can run, in the order stage.js reaches them before QC: the green check (through the heavy slot), the owns
+// check, the tests check, the knowledge lint and the QC admission. stage.js sends them as one runner call instead of one each.
+export const GATE_STEPS = ['green', 'owns', 'tests', 'lint', 'admit'] as const
+export type GateStep = (typeof GATE_STEPS)[number]
+// a lint is met when it has no failure the crew's diff caused (new: false marks one already there at the merge base), the same
+// rule stage.js uses to send the writer back (isNewFinding); predating failures and warnings go to QC, so they do not stop the gates
+export function gateMet(step: GateStep, body: Obj): boolean {
+  if (step === 'admit') return body.admitted === true
+  if (step === 'lint') return Array.isArray(body.failures) && body.failures.every((x: unknown) => isObj(x) && x.new === false)
+  return body.ok === true
+}
+
+// `gates --slug S --steps a,b,... [--cwd W --expect E --label L --tests-since SHA --wait-ms N] [--admit-label L --admit-title T
+// --admit-wait-ms N]`: runs each step as its own command would (green as `heavy ... -- factory check`), in the order given,
+// stopping at the first unmet one. Prints {ok, stopped, gates: {step: met}, codes: {step: exit}, steps: {step: body}}, plus
+// green's head, env and heavy meta at the top so the status line carries them. Exit 0 when every step is met, else the stopped
+// step's exit (1 when that was 0). The single commands stay as they are.
+export async function gatesMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  try {
+    const f = parseFlags(argv)
+    const dir = path.resolve(dirOf(f))
+    const repo = repoOf(f)
+    const slug = need(f, 'slug')
+    const steps = (need(f, 'steps') as string).split(',').map((s) => s.trim()).filter(Boolean)
+    if (steps.length === 0) throw usage('--steps names no step')
+    for (const s of steps) if (!(GATE_STEPS as readonly string[]).includes(s)) throw usage(`unknown gate step: ${s}; steps: ${GATE_STEPS.join(', ')}`)
+    if (new Set(steps).size !== steps.length) throw usage('--steps names a step twice')
+    const dr = ['--dir', dir, '--repo', repo]
+    const gates: Obj = {}
+    const codes: Obj = {}
+    const out: Obj = {}
+    let stopped: string | null = null
+    let top: Obj = {}
+    for (const s of steps as GateStep[]) {
+      let r: { body: Obj; code: number }
+      if (s === 'green') {
+        const cwd = need(f, 'cwd')
+        const since = str(f, 'tests-since')
+        const wait = str(f, 'wait-ms')
+        const self = [process.execPath, ...process.execArgv, fileURLToPath(import.meta.url)]
+        const inner = [...self, 'check', '--slug', slug, '--cwd', cwd, '--expect', str(f, 'expect') ?? 'green', ...(since ? ['--tests-since', since] : []), ...dr]
+        r = await heavyMain([...dr, '--slug', slug, '--label', str(f, 'label') ?? `${slug}-check`, '--cwd', cwd, ...(wait ? ['--wait-ms', wait] : []), '--', ...inner])
+        top = { ...(typeof r.body.head === 'string' ? { head: r.body.head } : {}), ...(typeof r.body.env === 'string' ? { env: r.body.env } : {}), ...(isObj(r.body.heavy) ? { heavy: r.body.heavy } : {}) }
+      } else if (s === 'admit') {
+        const label = str(f, 'admit-label')
+        const title = str(f, 'admit-title')
+        // ADR-0046 item 1: a call that ran green (up to HEAVY_WAIT_MS for the slot, then the suite) never adds an admit wait, so
+        // the whole call stays inside the runner's 600 s Bash timeout; stage.js re-runs a held admit alone, with its own wait
+        const admitWait = steps.includes('green') ? '0' : (str(f, 'admit-wait-ms') ?? '0')
+        r = main(['admit', '--wait-ms', admitWait, '--slug', slug, ...(label !== undefined ? ['--label', label] : []), ...(title !== undefined ? ['--title', title] : []), ...dr])
+      } else {
+        const cmd = s === 'owns' ? 'owns-check' : s === 'tests' ? 'tests-check' : 'knowledge-lint'
+        r = main([cmd, '--slug', slug, ...dr])
+      }
+      out[s] = r.body
+      codes[s] = r.code
+      gates[s] = gateMet(s, r.body)
+      if (!gates[s]) {
+        stopped = s
+        break
+      }
+    }
+    const ok = stopped === null
+    const code = ok ? 0 : (codes[stopped as string] as number) || 1
+    return { body: { ok, stopped, gates, codes, ...top, steps: out }, code }
   } catch (e) {
     if (e instanceof CliError) return { body: e.body, code: e.code }
     return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
@@ -3497,15 +3686,6 @@ function learnedOf(dir: string, slug: string): Obj[] {
     }
   })
 }
-// The repo paths the crew's learned items name as targets, only markdown ones (an item can't send the knowledge step to code).
-function learnedTargets(dir: string, slug: string): Set<string> {
-  const out = new Set<string>()
-  for (const item of learnedOf(dir, slug)) {
-    const t = repoPathOf(item.target)
-    if (t !== undefined && t.toLowerCase().endsWith('.md')) out.add(t)
-  }
-  return out
-}
 function setCrewState(dir: string, slug: string, state: 'finished' | 'stopped' | null): void {
   const p = `${CREW_STATE(dir, slug)}/state.json`
   try {
@@ -4049,6 +4229,9 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
+  gates: () => {
+    throw usage('gates is async: run it from the command line')
+  },
 }
 // A plugin module's command key never replaces a core command or another module's: main refuses and names the keys.
 const PLUGIN_COMMANDS: Record<string, (f: Flags) => Obj>[] = [INBOX_COMMANDS, COST_COMMANDS, QUEUE_COMMANDS, WORKTYPE_COMMANDS]
@@ -4111,6 +4294,11 @@ export function statusLine(body: Obj): string {
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
+  // ADR-0046 item 1: a gates result also carries each step's met and the step that stopped it
+  if (isObj(body.gates)) {
+    s.gates = Object.fromEntries(Object.entries(body.gates).filter(([, v]) => typeof v === 'boolean'))
+    s.stopped = typeof body.stopped === 'string' ? body.stopped : null
+  }
   return `truss-status: ${JSON.stringify(s)}`
 }
 // Takes the boolean --status-line flag out of argv (for heavy, only before its `--`, so the command after it is untouched).
@@ -4119,6 +4307,24 @@ export function takeStatusFlag(argv: string[]): { on: boolean; argv: string[] } 
   const head = cut < 0 ? argv : argv.slice(0, cut)
   const rest = cut < 0 ? [] : argv.slice(cut)
   return { on: head.includes('--status-line'), argv: [...head.filter((a) => a !== '--status-line'), ...rest] }
+}
+// ADR-0046 item 1: `--reap-first <slug>` reaps that crew's `<slug>-check` process groups (as `reap --slug <slug> --label
+// <slug>-check`) before the command runs, so stage.js folds the reap after a member into its next factory call instead of
+// spending a runner spawn on it. For heavy it is taken only before the `--`. Only a failed reap rides on the body (as reapedFirst), so the command's own output is unchanged.
+export function takeReapFlag(argv: string[]): { slug: string | null; argv: string[] } {
+  const cut = argv.indexOf('--')
+  const i = argv.indexOf('--reap-first')
+  if (i < 0 || (cut >= 0 && i > cut)) return { slug: null, argv }
+  return { slug: argv[i + 1] ?? '', argv: [...argv.slice(0, i), ...argv.slice(i + 2)] }
+}
+export function reapFirst(argv: string[], slug: string): Obj {
+  try {
+    const cut = argv.indexOf('--')
+    const f = parseFlags((cut < 0 ? argv : argv.slice(0, cut)).slice(1))
+    return cmdReap({ ...f, slug, label: `${slug}-check` })
+  } catch (e) {
+    return { error: e instanceof CliError ? JSON.stringify(e.body) : e instanceof Error ? e.message : String(e) }
+  }
 }
 // start's admission: a busy usage lock with no reading (StoreBusy from budgetVerdict, ADR-0038 amendment 2026-11-11) is never an
 // admit. start holds that crew with why `store busy: usage` and still reports the crews it already started in this call.
@@ -4131,8 +4337,11 @@ function heldOnBusy(f: () => Admission): Admission {
   }
 }
 if (isMain) {
-  const { on, argv } = takeStatusFlag(process.argv.slice(2))
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
+  const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
+  const { slug: reapSlug, argv } = takeReapFlag(plain)
+  const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : main(argv)
+  if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
   else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))

@@ -1,1 +1,20 @@
-{"architecture": "plugins/truss/docs/architecture.md", "adr": "plugins/truss/docs/adr", "merge": "sequential", "target": "main"}
+{
+  "architecture": "plugins/truss/docs/architecture.md",
+  "adr": "plugins/truss/docs/adr",
+  "merge": "sequential",
+  "target": "main",
+  "heavySlots": 2,
+  "pricing": {
+    "claude-opus-5-5": {
+      "inputPerMTok": 4, "outputPerMTok": 20, "cacheReadPerMTok": 0.2, "cacheWrite5mPerMTok": 5, "cacheWrite1hPerMTok": 8,
+      "fast": { "inputPerMTok": 8, "outputPerMTok": 40, "cacheReadPerMTok": 0.4, "cacheWrite5mPerMTok": 10, "cacheWrite1hPerMTok": 16 }
+    },
+    "claude-sonnet-5-5": {
+      "inputPerMTok": 2, "outputPerMTok": 10, "cacheReadPerMTok": 0.1, "cacheWrite5mPerMTok": 2.5, "cacheWrite1hPerMTok": 4
+    },
+    "claude-haiku-5-5": {
+      "inputPerMTok": 0.1, "outputPerMTok": 0.5, "cacheReadPerMTok": 0.01, "cacheWrite5mPerMTok": 0.125, "cacheWrite1hPerMTok": 0.2,
+      "longContext": { "abovePromptTokens": 100000, "inputPerMTok": 0.5, "outputPerMTok": 2.5, "cacheReadPerMTok": 0.05, "cacheWrite5mPerMTok": 0.625, "cacheWrite1hPerMTok": 1 }
+    }
+  }
+}
