@@ -165,6 +165,13 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - Entry points: plugins/truss/workflows/plan.js (lines 203-204), plugins/truss/bin/factory.ts (sessionAudit).
 - Owner: truss-workflow-scripts.
 
+## Crew product calls reach the program manager
+
+- What: a `PO: ESCALATE` opens a `pm-question` item the program manager resolves with `--by pm`; a `PO: SCOPE-CHANGE` opens a client-only `scope-change` item. Only the asking crew stops BLOCKED while it is open, and a resumed stage re-reads it through `factory inbox`, never a timer. `PO: DECIDE` never waits.
+- Entry points: `plugins/truss/workflows/stage.js` (`productCall`, `restoreCalls`, `pendingCall`), `plugins/truss/bin/inbox.ts` (`KINDS`); test `plugins/truss/tests/pm-calls-029.check.ts`.
+- Owner: `truss-workflow-scripts`.
+- Docs: [inbox](knowledge/inbox.md), `plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md` (amends ADR-0033 section B).
+
 ## Decision log line (decide)
 
 - What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3563`).
