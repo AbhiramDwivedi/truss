@@ -803,6 +803,69 @@ Added: 2026-11-12T18:00:00Z | truss 0.29.0 factory throughput and QC quality rel
 Source: goal
 Example: Given a nit whose fix would change behaviour, when the fix round runs, then it is left and listed under "Nits left".
 
+## R-116: Green, fix and QC rounds run only the tests a diff reaches
+Status: open
+Kind: functional
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given a diff to one factory command module, when green runs, then it runs the test files that import that module through the symbol graph, the crew's acceptance and regression tests, and the whole-repo checks its files trigger; and when the reach is unclear (config, shared test helpers, package.json, an unimported file), it runs the full suite.
+
+## R-117: The heavy slot fits the suite and a background run never overruns the Bash limit
+Status: open
+Kind: constraint
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given a suite run, when it holds the heavy slot, then the slot is released when the suite ends, the wait scales with the measured suite time, no more suites run at once than heavySlots allows, and a run that could pass 600 s goes to a background job.
+
+## R-118: Obvious calls do not stop a run
+Status: open
+Kind: functional
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given a session-audit hit from a no-work or in-progress transcript, when the audit runs, then it is ignored; given any other audit hit, the program manager may waive it with an evidence line in decisions.md; and scope, budget, approval, untrusted intake, permissions and outward-facing actions stay hard stops.
+
+## R-119: The manager prompts say the role is brave, empowered and accountable
+Status: open
+Kind: constraint
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given the program-manager and project-manager prompts, when a test reads them, then each contains the words brave, empowered and accountable.
+
+## R-120: Crews write doc fragments and factory stitch folds them
+Status: open
+Kind: functional
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given two crews that each add a feature-map entry as a fragment under docs/features.d, when they merge, then the docs do not conflict; and when factory stitch runs, then the fragments are folded into docs/features.md; and a merge that conflicts only in frontmatter resolves automatically.
+
+## R-121: Docs cite code by symbol, never by line
+Status: open
+Kind: constraint
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given a doc, ADR or knowledge file that cites a source file, when the doc-citations lint runs in the default suite, then a line-number citation fails it.
+
+## R-122: factory.ts and stage.js are split by command group and step
+Status: open
+Kind: constraint
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given the command modules and the stage step modules, when the suite runs, then bin/factory.ts only dispatches, behaviour is unchanged, and a test fails when the committed stage.js bundle differs from what its sources build.
+
+## R-123: A program-manager ruling at QC is built on resume
+Status: open
+Kind: functional
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given an answers resume whose saved tasks are all done and whose ruling orders edits, when the crew resumes, then a fix builder runs before green and its commits are in the head QC sees; and a member commit dropped after a PROPOSAL stop is merged or named.
+
+## R-124: A resumed run's cost and timing cover every session that ran it
+Status: open
+Kind: functional
+Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Source: goal
+Example: Given a run driven by two program-manager sessions, when the cost meter sweeps, then it reads the transcripts of both sessions and usage.jsonl holds the rows of each.
+
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.
 - No view across several repos or sessions, no history of past runs, and no phone or remote access (client altitude ruling).
