@@ -466,7 +466,7 @@ function cmdPlanWrite(f: Flags): Obj {
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  // An unapproved plan is overwritten; an approved one with a running crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
+  // An unapproved plan is overwritten; an approved one with a running or planned crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
   // seen is the approvedAt the unlocked check saw; an approve that lands after it (a different value) is refused, never archived.
   const keepExisting = (archive: boolean, seen: unknown = null): unknown => {
     if (!existsSync(`${dir}/plan.json`)) return null
@@ -479,8 +479,8 @@ function cmdPlanWrite(f: Flags): Obj {
     if (existing === undefined) return no('kept the existing plan: it is not a readable plan')
     if (existing.approvedAt === null) return null
     if (archive && existing.approvedAt !== seen) return no('kept the existing plan: it is approved')
-    const running = existing.crews.filter((c: Obj) => c.status === 'running').map((c: Obj) => String(c.slug))
-    if (running.length > 0) return no(`kept the existing plan: crew ${running.join(', ')} of the earlier run is running`)
+    const live = existing.crews.filter((c: Obj) => c.status === 'running' || c.status === 'planned')
+    if (live.length > 0) return no(`kept the existing plan: crew ${live.map((c: Obj) => String(c.slug)).join(', ')} of the earlier run is ${live.some((c: Obj) => c.status === 'running') ? 'running' : 'planned, not finished'}`)
     if (!archive) return existing.approvedAt
     const stamp = String(existing.approvedAt).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'run'
     let name = `plan-${stamp}`
