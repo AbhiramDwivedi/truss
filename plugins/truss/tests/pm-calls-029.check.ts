@@ -425,3 +425,24 @@ t('two runs in one truss dir with different approvedAt send escalate calls with 
   assert.ok(r2.endsWith(A2), r2)
   assert.ok(r1.startsWith('crew-call:a:build-export'), r1)
 })
+
+// ---- a long program manager answer reaches the asking member whole (ADR-0047 "a resolved item starts the member with the answer", R-86)
+
+t('a program manager answer longer than 800 characters reaches the asking member and the decision log whole', async () => {
+  const long = 'Include archived items, flagged. '.repeat(45) + 'TAIL-MARKER | keep pipes'
+  assert.ok(long.length > 1500)
+  const row = { id: ITEM_ID, ts: '2026-11-12T12:30:00.000Z', kind: 'pm-question', session: 'sess-1', crews: ['a'], ref: REF, blocking: true, title: 'Product call for a', state: 'resolved', applied: false, decision: 'answer', by: 'pm', note: long }
+  const runner = async ({ cmd, prompt }) => {
+    if (cmd !== 'inbox') return undefined
+    return rj({ items: /--kind(?:\s+|=)pm-question\b/.test(prompt) ? [row] : [], open: 0 })
+  }
+  const again = { 'a-builder': done('feat/b2'), 'a-builder-2': done('feat/b3'), 'a-po': 'PO: ESCALATE\nsame question' }
+  const r = await runStages([entryOf('a', { resume: 'stale', tasks: [TT, TF, TD], done: ['write-tests'] })], { labels: labelsOf('a', again), runner })
+  assert.equal(resOf(r).state, 'passed', JSON.stringify(resOf(r)).slice(0, 500))
+  const builders = r.calls.filter((c) => /^a-builder(-\d+)?$/.test(String(c.label)))
+  assert.ok(builders.length >= 1, 'a builder ran')
+  assert.ok(builders.every((c) => c.prompt.includes('TAIL-MARKER')), 'the asking member sees the end of the answer')
+  const d = runnerCalls(r, 'crew-decision')
+  assert.equal(d.length, 1)
+  has(d[0].prompt, 'TAIL-MARKER')
+})
