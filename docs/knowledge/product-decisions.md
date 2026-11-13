@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/bin/store.ts
   - plugins/truss/tests/workflows.check.ts
-verified: 9439b62de2d708c960a6a7cb59a745ca1ab83f95
+verified: 0f9ae4698616b3a3085fee1e8f92d93eeed77144
 ---
 
 # Product decisions
@@ -40,3 +40,10 @@ verified: 9439b62de2d708c960a6a7cb59a745ca1ab83f95
 - Reason: R-89 (one finisher per crew) must hold while a long acceptance test runs; a timer cannot refresh a blocked thread.
 - Cost: other tools and older plugin versions must agree on the format, and cross-host judgement relies on agreeing clocks. Reversal is cheap.
 - Decided by: builder, ADR-0048 (crew resume-guard).
+
+## crew-decisions: who answers a crew product call
+
+- Question: when a product owner escalates, who answers and who waits?
+- Answer: the program manager answers only an escalation inside approved scope (a `pm-question` item). A call that contradicts approved scope or a client ruling becomes a client-only `scope-change` item (or a `PROPOSAL:`) that the program manager never resolves. Only the asking crew waits, and a resumed stage re-reads the item through `factory inbox`, never a timer. A call touching no scope line is logged and never waits.
+- Reason: scope changes are the client to rule on (plan decision 07:22, goal file `crew-decisions.md` approved scope); design in `plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md`.
+- Decided by: program manager as product owner (plan finding 3 ruling).
