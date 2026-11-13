@@ -463,8 +463,9 @@ function cmdPlanWrite(f: Flags): Obj {
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
   // An unapproved plan is overwritten; an approved one with a running crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
-  const keepExisting = (archive: boolean): void => {
-    if (!existsSync(`${dir}/plan.json`)) return
+  // seen is the approvedAt the unlocked check saw; an approve that lands after it (a different value) is refused, never archived.
+  const keepExisting = (archive: boolean, seen: unknown = null): unknown => {
+    if (!existsSync(`${dir}/plan.json`)) return null
     let existing
     try {
       existing = parsePlan(readFileSync(`${dir}/plan.json`, 'utf8'))
@@ -472,17 +473,19 @@ function cmdPlanWrite(f: Flags): Obj {
       return no('kept the existing plan: it could not be read')
     }
     if (existing === undefined) return no('kept the existing plan: it is not a readable plan')
-    if (existing.approvedAt === null) return
+    if (existing.approvedAt === null) return null
+    if (archive && existing.approvedAt !== seen) return no('kept the existing plan: it is approved')
     const running = existing.crews.filter((c: Obj) => c.status === 'running').map((c: Obj) => String(c.slug))
     if (running.length > 0) return no(`kept the existing plan: crew ${running.join(', ')} of the earlier run is running`)
-    if (!archive) return
+    if (!archive) return existing.approvedAt
     const stamp = String(existing.approvedAt).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'run'
     let name = `plan-${stamp}`
     for (let n = 2; existsSync(`${dir}/${name}.json`) || existsSync(`${dir}/${name}.md`); n++) name = `plan-${stamp}-${n}`
     renameSync(`${dir}/plan.json`, `${dir}/${name}.json`)
     if (existsSync(`${dir}/plan.md`)) renameSync(`${dir}/plan.md`, `${dir}/${name}.md`)
+    return existing.approvedAt
   }
-  keepExisting(false)
+  const seenApproved = keepExisting(false)
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -494,7 +497,7 @@ function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
-    keepExisting(true)
+    keepExisting(true, seenApproved)
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
