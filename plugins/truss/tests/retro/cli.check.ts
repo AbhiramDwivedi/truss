@@ -277,30 +277,72 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     assert.ok(!r.out.includes('KEPT') && !r.out.includes('DROPPED'))
   })
 
-  test('evidence is checked against the extract\u2019s line counts: the last line is kept, one past it, line 0 and one bad entry among good ones are dropped', async () => {
+  // ADR-0051 Decision 6 replaces the extract line-count check: evidence is a counted measure and its value
+  const counted = (title: string, measure: string, value: number, extra: any = {}) => ({
+    category: 'time',
+    title,
+    evidence: [{ measure, value }],
+    cost: { wallMs: 900, tokens: null, usd: null },
+    fix: `change the prompt for ${title}`,
+    target: { kind: 'plugin', path: 'agents/project-manager.md' },
+    ...extra,
+  })
+  const MEASURES = { 'time.slotWaitMs.alpha': 900, 'cost.tokens.alpha.builder': 5000 }
+
+  test('parseFindings(report, measures): evidence naming a measure with its value is kept; a missing measure, a different value and one bad entry among good ones are dropped, naming the measure', async () => {
+    const { parseFindings } = await cliMod()
+    const names = { ok: `ok${hex(3)}`, two: `two${hex(3)}`, ghost: `ghost${hex(3)}`, wrong: `wrong${hex(3)}`, mixed: `mixed${hex(3)}` }
+    const report = [
+      block(counted(names.ok, 'time.slotWaitMs.alpha', 900)), // 1: kept
+      block(counted(names.two, 'time.slotWaitMs.alpha', 900, { evidence: [{ measure: 'time.slotWaitMs.alpha', value: 900 }, { measure: 'cost.tokens.alpha.builder', value: 5000 }] })), // 2: kept
+      block(counted(names.ghost, 'time.slotWaitMs.beta', 900)), // 3
+      block(counted(names.wrong, 'time.slotWaitMs.alpha', 901)), // 4
+      block(counted(names.mixed, 'time.slotWaitMs.alpha', 900, { evidence: [{ measure: 'time.slotWaitMs.alpha', value: 900 }, { measure: 'cost.tokens.alpha.builder', value: 1 }] })), // 5: one bad entry drops the finding
+    ].join('\n')
+    const r = parseFindings(report, MEASURES)
+    assert.deepEqual(r.kept.map(k => k.finding.title), [names.ok, names.two], JSON.stringify(r.dropped))
+    assert.deepEqual(r.dropped.map(d => d.n), [3, 4, 5])
+    assert.ok(r.dropped[0].reason.includes('time.slotWaitMs.beta'), r.dropped[0].reason)
+    assert.ok(r.dropped[1].reason.includes('time.slotWaitMs.alpha'), r.dropped[1].reason)
+    assert.ok(r.dropped[2].reason.includes('cost.tokens.alpha.builder'), r.dropped[2].reason)
+  })
+
+  test('parseFindings keeps a category outside CHECKLIST, and a finding whose target path is product code becomes a proposed-goal', async () => {
+    const { parseFindings } = await cliMod()
+    const o = `outside${hex(3)}`
+    const prod = `prod${hex(3)}`
+    const plug = `plug${hex(3)}`
+    const cfg = `cfg${hex(3)}`
+    const r = parseFindings(
+      block(counted(o, 'time.slotWaitMs.alpha', 900, { category: `brand new ${hex(3)}` })) +
+        block(counted(prod, 'time.slotWaitMs.alpha', 900, { target: { kind: 'plugin', path: 'src/app/main.ts' } })) +
+        block(counted(plug, 'time.slotWaitMs.alpha', 900, { target: { kind: 'plugin', path: 'plugins/truss/agents/retro-judge.md' } })) +
+        block(counted(cfg, 'time.slotWaitMs.alpha', 900, { target: { kind: 'project-config', path: '.claude/settings.json' } })),
+      MEASURES,
+    )
+    assert.deepEqual(r.kept.map(k => k.finding.title), [o, prod, plug, cfg], JSON.stringify(r.dropped))
+    assert.ok(r.kept[0].finding.category.startsWith('brand new '))
+    assert.equal(r.kept[1].finding.target.kind, 'proposed-goal')
+    assert.equal(r.kept[2].finding.target.kind, 'plugin')
+    assert.equal(r.kept[3].finding.target.kind, 'project-config')
+  })
+
+  test('findings checks evidence against retro/problems.json, not the extract: with no extract the counted finding is kept, and a wrong value is dropped', async () => {
     const a = await prepared()
     const { main } = await cliMod()
-    const names = { last: `last${hex(3)}`, past: `past${hex(3)}`, zero: `zero${hex(3)}`, mixed: `mixed${hex(3)}`, both: `both${hex(3)}`, other: `other${hex(3)}` }
+    rmSync(join(a.trussDir, 'retro', 'extract.json'), { force: true })
+    mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
+    writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures: MEASURES, findings: [] }))
+    const good = `good${hex(3)}`
+    const bad = `bad${hex(3)}`
     const report = join(a.root, 'report.md')
-    writeFileSync(
-      report,
-      [
-        block(judged(names.last, a.main, MAIN_LINES)), // 1: kept
-        block(judged(names.past, a.main, MAIN_LINES + 1)), // 2
-        block(judged(names.zero, a.main, 0)), // 3
-        block(judged(names.mixed, a.main, 3, { evidence: [{ file: a.main, line: 3 }, { file: a.main, line: 99 }] })), // 4: one bad entry drops the finding
-        block(judged(names.both, a.main, 3, { evidence: [{ file: a.main, line: 1 }, { file: a.main, line: MAIN_LINES }] })), // 5: kept
-        block(judged(names.other, `${a.sid}/subagents/${hex(3)}.jsonl`, 1)), // 6: not in the extract's files
-      ].join('\n'),
-    )
-    rmSync(join(a.root, 'proj'), { recursive: true, force: true }) // the extract alone decides (R-35)
+    writeFileSync(report, block(counted(good, 'time.slotWaitMs.alpha', 900)) + block(counted(bad, 'time.slotWaitMs.alpha', 1)))
     const r = await main(['findings', a.trussDir, 'j', report])
     const lines = linesOf(r.out)
-    assert.ok(lines.includes(`KEPT: F-1 | ${names.last}`), r.out)
-    assert.ok(lines.includes(`KEPT: F-2 | ${names.both}`), r.out)
-    for (const n of [2, 3, 4, 6]) assert.ok(lines.some(l => l.startsWith(`DROPPED: ${n} | `)), `block ${n}: ${r.out}`)
-    assert.equal(lines.pop(), 'OK: 2 kept, 4 dropped')
-    assert.deepEqual(readFindings(a.trussDir).findings.map((f: any) => f.title), [names.last, names.both])
+    assert.ok(lines.includes(`KEPT: F-1 | ${good}`), r.out)
+    assert.ok(lines.some(l => l.startsWith('DROPPED: 2 | ') && l.includes('time.slotWaitMs.alpha')), r.out)
+    assert.equal(lines.pop(), 'OK: 1 kept, 1 dropped')
+    assert.deepEqual(readFindings(a.trussDir).findings.map((f: any) => f.title), [good])
   })
 })
 
