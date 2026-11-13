@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync,
+  accessSync, appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -31,7 +31,7 @@ const retro = (): NonNullable<typeof retroMods> => {
 // ==== core ====
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, takeLease, refreshLease, releaseLease } from './store.ts'
+import { CliError, StoreBusy, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf, packageName, declares, withLock, writeJsonAtomic, commonDir, transcriptsOf, takeLease, refreshLease, releaseLease } from './store.ts'
 import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
@@ -399,6 +399,15 @@ function scriptPathFor(plugin: string, script: string, scriptsDir: string | unde
   copyFileSync(src, to)
   return to
 }
+// The session scripts dir the Workflow tool accepts: <dirname of the main transcript>/<sid>/workflows/scripts, where <sid> is the path
+// segment directly under <git common dir>/truss/ of the truss dir (a wave subdir is allowed). undefined when the session is not found.
+function sessionScriptsDir(repo: string, dir: string): string | undefined {
+  const rel = path.relative(`${flat(commonDir(repo))}/truss`, path.resolve(dir))
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return undefined
+  const sid = flat(rel).split('/')[0] as string
+  const main = transcriptsOf(sid).main
+  return main === null ? undefined : `${path.posix.dirname(flat(main))}/${sid}/workflows/scripts`
+}
 // The architecture doc as an absolute path (the key `architecture` of truss.json, repo-relative, default docs/architecture.md).
 const archPath = (repo: string, rel: unknown): string => path.isAbsolute(String(rel)) ? flat(String(rel)) : `${repo}/${typeof rel === 'string' && rel !== '' ? rel : 'docs/architecture.md'}`
 
@@ -420,7 +429,7 @@ function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir')), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
+      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir)), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -457,18 +466,40 @@ function cmdPlanWrite(f: Flags): Obj {
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
   if (!isObj(carried)) no('the plan.json block is not an object')
-  const keepExisting = (): void => {
-    if (!existsSync(`${dir}/plan.json`)) return
+  // An unapproved plan is overwritten; an approved one with a running or planned crew is refused; otherwise (archive) it moves to plan-<approvedAt>.json/.md.
+  // seen is the approvedAt the unlocked check saw; an approve that lands after it (a different value) is refused, never archived.
+  const keepExisting = (archive: boolean, seen: unknown = null): unknown => {
+    if (!existsSync(`${dir}/plan.json`)) return null
     let existing
     try {
       existing = parsePlan(readFileSync(`${dir}/plan.json`, 'utf8'))
     } catch {
       return no('kept the existing plan: it could not be read')
     }
-    if (existing === undefined) no('kept the existing plan: it is not a readable plan')
-    else if (existing.approvedAt !== null) no('kept the existing plan: it is approved')
+    if (existing === undefined) return no('kept the existing plan: it is not a readable plan')
+    if (existing.approvedAt === null) return null
+    if (archive && existing.approvedAt !== seen) return no('kept the existing plan: it is approved')
+    const live = existing.crews.filter((c: Obj) => c.status === 'running' || c.status === 'planned')
+    if (live.length > 0) return no(`kept the existing plan: crew ${live.map((c: Obj) => String(c.slug)).join(', ')} of the earlier run is ${live.some((c: Obj) => c.status === 'running') ? 'running' : 'planned, not finished'}`)
+    if (!archive) return existing.approvedAt
+    const stamp = String(existing.approvedAt).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'run'
+    let name = `plan-${stamp}`
+    for (let n = 2; existsSync(`${dir}/${name}.json`) || existsSync(`${dir}/${name}.md`); n++) name = `plan-${stamp}-${n}`
+    renameSync(`${dir}/plan.json`, `${dir}/${name}.json`)
+    if (existsSync(`${dir}/plan.md`)) renameSync(`${dir}/plan.md`, `${dir}/${name}.md`)
+    return existing.approvedAt
   }
-  keepExisting()
+  const seenApproved = keepExisting(false)
+  // test-only sync point (unset in production): after the unlocked first check, write <gate>/checked, then wait for <gate>/go; a timeout fails closed
+  const gate = process.env.TRUSS_TEST_PLAN_WRITE_GATE
+  if (gate !== undefined && gate !== '') {
+    writeFileSync(`${gate}/checked`, '')
+    const until = Date.now() + 30000
+    while (!existsSync(`${gate}/go`)) {
+      if (Date.now() > until) no('kept the existing plan: the test gate timed out')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal
@@ -480,7 +511,7 @@ function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
-    keepExisting()
+    keepExisting(true, seenApproved)
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
@@ -2246,7 +2277,7 @@ function cmdStart(f: Flags): Obj {
   const settings = settingsOf(repo)
   const plan = loadPlan(dir)
   excludeScratch(repo)
-  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir'))
+  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir))
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
@@ -3680,6 +3711,43 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
   appendDecisionLine(dir, line)
   return { ok: true, form, line }
 }
+// `goal-check --dir D --repo R [--goal ID]` runs the plan's goalCheck (or the goal's own) at the target head in a temporary detached
+// worktree, never in the main checkout, and never pushes or moves a branch. One JSON line, one decision line, ok or not.
+export function cmdGoalCheck(f: Flags): Obj {
+  const dir = dirOf(f)
+  const repo = repoOf(f)
+  const plan = loadPlan(dir)
+  const goalId = str(f, 'goal')
+  let command: unknown = plan.goalCheck
+  if (goalId !== undefined) {
+    const g = (Array.isArray(plan.goals) ? plan.goals : []).find((x: Obj) => isObj(x) && x.id === goalId)
+    if (!g) throw usage(`no goal ${goalId} in the plan`)
+    command = g.goalCheck
+  }
+  if (typeof command !== 'string' || command.trim() === '') throw usage(goalId === undefined ? 'the plan has no goalCheck' : `goal ${goalId} has no goalCheck`)
+  const target = settingsOf(repo).target
+  const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${target}^{commit}`])
+  const wt = flat(path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'truss-goalcheck-'))), 'wt'))
+  const label = goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`
+  let status = 1
+  let tail = ''
+  let added = false
+  try {
+    gitOrFail(repo, ['worktree', 'add', '-q', '--detach', wt, sha])
+    added = true
+    const r = spawnSync('bash', ['-c', command], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
+    status = r.error ? 1 : (r.status ?? 1)
+    tail = `${r.error ? `${r.error.message}\n` : ''}${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000)
+  } finally {
+    if (added) run(repo, ['worktree', 'remove', '--force', wt])
+    run(repo, ['worktree', 'prune'])
+    rmSync(path.dirname(wt), { recursive: true, force: true })
+  }
+  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
+  if (status !== 0) throw refuse(body)
+  return body
+}
 
 // ==== crew decisions ====
 
@@ -4258,7 +4326,7 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'persona-install': cmdPersonaInstall,
+  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check': cmdGoalCheck, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },

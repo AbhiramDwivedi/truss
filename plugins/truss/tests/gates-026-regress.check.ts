@@ -62,20 +62,27 @@ const MESSAGE = `Plan.\n\n\`\`\`\`json plan.json\n${PLAN_JSON}\n\`\`\`\`\n\n\`\`
 st('gates-026-regress: plan-write does not overwrite a plan approved while it waited for the plan lock', async () => {
   const env = mkEnv()
   const { dir: run } = mkRun(env.transcripts, 'wf_plan', [{ id: 'aarch', label: 'truss-designer', agentType: 'truss:design-engineer', metaModel: 'opus', result: MESSAGE }])
-  const existing = planObj([crew('kept', { stage: 0, verdict: 'design' })], { approval: 'client', approvedAt: null })
+  // the crew is finished, so the only thing that can refuse is the `seen` guard under the lock (a running crew would refuse at the first check)
+  const existing = planObj([crew('kept', { stage: 0, verdict: 'design', status: 'done' })], { approval: 'client', approvedAt: null })
   writePlan(env.dir, existing)
   // a live owner holds the plan lock: plan-write passes its first check (the plan is unapproved), then waits
   const lock = `${env.dir}/locks/plan.lock`
   mkdirSync(lock, { recursive: true })
   writeFileSync(`${lock}/owner.json`, JSON.stringify({ pid: process.pid, host: hostname(), token: 'test', since: Date.now() }))
-  const c = spawn(process.execPath, [env.factory, 'plan-write', '--dir', env.dir, '--repo', env.repo, '--transcript', run, '--label', 'truss-designer'], { windowsHide: true })
+  // the test-only sync point in cmdPlanWrite: <gate>/checked after the unlocked first check, then wait for <gate>/go
+  const gate = `${env.dir}/gate`
+  mkdirSync(gate, { recursive: true })
+  const c = spawn(process.execPath, [env.factory, 'plan-write', '--dir', env.dir, '--repo', env.repo, '--transcript', run, '--label', 'truss-designer'], { windowsHide: true, env: { ...process.env, TRUSS_TEST_PLAN_WRITE_GATE: gate } })
   let out = ''
   c.stdout.on('data', (d) => (out += d))
   c.stderr.on('data', (d) => (out += d))
   const closed = new Promise<number | null>((resolve) => c.on('close', resolve))
-  await new Promise((r) => setTimeout(r, 1500))
-  // the approval lands, then the lock is released
+  const until = Date.now() + 30000
+  while (!existsSync(`${gate}/checked`) && Date.now() < until) await new Promise((r) => setTimeout(r, 20))
+  assert.ok(existsSync(`${gate}/checked`), `plan-write reached its first check: ${out}`)
+  // the approval lands, the child is released, then the lock is released
   writePlan(env.dir, { ...existing, approvedAt: '2026-10-01T00:00:00.000Z' })
+  writeFileSync(`${gate}/go`, '')
   rmSync(lock, { recursive: true, force: true })
   const status = await closed
   assert.equal(status, 1, `plan-write must refuse: ${out}`)
