@@ -6,8 +6,8 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { realpathSync } from 'node:fs'
-import { CliError, isObj, refuse, usage } from './store.ts'
-import type { Flags, Obj } from './store.ts'
+import { CliError, isObj, refuse, usage } from './core.ts'
+import type { Flags, Obj } from './core.ts'
 import { INBOX_COMMANDS } from './inbox.ts'
 import { ATTACH_COMMANDS, COST_COMMANDS, recordSession } from './cost.ts'
 import { QUEUE_COMMANDS } from './queue.ts'
@@ -28,7 +28,7 @@ import { parseFlags } from './factory/shared.ts'
 import { argsFileOut, checkArgsFile, cmdStart } from './factory/start.ts'
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf } from './store.ts'
+export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf } from './core.ts'
 export type { Flags, Obj }
 // The names the command modules exported from here before the split, so existing imports keep working.
 export { loadPlan, savePlan, settingsOf, knowledgeCfgOf, crewWorktree, baseOf, appendEvent, appendDecision, readRoles, roleDefaults } from './factory/shared.ts'
