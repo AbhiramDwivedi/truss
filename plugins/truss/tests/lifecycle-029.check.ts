@@ -77,32 +77,38 @@ test('goal-check exits non-zero with the command output when goalCheck fails', (
   assert.equal(decisionLines(env.dir).length, before + 2, 'each run logs one decision line')
 })
 
-test('goal-check times out, kills the whole process tree and says so in one line', () => {
-  const pidFile = `${tmp('lc-hang-')}/pid`
-  const { env } = checkWorld({ goalCheck: `node hang.cjs ${pidFile}` })
+test('goal-check runs as a background heavy job: a wait that runs out says it is still running in one line, kills nothing, and the same line collects the result', () => {
+  const scratch = tmp('lc-slow-')
+  const pidFile = `${scratch}/pid`
+  const goFile = `${scratch}/go`
+  const { env } = checkWorld({ goalCheck: `node slow.cjs ${pidFile} ${goFile}` })
   git(env.repo, ['checkout', '-q', 'main'])
-  putFile(env.repo, 'hang.cjs', "const { spawn } = require('node:child_process')\nconst c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })\nrequire('node:fs').writeFileSync(process.argv[2], String(c.pid))\nsetInterval(() => {}, 1000)\n", 'add hanging check')
+  putFile(env.repo, 'slow.cjs', "const fs = require('node:fs')\nfs.writeFileSync(process.argv[2], String(process.pid))\nconst t = setInterval(() => { if (fs.existsSync(process.argv[3])) { clearInterval(t); console.log('SLOW-CHECK-DONE') } }, 20)\n", 'add slow check')
   git(env.repo, ['checkout', '-q', 'topic'])
-  const t0 = Date.now()
-  const res = runCli(env.factory, 'goal-check', ['--dir', env.dir, '--repo', env.repo], env.repo, { TRUSS_TRANSCRIPTS_ROOT: tmp('lc-root-'), CLAUDE_CONFIG_DIR: '', TRUSS_GOALCHECK_TIMEOUT_MS: '1500' })
-  assert.ok(Date.now() - t0 < 20000, 'the command returned after the limit, not after the hang')
-  assert.notEqual(res.status, 0)
-  const j = assertOneLine(res)
+  const worktrees = git(env.repo, ['worktree', 'list', '--porcelain'])
+  const before = decisionLines(env.dir).length
+  const line = ['--dir', env.dir, '--repo', env.repo]
+  const first = runCli(env.factory, 'goal-check', line, env.repo, { TRUSS_TRANSCRIPTS_ROOT: tmp('lc-root-'), CLAUDE_CONFIG_DIR: '', TRUSS_HEAVY_ATTACH_MS: '300' })
+  assert.notEqual(first.status, 0)
+  const j = assertOneLine(first)
   assert.equal(j.ok, false)
-  assert.match(String(j.error), /^goalCheck timed out after 2 s/)
-  assert.ok(decisionLines(env.dir).some((l) => /goalCheck timed out/.test(l)), 'the decision line says it timed out')
+  assert.equal(j.pending, true)
+  assert.match(String(j.error), /^goalCheck still running after \d+ s/)
+  assert.equal(decisionLines(env.dir).length, before, 'no decision line before the check has a result')
+  for (let i = 0; i < 100 && !existsSync(pidFile); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
   const pid = Number(readFileSync(pidFile, 'utf8'))
-  assert.ok(Number.isInteger(pid) && pid > 0)
-  let alive = true
-  for (let i = 0; i < 50 && alive; i++) {
-    try {
-      process.kill(pid, 0)
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    } catch {
-      alive = false
-    }
-  }
-  assert.equal(alive, false, `the grandchild ${pid} was killed with the tree`)
+  assert.doesNotThrow(() => process.kill(pid, 0), 'the check runs on in the background after the caller returned')
+  const lock = `${env.dir}/resources/heavy.lock/owner.json`
+  assert.ok(existsSync(lock), 'the goalCheck job holds a heavy slot')
+  writeFileSync(goFile, '')
+  const second = runCli(env.factory, 'goal-check', line, env.repo, { TRUSS_TRANSCRIPTS_ROOT: tmp('lc-root-'), CLAUDE_CONFIG_DIR: '', TRUSS_HEAVY_ATTACH_MS: '60000' })
+  assert.equal(second.status, 0, `${second.stdout} ${second.stderr}`)
+  const k = assertOneLine(second)
+  assert.equal(k.ok, true)
+  assert.ok(String(k.output).includes('SLOW-CHECK-DONE'), second.stdout)
+  assert.equal(decisionLines(env.dir).length, before + 1, 'one decision line, written when the check ended')
+  assert.ok(!existsSync(`${env.dir}/resources/heavy.lock`), 'the slot is released when the check ends')
+  assert.equal(git(env.repo, ['worktree', 'list', '--porcelain']), worktrees, 'the temporary worktree is gone')
 })
 
 test('goal-check runs in a temporary worktree, leaves the main checkout unchanged and never pushes', () => {

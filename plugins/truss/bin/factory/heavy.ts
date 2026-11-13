@@ -70,7 +70,10 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     const key = jobKey(slug, label, cwd, argv2)
     const jdir = `${JOBS(dir)}/${key}`
     const t0 = Date.now()
-    const job = { cmd: argv2, cwd, slug, label, slots, slot: !isCheck, waitLimit: explicit ?? slotWaitMs(dir), ...(explicit !== undefined ? { env: { TRUSS_HEAVY_WAIT_MS: String(explicit) } } : {}) }
+    const waitLimit = explicit ?? slotWaitMs(dir)
+    // budgetMs: how long the job may take in all, the slot wait plus slotWaitMs for the run itself (slotWaitMs is at least twice
+    // the longest recent slot run). stage.js polls a pending job until its age reaches this, so the two never disagree.
+    const job = { cmd: argv2, cwd, slug, label, slots, slot: !isCheck, waitLimit, budgetMs: waitLimit + slotWaitMs(dir), ...(explicit !== undefined ? { env: { TRUSS_HEAVY_WAIT_MS: String(explicit) } } : {}) }
     const attach = attachMsOf()
     for (let restarts = 0; ; ) {
       startJob(dir, key, job)
@@ -82,8 +85,12 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     }
     const res = readObj(`${jdir}/result.json`)
     if (res === undefined) {
-      const why = `still running after ${Date.now() - t0} ms in the background (job ${key}); run the same command again to wait for its result`
-      return { body: { heavy: { label, pending: true, job: key, waitedMs: Date.now() - t0, why } }, code: 1 }
+      // the job as started (this call's or an earlier one's): its start time and budget, not this call's
+      const started = readObj(`${jdir}/job.json`) ?? {}
+      const ageMs = Date.now() - (typeof started.since === 'number' ? started.since : t0)
+      const budgetMs = typeof started.budgetMs === 'number' ? started.budgetMs : job.budgetMs
+      const why = `still running after ${Math.round(ageMs / 1000)} s in the background (job ${key}); run the same command again to wait for its result`
+      return { body: { heavy: { label, pending: true, job: key, waitedMs: Date.now() - t0, ageMs, budgetMs, why } }, code: 1 }
     }
     try {
       if (res.ran === false) return { body: { heavy: { label, ran: false, waitedMs: res.waitedMs, waitLimitMs: res.waitLimitMs, why: res.why } }, code: 1 }
@@ -114,12 +121,15 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
   }
 }
 
-// A job dir is alive while it has a result, its wrapper's pid runs, or it was made under 10 s ago and the wrapper has not yet
-// written its pid.
-function jobAlive(jdir: string): boolean {
+// A job dir is alive while it has a result or its wrapper's pid runs. The spawner writes pid.json itself the moment spawn returns
+// (startJob), so a wrapper slow to start on a loaded host never looks dead. Before that, job.json names the spawner, and the job is
+// alive while the spawner runs. A dir with neither file is the instant between mkdir and the job.json write: alive for 10 s.
+export function jobAlive(jdir: string): boolean {
   if (existsSync(`${jdir}/result.json`)) return true
   const p = readObj(`${jdir}/pid.json`)
   if (p !== undefined) return pidAlive(p.pid)
+  const j = readObj(`${jdir}/job.json`)
+  if (j !== undefined) return pidAlive(j.spawner)
   try {
     return Date.now() - statSync(jdir).mtimeMs < 10000
   } catch {
@@ -140,9 +150,14 @@ function startJob(dir: string, key: string, job: Obj): void {
     rmSync(jdir, { recursive: true, force: true })
     mkdirSync(jdir)
   }
-  writeFileSync(`${jdir}/job.json`, JSON.stringify(job))
+  writeFileSync(`${jdir}/job.json`, JSON.stringify({ ...job, since: Date.now(), spawner: process.pid }))
   const self = [...process.execArgv, FACTORY, 'heavy-job', '--dir', dir, '--job', key]
-  spawn(process.execPath, self, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  const child = spawn(process.execPath, self, { detached: true, stdio: 'ignore', windowsHide: true })
+  child.on('error', () => {})
+  child.unref()
+  // the spawner records the wrapper's pid, not the wrapper: no window where a live job has no pid on disk
+  if (child.pid !== undefined) writeFileSync(`${jdir}/pid.json`, JSON.stringify({ pid: child.pid }))
+  else writeFileSync(`${jdir}/result.json`, JSON.stringify({ ran: false, waitedMs: 0, why: 'the heavy job could not be started' }))
 }
 
 // `heavy-job --dir D --job KEY` (internal, started by heavyMain): takes the slot when the job needs it, runs the command in its
@@ -156,7 +171,6 @@ export async function heavyJobMain(argv: string[]): Promise<{ body: Obj; code: n
     writeFileSync(`${jdir}/result.tmp`, JSON.stringify(r))
     renameSync(`${jdir}/result.tmp`, `${jdir}/result.json`)
   }
-  writeFileSync(`${jdir}/pid.json`, JSON.stringify({ pid: process.pid }))
   const job = readObj(`${jdir}/job.json`)
   if (job === undefined || !Array.isArray(job.cmd) || job.cmd.length === 0) {
     done({ ran: false, waitedMs: 0, why: 'the heavy job has no command' })
