@@ -28,7 +28,7 @@ test(P + 'plan-check accepts a stage-0-free change plan with approval auto, a go
   const plan = planObj([crew('rename-bin', { stage: 1 }), crew('rename-docs', { stage: 1 })], { approval: 'auto', goalCheck: 'node --test tests/zero-match.check.ts' })
   const r = planCheck(plan, '# Plan\n')
   accepted(r)
-  assert.equal(r.json.warnings, undefined, say(r))
+  assert.deepEqual(r.json.warnings, [], say(r))
   // the same plan with its change crews in stage 0 and no design crew is accepted too
   accepted(planCheck(planObj([crew('rename-bin', { stage: 0 })], { approval: 'auto' })))
 })
@@ -40,7 +40,7 @@ test(P + 'plan-check accepts a lean design crew, and a client plan with no stage
   )
   const r = planCheck(lean, '# Plan\n\nWhy stage 1: build needs seam\'s merged ADR and contract test\n')
   accepted(r)
-  assert.equal(r.json.warnings, undefined, say(r))
+  assert.deepEqual(r.json.warnings, [], say(r))
   accepted(planCheck(planObj([crew('alpha')], { approval: 'client', approvedAt: null })))
 })
 
@@ -78,12 +78,12 @@ test(P + 'plan-check warns, never refuses, on a later stage with no Why stage li
   // the Why line clears it
   const why = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n- Why stage 2: gamma needs alpha\'s merged parser\n')
   accepted(why)
-  assert.equal(why.json.warnings, undefined, say(why))
+  assert.deepEqual(why.json.warnings, [], say(why))
   // a bold Why line, with the colon inside or outside the bold, and a table cell clear it too
   for (const md of ['**Why stage 2:** gamma needs alpha\'s merged parser\n', '- **Why stage 2**: gamma needs alpha\'s parser\n', '| Stage | Why |\n| --- | --- |\n| 2 | Why stage 2: gamma needs alpha |\n', '| **Why stage 2:** gamma needs alpha |\n']) {
     const r = planCheck(planObj([crew('alpha', { stage: 1 }), crew('gamma', { stage: 2 })]), '# Plan\n\n' + md)
     accepted(r)
-    assert.equal(r.json.warnings, undefined, `${JSON.stringify(md)}: ${say(r)}`)
+    assert.deepEqual(r.json.warnings, [], `${JSON.stringify(md)}: ${say(r)}`)
   }
   // a Why line for another stage, or one buried mid-sentence, does not
   for (const md of ['Why stage 12: gamma needs alpha\n', 'We say Why stage 2: inline only\n']) {
@@ -99,7 +99,7 @@ test(P + 'plan-check warns, never refuses, on a later stage with no Why stage li
   assert.deepEqual(noLine.json.warnings.map((w: string) => w.split(':')[0]), ['stage 1 of goal gtwo'], say(noLine))
   const withLine = planCheck(added, '# Plan\n', { 'plan-gtwo.md': 'Why stage 1: gb needs ga\'s merged table\n' })
   accepted(withLine)
-  assert.equal(withLine.json.warnings, undefined, say(withLine))
+  assert.deepEqual(withLine.json.warnings, [], say(withLine))
 })
 
 test(P + 'approve --by auto approves an auto plan with a stage-0 crew and refuses a client plan', () => {

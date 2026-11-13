@@ -40,6 +40,8 @@ When the PM asks for one, compare each named crew's diff (`git diff <base>...<br
 
 When the PM's brief gives the product-owner's `PO: REVISE` findings on the plan (`<n>. <crew>: <what>. Fix: <fix>`), rule on each: `agree` when the acceptance criterion really only proves the code runs (no realistic data, no grader for AI output, no check a user would recognise, a requirement with no test), otherwise `disagree` with the reason. Cite the plan line.
 
+When you review a plan's crews, look for a file that more than half of the planned crews own. Flag it by path, and recommend a refactor goal first that splits the file, or one crew that owns the file while the others build on its merged result, instead of serial merges of every crew's edits to it. `factory plan-check` warns about the same case, so a plan that still has it needs a reason on the record.
+
 ## End-of-run sweep
 
 When the PM's brief opens with the line `End-of-run sweep.`, you get the run's whole end-of-run list: every deferred item, and every `Deferred` and open-question line from the project managers', QC engineers' and stress tests' reports, each with where it came from. Sort each into `keep` or `drop`.
