@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { analyze } from './timing.ts'
+import { codePart } from './problems-code.ts'
 
 type Json = Record<string, any>
 
@@ -52,7 +53,7 @@ export const fmtMs = (ms: number): string => {
   const m = Math.round(ms / MIN)
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`
 }
-const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 const fmtTokens =(n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n))
 
 // ---------- pricing: the client's `pricing` config, never a table of ours ----------
@@ -89,7 +90,7 @@ function rowUsd(pricing: unknown, r: Json): number | null {
 // ---------- the files ----------
 
 type Agent = { crew: string; role: string; name: string }
-type Ctx = {
+export type Ctx = {
   dir: string
   /** a plan.json exists: the dir is a truss run, so a finding may target a plugin file */
   truss: boolean
@@ -165,14 +166,14 @@ function readCtx(dir: string): Ctx {
 // ---------- findings ----------
 
 /** Sets a measure when it is a positive finite number; returns its key, or null when the files gave nothing. */
-const put = (M: Record<string, number>, k: string, v: number): string | null => {
+export const put = (M: Record<string, number>, k: string, v: number): string | null => {
   if (!Number.isFinite(v) || v <= 0) return null
   M[k] = v
   return k
 }
-const keys = (...ks: (string | null)[]): string[] => ks.filter((k): k is string => k !== null)
+export const keys = (...ks: (string | null)[]): string[] => ks.filter((k): k is string => k !== null)
 
-function finding(M: Record<string, number>, id: string, category: string, title: string, ms: string[], cost: Cost, fix: string, target: Target): Finding | null {
+export function finding(M: Record<string, number>, id: string, category: string, title: string, ms: string[], cost: Cost, fix: string, target: Target): Finding | null {
   if (cost.wallMs === null && cost.tokens === null && cost.usd === null) return null
   if (ms.length === 0 || ms.some((k) => !Object.hasOwn(M, k))) return null
   return { id, category, title, evidence: ms.map((k) => ({ measure: k, value: M[k] as number })), cost, fix, target }
@@ -180,7 +181,7 @@ function finding(M: Record<string, number>, id: string, category: string, title:
 
 const PLUGIN = 'plugins/truss'
 /** A plugin file when the dir is a truss run, else the project's own config: a plain project has no plugin file to fix. */
-const plug = (ctx: Ctx, path: string): Target => (ctx.truss ? { kind: 'plugin', path: `${PLUGIN}/${path}` } : { kind: 'project-config', path: 'CLAUDE.md' })
+export const plug = (ctx: Ctx, path: string): Target => (ctx.truss ? { kind: 'plugin', path: `${PLUGIN}/${path}` } : { kind: 'project-config', path: 'CLAUDE.md' })
 const cfg = (ctx: Ctx, path = ctx.truss ? '.claude/truss.json' : 'CLAUDE.md'): Target => ({ kind: 'project-config', path })
 
 // ---------- time ----------
@@ -499,5 +500,5 @@ export function assemble(directory: string, parts: Part[]): Problems {
 /** Counts the problems of a run dir or of a plain project dir: structured files only, ranked by measured cost. */
 export function problems(directory: string): Problems {
   const ctx = readCtx(directory)
-  return assemble(directory, [timePart(ctx), qualityPart(ctx), rulesPart(ctx), costPart(ctx)])
+  return assemble(directory, [timePart(ctx), ...codePart(ctx), qualityPart(ctx), rulesPart(ctx), costPart(ctx)])
 }
