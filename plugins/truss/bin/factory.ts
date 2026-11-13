@@ -3129,7 +3129,9 @@ export function worktreeChanges(wt: string, mainTop: string): { real: string[]; 
       const full = `${wt}/${rel.replace(/\/$/, '')}`
       try {
         if (lstatSync(full).isSymbolicLink()) {
-          const to = flat(path.resolve(path.dirname(full), readlinkSync(full)))
+          const target = path.resolve(path.dirname(full), readlinkSync(full))
+          // canonical parent, so a symlinked temp dir (macOS /var -> /private/var) compares equal to the realpath'd roots
+          const to = `${realOr(path.dirname(target))}/${path.basename(target)}`
           if (within(to, top) && !within(to, self) && !within(to, flat(wt))) {
             out.links.push(full)
             continue

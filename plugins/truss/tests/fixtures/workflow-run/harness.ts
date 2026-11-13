@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync, appendFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,7 @@ process.on('exit', () => {
 
 /** A fresh temp dir (removed when the test process exits); forward slashes. */
 export function tmp(prefix = 'fcli-'): string {
-  const d = flat(mkdtempSync(join(tmpdir(), prefix)))
+  const d = flat(realpathSync(mkdtempSync(join(tmpdir(), prefix))))
   temps.push(d)
   return d
 }
