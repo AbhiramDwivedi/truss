@@ -343,3 +343,24 @@ t('cd 17: start --resume gives the crew entry learned: [...] from crew-learned, 
   const again = env.run('start', { slug: 'x', resume: 'merge-ready' })
   assert.deepEqual(again.json.truss.crews[0].learned, [item])
 })
+
+const ROOT = resolve(PLUGIN, '..', '..')
+
+t('qc-3 docs 1: the inbox knowledge "Hold wording" bullet says a pm-question hold reads awaiting program manager (holdStop), not awaiting client', () => {
+  const bullet = readFileSync(`${ROOT}/docs/knowledge/inbox.md`, 'utf8').split('\n').find((l) => l.includes('Hold wording')) || ''
+  assert.ok(bullet, 'bullet exists')
+  assert.match(bullet, /awaiting program manager/)
+  assert.match(bullet, /holdStop/)
+  assert.doesNotMatch(bullet, /reads as a client wait/)
+  assert.match(bullet, /a crew resumed while its fix-step pm-question is still open stops awaiting the program manager, not the client/)
+})
+
+t('qc-3 docs 2: run SKILL.md product-call paragraph lists PO: SCOPE-CHANGE, opens an inbox item, and leaves no scope question to the PM', () => {
+  const para = readFileSync(`${PLUGIN}/skills/run/SKILL.md`, 'utf8').split('\n').find((l) => l.startsWith('A product question inside a crew')) || ''
+  assert.ok(para, 'paragraph exists')
+  assert.match(para, /PO: SCOPE-CHANGE/)
+  assert.match(para, /pm-question/)
+  assert.match(para, /scope-change/)
+  assert.doesNotMatch(para, /Cross-crew and scope questions stay yours/)
+  assert.doesNotMatch(para, /escalates to you \(a `QUESTION:`\) when the question is not a product question, is outside the crew's approved scope/)
+})
