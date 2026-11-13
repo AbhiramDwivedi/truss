@@ -8,7 +8,7 @@ sources:
   - plugins/truss/workflows-src/stage/replies.js
   - plugins/truss/workflows-src/stage/crew.js
   - plugins/truss/tests/pm-calls-029.check.ts
-verified: 2180477
+verified: e91664f
 ---
 
 # Inbox: crew product calls
