@@ -272,6 +272,7 @@ export function runCli(factory: string, command: string, args: string[] = [], cw
   delete env.TRUSS_MIN_FREE_MB
   delete env.TRUSS_SESSION_START
   delete env.CLAUDE_PID
+  delete env.CLAUDE_CODE_SESSION_ID // a session id inherited from the Claude Code running the tests would attach it to every run dir (cost.ts recordSession)
   env.TRUSS_SAMPLE = highSampleFile()
   Object.assign(env, extraEnv)
   const r = spawnSync(process.execPath, [factory, command, ...args], { cwd, encoding: 'utf8', timeout: 120_000, env })

@@ -185,3 +185,16 @@ Long-term cost, accepted by the ruling: an attended session at its cap stops at 
 Decided by: the PM, on the checking engineer's review of the review-fixes round (decision 12:58, checker-7 item 2). The case is in `tests/cost-026.check.ts`.
 
 Until this amendment, `budgetVerdict` returned `held: false` when the usage lock stayed busy for its 1000 ms wait and no `usage.jsonl` existed. That let a crew in with unknown spend, a fail-open that parallel admits can reach. Now the verdict sweeps once more with the store's default wait (5 s, under the 120 s stale age), and if the lock is still busy it throws `StoreBusy` (exit 2, `store busy: usage`). It never returns a hold, because a hold raises a budget escalation that needs a typed raise. Exit 2 is never an admit: `admit` and `queue-next` exit 2 (`stage.js` retries `admit` once, then stops BLOCKED), and `start` lists the crew in `held` with that `why`. When `usage.jsonl` exists, a busy lock still reads it as it stands, and the lag is accepted (Decision 4).
+
+## Amendment 2026-11-13: a resumed run sweeps every session that ran it
+
+Decided by: the program manager, on item 9 of the 0.31.0 speed goal. The cases are in `tests/cost-sessions-031.check.ts`.
+
+Until this amendment `sweep` read only the transcripts of the session its run dir is named after. Wave 4 was started by one PM session and finished by a second one, and none of the second session's usage reached `usage.jsonl`. Its cost, budget checks and timing were all too low.
+
+- A session that runs a state-changing factory command on a run dir named after another session is recorded in `D/sessions/<sid>.json` (`attach` in `bin/factory.ts`, `recordSession` and `ATTACH_COMMANDS` in `bin/cost.ts`). The session id comes from `CLAUDE_CODE_SESSION_ID`, which Claude Code sets in a Bash call's environment; a subagent or Workflow run inherits the parent session's id. The record is created once and never rewritten. A read such as `factory cost` never attaches.
+- `sweep` reads the union of the transcripts of the session D is named after and every recorded one (`sessionsOf`). The cursor stays keyed by transcript path, so each session keeps its own offsets; the msgId dedupe, the lock and the busy and StoreBusy rules are unchanged. Each row keeps the `sid` of its transcript.
+- The Claude Code estimate is kept per session in the cursor's `ccEstimates`, and `ccEstimate` is their sum.
+- Crew attribution reads the agent metadata of every recorded session, so a Workflow crew that the resuming session started is attributed to its crew.
+
+Long-term cost, accepted: a resuming session's whole transcript counts toward the run, including work it did before it attached. The session cap (`sessionUsd`) of a resumed run therefore counts both sessions. A run that a session resumed before 0.31.0 has no record; it can be added by hand as `D/sessions/<sid>.json` with `{v: 1, sid, ts, by}`.

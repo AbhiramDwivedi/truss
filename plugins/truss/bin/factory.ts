@@ -36,7 +36,7 @@ import type { Flags, Obj } from './store.ts'
 export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf }
 export type { Flags, Obj }
 import { INBOX_COMMANDS, approvalProof, blockingFor, confirmApproval, escalate, onPlanApprove } from './inbox.ts'
-import { COST_COMMANDS, budgetVerdict, crewCost } from './cost.ts'
+import { ATTACH_COMMANDS, COST_COMMANDS, budgetVerdict, crewCost, recordSession } from './cost.ts'
 import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS, profilesOf, workTypeErrors } from './worktypes.ts'
 import { ltcCrewGate, ltcPlan, ltcPlanGate } from './guard.ts'
@@ -4370,6 +4370,19 @@ function positionalsToFlags(argv: string[], names: string[]): string[] {
   return out
 }
 
+// A session that runs a state-changing command on a run dir named after another session has resumed that run: record it, so the cost
+// meter sweeps its transcripts too (recordSession, sessionsOf in cost.ts). Claude Code sets CLAUDE_CODE_SESSION_ID in a Bash call's
+// environment, and a subagent or Workflow inherits the parent session's id, whose transcripts hold the agents' too. Never fails the command.
+function attach(command: string, f: Flags): void {
+  const dir = typeof f.dir === 'string' ? f.dir : undefined
+  if (!ATTACH_COMMANDS.includes(command) || dir === undefined || !path.isAbsolute(dir)) return
+  try {
+    recordSession(dir, process.env.CLAUDE_CODE_SESSION_ID, command)
+  } catch {
+    // a record that cannot be written leaves the meter as it was before 0.31.0: the run dir's own session only
+  }
+}
+
 // Runs one command and returns what it printed and its exit code.
 export function main(argv: string[]): { body: Obj; code: number } {
   try {
@@ -4378,7 +4391,9 @@ export function main(argv: string[]): { body: Obj; code: number } {
     const fn = command === undefined ? undefined : COMMANDS[command]
     if (fn === undefined) throw usage(`unknown command: ${command ?? '(none)'}; commands: ${Object.keys(COMMANDS).join(', ')}`)
     const argv2 = command === 'decision-reply' ? positionalsToFlags(rest, ['id', 'reply']) : command === 'resolve' || command === 'mark-applied' ? positionalsToFlags(rest, ['id']) : rest
-    return { body: fn(parseFlags(argv2)), code: 0 }
+    const flags = parseFlags(argv2)
+    attach(command as string, flags)
+    return { body: fn(flags), code: 0 }
   } catch (e) {
     if (e instanceof CliError) return { body: e.body, code: e.code }
     return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }

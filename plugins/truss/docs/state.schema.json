@@ -128,7 +128,7 @@
       }
     },
     "usageCursor": {
-      "description": "D/usage-cursor.json. files is keyed by transcript path (lowercased on win32); ccEstimate is the newest cost-state estimate.",
+      "description": "D/usage-cursor.json. files is keyed by transcript path (lowercased on win32), over every session of the run (cost.ts sessionsOf); ccEstimates holds each session's newest cost-state estimate and ccEstimate is their sum (0.31.0; an older cursor has ccEstimate only).",
       "type": "object",
       "additionalProperties": false,
       "required": ["files", "project", "ccEstimate"],
@@ -143,8 +143,23 @@
           }
         },
         "project": { "type": ["string", "null"] },
-        "ccEstimate": { "type": ["number", "null"] }
+        "ccEstimate": { "$ref": "#/$defs/ccEstimate" },
+        "ccEstimates": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ccEstimate" } }
       }
+    },
+    "ccEstimate": {
+      "description": "A Claude Code cost-state estimate as the sweep keeps it: usd and the line's time in ms; null when none was seen.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["usd", "ts"],
+      "properties": { "usd": { "type": "number" }, "ts": { "type": "number" } }
+    },
+    "runSession": {
+      "description": "D/sessions/<sid>.json, created once by cost.ts recordSession when a session other than the one D is named after runs a state-changing factory command on D.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "sid", "ts", "by"],
+      "properties": { "v": { "const": 1 }, "sid": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }, "ts": { "type": "string" }, "by": { "type": "string" } }
     },
     "queueItem": {
       "description": "S/queue/items/<Q-id>.json. An item is a snapshot taken at first sight; a later edit to its source is ignored.",
