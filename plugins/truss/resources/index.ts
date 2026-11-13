@@ -1,5 +1,6 @@
 // truss ADR-0015 Decision 1: the sampler, the heavy slot lock and the process-group helpers.
 // Node built-ins only (P19). Every file it writes lives under <dir>/resources/ of the truss dir.
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -81,8 +82,38 @@ function worktreeUsage(root: string): Worktree[] {
   return found.map((f) => ({ path: f.path, procs: f.procs, rssMB: Math.round(f.rssKB / 1024) }))
 }
 
+/**
+ * macOS os.freemem() counts only strictly free pages; inactive and speculative pages are reclaimed on
+ * demand, so available memory is free + inactive + speculative (as Linux MemAvailable). Null if unparsable.
+ */
+export function darwinAvailableMB(vmStatText: string): number | null {
+  const size = /page size of (\d+) bytes/.exec(vmStatText)
+  if (!size) return null
+  const pageSize = Number(size[1])
+  let pages = 0
+  for (const name of ['free', 'inactive', 'speculative']) {
+    const m = new RegExp(`^Pages ${name}:\\s+(\\d+)\\.?\\s*$`, 'm').exec(vmStatText)
+    if (!m) return null
+    pages += Number(m[1])
+  }
+  if (!(pageSize > 0)) return null
+  return Math.round((pages * pageSize) / MB)
+}
+
+function freeMBOf(platform: string, vmStat: () => string): number {
+  if (platform === 'darwin') {
+    try {
+      const mb = darwinAvailableMB(vmStat())
+      if (mb !== null) return mb
+    } catch {
+      // vm_stat missing or slow: fall back to os.freemem
+    }
+  }
+  return Math.round(os.freemem() / MB)
+}
+
 /** Reads the host, or TRUSS_SAMPLE (a JSON file; the word `error` or a bad file throws). */
-export function sample(opts: { worktreesRoot?: string } = {}): Sample {
+export function sample(opts: { worktreesRoot?: string; platform?: string; vmStat?: () => string } = {}): Sample {
   const seam = process.env.TRUSS_SAMPLE
   if (seam !== undefined && seam !== '') {
     if (seam === 'error') throw new Error('TRUSS_SAMPLE=error')
@@ -94,7 +125,7 @@ export function sample(opts: { worktreesRoot?: string } = {}): Sample {
     }
     return o
   }
-  const s: Sample = { freeMB: Math.round(os.freemem() / MB), totalMB: Math.round(os.totalmem() / MB), cpus: os.availableParallelism(), ...pressureOf() }
+  const s: Sample = { freeMB: freeMBOf(opts.platform ?? process.platform, opts.vmStat ?? (() => execFileSync('vm_stat', { encoding: 'utf8', timeout: 2000, windowsHide: true }))), totalMB: Math.round(os.totalmem() / MB), cpus: os.availableParallelism(), ...pressureOf() }
   const la = os.loadavg()
   if (!la.every((v) => v === 0)) s.load1 = la[0]
   if (opts.worktreesRoot) s.worktrees = worktreeUsage(opts.worktreesRoot)
