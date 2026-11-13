@@ -343,6 +343,27 @@ t('a crew resumed while its fix-step pm-question is still open stops awaiting th
   has(s.text, row.id)
 })
 
+// ---- stress-test regressions (crew-decisions, head 95055bf6): an item resolved with no note must not stop the crew for good
+
+for (const kind of ['pm-question', 'scope-change']) {
+  t(`a ${kind} item resolved with no note does not stop the resumed crew when the program manager answers through the resume`, async () => {
+    const row = { id: ITEM_ID, ts: '2026-11-12T12:30:00.000Z', kind, session: 'sess-1', crews: ['a'], ref: REF, blocking: true, title: 'Product call for a', state: 'resolved', applied: false, decision: kind === 'scope-change' ? 'approve' : 'answer', by: kind === 'scope-change' ? 'client' : 'pm', note: '' }
+    const runner = async ({ cmd, prompt }) => {
+      if (cmd !== 'inbox') return undefined
+      return rj({ items: new RegExp(`--kind(?:\\s+|=)${kind}\\b`).test(prompt) ? [row] : [], open: 0 })
+    }
+    const again = { 'a-builder': done('feat/b2'), 'a-builder-2': done('feat/b3'), 'a-po': 'PO: ESCALATE\nsame question' }
+    const answers = [{ at: 'build-export', text: 'PM-ANSWER: include them' }]
+    const r = await runStages([entryOf('a', { resume: 'answers', tasks: [TT, TF, TD], done: ['write-tests'], answers })], { labels: labelsOf('a', again), runner })
+    const s = resOf(r)
+    assert.notEqual(s.tag, 'QUESTION', `the answered item no longer stops the crew: ${JSON.stringify(s).slice(0, 500)}`)
+    assert.equal(s.state, 'passed', JSON.stringify(s).slice(0, 500))
+    const builders = r.calls.filter((c) => /^a-builder(-\d+)?$/.test(String(c.label)))
+    assert.ok(builders.length >= 1, 'a builder ran for the asking task')
+    assert.ok(builders.every((c) => c.prompt.includes('PM-ANSWER: include them')), 'the member starts with the program manager answer from the resume')
+  })
+}
+
 // ---- approvedAt makes the crew-call ref unique per run (PM ruling truss-pm5, 2026-11-12)
 
 t('start carries the plan approvedAt in args.truss when it is a string and omits the key otherwise', () => {
