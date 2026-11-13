@@ -147,10 +147,24 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Configurable heavy slot count
 
-- What: up to `heavySlots` red and green checks (`factory heavy`) run at once across the session. The count is the `.claude/truss.json` key `heavySlots` (1-16), else `TRUSS_HEAVY_SLOTS`, else `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` from the host. Slot 1 is `resources/heavy.lock/`, slot n is `resources/heavy-<n>.lock/`; `heavy` takes the first free slot and prints the count as `heavy.slots`.
+- What: up to `heavySlots` red and green checks (`factory heavy`) run at once across the session. The count is the `.claude/truss.json` key `heavySlots` (1-16), else `TRUSS_HEAVY_SLOTS`, else `max(1, min(4, floor(cpus/4), floor(totalGB/8)))` from the host. Slot 1 is `resources/heavy.lock/`, slot n is `resources/heavy-<n>.lock/`; `heavy` takes the first free slot and prints the count as `heavy.slots`. Since 0.31.0 this repo's `.claude/truss.json` sets no `heavySlots`, so it runs at the host default, and the slot wait scales with the measured suite time (`slotWaitMs`: twice the longest of the last 10 slot runs, 540 s to 2 hours).
 - Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavySlotsOf`), `plugins/truss/resources/index.ts` (`defaultHeavySlots`, `takeHeavySlot`, `releaseHeavySlot`), `plugins/truss/docs/truss-config.schema.json` (`heavySlots`); tests `plugins/truss/tests/throughput-029.check.ts` (`i4 *`).
 - Owner: `truss-plugin-node`.
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 4, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 3, [architecture](../plugins/truss/docs/architecture.md) ("Heavy slots").
+
+## Background heavy jobs (0.31.0)
+
+- What: `factory heavy` starts a detached `factory heavy-job` wrapper that owns the slot for exactly the command's lifetime and releases it when the command exits, so a runner Bash call killed at 600 s no longer frees a slot while its suite still runs. The caller waits up to 540 s (`HEAVY_ATTACH_MS`, env `TRUSS_HEAVY_ATTACH_MS`), then prints `{heavy: {pending: true}}` with exit 1; running the same line again attaches to the same job. `stage.js` `check()` re-runs a pending line up to `HEAVY_POLLS = 8` times, then stops the crew BLOCKED with `heavy run still going`. The wrapper takes no slot for `factory check`, which takes it itself only for a full suite.
+- Entry points: `plugins/truss/bin/factory.ts` (`heavyMain`, `heavyJobMain`, `jobKey`, `startJob`, `slotWaitMs`, `recordHeavyTime`), `plugins/truss/workflows/stage.js` (`check`, `pendingOf`, `HEAVY_POLLS`); tests `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`.
+- Owner: `truss-plugin-node` (factory.ts), `truss-workflow-scripts` (stage.js).
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Background heavy jobs").
+
+## Targeted tests (0.31.0)
+
+- What: a green check runs the acceptance test with any trailing whole-suite step cut (`stripBlanketSuite`), then the tests the crew's diff reaches through imports and test-side string literals (`selectTests`), plus `targetedTests.map` entries for whole-repo checks and non-JS stacks. It runs the full suite instead when reach is unclear, and says why. Targeted runs take no heavy slot. After a QC PASS the stage runs `check --full` once, unless green already ran the full suite on that head. QC gets green's record and does not re-run a suite green on the same head. `plan-check` warns about an acceptance test that ends in `npm test`, and init proposes `targetedTests` for a non-JS stack.
+- Entry points: `plugins/truss/bin/testmap.ts` (`selectTests`, `selectForCheckout`, `stripBlanketSuite`), `plugins/truss/bin/factory.ts` (`checkTests`, `cmdCheck`), `plugins/truss/workflows/stage.js` (`noteTests`, `fullSuite`, `greenResultLines`), `plugins/truss/docs/truss-config.schema.json` (`targetedTests`); tests `plugins/truss/tests/testmap-031.check.ts`, `plugins/truss/tests/heavy-031.check.ts`, `plugins/truss/tests/stage-tests-031.check.ts`, `plugins/truss/tests/speed-031.check.ts`.
+- Owner: `truss-plugin-node` (testmap.ts, factory.ts), `truss-workflow-scripts` (stage.js).
+- Docs: [architecture](../plugins/truss/docs/architecture.md) ("Targeted tests"), [testing](knowledge/testing.md) ("Targeted tests").
 
 ## Long-context price tier (Claude 5.5 prices)
 
