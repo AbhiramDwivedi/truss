@@ -39,7 +39,7 @@ const norm = (p: string): string => {
   }
 }
 
-const TRUSS_KEYS = ['crews', 'dir', 'kind', 'personas', 'platform', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
+const TRUSS_KEYS = ['approvedAt', 'crews', 'dir', 'kind', 'personas', 'platform', 'plugin', 'repo', 'reworkAllowance', 'roles', 'scriptPath', 'target']
 const OUTPUT_KEYS = ['held', 'projectManagers', 'refused', 'stale', 'truss', 'unfinished', 'warnings']
 const ENTRY_KEYS = ['acceptanceTest', 'adrs', 'answers', 'architecture', 'base', 'branch', 'direction', 'done', 'goalFile', 'guarded', 'head', 'highImpact', 'labelFrom', 'livePage', 'members', 'ownTests', 'owns', 'prior', 'resume', 'slug', 'spent', 'stage', 'stressTest', 'tasks', 'ux', 'worktree']
 
