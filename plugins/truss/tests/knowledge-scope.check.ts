@@ -1,7 +1,8 @@
 // @ts-nocheck
 // truss ADR-0033 review fixes, factory side:
-//   1. owns-check exempts a file only when the crew's knowledge commit (subject `docs(knowledge): <slug> learned`) is the only commit
-//      that changed it and it is a doc path (feature map, ADR dir, .claude/agents/*.md, any *.md); never code, never another member's edit
+//   1. owns-check exempts a .md file on a doc path (feature map, architecture doc, ADR dir, rules and knowledge dirs, agents index,
+//      product decisions, .claude/agents/*.md body, item targets) that any crew commit changed (ADR-0046 item 0: the crew owns its
+//      docs); never code
 //   2. check --expect green lists the non-test source files the crew diff added, renamed or deleted (sourceChanges), so stage.js can
 //      run the knowledge step without a learned item
 //   3. featureMap and adrDir are keys of .claude/truss.json: declared in the schema, passed on to stage.js by start when they are
@@ -76,15 +77,12 @@ t('scope 2: a knowledge commit that edits a .ts target fails; the doc files in t
   assert.deepEqual(r.exempt, ['docs/features.md'])
 })
 
-t('scope 2b (review 6): the commit subject alone never counts: a forged subject with no knowledge-commit record exempts nothing; a record for another sha does not either', () => {
+t('scope 2b (ADR-0046 item 0): the exemption needs no knowledge-commit record: a crew doc commit is exempt with or without one', () => {
   const { env, wt } = world()
-  commitAll(wt, { 'docs/features.md': 'map\n' }, KNOWLEDGE)
-  assert.deepEqual(ownsFull(env).outside, ['docs/features.md'], 'no record')
-  const other = git(wt, ['rev-parse', 'HEAD~1'])
-  assert.equal(env.run('knowledge-commit', { slug: 's', sha: other }).status, 0)
-  assert.deepEqual(ownsFull(env).outside, ['docs/features.md'], 'a record for a different commit')
+  commitAll(wt, { 'docs/features.md': 'map\n' }, 'feat: the builder updates the map with its code')
+  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/features.md'] }, 'no record')
   record(env, wt)
-  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/features.md'] }, 'the record for the commit that changed it')
+  assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/features.md'] }, 'with a record')
 })
 
 t('scope 2c (review 6): only .md files are exempt: a featureMap or adrDir file of another extension is not; CLAUDE.md and AGENTS.md are only as item targets', () => {
@@ -117,29 +115,33 @@ t('scope 2e (review 6): a non-ASCII doc path is exempt: owns-check and the exemp
   assert.deepEqual(ownsFull(env), { status: 0, outside: [], exempt: ['docs/adr/0041-ünï.md', 'docs/übersicht.md'] })
 })
 
-t('scope 3: a member code change outside owns still fails, and so does a member edit of a doc path', () => {
+t('scope 3 (ADR-0046 item 0): a member code change outside owns still fails; a member edit of a doc path is exempt (the crew owns its docs)', () => {
   const { env, wt } = world()
   putFile(wt, 'lib/out.ts', 'x\n', 'member work')
   putFile(wt, 'docs/features.md', 'member wrote this\n', 'member also edits the map')
-  const r = owns(env)
+  const r = ownsFull(env)
   assert.equal(r.status, 1)
-  assert.deepEqual([...r.outside].sort(), ['docs/features.md', 'lib/out.ts'])
+  assert.deepEqual(r.outside, ['lib/out.ts'])
+  assert.deepEqual(r.exempt, ['docs/features.md'])
 })
 
-t('scope 4: a doc a member also changed is not exempt, even when the knowledge commit changed it too', () => {
+t('scope 4 (ADR-0046 item 0): a doc both a member and the knowledge commit changed is exempt; a doc that is not on a doc path is not', () => {
   const { env, wt } = world()
   putFile(wt, 'docs/features.md', 'member\n', 'member edits the map')
   putFile(wt, 'docs/features.md', 'member\nknowledge\n', KNOWLEDGE)
+  putFile(wt, 'docs/a.md', 'x\n', 'member writes a loose doc')
   record(env, wt)
-  assert.deepEqual(owns(env).outside, ['docs/features.md'])
+  assert.deepEqual(ownsFull(env), { status: 1, outside: ['docs/a.md'], exempt: ['docs/features.md'] })
 })
 
-t('scope 5: the record is per crew: another crew\'s knowledge-commit record exempts nothing here', () => {
-  const { env, wt } = world()
-  commitAll(wt, { 'docs/a.md': 'x\n' }, KNOWLEDGE)
-  const sha = git(wt, ['rev-parse', 'HEAD'])
-  assert.equal(env.run('knowledge-commit', { slug: 'other', sha }).status, 0)
-  assert.deepEqual(owns(env).outside, ['docs/a.md'])
+t('scope 5 (ADR-0046 item 0): the architecture doc (truss.json `architecture`, default docs/architecture.md) is a doc path', () => {
+  const a = world()
+  putFile(a.wt, 'docs/architecture.md', 'x\n', 'builder updates the module map')
+  assert.deepEqual(ownsFull(a.env), { status: 0, outside: [], exempt: ['docs/architecture.md'] })
+  const b = world({ merge: 'sequential', target: 'main', architecture: 'arch/ARCH.md' })
+  putFile(b.wt, 'arch/ARCH.md', 'x\n', 'builder updates the module map')
+  putFile(b.wt, 'docs/architecture.md', 'x\n', 'not the configured doc')
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['docs/architecture.md'], exempt: ['arch/ARCH.md'] })
 })
 
 t('scope 6: the configured featureMap and adrDir (as .md) are doc paths of the recorded knowledge commit; without the key they are not', () => {
@@ -195,6 +197,25 @@ t('diff 2: a crew that changed no source file has an empty sourceChanges, and a 
   git(wt, ['reset', '-q', '--hard', 'main'])
   const j = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green' }))
   assert.deepEqual(j.sourceChanges, [])
+})
+
+// ADR-0046 item 3: a stress-fix round's green check names the test files changed since the round's start head
+t('diff 3: check --expect green --tests-since <sha> lists the test files changed since that sha, and [] when none', () => {
+  const { env, wt } = world()
+  git(wt, ['merge', '-q', 'main'], true)
+  putFile(wt, 'src/s/a.ts', 'x\n', 'work')
+  const since = git(wt, ['rev-parse', 'HEAD']).trim()
+  putFile(wt, 'src/s/a.ts', 'y\n', 'fix, no test')
+  const none = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': since }))
+  assert.equal(none.ok, true, JSON.stringify(none))
+  assert.deepEqual(none.testsSince, [])
+  putFile(wt, 'tests/s/a.check.ts', 'x\n', 'regression case')
+  putFile(wt, 'docs/s.md', 'x\n', 'doc')
+  const some = assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': since }))
+  assert.deepEqual(some.testsSince, ['tests/s/a.check.ts'])
+  // without the flag, or with one that is not a sha, the field is absent: an old stage.js sees no change
+  assert.equal('testsSince' in assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green' })), false)
+  assert.equal('testsSince' in assertOneLine(env.run('check', { slug: 's', cwd: wt, expect: 'green', 'tests-since': 'HEAD~1;x' })), false)
 })
 
 // ---------------------------------------------------------------- config keys

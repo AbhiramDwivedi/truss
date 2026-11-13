@@ -691,7 +691,7 @@ t('exempt 1: a recorded knowledge commit may write <rulesDir>/*.md, <knowledgeDi
   assert.deepEqual(ownsOf(env), { status: 0, outside: [], exempt: ['.claude/rules/area.md', 'AGENTS.md', 'docs/knowledge/deep/topic.md', 'docs/knowledge/product-decisions.md'] })
 })
 
-t('exempt 2: only .md files, only in the knowledge commit: a non-md file under those dirs, or one a builder commit also touched, is outside', () => {
+t('exempt 2: only .md files: a non-md file under those dirs is outside; one a builder commit also touched is exempt (ADR-0046 item 0)', () => {
   const { env, wt } = crewWorld()
   putFile(wt, 'docs/knowledge/shared.md', 'built\n')
   git(wt, ['add', '-A'])
@@ -699,8 +699,8 @@ t('exempt 2: only .md files, only in the knowledge commit: a non-md file under t
   knowledgeCommit(env, wt, { '.claude/rules/area.yaml': 'r\n', 'docs/knowledge/data.json': '{}\n', 'docs/knowledge/shared.md': 'changed\n', 'docs/knowledge/ok.md': 'k\n' })
   const o = ownsOf(env)
   assert.equal(o.status, 1)
-  assert.deepEqual(o.outside, ['.claude/rules/area.yaml', 'docs/knowledge/data.json', 'docs/knowledge/shared.md'])
-  assert.deepEqual(o.exempt, ['docs/knowledge/ok.md'])
+  assert.deepEqual(o.outside, ['.claude/rules/area.yaml', 'docs/knowledge/data.json'])
+  assert.deepEqual(o.exempt, ['docs/knowledge/ok.md', 'docs/knowledge/shared.md'])
 })
 
 t('exempt 3: the configured keys move the doc set; the defaults then stop being exempt', () => {

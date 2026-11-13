@@ -841,9 +841,20 @@ function cmdCheck(f: Flags): Obj {
   const known = exit === 0 ? [] : catalogHits(text)
   writeFileSync(`${dir}/checks/${slug}-${n}.json`, JSON.stringify({ command: crew.acceptanceTest, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }) }) + '\n', { flag: 'wx' })
   const ok = expect === 'red' ? exit !== 0 && env === undefined : exit === 0
-  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}) }
+  const since = ok && expect === 'green' ? testsSinceOf(cwd, f) : undefined
+  const body = { ok, exit, head, tail, ...envKeys, ...(known.length === 0 ? {} : { catalog: known }), ...(ok && expect === 'green' ? { sourceChanges: sourceChangesOf(cwd, f) } : {}), ...(since === undefined ? {} : { testsSince: since }) }
   if (!ok) throw refuse(body)
   return body
+}
+
+// ADR-0046 item 3: with --tests-since <sha>, the test files (isTestPath) changed in <sha>..HEAD, so stage.js can fail a stress-fix
+// round that added no regression test. Undefined without the flag, or when the range can't be read (no list, no check).
+function testsSinceOf(cwd: string, f: Flags): string[] | undefined {
+  const sha = typeof f['tests-since'] === 'string' ? f['tests-since'] : ''
+  if (!/^[0-9a-f]{4,40}$/i.test(sha)) return undefined
+  const r = run(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--no-renames', `${sha}..HEAD`])
+  if (r.status !== 0) return undefined
+  return r.out.split('\n').map((l) => l.trim()).filter((p) => p !== '' && isTestPath(p)).sort()
 }
 
 // ADR-0033: the non-test source files the crew's diff (merge-base with the target ... HEAD) adds, renames or deletes, from
@@ -1126,24 +1137,21 @@ function cmdOwnsCheck(f: Flags): Obj {
   return { ok: true, exempt }
 }
 
-// ADR-0033: the files the crew's knowledge commit may change outside the crew's owns. The commit is the one recorded by
-// `knowledge-commit` (its subject never counts: anyone can write a subject). A file is exempt only when ALL hold: it changed in a
-// recorded knowledge commit and in no other non-merge commit of the crew; it is a .md file; it is the feature map (featureMap,
-// default docs/features.md), a file under the ADR directory (adrDir, default docs/adr), a persona or the product-owner file
-// (.claude/agents/*.md, whose YAML frontmatter is unchanged: tools and model are never the knowledge step's to edit), or the
-// target of a learned item the crew recorded with `crew-learned`. A code file, or a file another commit changed, is not exempt.
+// ADR-0033, as ADR-0046 item 0 amends it: the doc files any crew commit may change outside the crew's owns. Each crew owns the
+// docs of its own work, so a builder updates them in the same change as the code, every round; the knowledge commit is a backstop,
+// not the only doc writer. A file is exempt only when ALL hold: it changed in a non-merge commit of the crew; it is a .md file; it
+// is the feature map (featureMap, default docs/features.md), the architecture doc (`architecture`), a file under the ADR directory
+// (adrDir, default docs/adr), the rules dir, the knowledge dir, the agents index, the product-decisions file, a persona or the
+// product-owner file (.claude/agents/*.md, whose YAML frontmatter is unchanged: tools and model are never a crew's to edit), or
+// the target of a learned item the crew recorded with `crew-learned`. A code file is never exempt.
 function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string; target: string }): Set<string> {
-  const shas = knowledgeShas(c.dir, c.slug)
-  if (shas.length === 0) return new Set()
   const base = baseOf(c.wt, c.target)
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--no-merges', '--name-only', '--format=%x00%H', `${base}..HEAD`])
-  const byKnowledge = new Set<string>()
-  const byOthers = new Set<string>()
+  const byCrew = new Set<string>()
   for (const chunk of out.split('\0').slice(1)) {
-    const lines = chunk.split('\n')
-    const files = lines.slice(1).map((l) => l.trim()).filter(Boolean)
-    for (const file of files) (shas.includes((lines[0] as string).trim()) ? byKnowledge : byOthers).add(file)
+    for (const file of chunk.split('\n').slice(1).map((l) => l.trim()).filter(Boolean)) byCrew.add(file)
   }
+  const arch = repoPathOf(configOf(c.repo).architecture) ?? 'docs/architecture.md'
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
@@ -1165,9 +1173,9 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const kc = knowledgeCfgOf(c.repo)
   const isDoc = (file: string): boolean =>
     file.toLowerCase().endsWith('.md') &&
-    (file === featureMap || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
+    (file === featureMap || file === arch || file.startsWith(`${adrDir}/`) || isPersona(file) || targets.has(file) || file.startsWith(`${kc.rulesDir}/`) || file.startsWith(`${kc.knowledgeDir}/`) || file === kc.agentsIndex || file === kc.productDecisions) &&
     (!isPersona(file) || frontmatterKept(file))
-  return new Set([...byKnowledge].filter((file) => !byOthers.has(file) && isDoc(file)))
+  return new Set([...byCrew].filter(isDoc))
 }
 
 // Guarded = every file a `Truss-Role: test-writer` commit in <base>..HEAD touched, whatever its name, plus every existing path
