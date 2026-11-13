@@ -56,7 +56,7 @@ Amended by [ADR-0029](0029-real-data.md) section 6: the architecture doc itself 
 - Failure: a block that fails `parse` shows its source in a `pre`, under "This diagram couldn't be drawn: <first line of the error>". If the chunk fails to load, every block shows its source with "Diagrams couldn't load, so their source is shown."
 - Accessibility: the SVG sits in a focusable `figure` labelled "Diagram n of m", with `role="img"` and a "Show source" disclosure.
 
-**CSP: no change.** The page CSP is `default-src 'self'` with no `style-src` (`ui/server/http/static.ts` `PAGE_CSP`), so inline `<style>` elements and `style` attributes are blocked. Mermaid 12.2.0 inserts a `<style>` element into each SVG while it renders (`mermaid.core.mjs:1361-1363`), and its diagrams write `style` attributes. The CSP doesn't block CSSOM writes such as `element.style.setProperty` (MDN, `style-src`). The ruling is to restyle:
+**CSP: no change.** The page CSP is `default-src 'self'` with no `style-src` (`ui/server/http/static.ts` `PAGE_CSP`), so inline `<style>` elements and `style` attributes are blocked. Mermaid 12.2.0 inserts a `<style>` element into each SVG while it renders (`mermaid.core.mjs`), and its diagrams write `style` attributes. The CSP doesn't block CSSOM writes such as `element.style.setProperty` (MDN, `style-src`). The ruling is to restyle:
 
 1. The app's own stylesheet themes `svg[id^="truss-mmd-"]` with the D2 tokens: fills, strokes, text and fonts. Mermaid measures text in the live document, where this rule already applies, so the layout and the shown font agree.
 2. Before inserting the returned SVG, DesignPanel parses it with `DOMParser`, removes every `<style>`, and moves each `style` attribute into `style.setProperty` calls on the inserted node.
@@ -66,7 +66,7 @@ The gate is `docs.spec.ts`, which runs F7 against the real server and its CSP. I
 
 ### 6. Agent task and purpose (R-42)
 
-The task comes from matching IDs. Each SDK `task_started` and `task_progress` message carries a `task_id` and a `description` (`sdk-stream.jsonl:64`, `:71`). The real truss dir `361b2630-…` has 1,888 spawn lines, and 1,807 of them carry an `agentId` of the same form, `a` plus 16 hex digits. The other 81 are factory crew lines with `agentId: null` and type `workflow-crew`. The subagent's own messages carry `agent_id` equal to that `task_id` (`sdk-stream.jsonl`, subagent lines).
+The task comes from matching IDs. Each SDK `task_started` and `task_progress` message carries a `task_id` and a `description` (`sdk-stream.jsonl`). The real truss dir `361b2630-…` has 1,888 spawn lines, and 1,807 of them carry an `agentId` of the same form, `a` plus 16 hex digits. The other 81 are factory crew lines with `agentId: null` and type `workflow-crew`. The subagent's own messages carry `agent_id` equal to that `task_id` (`sdk-stream.jsonl`, subagent lines).
 
 New optional `Member` fields (`types.ts`):
 

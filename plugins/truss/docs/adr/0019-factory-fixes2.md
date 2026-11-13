@@ -26,7 +26,7 @@ The code facts the items rest on:
 - `taskPrompt` emits `Task: ${task.name}` and adds only the answers whose `at` equals that task's name (`workflows-src/stage/prompts.js`).
 - Two test-path rules exist: `isTestPath` in `workflows/stage.js` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory/crew.ts`, which feeds the guarded set in `cmdTestsCheck`.
 - `rolesWithTypes` reads truss.json `roles` whenever it is an object (`bin/factory/shared.ts`). It never checks whether kit is loaded.
-- `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` at `README.md:283`.
+- `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` in `README.md` section "What the fetch log records".
 
 ## Decision
 
@@ -81,7 +81,7 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 - (d) **deferred**: resumed QC and stress gate labels, and the retro `QC_FILE` glob. They reverse the gate that `rl 4` pins, and no run has hit it.
 - (e) folded into items 2 and 17.
 
-**Item 14** (plugin-meta). Three parts: reword the example URL at `README.md:283` so LISTING_URL_SCHEME stops firing; add an icon; and add `tests/plugin-validate.check.ts`, which runs `claude plugin validate` and fails on any `(CODE)` warning, with no exemption. The check resolves the plugin root from its own module path (`path.dirname(fileURLToPath(import.meta.url))`), never from `process.cwd()`, so the base-copy run validates the base tree and can go red (ruling 4).
+**Item 14** (plugin-meta). Three parts: reword the example URL in `README.md` section "What the fetch log records" so LISTING_URL_SCHEME stops firing; add an icon; and add `tests/plugin-validate.check.ts`, which runs `claude plugin validate` and fails on any `(CODE)` warning, with no exemption. The check resolves the plugin root from its own module path (`path.dirname(fileURLToPath(import.meta.url))`), never from `process.cwd()`, so the base-copy run validates the base tree and can go red (ruling 4).
 
 The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` field, but the plan uses the default path `.claude-plugin/icon.png` with no key. The validator looks there, and the file turns ICON_MISSING off; there is no ICON_MISSING exemption. plugin-meta commits a deliberately designed square PNG with a truss motif, not a blank placeholder, of 512 to 2048 px a side and under 2 MB. The reason: validate warns that the icon "may become the listing icon only once: the first time the plugin is saved or submitted in the developer portal". The client is told before any portal save.
 

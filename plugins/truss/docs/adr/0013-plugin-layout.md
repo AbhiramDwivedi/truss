@@ -85,7 +85,7 @@ The plugin moves as one directory, so every path the code resolves from the plug
 - `const PLUGIN` in `bin/factory/shared.ts` is two directories above `bin/factory.ts`, and `bin/factory/plan.ts` `cmdPlanArgs` passes `${PLUGIN}/docs/plan.schema.json` as the plan schema;
 - `skills/retro/SKILL.md` section "1. Find the dir and run the script" finds `${CLAUDE_PLUGIN_ROOT}/scripts/retro.py`, or `scripts/retro.py` two directories above the skill;
 - `agents/design-engineer.md` section "plan mode" finds the schema at `<principles skill base dir>/../../docs/plan.schema.json`;
-- `workflowCallVerdict` in `hooks/register.ts` matches `${dir}/workflows/plan.js` and `${dir}/workflows/stage.js` (`:722-723`), and `hooks/register.ts` the `tool.call` handler for `Workflow` reads both from `${pluginDir}/workflows/`.
+- `workflowCallVerdict` in `hooks/register.ts` matches `${dir}/workflows/plan.js` and `${dir}/workflows/stage.js` (`isPlanJs` and `isStageJs`), and `hooks/register.ts` the `tool.call` handler for `Workflow` reads both from `${pluginDir}/workflows/`.
 
 What does not stay relative is listed under "Seams after the move".
 
@@ -182,7 +182,7 @@ The ui files that take the plugin or repo root to be ui/'s parent. At commit dbb
 
 Two more resolve the root another way, so that grep misses them: `ui/contract/live.check.ts` `root` (`dirname(dirname(dirname(fileURLToPath(import.meta.url))))`) and `ui/spike/run.ts` `root` (`resolve(here, '..', '..')`). The later goal recounts all of them at its own amend, since more ui crews may land first.
 
-Other files the move must fix, from the plan's scratch move (plan-repo-home.md, "Later goal"): `tests/run-procedure.check.ts` (two tests read `.claude/truss.json` at its REPO path) and `evals/run-model.ts:142-143`.
+Other files the move must fix, from the plan's scratch move (plan-repo-home.md, "Later goal"): `tests/run-procedure.check.ts` (two tests read `.claude/truss.json` at its REPO path) and `evals/run-model.ts` (the `worktree add --detach` call and the `rmSync` of `evals/golden` after it).
 
 ## Consequences
 
@@ -256,7 +256,7 @@ The recount at 1cc086f, `git grep -nE "dirname\(uiDir\)|resolve\(uiDir, *'\.\.'\
 
 Three more take the plugin to be ui/'s parent another way, so the grep misses them:
 
-- `ui/contract/live.check.ts` `root`, `dirname(dirname(dirname(fileURLToPath(import.meta.url))))`, passed as the `--plugin` root at `:136`;
+- `ui/contract/live.check.ts` `root`, `dirname(dirname(dirname(fileURLToPath(import.meta.url))))`, passed as the `--plugin` root in its `before` hook;
 - `ui/spike/run.ts` `root`, `resolve(here, '..', '..')`, used as the plugin path at `flat` and `q`;
 - `ui/e2e/session.spec.ts` `fixtureLines`, which reads `ui/contract/fixtures/sdk-stream.jsonl` through the harness's `root`.
 
@@ -266,7 +266,7 @@ The total is 13, replacing the nine-plus-two list above. `ui/contract/live.check
 
 - `tests/contract-stubs.check.ts`
 - `tests/evals-run-model.check.ts`
-- `evals/run-model.ts:140-143` (the case's worktree is a detached `git worktree add` of HEAD, and `:143` removes `evals/golden` from its root)
+- `evals/run-model.ts` (the case's worktree is a detached `git worktree add` of HEAD, and its `rmSync` call removes `evals/golden` from its root)
 - `tests/main-edit-gate.check.ts` test "round trip: this repo layout refuses hooks/register.ts and allows docs/requirements.md during a run" (it reads `../.claude/truss.json` from the tests dir, and builds `${repoRoot}/hooks/register.ts` and `${repoRoot}/docs/requirements.md` from the repo root)
 - `tests/retro/cli.check.ts` test "pf item 14: ?token=<token> is there, no real-looking ?token= value is, and scrub finds no token hit" (`join(PLUGIN, 'ui', 'README.md')`)
 - `tests/run-procedure.check.ts` `REPO` (`const REPO = PLUGIN`) and test "parses and carries merge sequential and target main, keeping architecture and adr" (it asserts `architecture` `docs/architecture.md` and `adr` `docs/adr`)

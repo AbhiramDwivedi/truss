@@ -86,7 +86,7 @@ A human `/truss:x args` is probed as two lines with the same timestamp: a user l
 
 ## Stub modules
 
-No module is a stub any more: all six are implemented (the `worktypes.ts:1` header, once an "A0 stub" comment, now says what the module is). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (`sweepOrRead`, `crewCost` in cost.ts). The exports:
+No module is a stub any more: all six are implemented (the `worktypes.ts` header comment, once an "A0 stub" comment, now says what the module is). Each keeps the contract-025 exports exactly. `cost.ts` `crewCost` returns `{usd: null, why: 'usage sweep busy'}` on a busy usage lock; `sweepOrRead` marks its result `busy: true`, and there is no `unswept` field (`sweepOrRead`, `crewCost` in cost.ts). The exports:
 
 - `inbox.ts`: `escalate(repo, dir, {kind, title, detail?, crews?, ref?, blocking?})`, `blockingFor`, `budgetRaises`, `INBOX_COMMANDS`, plus `verifiedItems`, which the contract does not name (ADR-0037 amendment).
 - `guard.ts`: `ltcLines`, `ltcTriggers`, `ltcPlan`, `ltcPlanGate`, `ltcCrewGate`.

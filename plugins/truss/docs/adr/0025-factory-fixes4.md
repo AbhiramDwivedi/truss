@@ -19,15 +19,15 @@ Each item is shown with the code on main at `9fba182`. `bin/factory.ts` and `age
 | Item | What the code does on `9fba182` |
 |---|---|
 | item 36 | The dispatch is `start: (f) => argsFileOut(f, cmdStart(f))` (`bin/factory.ts` `COMMANDS`). The absolute-path check is inside `argsFileOut`, after `cmdStart` has already run `ensureWorktree`, `savePlan` (status `running`), the `spawn` event and the decision line. A relative `--args-file` lost the entry, and the re-run listed `fixes3-design` as unfinished with no run. |
-| item 37 | `cmdStart` builds `open`, `goalNext` and `startsNow` from every planned or running crew (`:1289-1306`). It never reads `plan.goals[].approvedAt`, so `start` offered crews of the unapproved goal `ui-followups`. They were refused only because their goal files were missing. |
-| item 38 | `resource-monitor.md:19` goes down one on high load or low memory, with no other condition. While running is above parallelism, every crossing lowers it again, though no new crew was admitted to cause the load. On 2026-11-03 it went from 3 to 2 at 06:46 and to 1 at 07:01 with 3 crews running. |
-| item 39 | `admission` checks parallelism only when `crew.status === 'planned'` (`:1454`). The monitor's step 3 runs `admit --slug <any slug>` and says admit "exits 1 when it holds a start" (`resource-monitor.md:14`). With a running slug, admit said `admitted: true` at running 3 / parallelism 3 while `start` held a planned crew. |
-| item 40 | `crewEntry` (`:915-948`) reads `sections.UX` only for the boolean `ux`. It carries no Live page line. The PO ruling at 08:08 gives stage.js an optional `entry.livePage`, and leaves filling it to this goal. |
-| item 41 | `stressWarnings` (`:992-993`) and `roleWarnings` (`:1024-1025`) compare the agent file's `mtimeMs` with `sessionStart()` and say only "changed after this session loaded its agents". They give no size and no commit. |
-| item 42 (item 27) | `doneTasks` calls `ownCommits` (`:1153-1168`). When no first-parent crew commit is in the member branch (`fork === undefined`, so the crew branch was rewritten), `ownCommits` returns `reach.length`. A fresh BLOCKED branch left on the old crew head then counts as having commits of its own, so its task never re-runs. |
-| item 43 | `failureBlocks` (`:552-561`) runs each block until the next header. An env line printed after the last TAP `not ok` block lands inside that block and "explains" a code failure, so `envVerdict` returns `env` instead of `envSeen`. |
-| item 44 (item 32) | `cmdIntegrate` (`:726-735`) returns `contained: true` from `merge-tree` tree equality. It never looks at `MERGE_HEAD`, so it can answer `contained` while a merge is still in progress in the crew worktree. |
-| item 34 | `c1c4861` made `[project] › ` optional in the header regex (`:553`). What is left is the QC nit: no committed test for project-less Playwright headers. |
+| item 37 | `cmdStart` builds `open`, `goalNext` and `startsNow` from every planned or running crew. It never reads `plan.goals[].approvedAt`, so `start` offered crews of the unapproved goal `ui-followups`. They were refused only because their goal files were missing. |
+| item 38 | `resource-monitor.md` (the "Go down one when" rule) goes down one on high load or low memory, with no other condition. While running is above parallelism, every crossing lowers it again, though no new crew was admitted to cause the load. On 2026-11-03 it went from 3 to 2 at 06:46 and to 1 at 07:01 with 3 crews running. |
+| item 39 | `admission` checks parallelism only when `crew.status === 'planned'`. The monitor's step 3 runs `admit --slug <any slug>` and says admit "exits 1 when it holds a start" (`resource-monitor.md` step 3). With a running slug, admit said `admitted: true` at running 3 / parallelism 3 while `start` held a planned crew. |
+| item 40 | `crewEntry` reads `sections.UX` only for the boolean `ux`. It carries no Live page line. The PO ruling at 08:08 gives stage.js an optional `entry.livePage`, and leaves filling it to this goal. |
+| item 41 | `stressWarnings` and `roleWarnings` compare the agent file's `mtimeMs` with `sessionStart()` and say only "changed after this session loaded its agents". They give no size and no commit. |
+| item 42 (item 27) | `doneTasks` calls `ownCommits`. When no first-parent crew commit is in the member branch (`fork === undefined`, so the crew branch was rewritten), `ownCommits` returns `reach.length`. A fresh BLOCKED branch left on the old crew head then counts as having commits of its own, so its task never re-runs. |
+| item 43 | `failureBlocks` runs each block until the next header. An env line printed after the last TAP `not ok` block lands inside that block and "explains" a code failure, so `envVerdict` returns `env` instead of `envSeen`. |
+| item 44 (item 32) | `cmdIntegrate` returns `contained: true` from `merge-tree` tree equality. It never looks at `MERGE_HEAD`, so it can answer `contained` while a merge is still in progress in the crew worktree. |
+| item 34 | `c1c4861` made `[project] › ` optional in the `header` regex in `failureBlocks`. What is left is the QC nit: no committed test for project-less Playwright headers. |
 | item 26 | ADR-0024's item 26 leftover: member branches with no `git worktree` registration. Dropped; see `## Dropped`. |
 
 ## Decision
@@ -92,7 +92,7 @@ The i39 case reads the step-3 paragraph only, the text between `3.` and `4.`, an
 - **Where it goes.** In parentheses right after "changed after this session loaded its agents" and before the `;`. The stress form becomes `... changed after this session loaded its agents (<detail>); restart the session to load it`. The role form becomes `... changed after this session loaded its agents (<detail>); restart the session to load it, <fallback>`.
 - **Plugin dir in a git work tree.** The detail gives the lines added and removed in the agent file since the session start, from `git diff --numstat` against the last commit before `sessionStart()`, working tree included. It names the newest commit since then that touched the file, by short sha and subject, or says `uncommitted` when no commit did.
 - **Plugin dir outside git.** The detail gives the file's mtime and the session start as ISO times.
-- **Unchanged.** The can't-tell texts (`:992`, `:1024`) stay word for word, including the assertion at `tests/factory-fixes3.check.ts` test "control 1: the stress warning texts are unchanged, newer-than-session and can\". The restart advice and the role fallback don't change.
+- **Unchanged.** The can't-tell texts in `stressWarnings` and `roleWarnings` stay word for word, including the assertion at `tests/factory-fixes3.check.ts` test "control 1: the stress warning texts are unchanged, newer-than-session and can\". The restart advice and the role fallback don't change.
 - **The two assertions that change.** The exact newer-than-session assertions at `tests/factory-fixes3.check.ts` test "i24 5: a stress-yes crew still gets the stress warning word for word, next to the new ones" (`ws.includes(...)` in `i24 5`) and test "control 1: the stress warning texts are unchanged, newer-than-session and can\" (`deepEqual` in `control 1`) change to the new text, with the detail the test world produces. Both test titles stay, so the title diff still passes, and QC doesn't count them as lost base cases.
 - **Tests** use `TRUSS_SESSION_START` and a git-initialised plugin copy.
 
@@ -105,7 +105,7 @@ The i39 case reads the step-3 paragraph only, the text between `3.` and `4.`, an
 
 **Item 44 (item 32)** (resume-fixes4). `cmdIntegrate` takes the `contained` shortcut only when `git rev-parse -q --verify MERGE_HEAD` fails in the crew worktree. While a merge is in progress it falls through to `mergeIn`, which answers as it does today, and it never returns `contained: true`.
 
-**Item 34 control** (resume-fixes4). A `control N: i34 ...` case: Playwright output with project-less headers (`1) a.spec.ts:3:5 › api`), one code failure and one browser-launch env failure, gives `envSeen` and no `env`. It passes on the base code and on this goal's code.
+**Item 34 control** (resume-fixes4). A `control N: i34 ...` case: Playwright output with project-less headers (`1) a.spec.ts:<line>:<col> › api`), one code failure and one browser-launch env failure, gives `envSeen` and no `env`. It passes on the base code and on this goal's code.
 
 ### The `livePage` path, end to end
 
