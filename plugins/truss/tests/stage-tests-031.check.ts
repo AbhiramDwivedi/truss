@@ -226,7 +226,7 @@ st('a pending heavy run is collected by running the same line again', async () =
   let n = 0
   const runner = (p) => {
     if (checkExpect(p) !== 'green' || isFull(p)) return undefined
-    if (++n <= 2) return rj({ heavy: { label: p.label, pending: true, job: 'k', waitedMs: 540000, why: 'still running' } }, 1)
+    if (++n <= 2) return rj({ heavy: { label: p.label, pending: true, job: 'k', waitedMs: 540000, ageMs: n * 540000, budgetMs: 7200000, why: 'still running' } }, 1)
     return greenOk(p)
   }
   const r = await runStage([entry('a')], { labels: base('a'), runner })
@@ -236,11 +236,13 @@ st('a pending heavy run is collected by running the same line again', async () =
   assert.equal(new Set(g.map((c) => c.runner.line)).size, 1, 'the same line each time')
 })
 
-st('a heavy run that stays pending blocks the crew after a bounded number of polls', async () => {
-  const runner = (p) => (checkExpect(p) === 'green' ? rj({ heavy: { label: p.label, pending: true, job: 'k', waitedMs: 540000, why: 'PENDING-WHY' } }, 1) : undefined)
+st('a pending heavy run is polled until the factory budget runs out, not a fixed number of polls, then blocks the crew', async () => {
+  let n = 0
+  // the factory budget (slot wait plus a run) is 12 polls of 540 s; the job's age grows by one attach per poll
+  const runner = (p) => (checkExpect(p) === 'green' ? rj({ heavy: { label: p.label, pending: true, job: 'k', waitedMs: 540000, ageMs: ++n * 540000, budgetMs: 12 * 540000, why: 'PENDING-WHY' } }, 1) : undefined)
   const r = await runStage([entry('a')], { labels: base('a'), runner })
   assert.equal(r.res[0].state, 'stopped')
   assert.equal(r.res[0].tag, 'BLOCKED')
-  assert.match(r.res[0].text, /heavy run still going after 8 polls: PENDING-WHY/)
-  assert.equal(greens(r.calls).length, 9)
+  assert.match(r.res[0].text, /heavy run still going after 6480 s \(budget 6480 s\): PENDING-WHY/)
+  assert.equal(greens(r.calls).length, 12)
 })

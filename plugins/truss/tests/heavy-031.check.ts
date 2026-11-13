@@ -5,11 +5,13 @@
 // goes on in the background and the same line collects it. Node built-ins only.
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { HEAVY_WAIT_MAX_MS, HEAVY_WAIT_MS, heavyWaitMs, slotWaitMs, statusLine } from '../bin/factory.ts'
 import { takeHeavySlot, releaseHeavySlot } from '../resources/index.ts'
+import { jobAlive } from '../bin/factory/heavy.ts'
 import { crew, git, mkEnv, mkTrussDir, planObj, runCli, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const say = (r) => `exit ${r.status}\n${r.stdout}\n${r.stderr}`
@@ -107,16 +109,21 @@ test('a heavy run longer than the attach budget goes on in the background, holds
   const started = join(scratch, 'started')
   const hold = `const fs=require('fs');fs.writeFileSync(${JSON.stringify(started)},'');const t=setInterval(()=>{if(fs.existsSync(${JSON.stringify(go)})){clearInterval(t);console.log(JSON.stringify({ok:true}))}},20)`
   const line = ['--dir', w.dir, '--repo', w.repo, '--slug', 'x', '--label', 'x-run', '--cwd', w.repo, '--status-line', '--', process.execPath, '-e', hold]
-  const first = runCli(w.factory, 'heavy', line, w.repo, { ...w.extra, TRUSS_HEAVY_ATTACH_MS: '300' })
+  const first = runCli(w.factory, 'heavy', line, w.repo, { ...w.extra, TRUSS_HEAVY_ATTACH_MS: '300', TRUSS_HEAVY_WAIT_MS: '1000' })
   assert.equal(first.status, 1, say(first))
   assert.equal(body(first).heavy.pending, true)
+  // the give-up budget stage.js polls against: the slot wait plus slotWaitMs for the run itself, and the job's age so far
+  assert.equal(body(first).heavy.budgetMs, 1000 + slotWaitMs(w.dir), say(first))
+  assert.ok(Number.isInteger(body(first).heavy.ageMs) && body(first).heavy.ageMs >= 300, say(first))
+  const jdir = join(w.dir, 'resources', 'jobs', body(first).heavy.job)
+  assert.ok(existsSync(join(jdir, 'pid.json')), 'the spawner recorded the wrapper pid itself')
   assert.match(first.stdout, /truss-status: .*"pending":true/)
   const lock = join(w.dir, 'resources', 'heavy.lock', 'owner.json')
   assert.ok(existsSync(lock), 'the job holds the slot after the caller returned')
   const owner = JSON.parse(readFileSync(lock, 'utf8'))
   assert.doesNotThrow(() => process.kill(owner.pid, 0), 'the slot owner is the live background job')
   writeFileSync(go, '')
-  const second = runCli(w.factory, 'heavy', line, w.repo, { ...w.extra, TRUSS_HEAVY_ATTACH_MS: '30000' })
+  const second = runCli(w.factory, 'heavy', line, w.repo, { ...w.extra, TRUSS_HEAVY_ATTACH_MS: '30000', TRUSS_HEAVY_WAIT_MS: '1000' })
   assert.equal(second.status, 0, say(second))
   assert.equal(body(second).ok, true)
   assert.ok(existsSync(started))
@@ -125,4 +132,36 @@ test('a heavy run longer than the attach budget goes on in the background, holds
 
 test('statusLine carries a pending heavy run', () => {
   assert.equal(statusLine({ heavy: { pending: true, label: 'x' } }), 'truss-status: {"pending":true}')
+  assert.equal(statusLine({ heavy: { pending: true, label: 'x', ageMs: 5, budgetMs: 9 } }), 'truss-status: {"pending":true,"ageMs":5,"budgetMs":9}')
+})
+
+test('an acceptance test that is only npm test runs the whole suite, so it takes the heavy slot', () => {
+  const w = world({ heavySlots: 1 })
+  writePlan(w.dir, planObj([crew('x', { acceptanceTest: 'npm test' })]))
+  const marker = join(w.repo, 'suite-ran')
+  writeFileSync(join(w.repo, 'package.json'), JSON.stringify({ scripts: { test: `node -e "require('fs').writeFileSync('suite-ran', '')"` } }))
+  const token = takeHeavySlot(w.dir, { slug: 'other', label: 'other', pid: process.pid }, process.platform, 1)
+  assert.equal(typeof token, 'string')
+  try {
+    const r = check(w, ['--wait-ms', '0'])
+    assert.equal(r.status, 1, say(r))
+    assert.equal(body(r).slot.ran, false, say(r))
+    assert.ok(!existsSync(marker), 'the suite did not run while another crew held the only slot')
+  } finally {
+    releaseHeavySlot(w.dir, token)
+  }
+})
+
+test('a job dir whose wrapper has not written anything yet stays alive while its spawner runs, however old the dir', () => {
+  const jdir = tmp('heavy-031-job-')
+  const old = new Date(Date.now() - 60000)
+  writeFileSync(join(jdir, 'job.json'), JSON.stringify({ cmd: ['x'], spawner: process.pid }))
+  utimesSync(jdir, old, old)
+  assert.equal(jobAlive(jdir), true, 'a live spawner keeps the job alive')
+  const gone = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout)
+  writeFileSync(join(jdir, 'job.json'), JSON.stringify({ cmd: ['x'], spawner: gone }))
+  utimesSync(jdir, old, old)
+  assert.equal(jobAlive(jdir), false, 'a dead spawner and no wrapper pid: dead')
+  writeFileSync(join(jdir, 'pid.json'), JSON.stringify({ pid: process.pid }))
+  assert.equal(jobAlive(jdir), true, 'a live wrapper pid: alive')
 })
