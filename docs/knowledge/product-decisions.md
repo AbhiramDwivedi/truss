@@ -48,3 +48,10 @@ verified: a86d60c226674d0da487a5c2f057b39c676effb9
 - Pricing: `pricing` in `.claude/truss.json` holds the three 5.5 ids. Cache write is 1.25x input (5m) and 2x input (1h), cache read 0.05x for Opus and Sonnet 5.5 (claude-api skill, `shared/prompt-caching.md`). Haiku 5.5 is priced from the claude-api skill pricing page read 2026-11-12, including its long-context tier (`longContext {abovePromptTokens: 100000, ...}`, priced in `bin/cost.ts` `ratesFor`; see features.md, Long-context price tier).
 - Flake: with one busy-loop child per CPU, 20 consecutive whole-file runs of `inbox.check.ts` passed on the dev host (about 29 min, `load-red.mjs`), so the `:442` flake does not reproduce there and a red under load is not demonstrable on that host. The acceptance case runs only with `TRUSS_HYGIENE_LOAD_RUNS=20`.
 - Decided by: crew hygiene (hygiene-tester, hygiene-builder items).
+
+## crew-decisions: who answers a crew product call
+
+- Question: when a product owner escalates, who answers and who waits?
+- Answer: the program manager answers only an escalation inside approved scope (a `pm-question` item). A call that contradicts approved scope or a client ruling becomes a client-only `scope-change` item (or a `PROPOSAL:`) that the program manager never resolves. Only the asking crew waits, and a resumed stage re-reads the item through `factory inbox`, never a timer. A call touching no scope line is logged and never waits.
+- Reason: scope changes are the client to rule on (plan decision 07:22, goal file `crew-decisions.md` approved scope); design in `plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md`.
+- Decided by: program manager as product owner (plan finding 3 ruling).
