@@ -448,7 +448,11 @@ function cmdPlanWrite(f: Flags): Obj {
   }
   const fieldMd = isObj(raw) && typeof raw.planMd === 'string' && raw.planMd.trim() !== '' ? raw.planMd : undefined
   const json = fieldJson ?? fencedBlock(message, '````json plan.json')
-  const md = fieldMd ?? fencedBlock(message, '````markdown plan.md')
+  const fencedMd = fencedBlock(message, '````markdown plan.md')
+  // a stub or pointer field ("See plan.json.") is shorter than the fenced block and has no crew table: the fenced plan wins then
+  const hasTable = (s: string): boolean => /^\s*\|.*\|\s*$/m.test(s)
+  const stubMd = fieldMd !== undefined && fencedMd !== undefined && fieldMd.length < fencedMd.length && hasTable(fencedMd) && !hasTable(fieldMd)
+  const md = fieldMd !== undefined && !stubMd ? fieldMd : fencedMd
   if (json === undefined || md === undefined) no(json === undefined ? 'no plan.json block' : 'no plan.md block')
   if (parsePlan(json as string) === undefined) no('the plan.json block is not a plan')
   const carried = JSON.parse((json as string).startsWith('﻿') ? (json as string).slice(1) : (json as string))
@@ -663,6 +667,8 @@ function cmdPlanCheck(f: Flags): Obj {
   for (const e of profiles.errors) addOnce(e)
   if (errors.length > 0) throw refuse({ ok: false, errors })
   const warnings = stageWarnings(dirOf(f), crews)
+  // a bare-directory owns entry (`dir/`) is read as `dir/**` by owns-check and the stage split; say so, so a plan that meant it is explicit
+  for (const c of crews) for (const g of Array.isArray(c.owns) ? c.owns : []) if (typeof g === 'string' && g.endsWith('/')) warnings.push(`crew ${name(c)}: owns entry ${g} is a bare directory, read as ${g}**; write ${g}** to say so`)
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
@@ -805,6 +811,28 @@ export function envVerdict(text: string): { env?: string; envSeen?: string } {
   return explained ? { env: first } : { envSeen: first }
 }
 
+// Stage green (ADR-0046 item 8): run `npm ci` in each directory with a tracked package-lock.json whose node_modules is missing.
+// A linked node_modules (lstat) counts as present. On win32 npm is a .cmd, which spawn runs only through a shell (CVE-2024-27980):
+// one fixed command string with shell: true and no args array (DEP0190); nothing in it comes from input.
+export function installMissingDeps(cwd: string, platform: string = process.platform, spawn: typeof spawnSync = spawnSync): { dir: string; status: number | null; output: string }[] {
+  const listed = spawnSync('git', ['-c', 'core.quotepath=off', 'ls-files', '-z', '--', 'package-lock.json', '**/package-lock.json'], { cwd, encoding: 'utf8', windowsHide: true })
+  const out: { dir: string; status: number | null; output: string }[] = []
+  if (listed.status !== 0) return out
+  for (const rel of String(listed.stdout).split('\0').filter(Boolean)) {
+    const dir = flat(path.join(cwd, path.dirname(rel)))
+    try {
+      lstatSync(`${dir}/node_modules`)
+      continue
+    } catch {
+      // missing: install
+    }
+    const opts = { cwd: dir, encoding: 'utf8' as const, windowsHide: true, timeout: 600000 }
+    const r = platform === 'win32' ? spawn('npm ci', { ...opts, shell: true }) : spawn('npm', ['ci'], opts)
+    out.push({ dir, status: r.status ?? 1, output: `${String(r.stdout ?? '')}${String(r.stderr ?? '')}${r.error ? `\n${r.error.message}` : ''}` })
+  }
+  return out
+}
+
 function cmdCheck(f: Flags): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
@@ -818,12 +846,14 @@ function cmdCheck(f: Flags): Obj {
   let text: string
   let exit: number
   try {
+    // a failed install goes into the check text, so the env catalog sees it
+    const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
     const fd = openSync(`${scratch}/out.txt`, 'w')
     const r = spawnSync('bash', ['-c', crew.acceptanceTest], { cwd, stdio: ['ignore', fd, fd] })
     closeSync(fd)
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
     exit = r.status ?? 1
-    text = readFileSync(`${scratch}/out.txt`, 'utf8')
+    text = installs.map((i) => `npm ci failed in ${i.dir} (exit ${i.status}):\n${i.output}\n`).join('') + readFileSync(`${scratch}/out.txt`, 'utf8')
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -1137,6 +1167,9 @@ function cmdOwnsCheck(f: Flags): Obj {
   const files = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'diff', '--name-only', `${baseOf(c.wt, c.target)}...HEAD`]).split('\n').filter(Boolean)
   // path.matchesGlob's `**` skips dot segments; an owned `**` covers them.
   const owned = (file: string, g: string): boolean => {
+    file = file.replace(/\\/g, '/')
+    g = g.replace(/\\/g, '/')
+    if (g.endsWith('/')) g += '**' // a bare directory entry means dir/**
     if (path.matchesGlob(file, g)) return true
     const i = g.indexOf('**')
     if (i === -1) return false
