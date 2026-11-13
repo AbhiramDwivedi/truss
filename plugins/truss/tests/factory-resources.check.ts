@@ -169,10 +169,14 @@ test('factory reap skips a record whose heavyPid is alive and prints reaped and 
   const w = world([planned('q')])
   const label = 'skipme'
   // Stand-ins this test started and owns: one for the heavy process, one for the group.
-  const hv = spawn('sleep', ['300'], { stdio: 'ignore' })
-  const grp = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' })
-  hv.unref()
-  grp.unref()
+  // They are started through a short-lived launcher so init adopts them: a killed direct child stays a zombie while this
+  // test blocks in spawnSync, and macOS has no /proc for the code under test to see that it exited.
+  const orphan = () => {
+    const code = "const c = require('node:child_process').spawn('sleep', ['300'], { detached: true, stdio: 'ignore' }); c.unref(); console.log(c.pid)"
+    return { pid: Number(spawnSync(process.execPath, ['-e', code], { encoding: 'utf8' }).stdout.trim()) }
+  }
+  const hv = orphan()
+  const grp = orphan()
   try {
     mkdirSync(`${w.dir}/resources/groups`, { recursive: true })
     writeFileSync(`${w.dir}/resources/groups/${grp.pid}.json`, JSON.stringify({ pgid: grp.pid, heavyPid: hv.pid, label, slug: 'q', since: Date.now() }))

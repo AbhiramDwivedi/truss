@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import * as reg from '../hooks/register.ts'
 import { ARCHIVE_PREFIX, worktreeChanges } from '../bin/factory.ts'
@@ -144,7 +144,7 @@ t('r2: an untracked symlink into the main checkout is clean; a symlink elsewhere
   assert.ok(existsSync(`${w.env.repo}/node_modules`), 'the link target in the main checkout is untouched')
   for (const [p, n] of [[paths.foreign, 2], [paths.file, 3]]) {
     assert.ok(existsSync(p) && branchExists(w.env.repo, `worktree-${RUN}-${n}`), `${p} stays`)
-    assert.ok(left(r.json).some((l) => l.path === p && l.why === 'dirty'), JSON.stringify(r.json.leftWorktrees))
+    assert.ok(left(r.json).some((l) => realpathSync(l.path) === realpathSync(p) && l.why === 'dirty'), JSON.stringify(r.json.leftWorktrees))
   }
 })
 
