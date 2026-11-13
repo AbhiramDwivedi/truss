@@ -330,7 +330,7 @@ const seededLearned = (list) =>
     .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
 }
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
@@ -436,7 +436,14 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   if (r.parsed.admitted === false) {
     const why = typeof r.parsed.why === 'string' && r.parsed.why ? r.parsed.why : r.out
     if (r.parsed.budget === true) throw new Stop('BLOCKED', `BLOCKED: budget: ${why}`, at)
-    if (r.parsed.awaiting === true) throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
+    if (r.parsed.awaiting === true) {
+      // factory words every open blocking item as "awaiting client:", whatever its kind; a pm-question is the program manager's to answer
+      const id = (/^awaiting client: (\S+)/.exec(why) ?? [])[1]
+      await (crew.callsRead ??= restoreCalls(crew))
+      const row = id ? Object.values(crew.calls).find((c) => c && c.id === id && c.kind === 'pm-question') : null
+      if (row) throw holdStop(row, oneLine(row.title), '', at)
+      throw new Stop('BLOCKED', `BLOCKED: ${/^awaiting client:/.test(why) ? why : `awaiting client: ${why}`}`, at)
+    }
     throw new Stop('BLOCKED', `held by admission: ${why}`, at)
   }
 }
@@ -899,6 +906,7 @@ function resumeLines(resume) {
   if (!resume) return []
   // ADR-0033: a product answer (the product-owner decided your QUESTION) or a main-session change of one; the note is the text
   if (resume.reason === 'product answer') return ['The product owner answered your QUESTION:', resume.note, 'Carry on with that answer. Your earlier work on this task is on the crew branch or your earlier branch; build on it.', ...(resume.branch ? [`Its branch was ${resume.branch}.`] : [])]
+  if (resume.reason === 'program manager answer') return ['The program manager (or the client, for a scope change) answered your QUESTION through the inbox:', resume.note, 'Carry on with that answer. Your earlier work on this task is on the crew branch or your earlier branch; build on it.', ...(resume.branch ? [`Its branch was ${resume.branch}.`] : [])]
   if (resume.reason === 'product change') return [resume.note, 'Your earlier work on this task is already on the crew branch; change it to match, and only that.']
   const lines = resume.reason === 'no report'
     ? ['A member before you returned no report.']
@@ -1045,15 +1053,20 @@ function productCallPrompt(crew, report, role, at, all) {
     '',
     'Read the goal file, the product decisions file and the requirements the goal file names, then decide.',
     "Follow an earlier call, from any crew, that settles the question. Reply PO: ESCALATE when your answer would contradict an earlier call from another crew: crews run in parallel and must not decide the same thing two ways.",
-    'Escalate (reply PO: ESCALATE) when any of these holds: the question is not a product question; it is outside the crew\'s approved scope; it touches another crew\'s area; it hits a client approval trigger in the goal file; or neither the product decisions file nor the requirements settle it. Never guess a product answer.',
+    'Escalate (reply PO: ESCALATE) when the question stays inside the crew\'s approved scope but is not yours to settle: it is not a product question; it touches another crew\'s area; or neither the product decisions file nor the requirements settle it. The program manager answers it through the inbox and the asking task waits for that answer.',
+    'Reply PO: SCOPE-CHANGE when the answer would contradict the approved scope or a client ruling, or the question hits a client approval trigger in the goal file. That goes to the client as a scope-change item; only this crew waits on it, and the program manager never answers it.',
+    'Never guess a product answer.',
     '',
     'Reply with no other text. Either:',
     'PO: DECIDE',
     '<the answer, in a few sentences the member can act on>',
     'Reason: <one line>',
     'or:',
-    'PO: ESCALATE',
-    '<why this goes to the main session>',
+    'PO: ESCALATE <why>',
+    '<why this goes to the program manager>',
+    'or:',
+    'PO: SCOPE-CHANGE <why>',
+    '<why this contradicts the approved scope or a client ruling>',
     '',
     SHELL,
     REFUSAL,
@@ -1080,30 +1093,158 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   const i = lines.findIndex((l) => l.trim() !== '')
   const head = i < 0 ? '' : lines[i].trim()
   const body = i < 0 ? [] : lines.slice(i + 1)
-  if (head.startsWith('PO: ESCALATE')) return { escalate: oneLine([head.slice('PO: ESCALATE'.length).replace(/^[:\s-]+/, ''), ...body].join(' '), 800) || 'no reason given' }
+  // R-86: an escalation inside approved scope goes to the program manager's inbox, one that contradicts approved scope or a client
+  // ruling to the client as a scope-change item; either way the asking task waits (openCall)
+  for (const [lead, kind] of [['PO: ESCALATE', 'pm-question'], ['PO: SCOPE-CHANGE', 'scope-change']]) {
+    if (head.startsWith(lead)) return openCall(crew, role, report, at, makePrompt, opts, kind, oneLine([head.slice(lead.length).replace(/^[:\s-]+/, ''), ...body].join(' '), 800) || 'no reason given')
+  }
   if (!head.startsWith('PO: DECIDE')) return { escalate: 'the product owner gave neither a PO: DECIDE nor a PO: ESCALATE first line' }
   const reasonLine = body.find((l) => /^reason:/i.test(l.trim()))
   const answer = oneLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join(' '))
   if (!answer) return { escalate: 'the product owner decided with no answer' }
   const reason = reasonLine ? oneLine(reasonLine.trim().replace(/^reason:\s*/i, '')) : ''
-  const question = oneLine(report.text)
+  return recordCall(crew, role, makePrompt, opts, at, { question: oneLine(report.text), answer, reason, by: 'product-owner', source: 'product-owner persona, crew product call', branch: typeof report.branch === 'string' ? report.branch : '', log: true })
+}
+
+// Logs a settled product call through crew-decision (log false: an earlier run already logged it), keeps it in the crew's decisions
+// and learned items, and returns the retry note of the asking member. c.by is who decided: product-owner, program-manager or client.
+async function recordCall(crew, role, makePrompt, opts, at, c) {
+  const { question, answer, reason } = c
+  const resume = { reason: c.by === 'product-owner' ? 'product answer' : 'program manager answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: c.branch }
+  if (!c.log) return { resume }
   let id = null
   try {
     // free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
-    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by product-owner`, 'id')
+    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by ${sh(c.by)}`, 'id')
     if (r.parsed && (typeof r.parsed.id === 'string' || typeof r.parsed.id === 'number') && String(r.parsed.id) !== '') id = String(r.parsed.id)
     else crew.proofs.push(`crew-decision failed: ${r.out}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     crew.proofs.push(`crew-decision failed: ${err && err.message ? err.message : String(err)}`)
   }
-  const item = { kind: 'product', text: `${question} -> ${answer}`, source: 'product-owner persona, crew product call', task: at, member: 'po' }
+  const item = { kind: 'product', text: `${question} -> ${answer}`, source: c.source, task: at, member: 'po' }
   crew.learned.push(item)
   crew.decisions.push({
     id, question, answer, reason, reply: null, note: '', item,
     rerun: rerunOf(crew, role, makePrompt, opts, at),
   })
-  return { resume: { reason: 'product answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: typeof report.branch === 'string' ? report.branch : '' } }
+  return { resume }
+}
+
+// ---------------------------------------------------------------- product calls that wait on an inbox item (R-86, ADR-0047)
+
+// The ref of a task's inbox item: factory escalate dedupes an open item with the same kind and ref, so a re-open on a resume is one item.
+// factory inbox and its dedupe span sessions, so the ref also names the run: the truss dir path under .git/truss (the basename repeats
+// as wave subdirs) and the plan's approvedAt (args.truss.approvedAt, '' when the caller passes none), after the slug and task. An
+// older run's item, or another session's with the same slug and task, never carries this suffix, so it never answers this run.
+const RUN_KEY = (() => {
+  const d = trussDir().replace(/\\/g, '/')
+  const k = d.lastIndexOf('/.git/truss/')
+  return [k < 0 ? '' : d.slice(k + '/.git/truss/'.length), typeof F.approvedAt === 'string' ? F.approvedAt : ''].filter(Boolean).join('@')
+})()
+const callRef = (crew, at) => `crew-call:${crew.slug}:${at}${RUN_KEY ? `@${RUN_KEY}` : ''}`
+const callAt = (crew, ref) => {
+  const head = callRef(crew, '')
+  const tail = RUN_KEY ? `@${RUN_KEY}` : ''
+  const lead = head.slice(0, head.length - tail.length)
+  return ref.startsWith(lead) && ref.endsWith(tail) && ref.length > head.length ? ref.slice(lead.length, ref.length - tail.length) : ''
+}
+
+// The inbox rows of one kind linked to this crew whose ref is one of its calls, in the order factory inbox lists them. The wait is
+// this re-read: Workflow scripts have no timers, so the script never polls; a resumed stage reads again, once per pass.
+async function callRows(crew, kind) {
+  const r = await runFactory(crew, `inbox --kind ${kind} --crew ${sh(crew.slug)}`, 'ok')
+  const list = r.parsed && Array.isArray(r.parsed.items) ? r.parsed.items : []
+  return list.filter((i) => isPlainObject(i) && i.kind === kind && typeof i.ref === 'string' && callAt(crew, i.ref) !== '' && typeof i.id === 'string')
+}
+
+// The stop of a crew whose task waits on an inbox item: only this crew stops, every other crew runs. A scope-change item is the
+// client's; the program manager answers a pm-question item and never a scope-change one.
+const holdStop = (row, question, branch, at) =>
+  new Stop('BLOCKED', `awaiting ${row.kind === 'scope-change' ? 'client' : 'program manager'}: ${row.id} (${row.kind}, ${row.ref}): ${question}${branch ? `\nThe asking member's branch was ${branch}.` : ''}\nResume the crew after the item is resolved.`, at)
+
+// Opens the inbox item of an escalated product call, then holds the crew at this task (the item is open) or takes its answer (it is
+// already resolved). When no item can be opened the question stops the crew as a QUESTION, the old path, never a faked wait.
+async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
+  const ref = callRef(crew, at)
+  const question = oneLine(report.text)
+  let id = null
+  let failed = ''
+  try {
+    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${question} The product owner's reason: ${why}`, 3000))}`, 'id')
+    if (r.parsed && typeof r.parsed.id === 'string' && r.parsed.id !== '') id = r.parsed.id
+    else failed = clip(r.out, 200)
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    failed = err && err.message ? String(err.message) : String(err)
+  }
+  if (id === null) return { escalate: `${why} (no ${kind} inbox item could be opened: ${failed})` }
+  let row = null
+  try {
+    row = (await callRows(crew, kind)).find((i) => i.id === id && i.ref === ref) ?? null
+  } catch (err) {
+    if (err instanceof Stop) throw err
+    log(`inbox read failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+  }
+  const branch = typeof report.branch === 'string' ? report.branch : ''
+  if (!row || row.state !== 'resolved') throw holdStop({ id, kind, ref }, question, branch, at)
+  return takeCall(crew, role, makePrompt, opts, at, row, branch, true)
+}
+
+// A resolved item's answer for the asking task: its resolve note, logged as a crew decision by whoever resolved it. A resolve with no
+// note holds no answer, so the question stops the crew as a QUESTION.
+async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
+  // the cap is resolve's own (inbox.ts resolveItem keeps 4000), so no stored answer reaches the member cut short
+  const note = oneLine(row.note, 4000)
+  if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
+  // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
+  if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
+  const by = row.by === 'client' ? 'client' : 'program-manager'
+  // the item id is in the logged question: it is how a resumed run knows this item is already logged (pendingCall)
+  return recordCall(crew, role, makePrompt, opts, at, { question: `${oneLine(row.title)} (inbox item ${row.id})`, answer: row.decision === 'answer' ? note : `${row.decision}: ${note}`, reason: '', by, source: `${by === 'client' ? 'client' : 'program manager'}, crew product call ${row.id}`, branch, log })
+}
+
+// On a resume: the stage's inbox items for the crew's calls, by task (an open one wins over a resolved one, a later over an earlier).
+// A failed read is logged and changes nothing.
+async function restoreCalls(crew) {
+  for (const kind of ['pm-question', 'scope-change']) {
+    try {
+      for (const row of await callRows(crew, kind)) {
+        const at = callAt(crew, row.ref)
+        const was = crew.calls[at]
+        // later over earlier is by the time each item was opened (row.ts), not by kind order
+        const older = was && Date.parse(row.ts) < Date.parse(was.ts)
+        if (at && !(was && was.state === 'open' && row.state !== 'open') && !(older && !(was.state !== 'open' && row.state === 'open'))) crew.calls[at] = row
+      }
+    } catch (err) {
+      if (err instanceof Stop) throw err
+      log(`inbox read failed: crew ${crew.slug}: ${err && err.message ? err.message : String(err)}`)
+    }
+  }
+}
+
+// Before a task's first member on a resume: its item still open holds the crew again (the item and not a timer decides), a resolved
+// one starts the member with the answer (logged once: not again when an earlier run's decision for this task came back).
+// Returns the first member's retry note, or null when the task asked nothing.
+async function pendingCall(crew, role, makePrompt, opts, at, isTask = false) {
+  // one inbox read per resumed crew, shared by its parallel tasks, made when the first task starts (after red and split)
+  if (crew.e.resume) await (crew.callsRead ??= restoreCalls(crew))
+  const row = crew.calls[at]
+  if (!row) return null
+  if (row.state !== 'resolved') throw holdStop(row, oneLine(row.title), '', at)
+  // used once: a later member at the same step asked nothing, so the item must not answer it again
+  delete crew.calls[at]
+  // logged once per item, not per task: a task can ask twice, and the second item's answer is a new decision. An earlier run's
+  // decision stands for this item when its logged question names the item id (takeCall puts it there)
+  const logged = crew.decisions.some((d) => String(d.question).includes(`(inbox item ${row.id})`))
+  // a fix or writer member at a step (green, qc, stress, knowledge) is a new member on every resume: an item an earlier run already
+  // used for its asking member answers none of them (ADR-0047, one item answers one member). A task is its own asker, so it re-reads.
+  if (logged && !isTask) return null
+  const got = await takeCall(crew, role, makePrompt, opts, at, row, '', !logged)
+  if (got.resume) return got.resume
+  // a resolve with no note holds no answer, but the program manager's answers resume does: the member starts with that answer (answersFor)
+  if ((crew.e.answers || []).some((a) => a && a.at === at)) return null
+  throw new Stop('QUESTION', `${oneLine(row.title)}\n\n${got.escalate}`, at)
 }
 
 // re-runs the asking task once, as a fix member on top of the integrated crew branch with a main-session note, and integrates the
@@ -1144,7 +1285,8 @@ async function restoreDecisions(crew) {
     // this run applies no reply: checkpoint() skips, and a reply that is still unacked comes out in the result's late list
     if (r.parsed && r.parsed.checkpoint === true) crew.checkpointed = true
     for (const d of list) {
-      if (!isPlainObject(d) || d.crew !== crew.slug || typeof d.id !== 'string' || !d.id || typeof d.question !== 'string' || typeof d.answer !== 'string') continue
+      // decisions --crew already filters by crew: a row that names another crew is skipped, one that names none is this crew's
+      if (!isPlainObject(d) || (d.crew !== undefined && d.crew !== crew.slug) || typeof d.id !== 'string' || !d.id || typeof d.question !== 'string' || typeof d.answer !== 'string') continue
       if (crew.decisions.some((c) => c.id === d.id)) continue
       const task = typeof d.task === 'string' && d.task ? d.task : 'earlier run'
       const taken = d.consumed === true && (d.reply === 'ack' || d.reply === 'change')
@@ -1359,7 +1501,10 @@ function taskOpts(task) {
 
 async function runTask(crew, task) {
   const at = task.name
-  const report = await runMember(crew, task.role, (note) => taskPrompt(crew, task, note), taskOpts(task), at)
+  const makePrompt = (note) => taskPrompt(crew, task, note)
+  // a resume: the task's product call may still wait on its inbox item (stop again) or be answered (start with the answer)
+  const first = await pendingCall(crew, task.role, makePrompt, taskOpts(task), at, true)
+  const report = await runMember(crew, task.role, makePrompt, taskOpts(task), at, first)
   report.task = task.name
   crew.proofs.push(`${task.name}: ${report.proof}`)
   await integrate(crew, report.branch, at)
@@ -1396,7 +1541,10 @@ async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
   const at = crew.step
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
-  const report = await runMember(crew, role, (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev), { title: `Fix ${what}`, ...(persona ? { persona } : {}) }, at)
+  const make = (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev)
+  const opts = { title: `Fix ${what}`, ...(persona ? { persona } : {}) }
+  const first = await pendingCall(crew, role, make, opts, at)
+  const report = await runMember(crew, role, make, opts, at, first)
   crew.proofs.push(`fix (${what}): ${report.proof}`)
   await integrate(crew, report.branch, at)
 }
@@ -2024,7 +2172,10 @@ async function knowledge(crew, again = null) {
   if (!again && !crew.learned.length && !crew.sourceChanges.length) return false
   crew.step = 'knowledge'
   const before = crew.head
-  const report = await runMember(crew, 'writer', (resume) => knowledgePrompt(crew, resume, again), { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }, 'knowledge')
+  const wmake = (resume) => knowledgePrompt(crew, resume, again)
+  const wopts = { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }
+  const first = await pendingCall(crew, 'writer', wmake, wopts, 'knowledge')
+  const report = await runMember(crew, 'writer', wmake, wopts, 'knowledge', first)
   crew.learned = crew.learned.filter((i) => i.task !== 'knowledge')
   crew.unrecorded = crew.unrecorded.filter((i) => i.task !== 'knowledge')
   // the fixers' items this re-run recorded count as learned, no longer as unrecorded
