@@ -490,6 +490,16 @@ function cmdPlanWrite(f: Flags): Obj {
     return existing.approvedAt
   }
   const seenApproved = keepExisting(false)
+  // test-only sync point (unset in production): after the unlocked first check, write <gate>/checked, then wait for <gate>/go; a timeout fails closed
+  const gate = process.env.TRUSS_TEST_PLAN_WRITE_GATE
+  if (gate !== undefined && gate !== '') {
+    writeFileSync(`${gate}/checked`, '')
+    const until = Date.now() + 30000
+    while (!existsSync(`${gate}/go`)) {
+      if (Date.now() > until) no('kept the existing plan: the test gate timed out')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
   // contract-025 section 3 (A2): the designer's and checkers' LONG-TERM-COST lines go to the guard; rev is sha12 of the designer's result.
   // Run before the plan is written, so a guard that throws leaves no plan for approve to pass unguarded (fail closed).
   const texts = run_.journal

@@ -233,10 +233,12 @@ test('start defaults scriptPath to the session scripts dir and --scripts-dir ove
 })
 
 test('plugin.json and the newest CHANGELOG entry are 0.29.0', () => {
+  // the release is the program manager's bump: assert the two agree and are at least 0.29.0, never one pinned version
   const manifest = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'))
-  assert.equal(manifest.version, '0.29.0')
   const log = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
   const newest = /^## (\d+\.\d+\.\d+)/m.exec(log)
   assert.ok(newest, 'CHANGELOG.md has a version heading')
-  assert.equal(newest[1], '0.29.0')
+  assert.equal(newest[1], manifest.version)
+  const [maj, min] = String(manifest.version).split('.').map(Number) as [number, number]
+  assert.ok(maj > 0 || min >= 29, `version ${manifest.version} is at least 0.29.0`)
 })
