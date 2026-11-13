@@ -6,12 +6,13 @@
 // Run with: node --test plugins/truss/tests/doc-citations-031.check.ts
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { citationDocs, citationLintFailures, lineCitations } from './fixtures/citations/line-citations.ts'
+import { selectTests } from '../bin/testmap.ts'
+import { CITATION_DOC_ROOTS, citationDocs, citationLintFailures, lineCitations } from './fixtures/citations/line-citations.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const texts = (md) => lineCitations(md).map((c) => c.text)
@@ -63,4 +64,14 @@ test('doc-citations: no doc in this repo cites code by line number', () => {
   assert.ok(docs.some((d) => d.startsWith('plugins/truss/docs/adr/')) && docs.includes('docs/knowledge/store.md'), `the lint found too few docs: ${docs.length}`)
   const fails = citationLintFailures(ROOT)
   assert.deepEqual(fails, [], `${fails.length} line citation(s); cite the symbol (function, constant, test title) or the section heading instead:\n${fails.join('\n')}`)
+})
+
+test('doc-citations: a change to any doc the lint scans selects the citation checks (targetedTests.map)', () => {
+  const config = JSON.parse(readFileSync(path.join(ROOT, '.claude', 'truss.json'), 'utf8')).targetedTests
+  for (const dir of CITATION_DOC_ROOTS) {
+    const doc = `${dir}/sub/some-doc.md`
+    const s = selectTests({ tracked: [doc], changed: [{ path: doc, deleted: false }], read: () => '', config, packageTest: 'node --test' })
+    assert.equal(s.mode, 'targeted', `${doc}: ${s.why.join('; ')}`)
+    for (const t of ['doc-citations-031', 'release-026']) assert.ok(s.files.some((f) => f.endsWith(`/${t}.check.ts`)), `${doc} does not select ${t}: ${s.files.join(', ')}`)
+  }
 })

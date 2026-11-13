@@ -86,7 +86,7 @@ const listField = (key: string, items: string[]): Field => ({ key, raw: [`${key}
 const joinFront = (fields: Field[], body: string[]): string => (fields.length === 0 ? body.join('\n') : ['---', ...fields.flatMap((f) => f.raw), '---', ...body].join('\n'))
 
 // Three-way merge of two frontmatters. Per key: a side that left it as base gets the other side's value; both changed it to
-// lists: their union, less what either side dropped; both changed `verified`: the newer commit when `newer` can tell; any
+// lists: their union, less what either side dropped; both changed `verified`: the newer commit when `newer` can tell (a descendant wins; on diverging branches the later commit date, then the larger sha); any
 // other key both sides changed differently: undefined (not resolvable). Keys keep ours' order, then theirs' new keys.
 export function mergeFields(base: Field[], ours: Field[], theirs: Field[], newer?: (a: string, b: string) => string | undefined): Field[] | undefined {
   const get = (fs: Field[], k: string): Field | undefined => fs.find((f) => f.key === k)
@@ -237,7 +237,16 @@ export function resolveFrontmatterConflicts(cwd: string, git: Git = defaultGit):
   const newer = (a: string, b: string): string | undefined => {
     if (git(cwd, ['merge-base', '--is-ancestor', a, b]).status === 0) return b
     if (git(cwd, ['merge-base', '--is-ancestor', b, a]).status === 0) return a
-    return undefined
+    // Two crews stamp their own branch heads (`crew.head`, `rev-parse HEAD`), so the stamps can sit on diverging branches. The later
+    // commit date wins, the larger sha on a tie, so both merge directions give the same stamp. A stamp that is no commit stays unresolved.
+    const at = (c: string): number | undefined => {
+      const r = git(cwd, ['show', '-s', '--format=%ct', `${c}^{commit}`])
+      const n = r.status === 0 ? Number(r.out.trim()) : NaN
+      return Number.isFinite(n) ? n : undefined
+    }
+    const [ta, tb] = [at(a), at(b)]
+    if (ta === undefined || tb === undefined) return undefined
+    return ta !== tb ? (ta > tb ? a : b) : a > b ? a : b
   }
   for (const file of files) {
     const stage = (n: number): string | undefined => {

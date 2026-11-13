@@ -136,6 +136,14 @@ t('a carried ruling at qc (built by an earlier run) spawns no fix builder; a new
   assert.equal(at(r, labelIs('a-builder')), -1)
 })
 
+t('a new waive-and-proceed ruling at qc orders no change and spawns no fix builder', async () => {
+  for (const text of ['PM ruling: waive the doc-line finding and proceed to merge.', 'Retry QC; no changes are needed.']) {
+    const r = await runCrew(entryOf({ answers: [{ at: 'qc', text }], freshAnswers: 1 }), tail)
+    assert.equal(at(r, labelIs('a-builder')), -1, `${text}: ${trail(r)}`)
+    assert.equal(r.result.state, 'passed', JSON.stringify(r.result).slice(0, 400))
+  }
+})
+
 t('an earlier fix member\'s stopped branch (entry.prior) is merged before green, even when no fix member runs', async () => {
   const e = entryOf({ answers: [{ at: 'green', text: 'retry the green check unchanged' }], freshAnswers: 1, prior: [{ at: 'fix, QC findings', branch: 'feat/builder-12' }] })
   const r = await runCrew(e, tail)

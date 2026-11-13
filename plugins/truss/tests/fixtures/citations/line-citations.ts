@@ -32,6 +32,9 @@ export function lineCitations(md) {
 
 // The docs the lint covers, repo-relative with `/`: the plugin docs (ADRs and goals included), the repo docs (feature map,
 // knowledge docs) and the rule files. A missing directory is skipped, so a test can point `root` at a fixture tree.
+// The doc roots the lint walks. `.claude/truss.json` targetedTests.map must send each root to the citation checks; doc-citations-031.check.ts pins that.
+export const CITATION_DOC_ROOTS = ['plugins/truss/docs', 'docs', '.claude/rules']
+
 export function citationDocs(root) {
   const out = []
   const walk = (rel) => {
@@ -42,7 +45,7 @@ export function citationDocs(root) {
       if (e.isDirectory()) { if (e.name !== 'vendor' && e.name !== 'node_modules') walk(r) } else if (e.isFile() && e.name.endsWith('.md')) out.push(r)
     }
   }
-  for (const d of ['plugins/truss/docs', 'docs', '.claude/rules']) walk(d)
+  for (const d of CITATION_DOC_ROOTS) walk(d)
   return out
 }
 

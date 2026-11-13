@@ -6,6 +6,7 @@
   "targetedTests": {
     "map": [
       { "paths": ["plugins/truss/**", ".claude/rules/**"], "tests": ["plugins/truss/tests/release-026.check.ts", "plugins/truss/tests/hygiene-029.check.ts"] },
+      { "paths": ["plugins/truss/docs/**", "docs/**", ".claude/rules/**"], "tests": ["plugins/truss/tests/doc-citations-031.check.ts", "plugins/truss/tests/release-026.check.ts"] },
       { "paths": ["ui/**"], "run": "npm --prefix ui test" }
     ]
   },

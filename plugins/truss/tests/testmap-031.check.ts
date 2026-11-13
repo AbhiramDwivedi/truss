@@ -188,6 +188,14 @@ test('testmap: stripBlanketSuite drops a trailing whole-suite step from an accep
   assert.deepEqual(stripBlanketSuite('node --test a.check.ts'), { command: 'node --test a.check.ts', blanket: false })
 })
 
+test('testmap: stripBlanketSuite keeps every other step of the chain, wherever the suite sits', () => {
+  assert.deepEqual(stripBlanketSuite('node --test a.check.ts && npm test && node --test b.check.ts'), { command: 'node --test a.check.ts && node --test b.check.ts', blanket: true })
+  assert.deepEqual(stripBlanketSuite('a\nnpm test && node --test b.check.ts'), { command: 'a\nnode --test b.check.ts', blanket: true })
+  assert.deepEqual(stripBlanketSuite('npm test > "$N" 2>&1 || { tail "$N"; fail "x && y"; } && node --test b.check.ts'), { command: 'node --test b.check.ts', blanket: true })
+  assert.deepEqual(stripBlanketSuite('echo "a && npm test" && node --test b.check.ts'), { command: 'echo "a && npm test" && node --test b.check.ts', blanket: false })
+  assert.deepEqual(stripBlanketSuite('npm test'), { command: '', blanket: true })
+})
+
 function git(cwd: string, ...args: string[]) {
   const r = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', windowsHide: true })
   assert.equal(r.status, 0, r.stderr)
