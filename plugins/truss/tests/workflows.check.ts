@@ -939,6 +939,8 @@ t('stage green: a fix builder that is not DONE stops the crew with its tag at gr
 // ---------------------------------------------------------------- stage.js: stress test
 
 const rtCrew = (o = {}) => entry('a', { stressTest: true, ...o })
+// a stress finding is a defect: the crew's tester writes its regression case before the fix builder runs (0.29.0 item 8)
+const rtFixers = { ...fixers, 'a-tester-2': done('feat/rt') }
 t('stage stress: runs a-stress with the prompt first line exactly "Stress test:" then head, branch, goal file, adrs, high-impact', async () => {
   const r = await runStage([rtCrew()], { labels: base('a', { 'a-stress': RT0 }) })
   const p = call(r, 'a-stress').prompt
@@ -959,7 +961,7 @@ t('stage stress: stressTest false runs no stress test', async () => {
 })
 t('stage stress: findings run one fix builder with them, integrate, green, then the qc; no second stress test', async () => {
   const r = await runStage([rtCrew()], {
-    labels: { ...base('a', { 'a-stress': RTN(2, 'ONE') }), ...fixers },
+    labels: { ...base('a', { 'a-stress': RTN(2, 'ONE') }), ...rtFixers },
     runner: greenSeq(gOk(HEAD), gOk(HEAD2)),
   })
   has(call(r, 'a-builder-2').prompt, 'ONE-finding-1')
@@ -976,19 +978,19 @@ t('stage stress: STRESSTEST 0 runs no fix builder', async () => {
   assert.ok(!had(r, 'a-stress-2'))
 })
 t('stage stress: one round adds no spend: a finding round with reworkAllowance 0 still passes', async () => {
-  const labels = { ...base('a', { 'a-stress': RTN(1, 'R1') }), 'a-builder-2': done('feat/f1') }
+  const labels = { ...base('a', { 'a-stress': RTN(1, 'R1') }), 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/f1') }
   const r = await runStage([rtCrew()], { reworkAllowance: 0, labels })
   assert.equal(r.calls.filter((c) => /stress/.test(c.label)).length, 1)
   assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
 })
 const NOTES = 'STRESSTEST: 1 findings\n## Findings\n- REAL-defect-1\n## Notes\n- GAP-note-1\n- GAP-note-2\nprose line, not a bullet\n## Other\n- not-a-note\n'
 t('stage stress: test gaps under ## Notes never reach a fix builder prompt', async () => {
-  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...fixers } })
+  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...rtFixers } })
   has(call(r, 'a-builder-2').prompt, 'REAL-defect-1')
   for (const c of r.calls.filter((c) => /builder/.test(c.label))) assert.ok(!c.prompt.includes('GAP-note-1'), `${c.label} prompt carries a test gap`)
 })
 t('stage stress: deferred holds the ## Notes bullets in order, "- " removed, up to the next ## heading', async () => {
-  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...fixers } })
+  const r = await runStage([rtCrew()], { labels: { ...base('a', { 'a-stress': NOTES }), ...rtFixers } })
   passedShape(r.res[0], 'a', HEAD, 'a-qc', rtCrew(), ['GAP-note-1', 'GAP-note-2'])
 })
 t('stage stress: deferred reads ## Notes to the end of the report and works with STRESSTEST 0', async () => {
@@ -1006,7 +1008,7 @@ t('stage stress: a crew with no stress test has no deferred key', async () => {
   assert.ok(!('deferred' in r.res[0]))
 })
 t('stage stress: the qc FAIL after a stress test fix is spend 1', async () => {
-  const labels = { ...base('a', { 'a-stress': RTN(1), 'a-qc': FAIL() }), 'a-builder-2': done('feat/f1') }
+  const labels = { ...base('a', { 'a-stress': RTN(1), 'a-qc': FAIL() }), 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/f1') }
   const r = await runStage([rtCrew()], { reworkAllowance: 0, labels })
   stopped(r.res[0], 'BLOCKED', 'qc')
   assert.ok(r.res[0].text.startsWith('BLOCKED: rework allowance spent: a, spend 1, reworkAllowance 0'), r.res[0].text)
