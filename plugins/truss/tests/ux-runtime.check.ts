@@ -355,7 +355,8 @@ t('u4 rework 1: UX: REWORK sends the findings to a fix builder, runs green again
   const r = await runStage([uxCrew()], { labels: uxBase({ 'a-ux-2': REWORK, 'a-ux-3': 'UX: PASS\n', 'a-builder-2': done('feat/fix') }) })
   assert.ok(had(r, 'a-builder-2'), `no fix builder after UX: REWORK: ${why(r)}`)
   assert.ok(call(r, 'a-builder-2').prompt.includes('Home: no empty state is drawn'), 'the fix builder brief holds the finding')
-  assert.equal(r.calls.filter((c) => c.runner?.key === 'check:green').length, 2, 'green runs again after the fix')
+  // the full suite before merge (check --full, 0.31.0 item 1) is not a green re-run
+  assert.equal(r.calls.filter((c) => c.runner?.key === 'check:green' && !/\s--full\b/.test(c.prompt)).length, 2, 'green runs again after the fix')
   assert.ok(call(r, 'a-ux-3').prompt.includes('Home: no empty state is drawn'), 'the next review sees the previous review')
   assert.equal(r.res[0].state, 'passed', why(r))
   assert.deepEqual(r.res[0].ux, { direction: 'a-ux', review: 'a-ux-3', verdict: 'PASS', findings: [] })

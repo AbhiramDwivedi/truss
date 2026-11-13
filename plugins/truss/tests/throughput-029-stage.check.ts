@@ -231,7 +231,8 @@ t('i1 1: the reap after each member rides on the crew\'s next factory call; only
   })
   // ADR-0046 item 1, measured: this crew cost 32 runner spawns before the change (31 before items 6 and 7)
   // ADR-0046 item 8 adds the stress finding's regression tester before the fix builder: its admit and its integrate, 24 -> 26
-  assert.ok(runners(r).length <= 26, `runner commands: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
+  // 0.31.0 item 1 adds the full suite before merge: one heavy check --full after the QC PASS, 26 -> 27
+  assert.ok(runners(r).length <= 27, `runner commands: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
 })
 
 // the runner labels that answered more than one command: gates calls (gatesAware records each step under the call's label)
@@ -243,7 +244,8 @@ t('i1 6: green, the owns and tests checks, the lint and the QC admit before QC c
   passed(r)
   const spawns = spawnLabels(r.calls)
   // measured: 26 runner spawns before gates (26 commands, one spawn each); the same commands now
-  assert.ok(spawns.length <= 22, `runner spawns: ${spawns.length}: ${spawns.map((l) => r.calls.filter((c) => c.label === l).map((c) => c.runner.key).join('+')).join(',')}`)
+  // 0.31.0 item 1 adds the full suite before merge, one spawn after the QC PASS: 22 -> 23
+  assert.ok(spawns.length <= 23, `runner spawns: ${spawns.length}: ${spawns.map((l) => r.calls.filter((c) => c.label === l).map((c) => c.runner.key).join('+')).join(',')}`)
   const qcAt = indexOf(r, 'a-qc')
   // the last spawn before QC answers green, owns-check, tests-check, knowledge-lint and the QC admit together
   const before = r.calls.slice(0, qcAt).filter((c) => c.runner)

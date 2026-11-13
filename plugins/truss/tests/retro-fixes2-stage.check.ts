@@ -273,7 +273,8 @@ const withGreen = (record, times, seen) => {
   return (x) => b(x) ?? g(x)
 }
 const backstopCalls = (r) => r.calls.filter((c) => c.runner?.cmd === 'tests-check' && /Backstop: /.test(c.prompt))
-const greenChecks = (r) => r.calls.filter((c) => c.runner?.key === 'check:green')
+// the full suite before merge (check --full, 0.31.0 item 1) is not a green re-check
+const greenChecks = (r) => r.calls.filter((c) => c.runner?.key === 'check:green' && !/\s--full\b/.test(c.prompt))
 
 t('F70 1: a green fix builder that ends BLOCKED or QUESTION naming a tester file is re-routed to a tester fix member, and the crew does not stop', async () => {
   for (const marker of ['BLOCKED', 'QUESTION']) {
