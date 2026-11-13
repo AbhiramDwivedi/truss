@@ -7,7 +7,7 @@ Proposed on 2026-10-26 by foundry run 2's design crew. It applies [ADR-0012](001
 
 worktrees gives every `Agent` call a worktree unless the call sets `isolation` or the type is in its no-isolate set (`plugins/worktrees/hooks/register.ts`): the `READ_ONLY_AGENTS` constant (line 8: `Explore`, `Plan`, `claude-code-guide`, `statusline-setup`, `scout`, `reviewer`) plus the user's `noIsolateAgents` and its deprecated alias `readOnlyAgents` (`register`, line 1204). `needsWorktree` (lines 55-60) matches the full type or its bare name.
 
-The interface that can't take the work: neither input lets the plugin that defines an agent type say it is read-only. The constant is worktrees' own source; the setting is the user's. A caller can't opt out on the call either, because the Agent tool's `isolation` takes only `worktree` or `remote` (`index.d.ts:555`). So `foundry:judge` and `foundry:cynic` (`tools: Read, Grep, Glob, Bash`) each get a worktree, a setup-script run and a port slot.
+The interface that can't take the work: neither input lets the plugin that defines an agent type say it is read-only. The constant is worktrees' own source; the setting is the user's. A caller can't opt out on the call either, because the Agent tool's `isolation` takes only `worktree` or `remote` (`index.d.ts`). So `foundry:judge` and `foundry:cynic` (`tools: Read, Grep, Glob, Bash`) each get a worktree, a setup-script run and a port slot.
 
 ## Decision
 
@@ -42,7 +42,7 @@ Status: accepted. The owner approved foundry run 3's plan at 2026-10-28T00:31:42
 
 ### Context
 
-The decision above gives no worktree to any type a `readOnly: true` entry names in full. A manifest written by kit 0.2.0, or by hand, can name a type that edits files, and that type then edits the main checkout. At plan time, `declaredReadOnly` (`plugins/worktrees/hooks/register.ts:74-92`) returned all seven types below as read-only. kit 0.3.0 stops writing such entries ([ADR-0013](0013-kit-manifest.md), amendment of 2026-10-27), but it reads existing files tolerantly, so the reader has to refuse them too. The interface that changes is the decision's second bullet: a full-name `readOnly: true` entry no longer always means no worktree.
+The decision above gives no worktree to any type a `readOnly: true` entry names in full. A manifest written by kit 0.2.0, or by hand, can name a type that edits files, and that type then edits the main checkout. At plan time, `declaredReadOnly` (`plugins/worktrees/hooks/register.ts`) returned all seven types below as read-only. kit 0.3.0 stops writing such entries ([ADR-0013](0013-kit-manifest.md), amendment of 2026-10-27), but it reads existing files tolerantly, so the reader has to refuse them too. The interface that changes is the decision's second bullet: a full-name `readOnly: true` entry no longer always means no worktree.
 
 ### The refused list
 
@@ -54,7 +54,7 @@ Refused read-only types: general-purpose, kit:builder, kit:test-writer, foundry:
 
 - `declaredReadOnly(text)` never puts a refused type in `types`. An entry is refused when its `name` (one the schema pattern allows, with `readOnly: true`), folded with the existing `asciiLower`, equals a list name. The match is full-name only: `Foundry:Lead` and `GENERAL-PURPOSE` are refused, `lead` and `plugin:general-purpose` are not.
 - Its return type becomes `{ types: Set<string>; refused: string[]; error?: string }`. `refused` is always present: the `name` of each refused entry as written in the file, in file order, and `[]` when there are none or when `error` is set. The constant is exported as `REFUSED_READ_ONLY_TYPES`, the seven names in the list's order, lower-case.
-- An unset or empty `subagent_type` is `general-purpose`, as today (`register.ts:58`), so it gets a worktree even when the manifest declares `general-purpose` read-only. So does `General-Purpose`.
+- An unset or empty `subagent_type` is `general-purpose`, as today (`register.ts` `isLead`), so it gets a worktree even when the manifest declares `general-purpose` read-only. So does `General-Purpose`.
 - Other declarations still count: a manifest that declares `foundry:judge` and a refused type gives `foundry:judge` no worktree.
 - When `refused` is non-empty, the handler writes one line to the debug log (P7), exactly:
 
@@ -76,7 +76,7 @@ Refused read-only types: general-purpose, kit:builder, kit:test-writer, foundry:
 
 Status: accepted. The owner approved foundry run 4's plan at 2026-10-28T15:11:50Z, and this amendment is part of that plan (its wave-0 design crew wrote it, in [ADR-0015](0015-agent-worktree-cleanup.md), items 4 and 13). The decisions above stand except where this section narrows them.
 
-- The main checkout whose `.claude/kit/manifest.json` worktrees reads is the one ADR-0015 item 4 resolves: `CLAUDE_PROJECT_DIR`, else the event's `cwd`, else `$.session.cwd()`, each tried with `git rev-parse --path-format=absolute --git-common-dir`. `declaredByKit` no longer runs git with no `cwd` (`plugins/worktrees/hooks/register.ts:727`, as of worktrees 0.7.0). A repo that was not found is never cached, so a spawn from inside the git dir followed by one from the main checkout both read the manifest.
+- The main checkout whose `.claude/kit/manifest.json` worktrees reads is the one ADR-0015 item 4 resolves: `CLAUDE_PROJECT_DIR`, else the event's `cwd`, else `$.session.cwd()`, each tried with `git rev-parse --path-format=absolute --git-common-dir`. `declaredByKit` no longer runs git with no `cwd` (`plugins/worktrees/hooks/register.ts`, as of worktrees 0.7.0). A repo that was not found is never cached, so a spawn from inside the git dir followed by one from the main checkout both read the manifest.
 - The manifest rules (full names only, refused types ignored, absent means silent, unreadable means logged) don't change. A manifest that declares a type now also logs `worktrees: isolation skipped <type>: kit manifest declares it read-only`, one of the isolation path's skip lines in ADR-0015.
 - `noIsolateAgents` stays untouched. It is the route for judges and cynics (ADR-0015 item 7); no new declaration source is added.
 - The seams above hold. Their mocks answer `--git-common-dir` for any `cwd`, so they still pass.

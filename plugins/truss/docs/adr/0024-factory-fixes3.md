@@ -16,16 +16,16 @@ The ui-redesign run logged twelve plugin bugs in `decisions.md` between 23:34 an
 |---|---|
 | item 24 | Only the stress role gets an "agent file changed after the session" warning: `stressWarnings` (`bin/factory/warnings.ts`). A `truss:ux-engineer` added mid-session was unspawnable ("agent type 'truss:ux-engineer' not found") and nothing warned. |
 | item 25 | `answersFor` (`workflows-src/stage/answers.js`) sends every answer whose `at` is not a task name to every member. That includes `ux-direction` and `ux-review`, which already reach their own step (`workflows-src/stage/ux.js` `uxDirectionPrompt`, `uxReviewPrompt`). |
-| item 26 | Hotfix `08ae9bd` makes member briefs merge with `--no-ff`, pinned in `tests/workflows.check.ts:687` ("bug 26"). A resume still never looks for member worktrees that have vanished. |
-| item 27 | `doneTasks` (`bin/factory/start.ts`) skips every result whose `marker !== 'DONE'` (`:1037`). A BLOCKED task whose branch the PM merged by hand is never done. |
-| item 28 | `testsBackstop` (`workflows-src/stage/fixes.js`) goes through `fixBuilder` (`workflows-src/stage/tasks.js`) and `fixPrompt` (`:431`), whose brief opens with a `git merge --no-ff` step and "Work in your own worktree" (`:445`), then tells the agent to rewrite the crew branch "not in your own worktree" (`:603`). The tester role runs with isolation `worktree` (`workflows/roles.json:5`), where the worktree guard refuses `git -C <crew worktree>`. |
-| item 29 | `const F = args.truss` (`workflows-src/stage/args.js` `F`). `workflowCallVerdict` refuses a call with no object `args.truss` (`hooks/register.ts:766-767`). `--args-file` already writes the object to a file (`bin/factory/start.ts` `argsFileOut`), but the PM still pastes it inline. A hook can rewrite a call's input: `next({ ...e, content: stamped })` (`register.ts:2200`). |
-| item 30 | `agents/ux-engineer.md:41` stops review mode BLOCKED with no screenshots and no dev server, even for a crew that renders nothing. |
-| item 31 | `testsGuard` (`workflows-src/stage/scope.js`) changes its prompt only per `tests` answer (`Attempt:`, `:859-860`, hotfix `8daf2ac`). The crew entry has no head SHA (`crewEntry`, `bin/factory/start.ts`), so a cached guard result outlives a branch rewrite. |
-| item 32 | `cmdIntegrate` (`bin/factory/crew.ts`) always runs `git merge --no-ff <branch>` (`:703`). A resume that replays a stale member branch brings back commits a rewrite removed. |
-| item 33 | `uxReviewPrompt` (`workflows-src/stage/ux.js`) gives the green tail only (`:1046-1047`). It never points to the goal file's `## UX` "Live page" line, and `ux-engineer.md:41-42` still stops for missing screenshots or ports. |
+| item 26 | Hotfix `08ae9bd` makes member briefs merge with `--no-ff`, pinned in `tests/workflows.check.ts` test "stage members: the first step of a member prompt is git merge of the crew branch (before the brief)" ("bug 26"). A resume still never looks for member worktrees that have vanished. |
+| item 27 | `doneTasks` (`bin/factory/start.ts`) skips every result whose `marker !== 'DONE'`. A BLOCKED task whose branch the PM merged by hand is never done. |
+| item 28 | `testsBackstop` (`workflows-src/stage/fixes.js`) goes through `fixBuilder` (`workflows-src/stage/tasks.js`) and `fixPrompt`, whose brief opens with a `git merge --no-ff` step and "Work in your own worktree", then tells the agent to rewrite the crew branch "not in your own worktree". The tester role runs with isolation `worktree` (`workflows/roles.json` key `tester`), where the worktree guard refuses `git -C <crew worktree>`. |
+| item 29 | `const F = args.truss` (`workflows-src/stage/args.js` `F`). `workflowCallVerdict` refuses a call with no object `args.truss` (`hooks/register.ts` `truss`). `--args-file` already writes the object to a file (`bin/factory/start.ts` `argsFileOut`), but the PM still pastes it inline. A hook can rewrite a call's input: `next({...e, content: stamped })` (`register.ts` the `tool.call` handler for `Write`, `Edit`). |
+| item 30 | `agents/ux-engineer.md` section "Inputs you need, and the stops when one is missing" stops review mode BLOCKED with no screenshots and no dev server, even for a crew that renders nothing. |
+| item 31 | `testsGuard` (`workflows-src/stage/scope.js`) changes its prompt only per `tests` answer (`Attempt:`, hotfix `8daf2ac`). The crew entry has no head SHA (`crewEntry`, `bin/factory/start.ts`), so a cached guard result outlives a branch rewrite. |
+| item 32 | `cmdIntegrate` (`bin/factory/crew.ts`) always runs `git merge --no-ff <branch>`. A resume that replays a stale member branch brings back commits a rewrite removed. |
+| item 33 | `uxReviewPrompt` (`workflows-src/stage/ux.js`) gives the green tail only. It never points to the goal file's `## UX` "Live page" line, and `ux-engineer.md` section "Inputs you need, and the stops when one is missing" still stops for missing screenshots or ports. |
 | item 34 | `cmdCheck` sets `env` whenever `envFailure` finds any env line (`bin/factory/check.ts`). `green` stops BLOCKED on any `env` (`workflows-src/stage/green.js`). One WebKit launch line hid 66 real e2e failures. |
-| item 35 | `directionOf` (`bin/factory/runs.ts`) reads only `reports/<slug>/`, which `finish` fills (`recordRun`, `:1489-1496`, called at `:1778`). A ux crew resumed before `finish` gets `direction: null`. |
+| item 35 | `directionOf` (`bin/factory/runs.ts`) reads only `reports/<slug>/`, which `finish` fills (`recordRun`, called in `cmdFinish`). A ux crew resumed before `finish` gets `direction: null`. |
 
 ## Decision
 
@@ -48,7 +48,7 @@ flowchart LR
 ### Rulings
 
 1. **Item 24** takes the warning option the brief offers. A stage.js fallback that inlines an agent body would need that body inside `args.truss`, which works against item 29.
-2. **Item 28's** backstop runs as the `resolver` role (isolation `none`, `workflows/roles.json:7`). A worktree-isolated tester can't run `git -C <crew worktree>` under the worktree guard (`workflows-src/stage/texts.js` `SHELL`, `SHELL`).
+2. **Item 28's** backstop runs as the `resolver` role (isolation `none`, `workflows/roles.json` key `resolver`). A worktree-isolated tester can't run `git -C <crew worktree>` under the worktree guard (`workflows-src/stage/texts.js` `SHELL`, `SHELL`).
 3. **Item 32** uses tree equality, not patch id alone. This run's rewrites split commits, which changes their patch ids (decisions 02:18).
 4. **Items 30 and 33:** "renders nothing" is mechanical: no "Live page" line and no UI file in owns. A design crew like floor-design gets a file-only review with no PO ruling.
 
@@ -78,11 +78,11 @@ This adds an input form to the gate ADR-0009 Decision 6 defined. Every check `wo
 
 **Item 32** (factory-resume). As seam 4, using `git merge-tree --write-tree HEAD <branch>` (git 2.56.0 on this host). On a conflict, or when merge-tree fails, `cmdIntegrate` falls back to today's `--no-ff` merge, unchanged. The trailer check (`bin/factory/crew.ts` `cmdIntegrate`) still runs first. Known limit: a stale member branch that also carries new work changes the tree, so it still merges whole, stale commits included. Tree equality catches only a branch the crew head already contains.
 
-**Item 33** (stage-fixes3). The review brief tells the UX engineer how to take its own screenshots. It quotes the goal file's `## UX` "Live page" line when there is one; the parser matches the line's real form, `Live page (how review takes its own screenshots): ...`. Otherwise a crew that owns `ui/**` gets a default: `npm --prefix ui run build`, start `node ui/server/main.ts` in the background, wait for its listening line, capture each screen with `@playwright/test` chromium from `ui/node_modules`, then kill the server by its pid. The brief says never to stop BLOCKED for missing screenshots: after two failed starts, review from the files and say so. `ux-engineer.md:41-42` change to match, and the "No port" stop becomes a note, because the review serves on a port the OS picks. This adds to ADR-0022's review step; its text is unchanged.
+**Item 33** (stage-fixes3). The review brief tells the UX engineer how to take its own screenshots. It quotes the goal file's `## UX` "Live page" line when there is one; the parser matches the line's real form, `Live page (how review takes its own screenshots):...`. Otherwise a crew that owns `ui/**` gets a default: `npm --prefix ui run build`, start `node ui/server/main.ts` in the background, wait for its listening line, capture each screen with `@playwright/test` chromium from `ui/node_modules`, then kill the server by its pid. The brief says never to stop BLOCKED for missing screenshots: after two failed starts, review from the files and say so. `ux-engineer.md` section "Inputs you need, and the stops when one is missing" change to match, and the "No port" stop becomes a note, because the review serves on a port the OS picks. This adds to ADR-0022's review step; its text is unchanged.
 
 **Item 34** (factory-resume, stage-fixes3). As seam 2. "Every failure is explained" works on failure blocks: Playwright's `N) [project] › ...` headers, node:test TAP's `not ok N - ...`, and otherwise the whole output as one block. `env` is set only when every block holds an env line, or no block is found and an env line is. Otherwise the record gets `envSeen`. A red with `envSeen` and no `env` counts as red. When `env` is set, `green` behaves as today.
 
-**Item 35** (factory-resume). In `cmdStartResume`, when `directionOf(dir, slug)` is null, the entry takes the newest `<slug>-ux*` agent result in the crew's runs (`crewRunsOf`, `bin/factory/runs.ts`; highest label number, later run on a tie) whose first non-empty line, after `unbannered`, is `UX: DIRECTION`, as `{label, text}`. The text is trimmed as `directionOf` trims it (`:318`).
+**Item 35** (factory-resume). In `cmdStartResume`, when `directionOf(dir, slug)` is null, the entry takes the newest `<slug>-ux*` agent result in the crew's runs (`crewRunsOf`, `bin/factory/runs.ts`; highest label number, later run on a tie) whose first non-empty line, after `unbannered`, is `UX: DIRECTION`, as `{label, text}`. The text is trimmed as `directionOf` trims it.
 
 ### The trussFile path, end to end
 
@@ -112,7 +112,7 @@ sequenceDiagram
   end
 ```
 
-**Risk to check on the first live run.** No test can show that the Workflow runtime honours a `tool.call` hook's rewritten `args`. The Write and Edit rewrite (`register.ts:2200`) is the only precedent, and it rewrites `content` and `new_string`, not `args`. If the runtime ignores the rewrite, stage.js's item 29 error fires before any agent call, and the PM falls back to inline `args.truss`. Nothing runs half-configured.
+**Risk to check on the first live run.** No test can show that the Workflow runtime honours a `tool.call` hook's rewritten `args`. The Write and Edit rewrite (`register.ts` the `tool.call` handler for `Write`, `Edit`) is the only precedent, and it rewrites `content` and `new_string`, not `args`. If the runtime ignores the rewrite, stage.js's item 29 error fires before any agent call, and the PM falls back to inline `args.truss`. Nothing runs half-configured.
 
 ## Seams to pin
 
@@ -132,4 +132,4 @@ stage.js keeps accepting old-form entries (no `head`, no `ownTests`, no `guarded
 - A resume keeps a hand-merged task done (item 27), recovers a UX direction before `finish` (item 35), and names vanished member worktrees (item 26).
 - Every new `truss:*` role a crew spawns warns when its agent file is newer than the session (item 24); the warning never holds or refuses a crew.
 - `envSeen` and `contained` are new optional keys in check records and integrate output. `workflowArgs` is a new optional key in `start`'s short output. No stored shape changes in a hard-to-undo way.
-- `architecture.md`'s "Workflow calls" section gains the `trussFile` seam line. Its older register.ts line numbers are stale on `693a307`: `fencedBlock` is at `:1109`, not `:915`; `workflowCallVerdict` at `:737`, not `:594`; the Workflow handler at `:2085`, not `:1796`. This crew may add only the link and seam lines, so the old numbers stay for the doc's next edit.
+- `architecture.md`'s "Workflow calls" section gains the `trussFile` seam line. Its older register.ts line numbers are stale on `693a307`: `fencedBlock` is at, not `statusText`; `workflowCallVerdict` at, not `isQcName`; the Workflow handler at the `tool.call` handler for `Workflow`, not `fireReset`. This crew may add only the link and seam lines, so the old numbers stay for the doc's next edit.

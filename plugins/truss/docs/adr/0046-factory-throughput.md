@@ -72,7 +72,7 @@ These amend ADR-0033 Scope (the owns exemption) and the QC engineer's steps 7, 8
 #### Item 8: the tester writes the regression case first
 
 - `fixFindings` sends each defect to a tester before the fix builder runs: every stress finding, and a QC finding rated `bug` or `risk` (`DEFECT_RE`, `qcDefect`). The tester writes a failing regression case (`regressionDetail`); the fix builder then makes it pass. A nit gets no regression case.
-- `DEFECT_RE` matches `bug` or `risk` only as a whole word after the finding's optional location (`- debug log ...` and `- riskier ...` are not defects; `- Bug: ...` and ``- `a.ts:5`: risk ...`` are).
+- `DEFECT_RE` matches `bug` or `risk` only as a whole word after the finding's optional location (`- debug log ...` and `- riskier ...` are not defects; `- Bug: ...` and ``- `a.ts:<line>`: risk ...`` are).
 
 #### Item 3: a stress-fix round that adds no test fails green
 

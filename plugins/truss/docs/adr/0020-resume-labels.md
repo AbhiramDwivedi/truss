@@ -39,4 +39,4 @@ The merge gate reads one QC file per label and the stress gate one `<slug>-stres
 
 ## What this ADR cannot change
 
-`docs/architecture.md:301` describes report files as one file per label. It should name `<label>.run<N>.md` and the rank rule. The redesign-design crew owns `architecture.md`, and this crew must not touch it. The change is left for factory-fixes-2.
+`docs/architecture.md` section "The Workflow path (ADR-0009)" describes report files as one file per label. It should name `<label>.run<N>.md` and the rank rule. The redesign-design crew owns `architecture.md`, and this crew must not touch it. The change is left for factory-fixes-2.

@@ -12,7 +12,7 @@ Two interfaces can't take that as they stand: plugin.json has no `dependencies` 
 
 - **The subagent-limits contract reaches Workflow agents.** All 27 agent transcripts of run `wf_e804087f-eaa` contain `[subagent-limits] Context budget.` (`grep -lF` over the run's `agent-*.jsonl` lists 27 files; its journal has 27 `started` lines), and so does every agent transcript of `wf_0dff946d-af1` after 2026-11-02T17:30Z. The string is the plugin's contract (subagent-limits README:65).
 - **Nudge and stop never fired.** Across the 806 Workflow agent meta files under `~/.claude/projects` when the plan was written, the largest request context was 181K tokens (181,414, run `wf_0af69b63-4d4`), under the defaults `nudgeAtK` 300 and `stopAtK` 450 (subagent-limits plugin.json `userConfig`, README:14-15).
-- **A refused agent returns no report.** Past `stopAtK` an agent gets 8 more tool calls, then every tool call is refused (README:8). Such an agent's `agent()` call ends with no schema object, and `reportOf` in `workflows/stage.js:314-317` stops the crew `BLOCKED` with `the member returned no report`.
+- **A refused agent() returns no report.** Past `stopAtK` an agent gets 8 more tool calls, then every tool call is refused (README:8). Such an agent's `agent` call ends with no schema object, and `reportOf` in `workflows/stage.js` stops the crew `BLOCKED` with `the member returned no report`.
 - **Worktrees.** `WorktreeCreate` fires for Workflow worktrees: `.git/claude-worktrees/slots.json` `"active"` holds `wf_*` entries (for example `wf_e804087f-eaa-18` and `wf_0dff946d-af1-6`). SubagentStart and `SubagentStop` miss them, so worktrees never cleaned them up: the plan counted 49 stale `wf_*` worktrees, each on a `worktree-wf_<id>-<n>` branch at `.claude/worktrees/wf_<id>-<n>`.
 - **Plugin agent types work as agentType.** Meta files show `truss:writer`, `truss:planning-engineer` and `truss:qc-engineer` runs. No Workflow agent has yet run as a `kit:*` type: 0 of the meta files.
 
@@ -55,9 +55,9 @@ The client accepted this probe in place of the isolated `CLAUDE_CONFIG_DIR` re-p
 
 "kit is loaded" means a `kit:` skill is among the session's skills.
 
-- **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json:5-7`) stand.
+- **Run.** The run skill passes `--type builder=kit:builder --type tester=kit:test-writer` to `factory.ts start` and `plan-args` only when kit is loaded. Otherwise it passes no `--type`, and the `roles.json` defaults (`general-purpose`, `workflows/roles.json` key `tester`) stand.
 - **Factory.** `rolesWithTypes` (`bin/factory/shared.ts`, today `--type` only) also reads `.claude/truss.json` `roles`: `roles.build` sets builder and resolver, `roles.test` sets tester. A `--type` wins over `roles`. No `roles` leaves `roles.json` as it is. The truss.json mapping maps whenever configured; the config author owns the kit dependency.
-- **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts:9-13` pins today.
+- **Init, missing manifest.** When `.claude/kit/manifest.json` is missing and `kit:init` is among the session's skills, init runs `kit:init` through the Skill tool; kit proposes and writes only on the client's approval. Init then proposes `roles` `build: kit:builder` and `test: kit:test-writer`, and the limit values of Decision 2. This reverses ADR-0002's no-manifest row and its 0.4.1 amendment, which `tests/init.check.ts` `NO_MANIFEST` pins today.
 - **Init, kit absent.** The kit-absent line stays word for word, because truss loaded alone by `--plugin-dir` still reaches it: `kit is not installed; truss init carries on without a kit manifest (0.3.0 behaviour)`.
 
 PM gate 1 runs a member as `kit:builder` before stage 1 and records its meta.json agentType. If it fails, the PM re-plans this decision before stage 1 starts.
@@ -66,7 +66,7 @@ Decided by: the plan, items 2 and 3 (approved auto, checker-41); PM ruling D (14
 
 ### 4. split-work is loaded unconditionally
 
-The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md:42` loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`workflows-src/stage/split.js`) doesn't name it.
+The project manager prompt and the planning engineer's prompt in stage.js both load `subagent-limits:split-work` before splitting work. Today `agents/project-manager.md` section "3. Split the work into member tasks" loads it only "If the `subagent-limits:split-work` skill is available", and `plannerPrompt` (`workflows-src/stage/split.js`) doesn't name it.
 
 Decided by: the plan, item 4 (approved auto, checker-41).
 
@@ -159,8 +159,8 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 
 - A user who skips the claude-ops marketplace gets a truss that fails to load, and the fix is in the README.
 - `docs/events.schema.json`'s `event` enum has no `restart` today (it holds `spawn`, `stall`, `tag`, `report`, `allowance-spent`, `fetch`, `incomplete`, `refusal`, `sampler-error`). compose-runtime (stage 1), which owns that file under PO ruling F, adds `restart` with `crew`, `label`, `n` and `reason`. compose-design never edits it.
-- `tests/workflows.check.ts:808-813` (a second member that is not DONE after a CHECKPOINT stops BLOCKED, with no third member) is the one existing case reversed; compose-runtime may change only those lines. The case above it (`:801-807`, a CHECKPOINT then DONE) still holds.
-- `tests/init.check.ts:9-13` is reversed with Decision 3; compose-wiring owns it. `tests/contract.check.ts` stays green, because the kit-absent line stays.
+- `tests/workflows.check.ts` test "stage members: a second member that is not DONE after a CHECKPOINT stops BLOCKED at the task, with no third member" is the one existing case reversed; compose-runtime may change only that test. The test above it, "stage members: CHECKPOINT starts one fresh member of the same role from its text; DONE there carries on" (a CHECKPOINT then DONE), still holds.
+- `tests/init.check.ts` `NO_MANIFEST` is reversed with Decision 3; compose-wiring owns it. `tests/contract.check.ts` stays green, because the kit-absent line stays.
 - A task can take more member runs than before (the worst case above), but each is a fresh, smaller context.
 
 ## Left for later

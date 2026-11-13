@@ -14,6 +14,7 @@ import { goalOf } from '../../hooks/intake.ts'
 import { logPassed, recordEscalations, recordRun, sessionAudit } from './audit.ts'
 import type { Audit } from './audit.ts'
 import { cmdCheck } from './check.ts'
+import { concludeFrontmatterMerge } from '../fragments.ts'
 import { cmdOwnsCheck } from './crew.ts'
 import { setCrewState } from './decisions.ts'
 import { gateGit, knowledgeConfigRefusal } from './knowledge-cmds.ts'
@@ -113,7 +114,8 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   if (resolved.status !== 0 || resolved.out === '') return { refused: `target branch ${target} does not resolve` }
   const oldSha = resolved.out
   const m = run(wt, ['merge', '--no-edit', oldSha])
-  if (m.status !== 0) {
+  // 0.31.0 item 4 (architecture.md, "Doc fragments"): a conflict confined to YAML frontmatter resolves itself; any other conflict is the crew's rework
+  if (m.status !== 0 && !concludeFrontmatterMerge(wt).concluded) {
     const conflict = run(wt, ['diff', '--name-only', '--diff-filter=U']).out !== ''
     run(wt, ['merge', '--abort'])
     return conflict ? { rework: 'conflict' } : { refused: `git merge ${target} failed: ${m.err || m.out}` }

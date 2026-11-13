@@ -21,12 +21,12 @@ The code facts the items rest on:
 - The merge step refuses a crew whose `redRecord` is missing or has exit 0 (`bin/factory/finish.ts`). An answers resume skips red unless an answer's `at` is `red` (`workflows-src/stage/chain.js` `chain`).
 - `cmdPlanCheck` compares owns only between crews of the same stage and the same goal (`bin/factory/plan.ts`).
 - `crewEntry` copies `goal`, `scope` (the goal file's `## Approved scope`) and `acceptanceTest` into every entry, beside `goalFile` (`bin/factory/start.ts`). `start --args-file` writes that whole object to the argsFile and prints a pointer (`bin/factory/start.ts` `argsFileOut`).
-- `memberPrompt` puts `Approved scope: ${e.scope}` and `Acceptance test: ${e.acceptanceTest}` in every member brief (`workflows-src/stage/prompts.js`). The same fields reach prompts at `:520`, `:567`, `:726` and `:734`.
+- `memberPrompt` puts `Approved scope: ${e.scope}` and `Acceptance test: ${e.acceptanceTest}` in every member brief (`workflows-src/stage/prompts.js`). The same fields reach prompts at `plannerPrompt`, `green`, `qcPrompt` and `qcPrompt`.
 - `runFactory` does `JSON.parse(res.stdout)` on the whole stdout (`workflows-src/stage/runner.js`), so one non-JSON line before the result makes `parsed` null.
 - `taskPrompt` emits `Task: ${task.name}` and adds only the answers whose `at` equals that task's name (`workflows-src/stage/prompts.js`).
-- Two test-path rules exist: `isTestPath` in `workflows/stage.js:273` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory/crew.ts`, which feeds the guarded set at `:704`.
+- Two test-path rules exist: `isTestPath` in `workflows/stage.js` (a `tests/`, `test/` or `__tests__/` segment, or `.check.`, `.test.`, `.spec.`) and a wider one in `bin/factory/crew.ts`, which feeds the guarded set in `cmdTestsCheck`.
 - `rolesWithTypes` reads truss.json `roles` whenever it is an object (`bin/factory/shared.ts`). It never checks whether kit is loaded.
-- `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` at `README.md:283`.
+- `claude plugin validate plugins/truss` on main passes with two plugin-directory warnings: `icon: No icon (ICON_MISSING)` and `README.md: Listing link or icon path not accepted (LISTING_URL_SCHEME)`. The second names the example URL `https://user:secret@example.com:8443/...` in `README.md` section "What the fetch log records".
 
 ## Decision
 
@@ -66,7 +66,7 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 
 **Item 8** (runtime-factory). plan-check reports an owns overlap between crews of different goals whenever neither crew is merged or dropped (ruling 6). There is no held-goal exemption and no later-stage exemption. The error names both crews. The fixture uses crewalpha, crewbeta and crewgamma, each matched with `grep -w`: crewalpha and crewbeta are named, a merged crewgamma is not, and the check passes once crewbeta is merged.
 
-**Item 9** (split). One test-path rule. Start side, runtime-factory: `factory start` emits `guarded` (the guarded set of `bin/factory/crew.ts` `cmdOwnsCheck`) and `ownTests` in each crew entry, from the one rule in `bin/factory.ts`. Reader side, runtime-stage: stage.js drops its own `isTestPath` (`workflows/stage.js:273`) and reads `ownTests`, for example in `testerFiles` (`:277-281`). The acceptance grep `isTestPath *=\|tests\?\|\|__tests__\|\(check\|test\|spec\)` must find nothing in stage.js. It fires on main's `:273`, and it also fires on the `_{2}tests_{2}` evasion that gamed the older grep (ruling 3).
+**Item 9** (split). One test-path rule. Start side, runtime-factory: `factory start` emits `guarded` (the guarded set of `bin/factory/crew.ts` `cmdOwnsCheck`) and `ownTests` in each crew entry, from the one rule in `bin/factory.ts`. Reader side, runtime-stage: stage.js drops its own `isTestPath` (`workflows/stage.js`) and reads `ownTests`, for example in `testerFiles`. The acceptance grep `isTestPath *=\|tests\?\|\|__tests__\|\(check\|test\|spec\)` must find nothing in stage.js. It fires on main's, and it also fires on the `_{2}tests_{2}` evasion that gamed the older grep (ruling 3).
 
 **Item 10** (dropped). Under `claude plugin test` on main, 290 cases pass and 174 fail across all 17 `*.test.ts` files. Fixing that is a separate goal.
 
@@ -81,13 +81,13 @@ Main's stage.js inserts `e.scope` and `e.acceptanceTest` into prompts (`workflow
 - (d) **deferred**: resumed QC and stress gate labels, and the retro `QC_FILE` glob. They reverse the gate that `rl 4` pins, and no run has hit it.
 - (e) folded into items 2 and 17.
 
-**Item 14** (plugin-meta). Three parts: reword the example URL at `README.md:283` so LISTING_URL_SCHEME stops firing; add an icon; and add `tests/plugin-validate.check.ts`, which runs `claude plugin validate` and fails on any `(CODE)` warning, with no exemption. The check resolves the plugin root from its own module path (`path.dirname(fileURLToPath(import.meta.url))`), never from `process.cwd()`, so the base-copy run validates the base tree and can go red (ruling 4).
+**Item 14** (plugin-meta). Three parts: reword the example URL in `README.md` section "What the fetch log records" so LISTING_URL_SCHEME stops firing; add an icon; and add `tests/plugin-validate.check.ts`, which runs `claude plugin validate` and fails on any `(CODE)` warning, with no exemption. The check resolves the plugin root from its own module path (`path.dirname(fileURLToPath(import.meta.url))`), never from `process.cwd()`, so the base-copy run validates the base tree and can go red (ruling 4).
 
 The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` field, but the plan uses the default path `.claude-plugin/icon.png` with no key. The validator looks there, and the file turns ICON_MISSING off; there is no ICON_MISSING exemption. plugin-meta commits a deliberately designed square PNG with a truss motif, not a blank placeholder, of 512 to 2048 px a side and under 2 MB. The reason: validate warns that the icon "may become the listing icon only once: the first time the plugin is saved or submitted in the developer portal". The client is told before any portal save.
 
-**Item 15** (plugin-meta). Version 0.16.0 becomes 0.17.0 and the subagent-limits dependency `^0.3.1` becomes `^0.3.2` (`.claude-plugin/plugin.json:3`, `:8`), with the compose-manifests pins and a CHANGELOG entry. The nudge is re-proved live in an isolated `CLAUDE_CONFIG_DIR` and recorded in ADR-0021.
+**Item 15** (plugin-meta). Version 0.16.0 becomes 0.17.0 and the subagent-limits dependency `^0.3.1` becomes `^0.3.2` (`.claude-plugin/plugin.json` key `version`, key `dependencies`), with the compose-manifests pins and a CHANGELOG entry. The nudge is re-proved live in an isolated `CLAUDE_CONFIG_DIR` and recorded in ADR-0021.
 
-**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows-src/stage/split.js`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry()` fixture (`:145`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
+**Item 16** (runtime-stage). The stage half of item 6: builder prompts carry the read-only list of test files, and `validateTasks` (`workflows-src/stage/split.js`) sends back a task plan that breaks the rule. The exact send-back condition is runtime-stage's to pin in `stage-fixes2.check.ts`. `tests/stage-briefs.check.ts`'s `entry()` fixture (`entry`) gains `ownTests`, since F-27 depends on the tester derivation item 9 changes.
 
 **Item 17** (runtime-factory). doneTasks also counts a task whose branch has a full patch-id match on `truss-<slug>`, not only an ancestor, so a task whose commits reached the crew branch under other hashes stays done.
 
@@ -101,11 +101,11 @@ The icon (ruling 5 and the PO ruling on item 14): `plugin.json` has an `icon` fi
 
 ### Note on ADR-0015 Decision 6 (item 5)
 
-ADR-0015 Decision 6 says only runner-run commands go through `factory heavy`, that members' builds and tests are not queued, and that `reap` doesn't catch a member's own processes (`0015-resource-aware.md:161`, `:179`). Once item 5 merges, that changes: members run their builds and test suites through `factory heavy` with `--label <slug>-check`, so they share the one heavy slot with red and green checks, and the existing `reap` after each member covers their orphans (ADR-0017 Decision 1 and Consequences). This ADR holds the note because ADR-0015 is not this crew's to edit.
+ADR-0015 Decision 6 says only runner-run commands go through `factory heavy`, that members' builds and tests are not queued, and that `reap` doesn't catch a member's own processes (`0015-resource-aware.md` section "Checks through heavy: runner-run commands only", section "Reap: its own runner call"). Once item 5 merges, that changes: members run their builds and test suites through `factory heavy` with `--label <slug>-check`, so they share the one heavy slot with red and green checks, and the existing `reap` after each member covers their orphans (ADR-0017 Decision 1 and Consequences). This ADR holds the note because ADR-0015 is not this crew's to edit.
 
 ### Note on architecture.md, the run<N>.md files (item 13c)
 
-`docs/architecture.md:301` says `finish` records each agent's report under `reports/<slug>/<label>.md`. Since ADR-0020 that is true only for the first-ranked agentId under a label. A later agentId with a result, at rank k >= 2, is filed as `reports/<slug>/<label>.run<k>.md`, written `<label>.run<N>.md` with N the rank, except under a QC or stress gate label, where it is refused. The goal ui-redesign owns `architecture.md`, so the note lives here until that doc is next edited.
+`docs/architecture.md` section "The Workflow path (ADR-0009)" says `finish` records each agent's report under `reports/<slug>/<label>.md`. Since ADR-0020 that is true only for the first-ranked agentId under a label. A later agentId with a result, at rank k >= 2, is filed as `reports/<slug>/<label>.run<k>.md`, written `<label>.run<N>.md` with N the rank, except under a QC or stress gate label, where it is refused. The goal ui-redesign owns `architecture.md`, so the note lives here until that doc is next edited.
 
 ## Seams to pin
 

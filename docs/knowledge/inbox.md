@@ -1,12 +1,14 @@
 ---
 sources:
   - plugins/truss/bin/inbox.ts
-  - plugins/truss/bin/factory.ts
+  - plugins/truss/bin/factory/start.ts
+  - plugins/truss/bin/factory/plan.ts
+  - plugins/truss/bin/factory/resources.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/replies.js
   - plugins/truss/workflows-src/stage/crew.js
   - plugins/truss/tests/pm-calls-029.check.ts
-verified: f43974cc965a8760286c175febcbf4e48f1aae72
+verified: 31478126626f33e7f122ed9c0e7a03ec21b2ec55
 ---
 
 # Inbox: crew product calls
