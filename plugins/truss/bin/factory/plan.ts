@@ -315,7 +315,16 @@ export function cmdPlanCheck(f: Flags): Obj {
   // 0.31.0 item 1: the green check runs the tests the diff reaches and the full suite runs before merge, so a trailing whole-suite
   // step only slows every check; factory check cuts it (stripBlanketSuite), and the plan should drop it
   for (const c of crews) if (typeof c.acceptanceTest === 'string' && stripBlanketSuite(c.acceptanceTest).blanket) warnings.push(`crew ${name(c)}: the acceptance test ends with the whole test suite (npm test); the green check runs the tests the diff reaches and the full suite runs before merge, so drop that step`)
-  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
+  // R-132: a file owned (by exact path, not glob) by more than half of a goal's crews, in a goal of 3 crews or more, is a hotspot
+  const byGoal = new Map<string, any[]>()
+  for (const c of crews) byGoal.set(goalOf(c), [...(byGoal.get(goalOf(c)) ?? []), c])
+  for (const [g, gc] of byGoal) {
+    if (gc.length < 3) continue
+    const owners = new Map<string, Set<string>>()
+    for (const c of gc) for (const o of Array.isArray(c.owns) ? c.owns : []) if (typeof o === 'string' && !/[*?[\]{}]/.test(o) && !o.endsWith('/')) owners.set(o, (owners.get(o) ?? new Set()).add(name(c)))
+    for (const [p, s] of owners) if (s.size * 2 > gc.length) warnings.push(`hotspot: ${p} is owned by ${s.size} of ${gc.length} crews${g === RUN_GOAL ? '' : ` of goal ${g}`}; propose a refactor goal first or one crew that owns it instead of serial merges`)
+  }
+  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), warnings }
 }
 
 // ADR-0044 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's

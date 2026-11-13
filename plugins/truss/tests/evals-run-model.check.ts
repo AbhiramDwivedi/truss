@@ -17,8 +17,24 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOT = join(PLUGIN, '..', '..')
-const RUN_MODEL = join(PLUGIN, 'evals', 'run-model.ts')
+const REAL_ROOT = join(PLUGIN, '..', '..')
+// The runner adds git worktrees to the repo its own file lives in, so the tests run a copy of it inside a fixture
+// repo: a shared clone of this checkout's HEAD in a mkdtemp dir. The real checkout's .git is only read, never written.
+// ROOT is that fixture repo; PLUGIN stays the real plugin dir, which the tests only read.
+const ROOT = realpathSync(mkdtempSync(join(tmpdir(), 'truss-fixrepo-')))
+const FIXTURE_PLUGIN = join(ROOT, 'plugins', 'truss')
+process.on('exit', () => rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 }))
+{
+  const env = { ...process.env }
+  for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k]
+  const g = (...a: string[]) => {
+    const r = spawnSync('git', ['-c', 'core.quotepath=off', ...a], { encoding: 'utf8', env, windowsHide: true })
+    assert.equal(r.status, 0, r.stderr)
+  }
+  g('clone', '--shared', '--no-checkout', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', REAL_ROOT.replace(/\\/g, '/'), ROOT.replace(/\\/g, '/'))
+  g('-C', ROOT, 'checkout', '--detach', '-f', 'HEAD')
+}
+const RUN_MODEL = join(FIXTURE_PLUGIN, 'evals', 'run-model.ts')
 const STUB = join(PLUGIN, 'tests', 'fixtures', 'claude-stub', 'claude.mjs')
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 const rm = (p: string) => rmSync(p, { recursive: true, force: true, maxRetries: 10 })
@@ -587,7 +603,7 @@ test('run-model (source check): the per-case timeout is CASE_TIMEOUT_MS = 600000
 })
 
 test('run-model: runs claude in a throwaway worktree even when started from a subdirectory', () => {
-  const { r, calls } = run({}, [], { cwd: PLUGIN })
+  const { r, calls } = run({}, [], { cwd: FIXTURE_PLUGIN })
   assert.equal(r.status, 0, r.stderr)
   assert.ok(calls.length >= 1)
   for (const c of calls) assertThrowawayCwd(c.cwd, 'cwd')
@@ -617,7 +633,7 @@ test('run-model: at call time the case cwd is a detached worktree of HEAD with t
       assert.equal(c.head, HEAD, 'worktree is not at HEAD')
       assert.equal(c.detached, true, 'worktree is not detached')
       // the case runs in the plugin dir inside the detached worktree: <worktree path>/<plugin path relative to the repo root>
-      const pluginRel = relative(ROOT, PLUGIN)
+      const pluginRel = relative(ROOT, FIXTURE_PLUGIN)
       assert.ok(c.worktrees.split('\n').some((l: string) => l.startsWith('worktree ') && norm(join(l.slice(9), pluginRel)) === norm(c.cwd)),
         `git does not list ${c.cwd} as a worktree path plus ${pluginRel}`)
       assertThrowawayCwd(c.cwd, 'probe cwd')

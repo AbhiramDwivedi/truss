@@ -1,0 +1,7 @@
+## Stored row shapes
+
+`state.schema.json` holds `inboxOp`, `ledgerRow`, `usageRow`, `usageCursor`, `queueItem`, `unattended` and `ltcPlan` as `$defs`. The contract left ledger field types open: `process`, `qc`, `red`, `goal` and `workType` are nullable, `target`, `base` and `head` are strings. Treat them as append-only once rows exist.
+
+`<truss dir>/crews/<slug>/answers.json` (0.29.0, ADR-0046 item 5) is a JSON array of `{at, text, after, ts}`, rewritten whole by `saveAnswers` (`writeJsonAtomic`) on every resume. `after` is the id of the crew's newest Workflow run when the ruling was first given, or null; a stored row keeps its first `after` and `ts`. `carriedAnswers` drops a row at a task name once a run after `after` (or after the resume start, whichever is later) finished that task; a row at a step name never drops. An `after` the run list no longer holds counts as unbuilt.
+
+`plan.schema.json` forbids a crew `workType` below version 4 through the existing crew `not`/`anyOf` list (line 126). The text `workType is version 4 only` comes from `cmdPlanCheck` in `factory.ts`, not the schema. `cmdPlanCheck` also owns the enum and the unattended-required rules and de-duplicates against `workTypeErrors()`. The enum `WORK_TYPES` lives in `bin/factory/plan.ts`, not in `worktypes.ts`. `cmdPlanCheck` always returns a `warnings` array (empty when none); it adds a `hotspot:` warning when an exact (non-glob) `owns` path is owned by more than half of a goal's crews in a goal of 3 or more crews.
