@@ -202,6 +202,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Goal check (goal-check)
 
 - What: `factory goal-check --dir D --repo R [--goal ID]` runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, removed after the check, never in the main checkout. It prints one JSON line with the head sha and the output tail (exit 1 when the check fails), logs one decision line either way, and never pushes or moves a branch. A plan or goal with no `goalCheck` is a usage error (`cmdGoalCheck`). It checks only the head of `settingsOf(repo).target` and has no flag for another ref, so a single-mode integration branch check stays a hand-run in the integrator's worktree.
+- Time limit: the check runs under a node supervisor (`GOALCHECK_SUPERVISOR`) that ends the whole process tree at the limit (`goalCheckLimitMs`: 10 minutes, or `TRUSS_GOALCHECK_TIMEOUT_MS`), with `taskkill /T /F` on Windows and a process-group kill elsewhere. A timeout exits non-zero with a one-line `error` (`goalCheck timed out after N s and was killed`) in the JSON.
 - Entry points: `plugins/truss/bin/factory/decide.ts` (`cmdGoalCheck`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` section 9 ("Goal check"); [architecture](../plugins/truss/docs/architecture.md) ("Goal check (step 9)").

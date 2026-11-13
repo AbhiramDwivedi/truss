@@ -103,7 +103,9 @@ async function runQc(crew) {
 async function qc(crew) {
   for (;;) {
     // ADR-0046 item 1: a gates call made just before (chain end, or the fix round below) still holds these steps
-    if (!crew.gates) await gates(crew, { tests: true, lint: true, admit: true })
+    if (!crew.gates) await gates(crew, { owns: true, tests: true, lint: true, admit: true })
+    // a fix round can edit outside the crew owns: the scope check runs on the new head here, so the refusal comes before the next QC
+    await scope(crew)
     await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
@@ -138,7 +140,7 @@ async function qc(crew) {
     if (unscoped.length) await fixBuilder(crew, 'QC findings', detail)
     else await fixFindings(crew, 'QC findings', 'The QC ruled FAIL, with these findings:', /^## Findings\s*$/m.test(j.text) ? sectionOf(j.text, '## Findings').join('\n') : j.text, detail)
     // ADR-0046 item 1: when no knowledge re-run follows (knowledgeAgain's own rule), green runs in one call with the next QC's checks
-    if (!crew.knowledgeRan && !crew.unrecorded.length) await gates(crew, { green: true, tests: true, lint: true, admit: true })
+    if (!crew.knowledgeRan && !crew.unrecorded.length) await gates(crew, { green: true, owns: true, tests: true, lint: true, admit: true })
     await green(crew)
     await knowledgeAgain(crew, 'QC findings', from)
   }
