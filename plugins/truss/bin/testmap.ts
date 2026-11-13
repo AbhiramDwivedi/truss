@@ -36,24 +36,48 @@ const inTestDir = (p: string): boolean => p.split('/').slice(0, -1).some((s) => 
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 const globHit = (p: string, globs: unknown): boolean => Array.isArray(globs) && globs.some((g) => typeof g === 'string' && g !== '' && path.posix.matchesGlob(p, g))
 
-/** A trailing whole-suite step (`npm test`, `pnpm test`, `yarn test`, `npm run test`) cut from an acceptance command: the stage green
- * check adds the targeted set itself, and the full suite runs before merge. */
-export function stripBlanketSuite(command: string): { command: string; blanket: boolean } {
-  const suite = String.raw`(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|t)(?=$|[\s;&|>])`
-  const inline = new RegExp(String.raw`\s*&&\s*${suite}[^\n]*$`)
-  const line = new RegExp(String.raw`^\s*${suite}`)
-  let blanket = false
-  const lines = command.split('\n').filter((l) => {
-    if (!line.test(l)) return true
-    blanket = true
-    return false
-  })
-  let out = lines.join('\n')
-  if (inline.test(out)) {
-    blanket = true
-    out = out.replace(inline, '')
+/** `&&` chain segments of one shell line. A `&&` inside quotes, braces or parentheses does not split. */
+function andSegments(line: string): string[] {
+  const out: string[] = []
+  let quote = ''
+  let depth = 0
+  let from = 0
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (quote !== '') {
+      if (c === '\\' && quote === '"') i++
+      else if (c === quote) quote = ''
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '{' || c === '(') depth++
+    else if (c === '}' || c === ')') depth = Math.max(0, depth - 1)
+    else if (c === '&' && line[i + 1] === '&' && depth === 0) {
+      out.push(line.slice(from, i))
+      from = i + 2
+      i++
+    }
   }
-  return { command: blanket ? out : command, blanket }
+  out.push(line.slice(from))
+  return out
+}
+
+/** The blanket whole-suite step (`npm test`, `pnpm test`, `yarn test`, `npm run test`) cut from an acceptance command: the stage green
+ * check adds the targeted set itself, and the full suite runs before merge. Only that step goes: its line, or its `&&` segment
+ * (with its redirects and `||` handler); every other step in the chain stays, wherever it sits. */
+export function stripBlanketSuite(command: string): { command: string; blanket: boolean } {
+  const suite = new RegExp(String.raw`^\s*(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|t)(?=$|[\s;&|>])`)
+  let blanket = false
+  const lines: string[] = []
+  for (const line of command.split('\n')) {
+    const segs = andSegments(line)
+    const kept = segs.filter((g) => !suite.test(g))
+    if (kept.length === segs.length) {
+      lines.push(line)
+      continue
+    }
+    blanket = true
+    if (kept.length > 0) lines.push((/^\s*/.exec(line)?.[0] ?? '') + kept.map((g) => g.trim()).join(' && '))
+  }
+  return { command: blanket ? lines.join('\n') : command, blanket }
 }
 
 /** Who uses whom: A -> B when A (a JS file) imports B by a relative specifier, or when A is test-side (a test or a file in a test

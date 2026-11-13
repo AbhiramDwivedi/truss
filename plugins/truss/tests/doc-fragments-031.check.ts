@@ -147,6 +147,34 @@ test('doc-fragments: a merge conflict confined to frontmatter resolves and stage
   }
 })
 
+test('doc-fragments: verified stamps on diverging branches resolve to the later commit date, in either merge direction', () => {
+  const base = '---\nsources:\n  - a.ts\nverified: v0\n---\n# Store\n\n## Lock\n\nlock text\n\n## Queue\n\nqueue text\n'
+  const root = repoWith(base)
+  const file = path.join(root, 'docs', 'knowledge', 'store.md')
+  const commitAt = (msg, date) => spawnSync('git', ['commit', '-q', '-am', msg], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date }, windowsHide: true })
+  try {
+    const shas = {}
+    // each crew edits its own section, then stamps its own head; the dates make `late` the later one although `early` is the larger-or-smaller sha by chance
+    for (const [branch, from, to, day] of [['early', 'lock text', 'lock text, early', '01'], ['late', 'queue text', 'queue text, late', '02']]) {
+      git(root, 'checkout', '-q', '-B', branch, 'main')
+      writeFileSync(file, base.replace(from, to))
+      commitAt(`${branch} work`, `2026-0${day}-01T00:00:00Z`)
+      shas[branch] = git(root, 'rev-parse', 'HEAD').stdout.trim()
+      writeFileSync(file, base.replace(from, to).replace('verified: v0', `verified: ${shas[branch]}`))
+      commitAt(`${branch} stamp`, `2026-0${day}-02T00:00:00Z`)
+    }
+    for (const [from, into] of [['early', 'late'], ['late', 'early']]) {
+      git(root, 'checkout', '-q', into)
+      assert.notEqual(git(root, 'merge', '--no-edit', from).status, 0, 'the fixture must conflict')
+      assert.deepEqual(resolveFrontmatterConflicts(root), { resolved: ['docs/knowledge/store.md'], left: [] })
+      assert.match(readFileSync(file, 'utf8'), new RegExp(`verified: ${shas.late}\n`))
+      git(root, 'merge', '--abort')
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('doc-fragments: two crews that re-stamp verified to commits and add sources merge clean', () => {
   const base = '---\nsources:\n  - a.ts\nverified: v0\n---\n# Store\n\n## Lock\n\nlock text\n\n## Queue\n\nqueue text\n'
   const root = repoWith(base)
