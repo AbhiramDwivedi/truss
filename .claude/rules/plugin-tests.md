@@ -17,7 +17,8 @@ sources:
   - plugins/truss/tests/gates-026-regress.check.ts
   - plugins/truss/tests/fixes-026.check.ts
   - plugins/truss/tests/release-026.check.ts
-verified: 9ebda642451e4c2e780868d2ad6b25b4f79e9be6
+  - plugins/truss/tests/hygiene-029.check.ts
+verified: dfce4a9ccd024db56d52c5884312c80967e3da77
 ---
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts:28`).
 - Copy the plugin with `pluginCopy()` into your own tmp dir (`cpSync(pluginCopy(), d, {recursive: true})`); never write inside the shared copy.
@@ -37,4 +38,4 @@ verified: 9ebda642451e4c2e780868d2ad6b25b4f79e9be6
 - Prove a guard test red by mutating the checkout copy (`mkEnv`/`pluginCopy`): `git checkout <fix>^ -- <files>`, run, `git checkout HEAD -- <files>`. In an in-progress merge `HEAD` is the pre-merge file; undo a mutation with `git checkout <merged-branch> -- <file>`. A lock-guarded read-modify-write test: create `<dir>/locks/plan.lock/owner.json` (live `pid`, `host`, `token`, fresh `since`), start the CLI async, change `plan.json`, remove the lock; no sleep decides (`gates-026-regress.check.ts`, the plan-write plan-lock test).
 - The eval runner takes only the `qc` and `checker` roles (`evals/case.schema.json`), so no golden exercises the design-engineer; pin its prompt rules by prose tests.
 - CLI test seams in `fixes-026.check.ts`, none touching `bin/`: collide a random draw by spawning with `NODE_OPTIONS=--import=<file url>` of a preload that patches `require('node:crypto').randomBytes` and calls `syncBuiltinESMExports()`; prove a process tree dead without sleeping by giving parent and `detached: true` grandchild (the portable setsid) the inherited write end of a pipe, whose `close` fires only when every holder exited; stub `gh` as a node-shebang file `gh` (chmod 755) plus a `gh.cmd` shim first on PATH via `runCli` `extraEnv`, logging argv to a file the test counts (`ghStub()`).
-- Importing `release-026.check.ts` from another test runs all its cases too (`hygiene-029.check.ts:19` does); a shared citation helper belongs in its own module. `citationFailures` passes a citation when its symbol is anywhere in the cited file and skips bare `:N` follow-ons, so a green check does not prove the line numbers; check the cited lines hold the symbol (`release-026.check.ts:160-177`).
+- Importing `release-026.check.ts` from another test runs all its cases too (`hygiene-029.check.ts:19` does); a shared citation helper belongs in its own module. `citationFailures` passes a citation when its symbol is anywhere in the cited file and skips bare `:N` follow-ons, so a green check does not prove the line numbers (`release-026.check.ts:160-177`). A fix that needs exact lines gets its own case that reads them, as `hygiene-029.check.ts` does for retro `SKILL.md` (`bin/inbox.ts` `typedText`, `OUTPUT_TAG`): cite the symbol plus its current line or range.
