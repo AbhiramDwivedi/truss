@@ -4,7 +4,7 @@ sources:
   - plugins/truss/bin/factory.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/tests/pm-calls-029.check.ts
-verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
+verified: ded1ac7036dce5451a292f8d0ab57632bf13d130
 ---
 
 # Inbox: crew product calls
@@ -15,7 +15,7 @@ verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
 - Resume: a resumed stage runs `factory.ts inbox --kind <k> --crew <slug>` once per kind per crew through a runner (`restoreCalls`, `callRows`). `pendingCall` is the one place a resumed member reads its item: every `runMember` call site that can ask a `QUESTION:` (`runTask`, `knowledge()`, `fixBuilder()`) calls it first and passes the result as `first`. It deletes `crew.calls[at]` once taken, so one item answers one member.
 - `restoreCalls` loops kinds in the fixed order `['pm-question','scope-change']`, so it compares item `ts`: a later item wins over an earlier one, an open one over a resolved one.
 - Logging: `takeCall` logs a resolved item as a crew decision whose question ends `(inbox item <id>)`; a resumed run treats an item as logged only when a prior decision's question carries that id (text matching would drop a re-asked question). A resolved row with no note, or with `noteUnbound` true (a client resolve whose note `factory inbox` could not bind to the client's typed line), holds no answer: the crew stops as a `QUESTION:` and nothing is logged. That stop clears with an answers resume that carries an answer at the same task: `pendingCall` then spends the item and the member starts with that answer (`answersFor`).
-- Hold wording: `admit()` forwards factory's `awaiting client: <id>` for any open blocking item, a `pm-question` included, so a fix-step hold reads as a client wait; the program-manager wording (`holdStop`) is on the `pendingCall` task path only.
+- Hold wording: `admit()` in `stage.js` looks the item id up in `crew.calls` and throws `holdStop` (`awaiting program manager: <id>`) for a `pm-question`, so a resumed crew whose fix-step call is still open stops awaiting the program manager, not the client; any other open blocking item keeps factory's `awaiting client: <id>`. Pinned by the test 'a crew resumed while its fix-step pm-question is still open stops awaiting the program manager, not the client' (`pm-calls-029.check.ts`).
 - CLI test facts: a crew slug must match `SLUG` (lowercase, `bin/factory.ts`); `admit` and `start` need a `plan.json` in the session dir.
 - Test stubs: any stage-test runner stub must script `inbox` and `escalate` (see `.claude/rules/plugin-tests.md`).
 - Design: [ADR-0047](../../plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md).
