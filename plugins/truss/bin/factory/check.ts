@@ -22,6 +22,7 @@ export const ENV_PATTERNS: RegExp[] = [
   /browserType\.launch: /, // Playwright: the browser process could not start
   /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
   /error while loading shared libraries: /, // the dynamic loader: a system library is missing
+  /^mk[ds]?temp: mk[ds]?temp failed on .*Operation not permitted/, // a sandbox forbids the temp dir the host's mktemp picked
 ]
 // The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
 // ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
@@ -114,14 +115,23 @@ export function installMissingDeps(cwd: string, platform: string = process.platf
 }
 
 // Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
-function bashRun(cwd: string, command: string): { exit: number; text: string } {
+// Prefixed (on the same line, so line numbers in the output stay the crew's) to every command bashRun runs. BSD mktemp with no
+// template uses the Darwin per-user temp dir and ignores TMPDIR, which a sandbox forbids; GNU mktemp already honours TMPDIR, so
+// this is harmless on Linux. A call with a template, or with flags other than a lone -d, goes to the real mktemp unchanged.
+export const MKTEMP_PREFIX =
+  'mktemp() { if [ "$#" -eq 0 ]; then command mktemp "${TMPDIR:-/tmp}/tmp.XXXXXXXX"; ' +
+  'elif [ "$#" -eq 1 ] && [ "$1" = "-d" ]; then command mktemp -d "${TMPDIR:-/tmp}/tmp.XXXXXXXX"; ' +
+  'else command mktemp "$@"; fi; }; '
+
+// Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
+export function bashRun(cwd: string, command: string): { exit: number; text: string } {
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
     // a check started under node --test (the plugin's own tests) must not hand NODE_TEST_CONTEXT to the tests it runs: a nested
     // node --test that sees it skips every file and exits 0
     const { NODE_TEST_CONTEXT: _, ...env } = process.env
-    const r = spawnSync('bash', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd] })
+    const r = spawnSync('bash', ['-c', MKTEMP_PREFIX + command], { cwd, env, stdio: ['ignore', fd, fd] })
     closeSync(fd)
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
     return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8') }
