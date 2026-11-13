@@ -406,7 +406,7 @@ flowchart LR
 
 ## The client brief (ADR-0008)
 
-[ADR-0008](adr/0008-owner-interview.md) adds a module that asks the client about requirements before the plan, and a requirements ledger that carries them from run to run. It is built: the skill is `skills/brief/` (`SKILL.md`, `branches.md`), the CLI and ledger code are `brief/cli.ts` and `brief/ledger.ts`, and section 1 of `skills/run/SKILL.md` (section "Interview the owner") runs the skill before the plan.
+[ADR-0008](adr/0008-owner-interview.md) adds a module that asks the client about requirements before the plan, and a requirements ledger that carries them from run to run. It is built: the skill is `skills/brief/` (`SKILL.md`, `branches.md`), the CLI and ledger code are `brief/cli.ts` and `brief/ledger.ts`, and section 1 of `skills/run/SKILL.md` (section "Take the client brief") runs the skill before the plan.
 
 | Part | Path | What it does |
 | --- | --- | --- |
@@ -436,7 +436,7 @@ flowchart LR
   fore -- "quotes R-n lines" --> goals
 ```
 
-*The client brief's parts, as ADR-0008 designs them.* Traces to: `docs/adr/0008-owner-interview.md` section "1. Where it runs" (the diagram, copied), which traces to `skills/run/SKILL.md` section "foundry run" (only the PM talks to the client) and section 3, "Hire the personas the goal needs" (the design engineer brief); the rest is new. The `docs/requirements.md` node shows the ADR's recommended location, which is an open client decision (below).
+*The client brief's parts, as ADR-0008 designs them.* Traces to: `docs/adr/0008-owner-interview.md` section "1. Where it runs" (the diagram, copied), which traces to `skills/run/SKILL.md` section "truss run", its opening paragraph (only the PM talks to the client) and section 3, "Hire the personas the goal needs" (the design engineer brief); the rest is new. The `docs/requirements.md` node shows the ADR's recommended location, which is an open client decision (below).
 
 ```mermaid
 sequenceDiagram

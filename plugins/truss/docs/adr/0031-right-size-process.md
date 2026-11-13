@@ -13,7 +13,7 @@ Every crew pays for the full process today, whatever the task.
 - `finish` merges a crew only on a QC PASS with no UNSCOPED finding (`bin/factory/finish.ts` `cmdFinish`), and `mergeHeadVerdict` refuses anything else (`bin/factory/finish.ts`).
 - `plan-check` accepts only plan versions 2 and 3: `bin/factory/plan.ts` `cmdPlanCheck`.
 - `$defs/crew` is `additionalProperties: false` (`docs/plan.schema.json` key `$defs.crew.additionalProperties`), so a crew has nowhere to record a process size or the PM's proof choices.
-- The run skill's crew without a project manager, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md` section "6. Write the goal files and start the foremen by stage").
+- The run skill's crew without a project manager, for at most 2 members, still runs a test-writer, a builder and a QC engineer (`skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage").
 
 A docs fix and a new factory feature get the same planner, red-then-green test and QC engineer. The client ruled on 2026-11-08 that this changes:
 
@@ -132,7 +132,7 @@ factory.ts land --dir D --repo R --slug S
 1. A crew that isn't `running` is refused. So is a crew whose `process` is absent or `full`, with `why` naming `process`; it merges through `finish`.
 2. The crew worktree must exist and be on `truss-<slug>`. `owns-check` must pass.
 3. When `red` is true, the red record must exist with a non-zero integer `exit`, as at `bin/factory/finish.ts` `mergeCrew`.
-4. When `qc` is true, the newest QC file under `reports/<slug>/` from this run must be a PASS with no UNSCOPED finding. The PM saves the QC hand-back there, as `skills/run/SKILL.md` section "6. Write the goal files and start the foremen by stage" already says. `qcFails` must not exceed `reworkAllowance`.
+4. When `qc` is true, the newest QC file under `reports/<slug>/` from this run must be a PASS with no UNSCOPED finding. The PM saves the QC hand-back there, as `skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage" already says. `qcFails` must not exceed `reworkAllowance`.
 5. `land` merges the resolved target into the crew branch, never by rebase. A conflict aborts the merge and refuses with `why: "conflict"`.
 6. When `qc` is true, the merged head must pass `mergeHeadVerdict`. When `red` is true, or `qc` is true and the head moved past the QC engineer's `Head:`, `check --expect green` must pass on the merged head.
 7. `land` fast-forwards the target, with the same dirty-target and target-moved refusals as `mergeCrew`.
@@ -212,7 +212,7 @@ Stage 0 pins these seams. The test-writer builds them on fixture git repos and t
 **Neutral**
 
 - The hooks don't change. Guard 11 pins that.
-- The project-manager-less crew of `skills/run/SKILL.md` section "6. Write the goal files and start the foremen by stage" and section "6. Write the goal files and start the foremen by stage" is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
+- The project-manager-less crew of `skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage" is deleted and replaced by `lean`. Stage 1 makes that change, together with the design engineer's per-crew `process` and the new agent file.
 
 **Reversing it** touches:
 

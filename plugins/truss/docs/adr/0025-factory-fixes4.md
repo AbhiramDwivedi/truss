@@ -77,7 +77,7 @@ flowchart LR
 - Crews of the top-level goal (`run`) keep today's behaviour.
 - `--slug ... --resume` of a crew in an unapproved goal is refused with a reason that names the goal.
 
-**Item 38** (monitor-hold). The step rule gains a hold. When the running crews already exceed the current effective parallelism, the monitor doesn't go down. The load comes from crews admitted before the last step-down, and a lower number would hold no extra start. The monitor keeps the current value unless the up rule applies. The up rule is unchanged and applies whatever the running count, so it is the way back up. The PM already starts the monitor at every stage start and every held crossing (`skills/run/SKILL.md` section "6. Write the goal files and start the foremen by stage"), so once load falls a lowered number rises one step at each start.
+**Item 38** (monitor-hold). The step rule gains a hold. When the running crews already exceed the current effective parallelism, the monitor doesn't go down. The load comes from crews admitted before the last step-down, and a lower number would hold no extra start. The monitor keeps the current value unless the up rule applies. The up rule is unchanged and applies whatever the running count, so it is the way back up. The PM already starts the monitor at every stage start and every held crossing (`skills/run/SKILL.md` section "6. Write the goal files and start the project managers by stage"), so once load falls a lowered number rises one step at each start.
 
 **Item 39** (monitor-hold). Step 3 replaces "exits 1 when it holds a start" with what admit's answer means:
 - `admitted` and the exit code answer for the slug given only.
