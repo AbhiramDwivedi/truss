@@ -16,6 +16,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as reg from '../hooks/register.ts'
 import { parseLabel } from '../bin/factory.ts'
+import { gatesAware } from './fixtures/gates-stub.ts'
 
 const { workflowRoleVerdict, workflowCallVerdict, qcRuling } = reg
 
@@ -67,7 +68,7 @@ async function exec(file, args, o = {}) {
   const maxInflight = {}
   const phases = []
   const logs = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -125,7 +126,7 @@ async function exec(file, args, o = {}) {
       timeline.push(`end:${opts.label}`)
     }
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) =>
     Promise.all(items.map(async (item, i) => {
@@ -147,18 +148,24 @@ async function exec(file, args, o = {}) {
     error = e
   }
   // admit and reap are their own runner calls around every non-runner spawn; `labels` and `timeline` leave them out so the
-  // assertions about members and the other runner commands keep their meaning. allLabels/allTimeline keep everything.
+  // assertions about members and the other runner commands keep their meaning. allLabels/allTimeline keep everything, but
+  // allLabels holds one label per spawn: the later steps of one gates call (fixtures/gates-stub.ts) share its spawn.
   const isAR = (c) => c.runner?.cmd === 'admit' || c.runner?.cmd === 'reap'
+  const laterStep = (c, k) => c.opts.gatesStep && k > 0 && calls[k - 1].label === c.label && calls[k - 1].opts.gatesStep
   const arNames = new Set(calls.filter(isAR).map((c) => c.runner.name))
   const notAR = (e) => !arNames.has(e.replace(/^(start|end):/, ''))
-  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, maxInflight, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.map((c) => c.label) }
+  return { result, error, calls, unscripted, timeline: timeline.filter(notAR), allTimeline: timeline, maxInflight, labels: calls.filter((c) => !isAR(c)).map((c) => c.label), allLabels: calls.filter((c, k) => !laterStep(c, k)).map((c) => c.label) }
 }
 
 function checkSpawns(calls, roles) {
   const seen = new Set()
+  const gatesLabels = new Set()
   for (const c of calls) {
     const o = c.opts
     assert.equal(typeof o.label, 'string', 'every agent() call has a label')
+    // the steps of one gates call (fixtures/gates-stub.ts) are one spawn under one label
+    if (o.gatesStep && gatesLabels.has(o.label)) continue
+    if (o.gatesStep) gatesLabels.add(o.label)
     assert.ok(!seen.has(o.label), `duplicate label ${o.label}`)
     seen.add(o.label)
     assert.ok(!/write-tests|build-it/.test(o.label), `a task name is in label ${o.label}`)

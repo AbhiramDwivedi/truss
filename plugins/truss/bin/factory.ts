@@ -2613,6 +2613,76 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
   }
 }
 
+// ==== gates (ADR-0046 item 1, batching) ====
+
+// The steps `gates` can run, in the order stage.js reaches them before QC: the green check (through the heavy slot), the owns
+// check, the tests check, the knowledge lint and the QC admission. stage.js sends them as one runner call instead of one each.
+export const GATE_STEPS = ['green', 'owns', 'tests', 'lint', 'admit'] as const
+export type GateStep = (typeof GATE_STEPS)[number]
+// a lint is met when it has no failure the crew's diff caused (new: false marks one already there at the merge base), the same
+// rule stage.js uses to send the writer back (isNewFinding); predating failures and warnings go to QC, so they do not stop the gates
+export function gateMet(step: GateStep, body: Obj): boolean {
+  if (step === 'admit') return body.admitted === true
+  if (step === 'lint') return Array.isArray(body.failures) && body.failures.every((x: unknown) => isObj(x) && x.new === false)
+  return body.ok === true
+}
+
+// `gates --slug S --steps a,b,... [--cwd W --expect E --label L --tests-since SHA --wait-ms N] [--admit-label L --admit-title T
+// --admit-wait-ms N]`: runs each step as its own command would (green as `heavy ... -- factory check`), in the order given,
+// stopping at the first unmet one. Prints {ok, stopped, gates: {step: met}, codes: {step: exit}, steps: {step: body}}, plus
+// green's head, env and heavy meta at the top so the status line carries them. Exit 0 when every step is met, else the stopped
+// step's exit (1 when that was 0). The single commands stay as they are.
+export async function gatesMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  try {
+    const f = parseFlags(argv)
+    const dir = path.resolve(dirOf(f))
+    const repo = repoOf(f)
+    const slug = need(f, 'slug')
+    const steps = (need(f, 'steps') as string).split(',').map((s) => s.trim()).filter(Boolean)
+    if (steps.length === 0) throw usage('--steps names no step')
+    for (const s of steps) if (!(GATE_STEPS as readonly string[]).includes(s)) throw usage(`unknown gate step: ${s}; steps: ${GATE_STEPS.join(', ')}`)
+    if (new Set(steps).size !== steps.length) throw usage('--steps names a step twice')
+    const dr = ['--dir', dir, '--repo', repo]
+    const gates: Obj = {}
+    const codes: Obj = {}
+    const out: Obj = {}
+    let stopped: string | null = null
+    let top: Obj = {}
+    for (const s of steps as GateStep[]) {
+      let r: { body: Obj; code: number }
+      if (s === 'green') {
+        const cwd = need(f, 'cwd')
+        const since = str(f, 'tests-since')
+        const wait = str(f, 'wait-ms')
+        const self = [process.execPath, ...process.execArgv, fileURLToPath(import.meta.url)]
+        const inner = [...self, 'check', '--slug', slug, '--cwd', cwd, '--expect', str(f, 'expect') ?? 'green', ...(since ? ['--tests-since', since] : []), ...dr]
+        r = await heavyMain([...dr, '--slug', slug, '--label', str(f, 'label') ?? `${slug}-check`, '--cwd', cwd, ...(wait ? ['--wait-ms', wait] : []), '--', ...inner])
+        top = { ...(typeof r.body.head === 'string' ? { head: r.body.head } : {}), ...(typeof r.body.env === 'string' ? { env: r.body.env } : {}), ...(isObj(r.body.heavy) ? { heavy: r.body.heavy } : {}) }
+      } else if (s === 'admit') {
+        const label = str(f, 'admit-label')
+        const title = str(f, 'admit-title')
+        r = main(['admit', '--wait-ms', str(f, 'admit-wait-ms') ?? '0', '--slug', slug, ...(label !== undefined ? ['--label', label] : []), ...(title !== undefined ? ['--title', title] : []), ...dr])
+      } else {
+        const cmd = s === 'owns' ? 'owns-check' : s === 'tests' ? 'tests-check' : 'knowledge-lint'
+        r = main([cmd, '--slug', slug, ...dr])
+      }
+      out[s] = r.body
+      codes[s] = r.code
+      gates[s] = gateMet(s, r.body)
+      if (!gates[s]) {
+        stopped = s
+        break
+      }
+    }
+    const ok = stopped === null
+    const code = ok ? 0 : (codes[stopped as string] as number) || 1
+    return { body: { ok, stopped, gates, codes, ...top, steps: out }, code }
+  } catch (e) {
+    if (e instanceof CliError) return { body: e.body, code: e.code }
+    return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
+}
+
 // ==== finish ====
 
 import { utimesSync } from 'node:fs'
@@ -4069,6 +4139,9 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
+  gates: () => {
+    throw usage('gates is async: run it from the command line')
+  },
 }
 // A plugin module's command key never replaces a core command or another module's: main refuses and names the keys.
 const PLUGIN_COMMANDS: Record<string, (f: Flags) => Obj>[] = [INBOX_COMMANDS, COST_COMMANDS, QUEUE_COMMANDS, WORKTYPE_COMMANDS]
@@ -4131,6 +4204,11 @@ export function statusLine(body: Obj): string {
   if (typeof body.head === 'string') s.head = body.head
   if (typeof body.env === 'string') s.env = body.env.slice(0, 200)
   if (isObj(body.heavy) && typeof body.heavy.ran === 'boolean') s.ran = body.heavy.ran
+  // ADR-0046 item 1: a gates result also carries each step's met and the step that stopped it
+  if (isObj(body.gates)) {
+    s.gates = Object.fromEntries(Object.entries(body.gates).filter(([, v]) => typeof v === 'boolean'))
+    s.stopped = typeof body.stopped === 'string' ? body.stopped : null
+  }
   return `truss-status: ${JSON.stringify(s)}`
 }
 // Takes the boolean --status-line flag out of argv (for heavy, only before its `--`, so the command after it is untouched).
@@ -4172,7 +4250,7 @@ if (isMain) {
   const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : main(argv)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))

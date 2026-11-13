@@ -402,6 +402,8 @@ async function ask(crew, role, prompt, opts = {}) {
   // whether this member is meant to run at effort high, so factory's audit does not flag it (a persona, task effort or ## Members line)
   const high = (PERSONA_ROLES.includes(role) || role === 'po') && ((persona && PERSONAS[persona] && PERSONAS[persona].effort === 'high') || rest.effort === 'high' || (member && member.effort === 'high'))
   await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title), persona, !!high)
+  // a member can change the crew branch: no gates result outlives it
+  dropGates(crew)
   try {
     const label = nextLabel(crew, role)
     if (labelOut) labelOut.label = label
@@ -420,7 +422,9 @@ async function ask(crew, role, prompt, opts = {}) {
 // A hold waits inside factory (admit --wait-ms: it re-checks every 2 s for up to 90 s) before it stops the crew; a hold is never retried, only a store-busy exit is (below).
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
-  let r = await runFactory(crew, cmd, 'admitted')
+  // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
+  const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
+  let r = pre ?? (await runFactory(crew, cmd, 'admitted'))
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
   if (r.exit === 2 && /store busy/.test(r.out)) {
@@ -501,6 +505,8 @@ const trussDir = () => (F.dir.startsWith('/') ? F.dir : `${F.repo.replace(/\/+$/
 // extra: one more line after the command, so a resumed call gets its own cache key (the runtime caches by prompt); null
 // leaves the prompt exactly as it was
 async function runFactory(crew, command, key, line = null, extra = null) {
+  // ADR-0046 item 1: a gates result is good only up to the next runner call (dropGates)
+  dropGates(crew)
   // ADR-0046 item 1: a reap left due by the last member spawn runs first inside this same command (--reap-first <slug>,
   // before heavy's `--`), so it costs no runner spawn. A reap command itself never carries it.
   const fold = !!crew.reapDue && !/^reap\b/.test(String(command || ''))
@@ -536,6 +542,79 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   }
   const met = fromStdout !== null && typeof fromStdout === 'object' && fromStdout[key] === true
   return { met, parsed: fromStdout, exit: res.exit, out: `exit ${res.exit}\n${res.stdout}` }
+}
+
+// ---------------------------------------------------------------- gates (ADR-0046 item 1, batching)
+
+// The checks before QC (green, owns-check, tests-check, knowledge-lint, the QC admit) used to cost one runner spawn each. gates()
+// sends the ones due now as one `factory gates` command; factory runs them in order and stops at the first unmet one. Each
+// step's sub-result waits in crew.gates, and the step's own function (check, scope, testsGuard, knowledgeLint, admit) takes it
+// instead of calling the runner, then judges it exactly as before. The runner judges nothing. A sub-result is dropped at the
+// next runner call or member spawn, or when a merge moved the head, so a step never reads a result older than its inputs;
+// a step with no sub-result (gates stopped before it, or the stdout was cut) runs alone, as before.
+const GATE_KEY = { green: 'ok', owns: 'ok', tests: 'ok', lint: 'ok', admit: 'admitted' }
+const dropGates = (crew) => {
+  crew.gates = null
+}
+
+// the sub-result of `step` from the last gates call, or null. Steps listed before it are dropped (they were skipped or taken).
+// match(g) checks the inputs the step would have sent (tests-since, the admit label).
+function takeGate(crew, step, match = null) {
+  const g = crew.gates
+  if (!g) return null
+  if (g.moves !== (crew.moves || 0)) {
+    crew.gates = null
+    return null
+  }
+  const i = g.order.indexOf(step)
+  if (i < 0) return null
+  g.order = g.order.slice(i + 1)
+  const r = g.results[step]
+  if (!r || (match && !match(g))) return null
+  return r
+}
+
+// want: which steps the caller reaches next ({green, owns, tests, lint, admit}); each is kept only when the step would really
+// call the runner now (its own skip rules). Fewer than two steps left: nothing is sent, and each step runs alone as before.
+async function gates(crew, want) {
+  const steps = []
+  if (want.green && !(crew.head && unmoved(crew, 'greenAt'))) steps.push('green')
+  if (want.owns && !unmoved(crew, 'scopeAt')) steps.push('owns')
+  if (want.tests && !unmoved(crew, 'testsAt')) steps.push('tests')
+  if (want.lint && (hasCodeTasks(crew) || knowledgeFilesExist()) && (steps.includes('green') || !(crew.lint && crew.lintHead === crew.head))) steps.push('lint')
+  // the QC admit (runQc): its label and title as runQc will send them; never past the rework allowance, where qc stops first
+  const admitLabel = want.admit && spendOf(crew) <= F.reworkAllowance ? peekLabel(crew, 'qc') : null
+  const admitTitle = admitLabel ? titleOf(crew, 'qc') : null
+  if (admitLabel) steps.push('admit')
+  if (steps.length < 2) return
+  const { bin, dr, slug, cwd } = heavyParts(crew)
+  const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
+  const parts = [`node ${bin} gates --slug ${slug} --steps ${steps.join(',')}`]
+  if (steps.includes('green')) parts.push(`--cwd ${cwd} --expect green --label ${sh(`${crew.slug}-check`)}`)
+  if (admitLabel) parts.push(`--admit-label ${sh(admitLabel)} --admit-title ${sh(admitTitle)} --admit-wait-ms 90000`)
+  parts.push(`${dr} --status-line`)
+  // the tests check's extra lines (Attempt, Head) ride along, so a resumed call keeps its own cache key
+  const extra = steps.includes('tests') ? testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null) : null
+  let r
+  try {
+    r = await runFactory(crew, 'gates', 'ok', parts.join(' '), extra)
+  } catch {
+    // the gates call only saves spawns: a runner that dies on it leaves every step to run alone, which meets the failure itself
+    return
+  }
+  const subs = r.parsed && isPlainObject(r.parsed.steps) ? r.parsed.steps : {}
+  const met = r.parsed && isPlainObject(r.parsed.gates) ? r.parsed.gates : {}
+  const codes = r.parsed && isPlainObject(r.parsed.codes) ? r.parsed.codes : {}
+  const results = {}
+  for (const s of steps) {
+    const body = subs[s]
+    if (!isPlainObject(body)) break
+    const exit = Number.isInteger(codes[s]) ? codes[s] : r.exit
+    // met as the step's own runFactory call would judge it (the same key); gates' own met only says where it stopped
+    results[s] = { met: body[GATE_KEY[s]] === true, parsed: body, exit, out: `exit ${exit}\n${JSON.stringify(body)}` }
+    if (typeof met[s] === 'boolean' && !met[s]) break
+  }
+  crew.gates = { moves: crew.moves || 0, order: steps, results, admitLabel, admitTitle, attempt }
 }
 
 // the object of a `truss-status: {...}` line, or null when the runner gave none or it does not parse
@@ -640,7 +719,9 @@ const HEAVY_WAIT_ROUNDS = 3
 async function check(crew, expect, testsSince = null) {
   let r, h
   for (let round = 1; round <= HEAVY_WAIT_ROUNDS; round++) {
-    r = await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect, testsSince))
+    // ADR-0046 item 1: a green check gates already ran (never one with --tests-since, which gates does not send)
+    const pre = round === 1 && expect === 'green' && !testsSince ? takeGate(crew, 'green') : null
+    r = pre ?? (await runFactory(crew, 'heavy', 'ok', heavyLine(crew, expect, testsSince)))
     h = r.parsed && typeof r.parsed === 'object' ? r.parsed.heavy : null
     if (!(h && typeof h === 'object' && h.ran === false)) return r
   }
@@ -1721,7 +1802,7 @@ async function stressTest(crew) {
 async function scope(crew) {
   crew.step = 'scope'
   if (unmoved(crew, 'scopeAt')) return
-  const r = await runFactory(crew, `owns-check --slug ${sh(crew.slug)}`, 'ok')
+  const r = takeGate(crew, 'owns') ?? (await runFactory(crew, `owns-check --slug ${sh(crew.slug)}`, 'ok'))
   if (r.met) return passedAt(crew, 'scopeAt')
   // ADR-0033: factory owns-check itself leaves out the doc files the crew's knowledge commit alone changed (bin/factory.ts
   // knowledgeDocs); stage.js exempts nothing, so whatever it still lists is outside
@@ -1737,7 +1818,7 @@ async function testsGuard(crew) {
   // a resume that answers at tests (the PM rewrote the crew branch) must re-run the check, not replay the cached BLOCKED
   const attempt = (crew.e.answers || []).filter((a) => a && a.at === 'tests').length
   if (unmoved(crew, 'testsAt')) return
-  const r = await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null))
+  const r = takeGate(crew, 'tests', (g) => g.attempt === attempt) ?? (await runFactory(crew, `tests-check --slug ${sh(crew.slug)}`, 'ok', null, testsCheckExtra(crew, attempt ? `Attempt: ${attempt}` : null)))
   if (r.met) return passedAt(crew, 'testsAt')
   const touched = r.parsed && Array.isArray(r.parsed.touched) ? r.parsed.touched : []
   const lines = touched.map((t) => `- ${t && t.commit} (Truss-Role: ${t && t.role}): ${t && Array.isArray(t.files) ? t.files.join(', ') : ''}`)
@@ -2004,7 +2085,7 @@ async function knowledgeLint(crew) {
   crew.lintHead = crew.head
   try {
     // --slug lints the crew worktree, and the factory takes the base as git merge-base <target> HEAD there, so a sync moves it too
-    const r = await runFactory(crew, `knowledge-lint --slug=${sh(crew.slug)}`, 'ok')
+    const r = takeGate(crew, 'lint') ?? (await runFactory(crew, `knowledge-lint --slug=${sh(crew.slug)}`, 'ok'))
     const failures = r.parsed ? lintEntries(r.parsed.failures) : null
     const warnings = r.parsed ? lintEntries(r.parsed.warnings ?? []) : null
     if (!failures || !warnings) {
@@ -2188,6 +2269,7 @@ async function runQc(crew) {
   await admit(crew, 'qc', label, titleOf(crew, 'qc'))
   let text
   try {
+    dropGates(crew)
     text = await spawn('qc', label, qcPrompt(crew))
   } finally {
     crew.reapDue = true
@@ -2197,6 +2279,8 @@ async function runQc(crew) {
 
 async function qc(crew) {
   for (;;) {
+    // ADR-0046 item 1: a gates call made just before (chain end, or the fix round below) still holds these steps
+    if (!crew.gates) await gates(crew, { tests: true, lint: true, admit: true })
     await testsGuard(crew)
     crew.step = 'qc'
     guardAllowance(crew, 'qc')
@@ -2219,6 +2303,8 @@ async function qc(crew) {
     crew.lastQc = { label: j.label, verdict: j.verdict, text: j.text, head: from, round: (crew.lastQc ? crew.lastQc.round : 0) + 1 }
     if (unscoped.length) await fixBuilder(crew, 'QC findings', detail)
     else await fixFindings(crew, 'QC findings', 'The QC ruled FAIL, with these findings:', /^## Findings\s*$/m.test(j.text) ? sectionOf(j.text, '## Findings').join('\n') : j.text, detail)
+    // ADR-0046 item 1: when no knowledge re-run follows (knowledgeAgain's own rule), green runs in one call with the next QC's checks
+    if (!crew.knowledgeRan && !crew.unrecorded.length) await gates(crew, { green: true, tests: true, lint: true, admit: true })
     await green(crew)
     await knowledgeAgain(crew, 'QC findings', from)
   }
@@ -2394,6 +2480,7 @@ async function chain(crew) {
     crew.checkpointed = true
     crew.pastKnowledge = true
     await syncStep(crew)
+    await gates(crew, { green: true, owns: true, tests: true, lint: true, admit: true })
     await green(crew)
     await scope(crew)
     return qc(crew)
@@ -2424,6 +2511,8 @@ async function chain(crew) {
   // record what the crew learned (its commit moves the head, so green always runs again)
   const recorded = await knowledge(crew)
   crew.pastKnowledge = true
+  // ADR-0046 item 1: green (when the knowledge commit moved the head), scope, the tests check, the lint and the QC admit in one call
+  await gates(crew, { green: recorded, owns: true, tests: true, lint: true, admit: true })
   if (recorded) await green(crew)
   await scope(crew)
   return qc(crew)

@@ -174,6 +174,64 @@ test('i1 3: --reap-first <slug> reaps before the command, leaves its output unch
   assert.ok(folded.stdout.trimEnd().split('\n').at(-1).startsWith('truss-status: '), 'the status line stays last')
 })
 
+// ---------------------------------------------------------------- item 1: one gates command for the steps before QC
+
+function gatesWorld() {
+  const env = mkEnv({ config: { merge: 'sequential', target: 'main' }, useRealPlugin: true })
+  writePlan(env.dir, planObj([crew('s', { owns: ['src/s/**'], status: 'running' })]))
+  writeGoal(env.dir, 's')
+  const wt = addCrewWorktree(env.repo, 's')
+  putFile(wt, 'src/s/a.ts', 'a\n', 'work\n\nTruss-Crew: s\nTruss-Role: builder')
+  return { env, wt }
+}
+const ALL = ['--steps', 'green,owns,tests,lint,admit', '--admit-label', 's-qc', '--admit-title', 'QC s', '--admit-wait-ms', '0']
+const statusOf = (r) => JSON.parse(r.stdout.trimEnd().split('\n').at(-1).slice('truss-status: '.length))
+
+test('i1 4: factory gates runs green, owns-check, tests-check, knowledge-lint and admit in one call, each body as its own command prints it', () => {
+  const { env, wt } = gatesWorld()
+  const r = env.run('gates', { slug: 's', cwd: wt, 'reap-first': 's', 'status-line': true }, ALL)
+  assert.equal(r.status, 0, say(r))
+  const j = JSON.parse(r.stdout.split('\n')[0])
+  assert.equal(j.ok, true, say(r))
+  assert.equal(j.stopped, null)
+  assert.deepEqual(j.gates, { green: true, owns: true, tests: true, lint: true, admit: true })
+  assert.deepEqual(Object.keys(j.steps), ['green', 'owns', 'tests', 'lint', 'admit'])
+  const head = git(wt, ['rev-parse', 'HEAD'])
+  assert.equal(j.steps.green.head, head)
+  assert.equal(typeof j.steps.green.heavy.waitedMs, 'number', 'green runs through the heavy slot')
+  assert.equal(j.head, head, 'green\'s head rides at the top, for the status line')
+  // the other steps print what their own command prints
+  for (const [step, cmd, flags] of [['owns', 'owns-check', {}], ['tests', 'tests-check', {}], ['lint', 'knowledge-lint', {}]]) {
+    const one = env.run(cmd, { slug: 's', ...flags })
+    assert.deepEqual(j.steps[step], JSON.parse(one.stdout.split('\n')[0]), step)
+    assert.equal(j.codes[step], one.status, step)
+  }
+  assert.equal(j.steps.admit.admitted, true)
+  assert.deepEqual(statusOf(r), { ok: true, head, gates: j.gates, stopped: null })
+})
+
+test('i1 5: factory gates stops at the first unmet step and exits with its code; a bad step is a usage error', () => {
+  const { env, wt } = gatesWorld()
+  putFile(wt, 'lib/out.ts', 'x\n', 'outside')
+  const r = env.run('gates', { slug: 's', cwd: wt, 'status-line': true }, ALL)
+  assert.equal(r.status, 1, say(r))
+  const j = JSON.parse(r.stdout.split('\n')[0])
+  assert.equal(j.ok, false)
+  assert.equal(j.stopped, 'owns')
+  assert.deepEqual(j.gates, { green: true, owns: false })
+  assert.deepEqual(j.steps.owns.outside, ['lib/out.ts'])
+  assert.ok(!('tests' in j.steps) && !('admit' in j.steps), 'nothing after the unmet step runs')
+  assert.deepEqual(statusOf(r).gates, { green: true, owns: false })
+  assert.equal(statusOf(r).stopped, 'owns')
+  // the order given is the order run: tests first, then owns stops it
+  const t = env.run('gates', { slug: 's', steps: 'tests,owns,admit' })
+  assert.deepEqual(JSON.parse(t.stdout.split('\n')[0]).gates, { tests: true, owns: false })
+  // a red green check stops it first
+  const red = env.run('gates', { slug: 's', cwd: wt, steps: 'green,owns', expect: 'red' })
+  assert.equal(JSON.parse(red.stdout.split('\n')[0]).stopped, 'green', say(red))
+  for (const steps of ['owns,bogus', 'owns,owns', '']) assert.equal(env.run('gates', { slug: 's', steps }).status, 2, steps)
+})
+
 // ---------------------------------------------------------------- item 4: a configurable heavy slot count
 
 test('i4 1: the host default is max(1, min(4, floor(cpus/4), floor(totalGB/8)))', async () => {

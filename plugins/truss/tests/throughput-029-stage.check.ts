@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { gatesAware, spawnLabels } from './fixtures/gates-stub.ts'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..').replace(/\\/g, '/')
 const STAGE = `${PLUGIN}/workflows/stage.js`
@@ -50,7 +51,7 @@ async function exec(args, o = {}) {
   const unscripted = []
   const counters = {}
   const logs = []
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -87,7 +88,7 @@ async function exec(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await ticks(2)
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   let result
@@ -221,7 +222,44 @@ t('i1 1: the reap after each member rides on the crew\'s next factory call; only
   })
   // ADR-0046 item 1, measured: this crew cost 32 runner spawns before the change (31 before items 6 and 7)
   // ADR-0046 item 8 adds the stress finding's regression tester before the fix builder: its admit and its integrate, 24 -> 26
-  assert.ok(runners(r).length <= 26, `runner spawns: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
+  assert.ok(runners(r).length <= 26, `runner commands: ${runners(r).length}: ${runners(r).map((c) => c.runner.key).join(',')}`)
+})
+
+// the runner labels that answered more than one command: gates calls (gatesAware records each step under the call's label)
+const gatesCalls = (r) => spawnLabels(r.calls).filter((l) => r.calls.filter((c) => c.label === l).length > 1)
+
+t('i1 6: green, the owns and tests checks, the lint and the QC admit before QC cost one runner spawn (26 down to 22 on this crew)', async () => {
+  const labels = labelsFor({ 'a-stress': 'STRESSTEST: 1 findings\n\n## Findings\n- src/ui/a.ts: crashes on an empty list\n', 'a-tester-2': done('feat/rt'), 'a-builder-2': done('feat/sfix', { learned: [FIX_ITEM] }) })
+  const r = await runStage([OLD({ stressTest: true })], { labels })
+  passed(r)
+  const spawns = spawnLabels(r.calls)
+  // measured: 26 runner spawns before gates (26 commands, one spawn each); the same commands now
+  assert.ok(spawns.length <= 22, `runner spawns: ${spawns.length}: ${spawns.map((l) => r.calls.filter((c) => c.label === l).map((c) => c.runner.key).join('+')).join(',')}`)
+  const qcAt = indexOf(r, 'a-qc')
+  // the last spawn before QC answers green, owns-check, tests-check, knowledge-lint and the QC admit together
+  const before = r.calls.slice(0, qcAt).filter((c) => c.runner)
+  const last = before.at(-1).label
+  assert.deepEqual(before.filter((c) => c.label === last).map((c) => c.runner.key), ['check:green', 'owns-check', 'tests-check', 'knowledge-lint', 'admit'])
+  assert.ok(gatesCalls(r).includes(last), 'one gates call')
+  // the admit inside it is QC's own: its label and title
+  assert.match(r.calls.find((c) => c.label === last && c.runner.cmd === 'admit').prompt, /--label a-qc --title /)
+})
+
+t('i1 7: gates stops at the first unmet step; the step after it runs alone once fixed, and QC never starts on an unmet gate', async () => {
+  // the owns check fails: the crew stops at scope with the outside files, and no tests check, lint or admit ran after it
+  const outside = (c) => (c.cmd === 'owns-check' ? rj({ ok: false, outside: ['lib/x.ts'] }, 1) : undefined)
+  const r = await runStage([OLD()], { labels: labelsFor(), runner: outside })
+  const res = resultOf(r)
+  assert.equal(res.state, 'stopped', why(r))
+  assert.match(JSON.stringify(res), /lib\/x\.ts/)
+  const gate = gatesCalls(r).at(-1)
+  assert.deepEqual(r.calls.filter((c) => c.label === gate).map((c) => c.runner.key), ['check:green', 'owns-check'])
+  assert.equal(indexOf(r, 'a-qc'), -1)
+  // a held QC admit inside gates stops the crew as a held admit always did
+  const held = (c) => (c.cmd === 'admit' && /--label a-qc /.test(c.prompt) ? rj({ admitted: false, why: 'memory low' }, 1) : undefined)
+  const h = await runStage([OLD()], { labels: labelsFor(), runner: held })
+  assert.match(JSON.stringify(resultOf(h)), /held by admission: memory low/)
+  assert.equal(indexOf(h, 'a-qc'), -1)
 })
 
 t('i1 2: green and the tests check are skipped while the crew head has not moved', async () => {

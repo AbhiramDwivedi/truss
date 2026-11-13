@@ -133,7 +133,8 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 ## Fewer runner spawns (reap fold, same-head skip)
 
 - What: the reap after each member spawn rides on the crew's next factory call as `--reap-first <slug>`; `factory.ts` reaps `<slug>-check` before running the command and adds `reapedFirst: {error}` to its output only when that reap failed. Only the crew-end reap is a runner call of its own. Green, owns-check and the tests check skip a re-run while the crew head has not moved since they passed. A stubbed crew with a stress fix went from 32 runner spawns to 24 (26 since ADR-0046 item 8 adds the regression tester's admit and integrate).
-- Entry points: `plugins/truss/workflows/stage.js` (`runFactory`, `ask`, `reap`, `moved`, `unmoved`, `passedAt`, `green`, `scope`, `testsGuard`, `testsBackstop`), `plugins/truss/bin/factory.ts` (`takeReapFlag`, `reapFirst`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`), `plugins/truss/tests/throughput-029.check.ts` (`i1 3`).
+- What (0.29.0, gates): the checks before QC (green, owns-check, tests check, knowledge lint, QC admit) go out as one runner call, `factory gates --slug S --steps ...`, which runs the due steps in order, stops at the first unmet one and prints each step's own output under `steps` with `gates`, `codes` and `stopped`. stage.js takes each step's result from that call and falls back to the single command when it has none. The same stubbed crew now costs 22 runner spawns; a real crew saves about 4 at the end of its member chain and about 3 per QC fix round.
+- Entry points: `plugins/truss/workflows/stage.js` (`runFactory`, `ask`, `reap`, `moved`, `unmoved`, `passedAt`, `green`, `scope`, `testsGuard`, `testsBackstop`, `gates`, `takeGate`, `dropGates`), `plugins/truss/bin/factory.ts` (`takeReapFlag`, `reapFirst`, `gatesMain`, `gateMet`, `statusLine`); tests `plugins/truss/tests/throughput-029-stage.check.ts` (`i1 1`, `i1 2`, `i1 6`, `i1 7`), `plugins/truss/tests/throughput-029.check.ts` (`i1 3`, `i1 4`, `i1 5`), stub helper `plugins/truss/tests/fixtures/gates-stub.ts` (`gatesAware`).
 - Owner: `truss-workflow-scripts` (stage.js), `truss-plugin-node` (factory.ts).
 - Docs: [ADR-0046](../plugins/truss/docs/adr/0046-factory-throughput.md) item 1, [ADR-0015](../plugins/truss/docs/adr/0015-resource-aware.md) Decision 6.
 
@@ -159,7 +160,7 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Decision log line (decide)
 
-- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3428`).
+- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3515`).
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
 
