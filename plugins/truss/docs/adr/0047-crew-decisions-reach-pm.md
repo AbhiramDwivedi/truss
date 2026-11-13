@@ -70,7 +70,7 @@ factory resolve <E-id> --decision answer --by pm --code <code> --note=<the answe
 
 The logged question ends `(inbox item <id>)`; a resumed run treats an item as logged only when a prior decision's question carries that id, so a re-asked question is not dropped. `pendingCall` is the one place a resumed member reads its item (`runTask`, `knowledge()` and `fixBuilder()` all call it first) and deletes the row once taken, so one item answers one member. `restoreCalls` compares item `ts` across the two kinds, a later item over an earlier, an open one over a resolved one.
 
-**Refs are per run.** The ref is `crew-call:<slug>:<task>`, suffixed with `@<truss dir under .git/truss>@<plan approvedAt>` (`RUN_KEY`, `callRef`, `workflows/stage.js`). `escalate` dedupes an open item with the same kind and ref, so a re-run of the same task reuses its item, and an older run's item never answers this run.
+**Refs are per run.** The ref is `crew-call:<slug>:<task>`, suffixed with `@<truss dir under .git/truss>@<plan approvedAt>` (`RUN_KEY`, `callRef`, `workflows/stage.js`). `escalate` dedupes an open item with the same kind and ref, so a re-run of the same task reuses its item, and an older run's item never answers this run. `factory start` passes `plan.approvedAt` to the workflow as `args.truss.approvedAt` when it is a string (`stageOut`, `bin/factory.ts`).
 
 **No item, no fake wait.** When `escalate` returns no id, the crew stops as a `QUESTION:` with `(no <kind> inbox item could be opened: <why>)` appended, the ADR-0033 path (`openCall`).
 
