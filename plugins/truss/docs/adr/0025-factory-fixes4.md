@@ -63,7 +63,7 @@ flowchart LR
 
 ### Rulings
 
-1. **Item 39 changes no code.** For a running slug, admit answers `admitted: true` at running equal to parallelism, by design. stage.js runs `admit --slug <running crew>` before every member spawn and reads only `admitted` (`workflows/stage/crew.js` `ask` on `9fba182`; the `admit` function). Putting parallelism into that answer would block members mid-run. admit already prints `running` and `parallelism` (`bin/factory.ts:1452`), so the monitor's step 3 only has to say how to read the line. `admission`, `cmdAdmit` and admit's output shape don't change.
+1. **Item 39 changes no code.** For a running slug, admit answers `admitted: true` at running equal to parallelism, by design. stage.js runs `admit --slug <running crew>` before every member spawn and reads only `admitted` (`workflows-src/stage/crew.js` `ask` on `9fba182`; the `admit` function). Putting parallelism into that answer would block members mid-run. admit already prints `running` and `parallelism` (`bin/factory.ts:1452`), so the monitor's step 3 only has to say how to read the line. `admission`, `cmdAdmit` and admit's output shape don't change.
 2. **Item 38 lives in the monitor text only.** ADR-0015 Decision 5 keeps load out of plain-code admission: load holds no start, the monitor reads it, and the PM, not factory, writes `parallelism.json`.
 3. **Item 42 reuses the reflog rule** factory-resume added for the fast-forward case, instead of a patch-id test. A patch-id test would count a fresh branch's old crew commits as "in `truss-<slug>`", which is the bug.
 4. **Item 41 is fixed because it is cheap:** one helper shared by both warning functions, with read-only git. Only the newer-than-session text gains a parenthesised detail. The can't-tell text stays word for word.
@@ -135,7 +135,7 @@ stage-fixes3 builds the consumer side, which reads `livePage` as optional; this 
 
 ## Seams to pin
 
-1. **`entry.livePage`** | factory.ts `crewEntry` → `workflows/stage/ux.js` `uxReviewPrompt` (stage-fixes3 reads it as optional).
+1. **`entry.livePage`** | factory.ts `crewEntry` → `workflows-src/stage/ux.js` `uxReviewPrompt` (stage-fixes3 reads it as optional).
    - Every `start` form, fresh and every `--resume` kind, sets `livePage`.
    - Its value is the first line of the goal file's `## UX` section that starts with `Live page`, after an optional `- ` or `* ` bullet marker. The line is trimmed and given whole, for example `Live page (how review takes its own screenshots): ...`.
    - It is `null` when there is no such line or no `## UX` section.
@@ -156,5 +156,5 @@ This adds one key to ADR-0019 item 7's lean entry and to ADR-0024 seam 1's entry
 
 ## Dropped
 
-- **`crewStart` (revision 1's item 39 fix).** No reader would use it. The monitor reads only `minFreeMB`, `running` and `parallelism`, and stage.js reads only `admitted` (`workflows/stage/crew.js` `ask` on `9fba182`). admit already prints `running` and `parallelism` (`bin/factory.ts:1452`). Item 39 is fixed in the monitor's step-3 text instead, and admit's output shape doesn't change.
+- **`crewStart` (revision 1's item 39 fix).** No reader would use it. The monitor reads only `minFreeMB`, `running` and `parallelism`, and stage.js reads only `admitted` (`workflows-src/stage/crew.js` `ask` on `9fba182`). admit already prints `running` and `parallelism` (`bin/factory.ts:1452`). Item 39 is fixed in the monitor's step-3 text instead, and admit's output shape doesn't change.
 - **Item 26 leftover (unregistered member worktrees).** `missingWorktrees` (`bin/factory.ts:1033`) reads only `git worktree list` registrations. A member branch with no registration and no directory leaves nothing to prune, and listing it changes no state. No real caller produced it (stress report: "I did not produce either case"). The no-`--transcript` part of the same nit is already fixed by `c1c4861` (`bin/factory.ts:1035-1040`).

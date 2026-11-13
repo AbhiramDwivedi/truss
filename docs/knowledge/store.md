@@ -10,9 +10,9 @@ sources:
   - plugins/truss/bin/queue.ts
   - plugins/truss/tests/fixtures/inbox/slash-command.jsonl
   - plugins/truss/workflows/stage.js
-  - plugins/truss/workflows/stage/crew.js
-  - plugins/truss/workflows/stage/check.js
-  - plugins/truss/workflows/stage/qc.js
+  - plugins/truss/workflows-src/stage/crew.js
+  - plugins/truss/workflows-src/stage/check.js
+  - plugins/truss/workflows-src/stage/qc.js
   - plugins/truss/tests/fixtures/ltc/e2e.ts
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
@@ -48,9 +48,9 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 `admission(dir, repo, plan, crew, command, running)` runs `holdOf()` before the memory checks (`admission` in `bin/factory.ts`). `holdOf` calls `blockingFor` (answer `awaiting: true`), then, only when `cfg.budget` is an object, `budgetVerdict` (answer `budget: true` with scope, spentUsd, limitUsd, why; plus a `budget-hold` event and a budget escalate). An escalate error never lifts the hold; it goes into the hold's `escalateError` field. The budget escalate's `ref` is the verdict's own `v.ref` when it is a non-empty string, else `budget:<sid>:<scope>:<run|slug>`.
 
-Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/factory.ts) re-reads `plan.json` under the `plan` lock before it edits and saves. `approve`, `start`, `mark-merged`, the merge gate, `plan-write` and `owns-extend` all write the plan that way, so none drops another's edit. `plan-write` over an approved plan with no running or planned crew archives it as `plan-<approvedAt>.json/.md` (`keepExisting` in `cmdPlanWrite`); a running or planned crew (a run not finished) refuses it. `workflows/stage/check.js` `check()` runs `heavy` up to 3 times (`HEAVY_WAIT_ROUNDS`) before it stops `heavy slot busy`.
+Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (bin/factory.ts) re-reads `plan.json` under the `plan` lock before it edits and saves. `approve`, `start`, `mark-merged`, the merge gate, `plan-write` and `owns-extend` all write the plan that way, so none drops another's edit. `plan-write` over an approved plan with no running or planned crew archives it as `plan-<approvedAt>.json/.md` (`keepExisting` in `cmdPlanWrite`); a running or planned crew (a run not finished) refuses it. `workflows-src/stage/check.js` `check()` runs `heavy` up to 3 times (`HEAVY_WAIT_ROUNDS`) before it stops `heavy slot busy`.
 
-`workflows/stage/crew.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (`admit` in `workflows/stage/crew.js`). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, `bin/factory.ts`). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (`ltcLinesOf` and `qc` in `workflows/stage/qc.js`).
+`workflows-src/stage/crew.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (`admit` in `workflows-src/stage/crew.js`). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, `bin/factory.ts`). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (`ltcLinesOf` and `qc` in `workflows-src/stage/qc.js`).
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (`stageOut` in `bin/factory.ts`).
 
