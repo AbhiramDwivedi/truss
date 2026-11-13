@@ -723,8 +723,8 @@ export function workflowRoleVerdict(roles: unknown): { deny: string } | undefine
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
   if (!isRecord(roles)) return refuse('the Workflow needs a roles table in args.truss.roles')
   for (const [key, role] of Object.entries(roles)) {
+    if (key === 'project-manager' || key === 'commissioning' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
     if (!/^[a-z]+$/.test(key)) return refuse(`Workflow role "${key}" is not a lowercase name`)
-    if (key === 'commissioning' || key === 'integrator') return refuse(`a Workflow never runs a ${key} role`)
     if (!isRecord(role)) return refuse(`Workflow role ${key} is not an object`)
     if (isLeadType(role.agentType) || role.agentType === 'truss:commissioning-engineer' || role.agentType === 'truss:integrator') return refuse(`Workflow role ${key} never runs as ${role.agentType}`)
     if (role.model !== 'opus' && role.model !== 'sonnet') return refuse(`Workflow role ${key} needs model opus or sonnet`)
