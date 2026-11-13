@@ -14,7 +14,7 @@ The client's ruling (decisions.md, 03:23): "the retro may read raw transcripts, 
 
 Today the retro sees only what the hooks and the PM wrote down. `scripts/retro.py` counts `events.jsonl` and `decisions.md` (ADR-0003, section 2), and the skill's root-cause step reads git, the disk, `decisions.md` and the QC engineer files' `VERDICT:` and finding lines (`skills/retro/SKILL.md` section "3. Find the causes"). The event log holds no message, prompt or report text (P8, ADR-0003:29). So the retro can't see what a crew member tried, what failed, or how many turns it lost. This session's own retro found 0 stalls and no proposals (decisions.md, 23:34), while the PM's log names problems it never counted: webkit missing a host library (03:21), a classifier refusal of a settings write, with `.claude/settings.local.json` never reaching worktrees (20:33), and a rework allowance spent by a counting rule (21:50).
 
-P24 is cited at `skills/retro/SKILL.md` section "truss retro" and section "3. Find the causes", ADR-0003:101, ADR-0006:85 and `:128`, `docs/events.schema.json` key `allOf.then.description` and `docs/architecture.md` section "`events.jsonl` (0.4.0)". P8 is at ADR-0003:29.
+P24 is cited at `skills/retro/SKILL.md` section "truss retro" and section "3. Find the causes", ADR-0003:101, ADR-0006:85 and ADR-0006 section "3. The retro skill's root-cause step", `docs/events.schema.json` key `allOf.then.description` and `docs/architecture.md` section "`events.jsonl` (0.4.0)". P8 is at ADR-0003:29.
 
 `factory.ts check` labels a failure only as an environment failure: four Playwright and loader patterns, plus a declared but uninstalled package (`bin/factory/check.ts` `ENV_PATTERNS`). Each known problem the session met again (webkit host libraries, `settings.local.json`, the worktree guard's shell shapes, harness-only `claude-code` tests, `node_modules` missing after a merge, tracked `.pyc` files) costs a crew a turn or a BLOCKED stop before anyone recognises it.
 
@@ -235,17 +235,17 @@ The PM's ruling (decisions.md, 04:04, on checker-7's recommendation): "optional 
 
 **Names.** `retro/cli.ts` gives `scrub` the person names to look for: `git config user.name` and the comma-separated `TRUSS_SCRUB_NAMES`, each trimmed. It keeps each name whole when it has 4 or more characters, and each of its whitespace-separated parts of 4 or more characters (`retro/cli.ts` `scrubNames`). The names are read at run time; none is written to a file or kept in source (`retro/cli.ts` `scrubNames`, `retro/scrub.ts`). A `name` hit on a line the fix did not add or change does not block the merge (Decision 6, Before each merge); that covers files that must carry the author's name, such as `plugin.json`'s `author` and `LICENSE`.
 
-**`scrub(text, names)`** reports at most one hit per kind per line, in line order, and in each line the kinds in the order `name`, `email`, `home-path`, `token`; it skips empty lines (`retro/scrub.ts` `scrub`). Every scan walks the line with `indexOf` and bounded character runs, never a backtracking pattern (`:1-3`). A line hits:
+**`scrub(text, names)`** reports at most one hit per kind per line, in line order, and in each line the kinds in the order `name`, `email`, `home-path`, `token`; it skips empty lines (`retro/scrub.ts` `scrub`). Every scan walks the line with `indexOf` and bounded character runs, never a backtracking pattern (the header comment of `retro/scrub.ts`). A line hits:
 
-- `name`: one of `names` of 4 or more characters, in any case, with no ASCII letter, digit or `_` on either side (`WORD_CHAR`, `:13`) (`:111-121`, `:182-189`).
-- `email`: an address with a non-empty local part (`parseFlags`) whose domain has two or more labels and whose last label starts with a letter, so a pin such as `pkg@1.2.3` is none; except `noreply@anthropic.com` and addresses at `example.com` or a `.invalid` domain (`:25-47`).
-- `home-path`, each with the literal `<name>` as the one allowed name (`:49-109`):
+- `name`: one of `names` of 4 or more characters, in any case, with no ASCII letter, digit or `_` on either side (`WORD_CHAR`, `hasName`, `scrub`).
+- `email`: an address with a non-empty local part (`parseFlags`) whose domain has two or more labels and whose last label starts with a letter, so a pin such as `pkg@1.2.3` is none; except `noreply@anthropic.com` and addresses at `example.com` or a `.invalid` domain (`hasEmail`).
+- `home-path`, each with the literal `<name>` as the one allowed name (`hasHomePath`, `hasWindowsHome`):
   - `/home/<x>` or `/Users/<x>`, with or without a trailing slash, for any name `<x>` of letters, digits, `.`, `_` or `-`;
   - Claude Code's encoded project dir, `-home-<x>` or `-Users-<x>`, at the start of the line or after whitespace, `/`, a backtick, a quote, `(` or `=`;
   - a Windows home: a drive letter of either case at the start of the line or after a character that is no ASCII letter, digit or `_`, then `:`, one or two `\` or `/`, `Users` in any case, one or two `\` or `/`, and a name. That covers `C:\Users\<x>\`, `C:/Users/<x>/` and the JSON-escaped `C:\\Users\\<x>\\`.
-- `token` (`:15-16`, `:123-176`):
+- `token` (`TOKEN_PREFIXES`, `KEY_WORDS`, `TOKEN_MIN`, `hasToken`):
   - a word, with no ASCII letter, digit or `_` before it, starting `sk-`, `ghp_`, `gho_`, `ghs_`, `github_pat_`, `xox`, `glpat-` or `npm_` and followed by 20 or more letters, digits, `_` or `-`, or starting `AKIA` and followed by 16 or more;
-  - a JWT: a word starting `eyJ`, 10 to 200 such characters, a `.`, then 10 or more of them; the first segment is counted only up to 200 characters, so a longer one is no hit (`:139`);
+  - a JWT: a word starting `eyJ`, 10 to 200 such characters, a `.`, then 10 or more of them; the first segment is counted only up to 200 characters, so a longer one is no hit (`hasToken`);
   - `bearer ` in any case, followed by 20 or more letters, digits or `_.~+/=-`;
   - `token`, `secret`, `password`, `api_key` or `apikey` in any case, then up to 24 more letters or `_` (as in `aws_secret_access_key`), an optional quote, spaces, `=` or `:`, spaces, an optional quote, and 16 or more letters, digits, `_` or `-`.
 

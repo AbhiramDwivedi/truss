@@ -12,18 +12,18 @@ Line numbers are those of this crew's base, main at `47975ae`.
 
 | Item | What the code does |
 |---|---|
-| item 45 | `agents/resource-monitor.md:23` goes up one only when `freeMB` is above four times `minFreeMB`, 8192 MB with `DEFAULT_MIN_FREE_MB` 2048 (`resources/index.ts`). The down rule fires below 2 x (`admits`). Logged idle readings kept parallelism at 1: 8189 MB / load1 0.49, 8152 / 0.68 and 8178 / 1.5, on 4 cpus with 0 running. |
+| item 45 | `agents/resource-monitor.md` (the "Go up one" rule) goes up one only when `freeMB` is above four times `minFreeMB`, 8192 MB with `DEFAULT_MIN_FREE_MB` 2048 (`resources/index.ts`). The down rule fires below 2 x (`admits`). Logged idle readings kept parallelism at 1: 8189 MB / load1 0.49, 8152 / 0.68 and 8178 / 1.5, on 4 cpus with 0 running. |
 | item 46 | `start --slug` without `--resume` is a usage error: `start --slug and --resume go together` (`bin/factory/start.ts` `cmdStart`). The PM can't run first the crew that unblocks others. |
 | item 47 | The ui-server-fixes acceptance test grepped `by: *['"]` in a test file and stopped a crew whose behaviour was right. The design engineer has no rule against pinning source spelling. |
 | item 48 | `runMembers` returns early for every task in `crew.e.done` (`workflows-src/stage/tasks.js`). `answersFor` sends an answer at a task name to that task only. An answer at a done tester task reaches no one. |
 | item 49 | `roleWarnings` (`bin/factory/warnings.ts`) warns whenever an agent file is newer than the session start, on every `start`, with nothing stored between starts. |
 | item 50 | `spawn` lets the entry's `## Members` value win over the roles row (`workflows-src/stage/spawn.js`, ADR-0022 U6). monitor-hold's builder ran on sonnet while `roles.builder` said opus. |
 | item 51a | `ownsUiFile` matches only UI file suffixes (`workflows-src/stage/ux.js`), so an owns of `ui/**` alone gives `Review mode: files` (`mode`). |
-| item 51b | `backstopPrompt` says "Work in the crew worktree" (`:604`), while `memberPrompt` adds an own-worktree proof line (`:318`) and "Commit on your branch" (`:389`). |
-| item 51c | `testsBackstop` turns any resolver marker but DONE into BLOCKED (`:636`). |
-| item 51d | `testsCheckExtra` builds `Head:` from `crew.e.head` (`:336`), while `crew.head` moves within the run (`:783`). |
+| item 51b | `backstopPrompt` says "Work in the crew worktree", while `memberPrompt` adds an own-worktree proof line (`memberHeavyLines`) and "Commit on your branch". |
+| item 51c | `testsBackstop` turns any resolver marker but DONE into BLOCKED. |
+| item 51d | `testsCheckExtra` builds `Head:` from `crew.e.head`, while `crew.head` moves within the run (`green`). |
 | item 51e | stage.js reads `args.truss` straight off `args` (`F`). `expandTrussFile` returns a JSON string when it was given one (`hooks/register.ts` `refuse`). |
-| item 52 | The stress engineer's probe went to a fixed name in the shared scratchpad and overwrote `probe.mjs`. `agents/stress-engineer.md:17` allows "scratch and `mkdtemp` dirs". |
+| item 52 | The stress engineer's probe went to a fixed name in the shared scratchpad and overwrote `probe.mjs`. `agents/stress-engineer.md` allows "scratch and `mkdtemp` dirs". |
 | item 53 | `crewEntry`'s `livePage` match (`bin/factory/start.ts`) accepts "Live pages are not built" and gives null for `-  Live page` and `1. Live page`; `checkArgsFile`  passes a read-only existing P that `argsFileOut` then fails to write; `changeDetail`  gives the mtime form for a file committed and then reverted. |
 | item 54 | `tally.seen` is a Record trimmed by `Object.keys` (`ui/server/session/fold.ts` `keys`), so integer-like ids sort first and break oldest-first order. `reduce.ts` `event` excludes `main`, `factory` and `workflow:*` from credit, unpinned. No case rolls a stall into `events.1.jsonl`. A successor project manager `a-2` never clears `a`'s idle-project-manager stall. |
 | item 55 | ui `pretest` is `npm run build` (`ui/package.json` key `scripts.pretest`), and build starts with `tsc` (key `scripts.build`). A partial `node_modules` fails with "tsc: command not found". |

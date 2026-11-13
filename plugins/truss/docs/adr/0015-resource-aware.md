@@ -146,7 +146,7 @@ The monitor is `truss:resource-monitor`, in `agents/resource-monitor.md`. Its fr
 - **Its rule** (chosen, not measured). Start from the current effective parallelism. Go down one when `freeMB` is below twice `minFreeMB`, or when `load1` is above `cpus`. Go up one when `freeMB` is above four times `minFreeMB` and `load1`, where present, is below half of `cpus`. Otherwise keep it.
 - **When the PM starts it.** At each stage start, and when a threshold crossing reaches the PM. Never on a loop.
 - **How a crossing reaches the PM.** Through what factory already returns, with no hook wake: `start`'s `held` list, and a `stopped` entry in `finish`'s output whose `why` starts `held by admission:` (Decision 6). `finish` sets `why` to the stop text's first non-empty line (`bin/factory/finish.ts` `finishRun`).
-- **What the PM does with it.** The PM decides. It writes `D/resources/parallelism.json` with Write and logs a decision line. The truss dir is exempt from the main-thread edit gate (`hooks/register.ts:975`, ADR-0014 Decision 2), so the Write goes through. Then it re-runs `start`, or resumes a held crew with `start --slug <s> --resume answers`.
+- **What the PM does with it.** The PM decides. It writes `D/resources/parallelism.json` with Write and logs a decision line. The truss dir is exempt from the main-thread edit gate (`hooks/register.ts` `mainEditVerdict`, ADR-0014 Decision 2), so the Write goes through. Then it re-runs `start`, or resumes a held crew with `start --slug <s> --resume answers`.
 
 The monitor-wiring crew writes the agent and the `skills/run/SKILL.md` step. The run skill names `truss:resource-monitor`, `parallelism` and `held`.
 
@@ -172,15 +172,15 @@ The four open items from the plan are decided here.
   node <plugin>/bin/factory.ts heavy --dir D --repo R --slug S --label <slug>-check --cwd W -- node <plugin>/bin/factory.ts check --dir D --repo R --slug S --cwd W --expect red|green
   ```
 
-  `runFactory` appends `--dir` and `--repo` after the whole command (`:149`), which would put them after the `--`. So `stage.js` builds this line with its own helper and passes both flags on each side.
+  `runFactory` appends `--dir` and `--repo` after the whole command, which would put them after the `--`. So `stage.js` builds this line with its own helper and passes both flags on each side.
 - Its runner prompt adds: run it with a Bash timeout of 600000.
-- `heavy` passes `check`'s JSON through (Decision 3), so `met` stays `parsed.ok === true`, and `envOf` and `knownOf` (`:169-176`) work as before.
+- `heavy` passes `check`'s JSON through (Decision 3), so `met` stays `parsed.ok === true`, and `envOf` and `knownOf` work as before.
 - **Queue timeout.** A result with `heavy.ran === false` is a stop, `Stop('BLOCKED', 'heavy slot busy: <why>', step)`. It is never a red or a failing green, so it never gets a fix builder.
 
 ### Reap: its own runner call
 
 - After each non-runner spawn ends, whatever its marker, `stage.js` runs `reap --slug <slug> --label <slug>-check` as its own runner call, with key `reaped` read as an array. It sits in the same two places as the admit pre-step: after the spawn in `ask`, and after the QC spawn. It also runs it once when the crew's chain ends, in `runCrew`.
-- It is not inside `integrate`. `integrate` runs only for a DONE member (`runTask`, `:313-320`), and the stopped and failed members are the ones most likely to leave a check group behind.
+- It is not inside `integrate`. `integrate` runs only for a DONE member (`runTask`), and the stopped and failed members are the ones most likely to leave a check group behind.
 - What it catches: a check whose runner shell hit its timeout and killed `heavy`, leaving the detached check group alive. `reap` kills it before the next member works.
 - What it doesn't catch: a member's own processes. They aren't recorded, because members' commands aren't queued (the gap above).
 - A failed reap call is logged in the crew's proofs and doesn't stop the crew.

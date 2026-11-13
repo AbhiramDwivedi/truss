@@ -20,7 +20,7 @@ The interfaces that can't take the work:
 - The QC engineer's report has no fixed line a hook can parse for the head or the patch, which breaks repo P23 for any code that would read them.
 - The project manager's report format (`agents/project-manager.md` section "13. Final report") and the project manager stop gate (`projectManagerStopPasses`, `register.ts`) know only the six sections.
 - `.claude/truss.json` has no key for the allowance (`truss-config.schema.json`).
-- retro's top-level and per-run keys are a pinned contract (`tests/test_contract_retro.py:23-24`), and it has no count of spent allowances.
+- retro's top-level and per-run keys are a pinned contract (`tests/test_contract_retro.py` `TOP_KEYS` and `RUN_KEYS`), and it has no count of spent allowances.
 
 There's also a fact about run scope. In this repo's session dir `40816bb1`, `reports/design/` holds `design-judge.md` to `design-judge-7.md`, and `reports/protocol/` holds `protocol-judge.md` to `-4.md`, all from earlier runs that used the same crew names (`ls` of that dir, 2026-10-27). Counting a crew's QC files by name alone would start run 3's `design` and `protocol` crews with their budgets already spent. "The highest-numbered QC file" would also name a stale file. ADR-0003 flagged this as open.
 

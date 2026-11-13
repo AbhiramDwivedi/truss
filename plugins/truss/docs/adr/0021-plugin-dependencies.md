@@ -159,7 +159,7 @@ The stage-1 crews build to these strings and shapes, and the contracts (`cs`, `c
 
 - A user who skips the claude-ops marketplace gets a truss that fails to load, and the fix is in the README.
 - `docs/events.schema.json`'s `event` enum has no `restart` today (it holds `spawn`, `stall`, `tag`, `report`, `allowance-spent`, `fetch`, `incomplete`, `refusal`, `sampler-error`). compose-runtime (stage 1), which owns that file under PO ruling F, adds `restart` with `crew`, `label`, `n` and `reason`. compose-design never edits it.
-- `tests/workflows.check.ts:808-813` (a second member that is not DONE after a CHECKPOINT stops BLOCKED, with no third member) is the one existing case reversed; compose-runtime may change only those lines. The case above it (`:801-807`, a CHECKPOINT then DONE) still holds.
+- `tests/workflows.check.ts` test "stage members: a second member that is not DONE after a CHECKPOINT stops BLOCKED at the task, with no third member" is the one existing case reversed; compose-runtime may change only that test. The test above it, "stage members: CHECKPOINT starts one fresh member of the same role from its text; DONE there carries on" (a CHECKPOINT then DONE), still holds.
 - `tests/init.check.ts` `NO_MANIFEST` is reversed with Decision 3; compose-wiring owns it. `tests/contract.check.ts` stays green, because the kit-absent line stays.
 - A task can take more member runs than before (the worst case above), but each is a fresh, smaller context.
 

@@ -10,39 +10,39 @@ Decided by: the client ruling of 11:33, the `[plugin-fixes]` lines of `decisions
 
 The client ruled at 11:33: "Don't just log a plugin bug, fix it." The plugin gaps this run proved became one goal, run through the factory after resource-aware merged (goal file `plugin-fixes-design.md`, Approved scope, 11:33 and 13:43).
 
-The approved items, from `amend-brief-plugin-fixes.md` (cited as "brief :N"), with what main `315c33e` does today:
+The approved items, from `amend-brief-plugin-fixes.md`, with what main `315c33e` does today:
 
-1. **Amend-route resume gap** (brief :6). A `Mode: amend` design engineer resumed mid-draft with SendMessage hands back a plan the plan-amend hook never routes. Today the main-session branch of the SendMessage handler (`hooks/register.ts` the `tool.call` handler for `SendMessage`) calls `next(e)` with no designer check. The route map `state.planDesigners` (`register.ts` `State`) is filled at spawn (the `agent.spawn` handler, the `tool.call` handler for `Agent`) and read only at hand-back (the `tool.call` handler). The PM ruled at 14:16 that the refusal covers plan-mode designers too, through the shared `planDesigners` map, as within item 1's intent.
-2. **`MAIN_MODEL_REFUSAL` text** (brief :7). The text at `register.ts` says the model is "opus" or "sonnet", while `mainCallVerdict` (`register.ts`) accepts any non-empty model.
-3. **Scrub and the plugin author** (brief :8). The scrubber flags `.claude-plugin/plugin.json` key `author.name`, the published author name.
-4. **Design engineer validation** (brief :9). A design engineer ran a cached `ajv-cli` after the classifier refused `npx -y`. The prompt must say: validate with `factory.ts plan-check` only, and report a refused command, never retry it another way.
-5. **Members' own heavy commands** (brief :10). ADR-0015 queues only runner-run checks. Left to a design slice (Decision 8).
-6. **A role added mid-session** (brief :11). A role added to the plugin after the session loaded its agents, such as `truss:stress-engineer`, can't be spawned until restart. Today `start` (`bin/factory/start.ts` `crewState`) reads no agent file, and its output (`stageOut`, `bin/factory/start.ts`) has no key that can carry a notice.
-7. **Missing goal file** (brief :12; approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory/start.ts`; `crewEntry` does the same at), so `engineOf` returns `the goal file has no ## Engine section`  and the crew goes to the project manager path.
-8. **Stale stress-test references** (brief :16). Several files point at `agents/qc-engineer.md` "Stress-test mode", a section that is gone. They should point at `agents/stress-engineer.md`.
-9. **False env verdicts** (brief :17). `envFailure` (`bin/factory/check.ts`) tests each trimmed line against `ENV_PATTERNS`  and the `Cannot find package` match anywhere on the line, so a failing test that echoes an env string inside JSON or assert text stops the crew as an env failure.
-10. **F-16** (brief :18). The planning engineer never assigns a report, summary or findings `.md` as a member deliverable.
-11. **F-21** (brief :19). Today `tests-check` guards only the files of `Truss-Role: test-writer` commits (`bin/factory/crew.ts` `cmdTestsCheck`). A file the acceptance test names that a builder added is not guarded.
-12. **F-29** (brief :20). A crew's acceptance proof uses only files from earlier stages or the crew's own owned files.
-13. **F-33** (brief :21). `workflowCallVerdict` reads `args.truss` only when `args` is an object (`register.ts`), so a Truss script whose `args` is a JSON string is refused with "a truss Workflow needs args.truss".
+1. **Amend-route resume gap**. A `Mode: amend` design engineer resumed mid-draft with SendMessage hands back a plan the plan-amend hook never routes. Today the main-session branch of the SendMessage handler (`hooks/register.ts` the `tool.call` handler for `SendMessage`) calls `next(e)` with no designer check. The route map `state.planDesigners` (`register.ts` `State`) is filled at spawn (the `agent.spawn` handler, the `tool.call` handler for `Agent`) and read only at hand-back (the `tool.call` handler). The PM ruled at 14:16 that the refusal covers plan-mode designers too, through the shared `planDesigners` map, as within item 1's intent.
+2. **`MAIN_MODEL_REFUSAL` text**. The text at `register.ts` says the model is "opus" or "sonnet", while `mainCallVerdict` (`register.ts`) accepts any non-empty model.
+3. **Scrub and the plugin author**. The scrubber flags `.claude-plugin/plugin.json` key `author.name`, the published author name.
+4. **Design engineer validation**. A design engineer ran a cached `ajv-cli` after the classifier refused `npx -y`. The prompt must say: validate with `factory.ts plan-check` only, and report a refused command, never retry it another way.
+5. **Members' own heavy commands**. ADR-0015 queues only runner-run checks. Left to a design slice (Decision 8).
+6. **A role added mid-session**. A role added to the plugin after the session loaded its agents, such as `truss:stress-engineer`, can't be spawned until restart. Today `start` (`bin/factory/start.ts` `crewState`) reads no agent file, and its output (`stageOut`, `bin/factory/start.ts`) has no key that can carry a notice.
+7. **Missing goal file** (approved-scope line 12:15). Today `start` reads `''` for an absent goal file (`bin/factory/start.ts`; `crewEntry` does the same at), so `engineOf` returns `the goal file has no ## Engine section`  and the crew goes to the project manager path.
+8. **Stale stress-test references**. Several files point at `agents/qc-engineer.md` "Stress-test mode", a section that is gone. They should point at `agents/stress-engineer.md`.
+9. **False env verdicts**. `envFailure` (`bin/factory/check.ts`) tests each trimmed line against `ENV_PATTERNS`  and the `Cannot find package` match anywhere on the line, so a failing test that echoes an env string inside JSON or assert text stops the crew as an env failure.
+10. **F-16**. The planning engineer never assigns a report, summary or findings `.md` as a member deliverable.
+11. **F-21**. Today `tests-check` guards only the files of `Truss-Role: test-writer` commits (`bin/factory/crew.ts` `cmdTestsCheck`). A file the acceptance test names that a builder added is not guarded.
+12. **F-29**. A crew's acceptance proof uses only files from earlier stages or the crew's own owned files.
+13. **F-33**. `workflowCallVerdict` reads `args.truss` only when `args` is an object (`register.ts`), so a Truss script whose `args` is a JSON string is refused with "a truss Workflow needs args.truss".
 14. **`ui/README.md` example token** (brief section "Start the UI"). A real-looking `?token=` value in the example launch line trips scrub. It becomes a placeholder such as `<token>`.
-15. **Members and the acceptance script** (brief :23). The worktree guard refuses an acceptance script that uses shell variables or multi-line shell. Members run plain single `node --test <files>` commands; the stage's green step runs the acceptance test.
+15. **Members and the acceptance script**. The worktree guard refuses an acceptance script that uses shell variables or multi-line shell. Members run plain single `node --test <files>` commands; the stage's green step runs the acceptance test.
 
-The confirm-against-main list (brief :24), as plan revision 2 settled it (`plan-plugin-fixes.md:95-109`):
+The confirm-against-main list, as plan revision 2 settled it (`plan-plugin-fixes.md`):
 
-| Item | Result | Plan line |
+| Item | Result |
 |---|---|---|
-| F-36, the brief skill's constraint example | include, prompts | :99 |
-| F-42, `hitLines` matching quoted string-literal lines | include, narrow: skip a quoted literal line ending in `,` | :100 |
-| F-43, the `toolError` quote and `handEdit` paths | include | :101 |
-| F-44, the checking engineer's report path | include, prompts | :102 |
-| P-2 | drop: the retro suites pass on main | :103 |
-| P-3, no fallback when `truss:retro-judge` isn't loaded | include, prompts | :104 |
-| P-5 | drop: not a bug | :105 |
-| P-6 | drop: the transcript triage says "Why finish left no file is not shown"; no failing case | :106 |
-| P-7 | drop: the producer was never traced | :107 |
-| P-9 | drop: the miss is item 1 | :108 |
-| item 2 text in `docs/architecture.md` | drop: the doc already states the rule | section "Roles and who talks to whom" |
+| F-36, the brief skill's constraint example | include, prompts |
+| F-42, `hitLines` matching quoted string-literal lines | include, narrow: skip a quoted literal line ending in `,` |
+| F-43, the `toolError` quote and `handEdit` paths | include |
+| F-44, the checking engineer's report path | include, prompts |
+| P-2 | drop: the retro suites pass on main |
+| P-3, no fallback when `truss:retro-judge` isn't loaded | include, prompts |
+| P-5 | drop: not a bug |
+| P-6 | drop: the transcript triage says "Why finish left no file is not shown"; no failing case |
+| P-7 | drop: the producer was never traced |
+| P-9 | drop: the miss is item 1 |
+| item 2 text | drop: the doc already states the rule (`docs/architecture.md` section "Roles and who talks to whom") |
 
 ## Decision 1: the factory CLI, `bin/factory.ts` (change)
 
@@ -71,7 +71,7 @@ TODO: plan revision 2 doesn't say which crews count as "starting now" on a `--re
 
 A crew whose source can be read gets either no warning or a definite one.
 
-The plan's proof (`plan-plugin-fixes.md:49-55`), re-run for this ADR in this session:
+The plan's proof (`plan-plugin-fixes.md`), re-run for this ADR in this session:
 
 ```
 $ printenv CLAUDE_PID
@@ -97,7 +97,7 @@ The YAML `error:` key is the exception. A leading `error:` key and its one openi
 - a one-line error quoted, as `error: "browserType.launch: ..."` or `error: '...'`;
 - a multi-line error as an `error: |-` block, whose message lines are not quoted.
 
-A rule of "no quote before the match" alone would miss the quoted one-line form (`plan-plugin-fixes.md:56`). These still count: a TAP `error: |-` block line, a TAP single-line `error: "browserType.launch: ..."`, a real loader line and a real Playwright line.
+A rule of "no quote before the match" alone would miss the quoted one-line form (`plan-plugin-fixes.md`). These still count: a TAP `error: |-` block line, a TAP single-line `error: "browserType.launch: ..."`, a real loader line and a real Playwright line.
 
 ### `tests-check` guards the acceptance files
 
@@ -113,7 +113,7 @@ The exact signatures and rules are in "Seams to pin".
 
 ## Decision 3: retro, `retro/extract.ts`, `retro/cli.ts`, `retro/scrub.ts` (extend)
 
-Narrower matches inside existing functions; the extract schema is unchanged (`plan-plugin-fixes.md:13`):
+Narrower matches inside existing functions; the extract schema is unchanged (`plan-plugin-fixes.md`):
 
 - F-42: `hitLines` skips a line that is a quoted string literal ending in `,`.
 - F-43: the line after `Exit code N` joins the quote, and `handEdit` leaves out scratchpad and memory paths. Today it leaves out only paths holding `/.git/truss/` (`retro/extract.ts` `extractSession`).
@@ -182,11 +182,11 @@ The factory-fixes crew also updates the two existing key pins: `OUTPUT_KEYS` in 
 
 Written by the design crew `guard-design` (stage 0 of goal `tests-guard-fix`), at main df3dbba. It records the new `factory tests-check` guard rule that the build crew `tests-guard` (stage 1) builds. Where it differs from the sections above, the amendment wins. Every line number below is at df3dbba.
 
-Decided by: checker-32's answer of 20:34 (`decisions.md:509`, followed), the client's standing ruling "Don't just log a plugin bug, fix it", and checker-35's delete control of 21:03, as plan revision 3 (`plan-tests-guard-fix.md`) settles them.
+Decided by: checker-32's answer of 20:34 (`decisions.md`, followed), the client's standing ruling "Don't just log a plugin bug, fix it", and checker-35's delete control of 21:03, as plan revision 3 (`plan-tests-guard-fix.md`) settles them.
 
 ### Why the rule changes
 
-Two gaps showed in goal `plugin-move` (`decisions.md:508`):
+Two gaps showed in goal `plugin-move` (`decisions.md`):
 
 - The rule in "`tests-check` guards the acceptance files" (Decision 1) guards every existing path the `acceptanceTest` names. It can't tell a test file from a deliverable the test only inspects, with `cmp` or `grep`, so a builder commit to such a deliverable is refused.
 - `cmdTestsCheck` reads `git log --cc --name-only` (`bin/factory/crew.ts`), which has no rename detection and shows only a rename's new path. Builder commit 77f5f09 renamed two test-writer files and edited them in the same commit (99% renames), and `tests-check` did not list it.
@@ -215,9 +215,9 @@ Two gaps showed in goal `plugin-move` (`decisions.md:508`):
 ### What this supersedes
 
 - **ADR-0016:102-104**, "`tests-check` guards the acceptance files" (Decision 1). Its rule, "the test-writer files plus every existing repo-relative path that the crew's `acceptanceTest` names", is replaced by rules 1 to 7 above: a named path is guarded only when it matches a test-file pattern, and renames count by rules 4 to 6. The seam row for `factory tests-check` in "Seams to pin" now states this rule.
-- **ADR-0009:279**, the "Tests guard" prose under Decision 4 step 6. Its rule, that the acceptance-test files are the files a `Truss-Role: test-writer` commit touched, read with `git log --cc` and no rename detection, is replaced by rules 1 to 8 above. Its other rules stand: a merge counts only for the files its resolution changed, a touch stops the crew `BLOCKED:` at `tests`, and no fix builder runs. ADR-0009:279 and the `tests-check` row of ADR-0009 Decision 1 (:170) now point here.
+- **ADR-0009:279**, the "Tests guard" prose under Decision 4 step 6. Its rule, that the acceptance-test files are the files a `Truss-Role: test-writer` commit touched, read with `git log --cc` and no rename detection, is replaced by rules 1 to 8 above. Its other rules stand: a merge counts only for the files its resolution changed, a touch stops the crew `BLOCKED:` at `tests`, and no fix builder runs. ADR-0009:279 and the `tests-check` row of ADR-0009 Decision 1 now point here.
 
-The Context item 11 (F-21, :25) stays as the history of the earlier fix.
+The Context item 11 (F-21) stays as the history of the earlier fix.
 
 ### The QC engineer's step 8
 

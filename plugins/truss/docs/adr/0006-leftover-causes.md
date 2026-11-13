@@ -5,7 +5,7 @@ Amended by ADR-0012 (the retro may read transcripts; P24 no longer binds the ret
 
 ## Context
 
-Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a stress test's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts:1324`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The stress test was detached because `agents/qc-engineer.md` section "Stress-test mode" tells it to run `git checkout --detach <sha>`.
+Retro's `leftovers` key (repo ADR-0015, pinned by `tests/test_contract_leftovers.py`) says which of a session's agents still have a `worktree-agent-<id>` branch or a `.claude/worktrees/agent-<id>` folder. It never says why. Run 1 left `.claude/worktrees/agent-acf43a8e536ebcdce`, a stress test's worktree, registered `detached` at `7cdaa0b`. Its branch pointed at the same commit, which was in main, so self-clean would have removed it had the worktree stayed on its branch. The sweep drops any worktree not on a `worktree-*` branch before it decides anything, with no log line (`plugins/worktrees/hooks/register.ts`, `if (live || !wt.branch?.startsWith('worktree-')) continue`). The stress test was detached because `agents/qc-engineer.md` section "Stress-test mode" tells it to run `git checkout --detach <sha>`.
 
 Three fixes follow, and this ADR decides all three:
 
@@ -13,7 +13,7 @@ Three fixes follow, and this ADR decides all three:
 2. the stress test resets its own branch instead of detaching, and leaves its worktree clean (section 2);
 3. the retro skill gets a root-cause step behind its description's "why crews stalled or got rejected" (section 3).
 
-**The interface that can't take the work.** `leftovers` is `{"branches": [...], "folders": [...], "count": n}`, and every test compares that whole dict: `tests/test_contract_leftovers.py`, `tests/test_retro_leftovers.py` and the root e2e test `tests/e2e/cleanup.e2e.ts`. A field nested inside it breaks all three. The top-level key set is pinned by set equality (`TOP_KEYS` in `tests/test_contract_retro.py:23` and `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged`). So the new facts go in one new top-level key, and `leftovers` and every other old key stay exactly as they are.
+**The interface that can't take the work.** `leftovers` is `{"branches": [...], "folders": [...], "count": n}`, and every test compares that whole dict: `tests/test_contract_leftovers.py`, `tests/test_retro_leftovers.py` and the root e2e test `tests/e2e/cleanup.e2e.ts`. A field nested inside it breaks all three. The top-level key set is pinned by set equality (`TOP_KEYS` in `tests/test_contract_retro.py` and `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged`). So the new facts go in one new top-level key, and `leftovers` and every other old key stay exactly as they are.
 
 ## Decision
 
@@ -48,7 +48,7 @@ The JSON values in the table are literal: `"detached "` is the word, one space, 
 
 1. `"ancestor"`: `git merge-base --is-ancestor <ref> HEAD` exits 0.
 2. `"tree"`: `git merge-tree --write-tree HEAD <ref>` exits 0 and its first output line equals `git rev-parse HEAD^{tree}` (`mergesToSameTree`, `register.ts` `budgetGate`). Exit 1, any other exit, or no `HEAD^{tree}` means this check doesn't hold.
-3. `"cherry"`, only when the entry is not locked and `dirty` is not `true` (the sweep's `wt.locked === undefined && !dirty`, `register.ts:1333`): `git cherry HEAD <ref>` exits 0 and prints at least one line, every line starting `- ` (`cherryMerged`, `register.ts` `patchIdOf`).
+3. `"cherry"`, only when the entry is not locked and `dirty` is not `true` (the sweep's `wt.locked === undefined && !dirty`, `register.ts`): `git cherry HEAD <ref>` exits 0 and prints at least one line, every line starting `- ` (`cherryMerged`, `register.ts` `patchIdOf`).
 
 The ref is passed by its short name, as register.ts passes it.
 
@@ -91,7 +91,7 @@ The leftovers contract forbids reading `slots.json`, and retro never reads trans
 
 **The git commands retro may run for this key**, all with `GIT_OPTIONAL_LOCKS=0` through `git_out`: `worktree list --porcelain`, `status --porcelain --untracked-files=all`, `merge-base --is-ancestor`, `rev-parse HEAD^{tree}`, `merge-tree --write-tree` (quarantined as above), `cherry`, `branch --show-current`. None changes a ref, the index, a worktree or config. retro.py's docstring, which says "rev-parse and for-each-ref only", is updated by the stage-1 crew to name these.
 
-**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts:734-752`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts` `patchOf`) and `parseWorktrees` (`register.ts` `headVerdict`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a Truss test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
+**The source, and the drift risk.** The rules above copy `decideSelfClean` (`plugins/worktrees/hooks/register.ts`, worktrees 0.8.0, commit `588d77d`), the sweep's fact gathering (`register.ts` `patchOf`) and `parseWorktrees` (`register.ts` `headVerdict`). retro never imports, calls or reads the worktrees plugin (repo ADR-0001, P1). When worktrees changes a reason string, its order or a check, retro's `skip` drifts from it silently. No cross-plugin test may catch that: a Truss test that reads `plugins/worktrees/` breaks P1. The guard is this section: a worktrees change to `decideSelfClean` is a reason to amend this ADR and retro in the same release, and the worktrees reviewer is the one who sees it.
 
 ### 2. the stress test's start and end state
 
@@ -137,7 +137,7 @@ The stage-0 check `tests/retro-cause.check.ts` pins in `SKILL.md`: the heading `
 | Seam | Producer | Consumer | Contract | Pinned by |
 | --- | --- | --- | --- | --- |
 | retro's `leftoverDetails` | `scripts/retro.py` | the `truss:retro` skill's root-cause step | section 1 | `tests/test_contract_leftover_details.py` |
-| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py:23`, `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged` |
+| retro's top-level key set | `scripts/retro.py` | the `truss:retro` skill | `TOP_KEYS` plus `leftoverDetails` | `tests/test_contract_retro.py` `TOP_KEYS`, `tests/test_contract_retro_050.py` `test_top_level_keys_unchanged` |
 | the stress test's start and end state | `agents/qc-engineer.md`, `agents/project-manager.md` | the stress-test QC engineer; worktrees' sweep (it removes the clean branch) | section 2 | `tests/redteam-reset.check.ts` |
 | The root-cause step | `skills/retro/SKILL.md` | the model running `/truss:retro` | section 3 | `tests/retro-cause.check.ts` |
 

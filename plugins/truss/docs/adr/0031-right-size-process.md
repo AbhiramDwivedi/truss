@@ -48,7 +48,7 @@ Two facts constrain the shape:
 | Name the sizes `small`, `standard`, `large` | Rejected | The names collide with the brief sizes (`docs/architecture.md` section "On disk"). |
 | Let a `lean` crew carry free-text proof | Rejected | A merge gate can't read prose. Two booleans, `qc` and `red`, can be read. |
 | Let the design engineer size an all-solo goal | Rejected | That starts the agent R-52 exists to save. It also loads a 292-line prompt (`agents/design-engineer.md`) for a one-screen answer. |
-| A new read-only sizing agent | Kept | This reuses an existing pattern, the read-only advisor `agents/resource-monitor.md:1-8`: "You recommend; the PM decides". |
+| A new read-only sizing agent | Kept | This reuses an existing pattern, the read-only advisor `agents/resource-monitor.md`: "You recommend; the PM decides". |
 | Teach `finish` to merge solo and lean crews | Rejected | `finish` reads a `stage.js` run's results and transcript (`bin/factory/finish.ts` `cmdFinish`). A solo or lean crew has neither. |
 | A new `land --slug` merge gate | Kept | It reuses `mergeCrew`'s steps and leaves `finish` unchanged. |
 
