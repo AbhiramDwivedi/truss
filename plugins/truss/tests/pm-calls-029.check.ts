@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, realpathSync, mkdtempSync, rmSync, writeFileSy
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { gatesAware } from './fixtures/gates-stub.ts'
 import { REAL_PLUGIN, assertOneLine, crew, flat, mkRepo, planObj, runCli, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const t = (name, fn) => test(name, { timeout: 60000 }, fn)
@@ -127,7 +128,7 @@ async function execStage(args, o = {}) {
   const calls = []
   const unscripted = []
   const counters = {}
-  const agent = async (prompt, opts = {}) => {
+  const agent = gatesAware(async (prompt, opts = {}) => {
     const call = { prompt, opts, label: opts.label, i: calls.length }
     calls.push(call)
     await tick()
@@ -164,7 +165,7 @@ async function execStage(args, o = {}) {
     const v = typeof h === 'function' ? await h(call, calls) : h
     await ticks(2)
     return v === null || v === undefined ? v : structuredClone(v)
-  }
+  })
   const parallel = async (thunks) => Promise.all(thunks.map(async (th) => { try { return await (typeof th === 'function' ? th() : th) } catch { return null } }))
   const pipeline = async (items, ...stages) => Promise.all(items.map(async (item, i) => { try { let prev = item; for (const st of stages) prev = await st(prev, item, i); return prev } catch { return null } }))
   let result
