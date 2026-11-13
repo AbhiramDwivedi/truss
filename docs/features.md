@@ -1,6 +1,6 @@
 # Feature map
 
-One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md). Product calls: [product-decisions](knowledge/product-decisions.md). Store, hold and stub details: [store](knowledge/store.md). Never nest backticks around a path here: the knowledge lint reads the inner path as a repo path and fails when it is untracked.
+One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md). Product calls: [product-decisions](knowledge/product-decisions.md). Store, hold and stub details: [store](knowledge/store.md). Test fixtures and suite notes: [testing](knowledge/testing.md). Never nest backticks around a path here: the knowledge lint reads the inner path as a repo path and fails when it is untracked.
 
 ## Shared store
 
@@ -170,6 +170,27 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 - What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `factory.ts:3563`).
 - Entry points: `plugins/truss/bin/factory.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
+
+## Goal check (goal-check)
+
+- What: `factory goal-check --dir D --repo R [--goal ID]` runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, removed after the check, never in the main checkout. It prints one JSON line with the head sha and the output tail (exit 1 when the check fails), logs one decision line either way, and never pushes or moves a branch. A plan or goal with no `goalCheck` is a usage error (`cmdGoalCheck`). It checks only the head of `settingsOf(repo).target` and has no flag for another ref, so a single-mode integration branch check stays a hand-run in the integrator's worktree.
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdGoalCheck`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: `plugins/truss/skills/run/SKILL.md` section 9 ("Goal check"); [architecture](../plugins/truss/docs/architecture.md) ("Goal check (step 9)").
+
+## Second run in one truss dir
+
+- What: `plan-write` over an approved plan renames `plan.json` and `plan.md` to `plan-<stamp>.json` and `.md` (`<stamp>`: the first 20 letters and digits of `approvedAt`, `-<n>` added on a clash) and writes the new plan; it refuses, writing nothing, while a crew of the earlier plan is `running` or still `planned` (a planned crew counts as a live run). An unapproved plan is still overwritten. `decisions.md` and `usage.jsonl` stay shared.
+- Entry points: `plugins/truss/bin/factory.ts` (`cmdPlanWrite`, `keepExisting`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: `plugins/truss/skills/run/SKILL.md` section 4 ("Draft the plan", step 4); [architecture](../plugins/truss/docs/architecture.md) ("Plan (step 4)").
+
+## Session scripts dir default
+
+- What: `plan-args` and `start` copy `plan.js` or `stage.js` to `<dir of the session transcript>/<session id>/workflows/scripts/truss-<script>` and print that as `scriptPath`, so the Workflow tool accepts it; the session id is the path segment under `<git common dir>/truss/` of the truss dir. `--scripts-dir` overrides; with no session found, `scriptPath` stays the plugin's own file.
+- Entry points: `plugins/truss/bin/factory.ts` (`sessionScriptsDir`, `scriptPathFor`, `cmdPlanArgs`, `cmdStart`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- Owner: `truss-plugin-node`.
+- Docs: `plugins/truss/skills/run/SKILL.md` sections 4 and 6; [architecture](../plugins/truss/docs/architecture.md) ("Workflow calls (ADR-0009)").
 
 ## Role names (ADR-0042)
 
