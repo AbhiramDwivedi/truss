@@ -82,7 +82,7 @@
       "minimum": 1
     },
     "heavySlots": {
-      "description": "ADR-0046 item 4: how many red and green checks (`factory heavy`) run at once across the session. Default from the host: max(1, min(4, floor(cpus/4), floor(totalGB/8))).",
+      "description": "ADR-0046 item 4: how many heavy commands (`factory heavy`: full test suites, builds, browser tests) run at once across the session. A targeted green check takes no slot (0.31.0). Default from the host: max(1, min(4, floor(cpus/4), floor(totalGB/8))).",
       "type": "integer",
       "minimum": 1,
       "maximum": 16
@@ -91,6 +91,31 @@
       "description": "ADR-0046 item 3: globs (repo-relative, path.matchesGlob) naming the project's test files beyond truss's built-in names (*.test|spec|check.*, test_*.py, *_test.py|go, tests/ test/ __tests__/ spec/ checks/ e2e/ fixtures/ dirs). The green check after a stress-fix round lists the test files changed; when no tracked file is a test file by either rule, the list is unknown and the crew gets a warning, not a stop.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
+    },
+    "targetedTests": {
+      "description": "0.31.0 (speed goal item 1): how a crew's green check picks its tests. factory check maps the crew's diff to the test files that import a changed file, transitively, or that name it in a string (bin/testmap.ts selectTests), and runs those outside the heavy slot. It runs the full suite instead when reach is unclear: a config file or dependency manifest, a shared test helper or fixture, code no test reaches, a deleted code file, or a diff over maxFiles. The full suite also runs once before merge, after the QC PASS.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runner": { "description": "The command that runs the selected JS test files, given as arguments. Default `node --test` when package.json's test script uses it; with none known, a JS selection runs the full suite.", "type": "string", "minLength": 1 },
+        "full": { "description": "The full-suite command. Default `npm test` when package.json has a test script.", "type": "string", "minLength": 1 },
+        "maxFiles": { "description": "A diff that changes more files than this runs the full suite. Default 40.", "type": "integer", "minimum": 1 },
+        "fullOn": { "description": "Globs (repo-relative, path.matchesGlob) whose change always runs the full suite.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "map": {
+          "description": "Paths the import graph can't see, and non-JS stacks: a changed file a `paths` glob matches adds the `tests` files and the `run` command (for example `pytest tests/api` or `npm --prefix ui test`). A covered file never forces the full suite.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["paths"],
+            "properties": {
+              "paths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+              "tests": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "run": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
     },
     "merge": {
       "description": "Merge mode of every run; the PM never asks. Default sequential.",

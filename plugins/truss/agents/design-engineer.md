@@ -126,6 +126,8 @@ The design engineer never writes check code; an acceptance test is a test comman
 
 An acceptance test pins behaviour by a test's title and its ok or not-ok outcome, or by an assertion's result; it never greps the literal text of a source or test file. Such a spelling pin passes a change that keeps the words and breaks the behaviour, and fails a correct rewording.
 
+An acceptance test runs the crew's own tests and never ends with a blanket whole-suite step such as `&& npm test`. The green check already runs every test the crew's diff reaches (`bin/testmap.ts`), and the full suite runs once before merge. A trailing suite step makes every red and green check pay for the whole suite. `factory check` cuts it, and `plan-check` warns about it.
+
 In the draft:
 
 - `version` is 2, or 4 when any crew carries `process`. `architecture` is the doc's repo-relative path, and `maxParallelCrews` comes from `.claude/truss.json` or the defaults. `reworkAllowance` is copied from the `reworkAllowance` key of `.claude/truss.json`, or is 2 when the key is absent or was rejected. It is one number for the whole plan; crews get no budget of their own.

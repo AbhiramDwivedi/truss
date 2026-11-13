@@ -702,6 +702,9 @@ function cmdPlanCheck(f: Flags): Obj {
   const warnings = stageWarnings(dirOf(f), crews)
   // a bare-directory owns entry (`dir/`) is read as `dir/**` by owns-check and the stage split; say so, so a plan that meant it is explicit
   for (const c of crews) for (const g of Array.isArray(c.owns) ? c.owns : []) if (typeof g === 'string' && g.endsWith('/')) warnings.push(`crew ${name(c)}: owns entry ${g} is a bare directory, read as ${g}**; write ${g}** to say so`)
+  // 0.31.0 item 1: the green check runs the tests the diff reaches and the full suite runs before merge, so a trailing whole-suite
+  // step only slows every check; factory check cuts it (stripBlanketSuite), and the plan should drop it
+  for (const c of crews) if (typeof c.acceptanceTest === 'string' && stripBlanketSuite(c.acceptanceTest).blanket) warnings.push(`crew ${name(c)}: the acceptance test ends with the whole test suite (npm test); the green check runs the tests the diff reaches and the full suite runs before merge, so drop that step`)
   return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
