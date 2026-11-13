@@ -5,7 +5,7 @@ sources:
   - plugins/truss/tests/workflows.check.ts
   - .claude/truss.json
   - plugins/truss/tests/inbox.check.ts
-verified: 971343f7c62eb6ad61165e5e706116d364793975
+verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
 ---
 
 # Product decisions
