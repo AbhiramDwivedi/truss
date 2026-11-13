@@ -8,7 +8,7 @@ sources:
   - plugins/truss/bin/testmap.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/green.js
-verified: 31478126626f33e7f122ed9c0e7a03ec21b2ec55
+verified: 2180477
 ---
 
 # Plugin test notes
@@ -40,4 +40,4 @@ Every git call in that file uses its own `GIT_CONFIG_GLOBAL` with `maintenance.a
 
 ## Targeted tests
 
-Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. The selector follows names, not whole files, and reaches a factory command's handler only when a test names that command (architecture.md, "Targeted tests"). A test that runs the CLI through a computed command reaches every handler, so name the command as a literal when you can. Only files package.json's test globs match are ever selected. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`, `symbolGraph`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows-src/stage/green.js` (`fullSuite`).
+Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. The selector follows names, not whole files, and reaches a factory command's handler only when a test names that command (architecture.md, "Targeted tests"). A test that runs the CLI through a computed command reaches every handler, so name the command as a literal when you can. Only files package.json's test globs match are ever selected. Acceptance scripts run through `bashRun` in `check.ts`, which prefixes `MKTEMP_PREFIX`: a bare `mktemp` or `mktemp -d` uses `${TMPDIR:-/tmp}` because BSD mktemp on macOS ignores TMPDIR, which a sandbox forbids. A sandbox `mktemp failed ... Operation not permitted` line matches `ENV_PATTERNS`, so it counts as an env failure, not a red test. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`, `symbolGraph`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows-src/stage/green.js` (`fullSuite`).
