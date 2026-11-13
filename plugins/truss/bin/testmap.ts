@@ -82,6 +82,14 @@ export function stripBlanketSuite(command: string): { command: string; blanket: 
   return { command: blanket ? lines.join('\n') : command, blanket }
 }
 
+/** The generated stage bundles (stage.js, first line `// Generated ... from the modules in ...`) a test loads by calling
+ * `loadStageBundle` (bin/build-stage.ts). The call names no path, so the name is the edge; a test that loads one step module names
+ * that module by a relative literal and reaches it alone (R-140). */
+function stageBundles(a: string, text: string, tracked: string[], read: (p: string) => string | null): string[] {
+  if (!/\bloadStageBundle\b/.test(text)) return []
+  return tracked.filter((t) => t !== a && base(t) === 'stage.js' && GENERATED.test(read(t) ?? ''))
+}
+
 /** Who uses whom: A -> B when A (a JS file) imports B by a relative specifier, or when A is test-side (a test or a file in a test
  * dir) and names B's file name in a string literal (a test that reads a script or a doc). A source module's literals are data
  * paths, not test reach, so they make no edge. */
@@ -108,6 +116,7 @@ function usedBy(tracked: string[], read: (p: string) => string | null): Map<stri
       for (const t of tracked) if (t.startsWith(under) && JS.test(t)) edge(a, t)
     }
     const testSide = RUNNABLE.test(a) || inTestDir(a)
+    if (testSide) for (const b of stageBundles(a, text, tracked, read)) edge(a, b)
     for (const m of text.matchAll(/'([^'\n]{1,300})'|"([^"\n]{1,300})"|`([^`\n]{1,300})`/g)) {
       // a template's ${...} parts are path prefixes (`${dir}/bin/factory.ts`): its file name still counts
       const lit = (m[1] ?? m[2] ?? (m[3] ?? '').replace(/\$\{[^}]*\}/g, '/')).trim()
@@ -207,6 +216,7 @@ export function symbolGraph(tracked: string[], read: (p: string) => string | nul
       for (const t of tracked) if (t.startsWith(under) && JS.test(t) && t !== a) out.other.push({ node: `W|${t}`, at: 0 })
     }
     const testSide = RUNNABLE.test(a) || inTestDir(a)
+    if (testSide) for (const b of stageBundles(a, text, tracked, read)) out.other.push({ node: `W|${b}`, at: 0 })
     for (const m of text.matchAll(LITERALS)) {
       const at = m.index as number
       if (consumed.has(at) || WRITE_TARGET.test(text.slice(Math.max(0, at - 40), at))) continue
