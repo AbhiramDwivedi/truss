@@ -8,7 +8,7 @@ Proposed on 2026-10-26 by foundry run 2's design crew. It applies [ADR-0012](001
 kit init sets a project up, but leaves no machine-readable record of what it found: the checks, the agent types and which of them are read-only, the risky paths, the setup scripts. The only marker is the `.claude/kit/` directory (`docs/architecture.md`, kit section). So:
 
 - foundry init can't build on kit's scan, and lists agent types by hand.
-- The stop gate's skip list is hard-coded in the template (`plugins/kit/skills/init/hooks-reference.md:57`, `case "$agent" in kit:scout|kit:reviewer|Explore|Plan|claude-code-guide) exit 0 ;; esac`, and `:79` for ps1). No other plugin can add its read-only types to it.
+- The stop gate's skip list is hard-coded in the template (`plugins/kit/skills/init/hooks-reference.md`, `case "$agent" in kit:scout|kit:reviewer|Explore|Plan|claude-code-guide) exit 0 ;; esac`, and its ps1 variant). No other plugin can add its read-only types to it.
 
 The existing interface that can't take the work is the set of project files in kit's table (`CLAUDE.md`, gates, checklist, setup script): they are prose and shell, written by the model, and no code can read the facts back out of them.
 
@@ -94,7 +94,7 @@ Status: accepted. The owner approved foundry run 3's plan at 2026-10-28T00:31:42
 
 A manifest entry with `readOnly: true` takes a type out of worktrees' isolation (ADR-0014) and out of the stop gate. Nothing stops a project or plugin from declaring a type that edits files. Such a type would then edit the main checkout and stop without its tests running.
 
-The interface that can't take the guard as it stands: `validate_facts` (`plugins/kit/scripts/kit_manifest.py:113`) checks both the input facts and the stored file, because `read_manifest` (`:191`) runs it on the existing manifest (`:221`) before `cmd_write` (`:434`) or `cmd_declare` (`:445`) can replace anything. A guard there would turn an existing manifest that declares `general-purpose` read-only into `MANIFEST_CORRUPT`, which no `write` could repair (P16). So the guard sits on the input path only, and reads stay tolerant.
+The interface that can't take the guard as it stands: `validate_facts` (`plugins/kit/scripts/kit_manifest.py`) checks both the input facts and the stored file, because `read_manifest` runs it on the existing manifest before `cmd_write` or `cmd_declare` can replace anything. A guard there would turn an existing manifest that declares `general-purpose` read-only into `MANIFEST_CORRUPT`, which no `write` could repair (P16). So the guard sits on the input path only, and reads stay tolerant.
 
 ### The refused list
 
@@ -102,7 +102,7 @@ This line is the list. ADR-0014 carries the same line, byte for byte; kit and wo
 
 Refused read-only types: general-purpose, kit:builder, kit:test-writer, foundry:architect, foundry:devops, foundry:lead, foundry:writer
 
-`general-purpose` is Claude Code's built-in editing type, and worktrees' default for an unset type (`plugins/worktrees/hooks/register.ts:58`). The other six are this repo's agents whose `tools:` line includes `Write` or `Edit` (`foundry:architect`, `foundry:devops`, `foundry:writer`) or that have no `tools:` line, so they get every tool (`foundry:lead`, `kit:builder`, `kit:test-writer`). A name is refused when its case-folded (`str.casefold()`) full name equals a case-folded name on the list. Only the full name counts: `Kit:Builder` and `GENERAL-PURPOSE` are refused, while `builder`, `plugin:general-purpose` and `kit:builder2` are not. Only `readOnly: true` is refused; a refused name with `readOnly: false` is a normal entry (kit declares `kit:builder` that way).
+`general-purpose` is Claude Code's built-in editing type, and worktrees' default for an unset type (`plugins/worktrees/hooks/register.ts`). The other six are this repo's agents whose `tools:` line includes `Write` or `Edit` (`foundry:architect`, `foundry:devops`, `foundry:writer`) or that have no `tools:` line, so they get every tool (`foundry:lead`, `kit:builder`, `kit:test-writer`). A name is refused when its case-folded (`str.casefold()`) full name equals a case-folded name on the list. Only the full name counts: `Kit:Builder` and `GENERAL-PURPOSE` are refused, while `builder`, `plugin:general-purpose` and `kit:builder2` are not. Only `readOnly: true` is refused; a refused name with `readOnly: false` is a normal entry (kit declares `kit:builder` that way).
 
 The script holds the list as the module constant `REFUSED_READ_ONLY_TYPES`, a tuple of the seven names in the order above.
 
@@ -112,7 +112,7 @@ The script holds the list as the module constant `REFUSED_READ_ONLY_TYPES`, a tu
 - **`declare` refuses a refused name.** After each `--read-only` name passes `check_agent_name` and the duplicate check, a refused name makes `declare` exit 2 with `READ_ONLY_EDITING_TYPE`, before the manifest is read, so the code is the same when there is no manifest. `NO_REPO` (exit 3) is still checked first, in `main`. Since a qualified name's prefix must equal `--by`, `declare --by foundry --read-only Foundry:Lead` still exits 2 with `DECLARER_MISMATCH`; `declare --by foundry --read-only foundry:LEAD` exits 2 with `READ_ONLY_EDITING_TYPE`.
 - **Stderr** is the usual one line: `kit_manifest: READ_ONLY_EDITING_TYPE: <detail>`, where the detail names the refused name as given in the input.
 - **Reads stay tolerant.** `read_manifest` and `validate_facts` don't apply the guard. An existing manifest with a refused `readOnly: true` entry is read as before: no `MANIFEST_CORRUPT`.
-- **Carried-over entries are dropped.** An entry a command would carry over from the existing file, rather than take from its input, is dropped when it has `readOnly: true` and a refused name. That covers `write`'s kept entries (declared by a plugin other than `kit` or `project` and not named in the facts, `kit_manifest.py:438-440`) and `declare`'s carried agents (`:461`). Entries declared by `kit` or `project` are replaced by `write`'s facts anyway, so a plain `write` repairs them. For each dropped entry, in the order the entries are sorted in the old file, the command writes one stderr line, exactly:
+- **Carried-over entries are dropped.** An entry a command would carry over from the existing file, rather than take from its input, is dropped when it has `readOnly: true` and a refused name. That covers `write`'s kept entries (declared by a plugin other than `kit` or `project` and not named in the facts, `kit_manifest.py`) and `declare`'s carried agents. Entries declared by `kit` or `project` are replaced by `write`'s facts anyway, so a plain `write` repairs them. For each dropped entry, in the order the entries are sorted in the old file, the command writes one stderr line, exactly:
 
   `kit_manifest: warning: dropped <name> (declaredBy <declaredBy>): READ_ONLY_EDITING_TYPE`
 
