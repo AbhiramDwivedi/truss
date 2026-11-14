@@ -4,11 +4,13 @@
 // diff and commits it once; `--reject` drops the proposal. Never imports factory.ts, whose top-level await would make an import cycle.
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { configOf, flat, isObj, refuse, repoPathOf, usage, withLock, writeJsonAtomic } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { configOf, flat, isObj, refuse, repoPathOf, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { withLock, writeJsonAtomic } from '../lock.ts'
 import { featurePaths, headTree } from '../knowledge.ts'
 import type { Tree } from '../knowledge.ts'
-import { dirOf, knowledgeCfgOf, repoOf, run } from './shared.ts'
+import { dirOf, repoOf, run } from './cli.ts'
+import { knowledgeCfgOf } from './settings.ts'
 
 type Row = { kind: 'merge' | 'flag' | 'prune' | 'repoint'; doc: string; reason: string }
 type Sec = { start: number; end: number; level: number; title: string }
