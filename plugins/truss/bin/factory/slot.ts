@@ -25,23 +25,27 @@ export function heavyWaitMs(f: Flags, env: Record<string, string | undefined> = 
 }
 // Twice the longest of the last 10 slot runs recorded in <dir>/resources/heavy-times.jsonl (one suite running, one ahead of the
 // waiter), never below HEAVY_WAIT_MS and never above HEAVY_WAIT_MAX_MS; HEAVY_WAIT_MS when nothing is recorded yet.
-export function slotWaitMs(dir: string): number {
-  let ms: number[] = []
+// A row the run limit stopped carries timedOut: true; it is no suite time, so slotWaitMs skips it (a hang never stretches the wait).
+function recentRows(dir: string): { ms: number; timedOut: boolean }[] {
   try {
-    ms = readFileSync(HEAVY_TIMES(dir), 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => {
+    return readFileSync(HEAVY_TIMES(dir), 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => {
       try {
-        return Number(JSON.parse(l).ms)
+        const r = JSON.parse(l)
+        return { ms: Number(r.ms), timedOut: r.timedOut === true }
       } catch {
-        return NaN
+        return { ms: NaN, timedOut: false }
       }
-    }).filter((n) => Number.isFinite(n) && n > 0).slice(-10)
+    }).filter((r) => Number.isFinite(r.ms) && r.ms > 0).slice(-10)
   } catch {
-    ms = []
+    return []
   }
+}
+export function slotWaitMs(dir: string): number {
+  const ms = recentRows(dir).filter((r) => !r.timedOut).map((r) => r.ms)
   if (ms.length === 0) return HEAVY_WAIT_MS
   return Math.min(HEAVY_WAIT_MAX_MS, Math.max(HEAVY_WAIT_MS, 2 * Math.max(...ms)))
 }
-export function recordHeavyTime(dir: string, row: { label: string; slug: string; ms: number }): void {
+export function recordHeavyTime(dir: string, row: { label: string; slug: string; ms: number; timedOut?: boolean }): void {
   try {
     mkdirSync(`${dir}/resources`, { recursive: true })
     appendFileSync(HEAVY_TIMES(dir), JSON.stringify({ ...row, at: new Date().toISOString() }) + '\n')
@@ -49,11 +53,29 @@ export function recordHeavyTime(dir: string, row: { label: string; slug: string;
     // a lost row only makes the next wait shorter
   }
 }
+// How long a command that holds a heavy slot may run (R-145): TRUSS_HEAVY_RUN_MS, else slotWaitMs(dir). Past it the heavy job stops the
+// command's group; HEAVY_GRACE_MS later the slot's `until` deadline lets a waiter take the slot from a holder that never got that far.
+export const HEAVY_GRACE_MS = 15000
+export function runMsOf(dir: string, env: Record<string, string | undefined> = process.env): number {
+  const v = env.TRUSS_HEAVY_RUN_MS
+  const n = v === undefined || v.trim() === '' ? NaN : Number(v)
+  if (Number.isInteger(n) && n > 0) return n
+  // a suite longer than the limit is stopped and never recorded as a suite time, so the limit would never grow to fit it: a stopped
+  // run still stretches the next default limit (twice the longest of them), up to HEAVY_WAIT_MAX_MS
+  const stopped = recentRows(dir).filter((r) => r.timedOut).map((r) => r.ms)
+  return stopped.length === 0 ? slotWaitMs(dir) : Math.min(HEAVY_WAIT_MAX_MS, Math.max(slotWaitMs(dir), 2 * Math.max(...stopped)))
+}
+// The one sentence every report of a run-limit stop carries: the limit in force, the variable, and how to raise it (client condition on R-145).
+export function limitNote(ms: number): string {
+  return `stopped after the run limit of ${ms} ms; set TRUSS_HEAVY_RUN_MS to a larger number of milliseconds to raise it`
+}
 // Takes one of `slots` heavy slots once free memory admits a run, waiting up to limitMs. The token is null when the wait ran out.
-export function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number): { token: string | null; waitedMs: number } {
+// The slot's owner.json carries until = now + the run limit + HEAVY_GRACE_MS, which takeHeavySlot treats as a stale deadline.
+export function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number, platform: NodeJS.Platform = process.platform): { token: string | null; waitedMs: number } {
   const t0 = Date.now()
+  const runMs = runMsOf(dir)
   for (;;) {
-    const token = takeHeavySlot(dir, { ...owner, pid: process.pid }, process.platform, slots)
+    const token = takeHeavySlot(dir, { ...owner, pid: process.pid, until: Date.now() + runMs + HEAVY_GRACE_MS }, platform, slots)
     if (token !== null) {
       let low = false
       try {
@@ -62,7 +84,7 @@ export function acquireSlot(dir: string, owner: { label: string; slug: string },
         appendEvent(dir, { event: 'sampler-error', crew: owner.slug, agent: owner.slug, command: 'heavy', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
       }
       if (!low) return { token, waitedMs: Date.now() - t0 }
-      releaseHeavySlot(dir, token)
+      releaseHeavySlot(dir, token, platform)
     }
     if (Date.now() - t0 >= limitMs) return { token: null, waitedMs: Date.now() - t0 }
     sleepSync(500)
