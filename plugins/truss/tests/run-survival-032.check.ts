@@ -41,7 +41,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crew, flat, mkRepo, planObj, readEvents, readPlan, REAL_FACTORY, runCli, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const HOUR = 3_600_000
@@ -150,9 +150,9 @@ test('two real processes that resume the same run at once start each unfinished 
   const sample = `${root}/high.json`
   writeFileSync(sample, JSON.stringify({ freeMB: 64000, totalMB: 64000 }))
   const env = { ...base, TRUSS_SAMPLE: sample, TRUSS_TRANSCRIPTS_ROOT: root }
-  const child = (repo: string, dir: string) =>
+  const child = (repo: string, dir: string, extra: Record<string, string> = {}) =>
     new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const p = spawn(process.execPath, [REAL_FACTORY, 'start', ...startArgs(repo, dir)], { cwd: repo, env, windowsHide: true })
+      const p = spawn(process.execPath, [REAL_FACTORY, 'start', ...startArgs(repo, dir)], { cwd: repo, env: { ...env, ...extra }, windowsHide: true })
       let stdout = ''
       let stderr = ''
       p.stdout.on('data', (d) => (stdout += d))
@@ -183,6 +183,27 @@ test('two real processes that resume the same run at once start each unfinished 
       }
       assert.equal(startRecords(dir, 'm').length, 0, 'the merged crew is never started')
     }
+    // The reclaim race: process A claims a crew (plan.json says running) and is held, by a real signal, before its spawn event.
+    // Process B then runs a whole start, whose orphan reclaim must not take A's live claim back to planned and start it again.
+    const repo = mkRepo({ config: CFG })
+    repos.push(repo)
+    const dir = session(repo, 's-old', planObj([crew('m', { stage: 1, status: 'merged' }), ...slugs.map((s) => crew(s, { stage: 2 }))], { approvedAt: iso(Date.now() - 3 * HOUR), maxParallelCrews: 8 }))
+    const holdDir = `${root}/hold`
+    mkdirSync(holdDir)
+    const preload = pathToFileURL(fileURLToPath(new URL('./fixtures/workflow-run/hold-worktree.mjs', import.meta.url))).href
+    const a = child(repo, dir, { TRUSS_TEST_HOLD_DIR: holdDir, NODE_OPTIONS: `--import=${preload}` })
+    const until = Date.now() + 60_000
+    while (!existsSync(`${holdDir}/held`) && Date.now() < until) await new Promise((r) => setTimeout(r, 20))
+    assert.ok(existsSync(`${holdDir}/held`), 'process A never reached its held worktree add')
+    const heldCrew = slugs.filter((s) => readPlan(dir).crews.find((c: any) => c.slug === s).status === 'running')
+    assert.equal(heldCrew.length, 1, 'while A is held it has claimed exactly one crew and has not written its spawn event')
+    assert.equal(startRecords(dir, heldCrew[0]).length, 0, 'the held crew has no spawn event yet')
+    const b = await child(repo, dir)
+    writeFileSync(`${holdDir}/go`, '')
+    const aOut = await a
+    assert.equal(b.status, 0, `held round, process B: ${say(b)}`)
+    assert.equal(aOut.status, 0, `held round, process A: ${say(aOut)}`)
+    for (const s of slugs) assert.equal(startRecords(dir, s).length, 1, `held round: crew ${s} has ${startRecords(dir, s).length} start records, wanted 1`)
   } finally {
     cleanup(root, ...repos)
   }
