@@ -113,9 +113,12 @@ function ownerDead(owner: unknown): boolean {
 // ADR-0052 Decision 1: a start that died after claimedWorktree set the crew running and before its spawn event leaves a
 // running workflow crew that no start form can restart (no spawn event, so it is neither stale nor resumable). Such a crew
 // never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
-function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boolean): void {
+// A direct (solo or lean) crew writes no spawn event, so its sign of a start that died is a dead owner and no crew worktree.
+function reclaimOrphans(dir: string, repo: string, plan: Obj, merge: string, noWorkflow: boolean): void {
+  const orphaned = (c: Obj): boolean => isDirect(c) ? !existsSync(crewWorktree(repo, String(c.slug))) : factorySpawned(dir, String(c.slug)) === undefined
   const orphans = plan.crews.filter((c: unknown) => {
-    if (!isObj(c) || c.status !== 'running' || isDirect(c) || factorySpawned(dir, String(c.slug)) !== undefined || !ownerDead(c.owner)) return false
+    if (!isObj(c) || c.status !== 'running' || !orphaned(c) || !ownerDead(c.owner)) return false
+    if (isDirect(c)) return true
     const goalFile = `${dir}/goals/${String(c.slug)}.md`
     if (!existsSync(goalFile)) return false
     return engineOf(goalSections(readFileSync(goalFile, 'utf8')), merge, noWorkflow).engine === 'workflow'
@@ -123,7 +126,7 @@ function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boole
   if (orphans.length === 0) return
   const slugs = new Set(orphans.map((c) => String(c.slug)))
   patchPlan(dir, (p) => {
-    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && factorySpawned(dir, String(e.slug)) === undefined && ownerDead(e.owner)) { e.status = 'planned'; delete e.owner }
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && orphaned(e) && ownerDead(e.owner)) { e.status = 'planned'; delete e.owner }
   })
   for (const c of orphans) c.status = 'planned'
   for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
@@ -595,7 +598,7 @@ export function cmdStart(f: Flags): Obj {
   const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
-  if (resumeFlag === undefined && slugFlag === undefined) reclaimOrphans(dir, plan, settings.merge, f['no-workflow'] === true)
+  if (resumeFlag === undefined && slugFlag === undefined) reclaimOrphans(dir, repo, plan, settings.merge, f['no-workflow'] === true)
   if (resumeFlag !== undefined) {
     if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
