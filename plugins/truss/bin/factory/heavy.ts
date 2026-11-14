@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { CliError, flat, isObj, need, readText, usage } from '../core.ts'
 import type { Obj } from '../core.ts'
 import { groupAlive, killGroup, releaseHeavySlot } from '../../resources/index.ts'
-import { acquireSlot, explicitWaitMs, GROUPS, pidAlive, recordHeavyTime, runMsOf, slotsAt, slotWaitMs } from './slot.ts'
+import { acquireSlot, explicitWaitMs, GROUPS, limitNote, pidAlive, recordHeavyTime, runMsOf, slotsAt, slotWaitMs } from './slot.ts'
 import { dirOf, FACTORY, parseFlags, run } from './cli.ts'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -111,7 +111,7 @@ export async function heavyMain(argv: string[], sys: HeavySys = {}): Promise<{ b
       const exit = Number.isInteger(res.exit) ? (res.exit as number) : 1
       const stdout = readText(`${jdir}/out.txt`) ?? ''
       // timedOut: the command ran past TRUSS_HEAVY_RUN_MS and the job stopped it (R-145)
-      let meta: Obj = { label, waitedMs: res.waitedMs, exit, slots, ...(res.timedOut === true ? { timedOut: true } : {}) }
+      let meta: Obj = { label, waitedMs: res.waitedMs, exit, slots, ...(res.timedOut === true ? { timedOut: true, limitNote: res.limitNote } : {}) }
       let parsed: unknown
       try {
         // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone
@@ -262,7 +262,7 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
       recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, timedOut: true })
     }
     if (pgid !== undefined && !groupAlive(pgid, platform)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
-    done({ ran: true, exit, waitedMs, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
+    done({ ran: true, exit, waitedMs, ms: Date.now() - t1, ...(timedOut ? { timedOut: true, limitNote: limitNote(runMs) } : {}) })
     return { body: { ok: exit === 0 }, code: 0 }
   } catch (e) {
     done({ ran: false, waitedMs: 0, why: `the heavy job failed: ${e instanceof Error ? e.message : String(e)}` })
