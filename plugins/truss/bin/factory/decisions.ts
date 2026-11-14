@@ -7,6 +7,8 @@ import type { Flags, Obj } from '../core.ts'
 import { localTime } from '../../hooks/register.ts'
 import { SLUG } from './plan.ts'
 import { dirOf, repoOf, run } from './cli.ts'
+import { ruleBookkeepingOnly } from './rule-bookkeeping.ts'
+import { knowledgeCfgOf } from './settings.ts'
 import { appendDecisionLine, appendEvent } from './log.ts'
 
 // ==== crew decisions ====
@@ -236,7 +238,10 @@ export function cmdKnowledgeCommit(f: Flags): Obj {
   const d = run(repoOf(f), ['-c', 'core.quotepath=off', 'diff', '--name-only', base as string, head as string])
   if (d.status !== 0) throw usage(`git diff ${base} ${head} failed: ${d.err || d.out}`)
   const files = d.out.split('\n').map((l) => l.trim()).filter(Boolean)
-  return { slug, sha, files }
+  // the base rule files among files whose change is only `verified` and `sources`: bookkeeping the workflow's knowledge step lets stand
+  const rulesDir = knowledgeCfgOf(repoOf(f)).rulesDir
+  const bookkeeping = files.filter((file) => ruleBookkeepingOnly(repoOf(f), base as string, head as string, file, rulesDir))
+  return { slug, sha, files, bookkeeping }
 }
 
 // factory crew-learned --slug <slug> --add=<json array>: appends the learned items of one member report to the crew's list. The list

@@ -10,6 +10,7 @@ import { releaseLease, takeLease, writeJsonAtomic } from '../lock.ts'
 import { profilesOf } from '../worktypes.ts'
 import { parsePlan, planVerdict, unbannered } from '../../hooks/register.ts'
 import { goalOf, RUN_GOAL } from '../../hooks/intake.ts'
+import { acceptanceCommand, goalSections } from './goal-file.ts'
 import { guardedOf, isTestPath, mergeIn, operationInProgress } from './crew.ts'
 import { CREW_STATE, learnedOf, readQuiet, setCrewState } from './decisions.ts'
 import { redRecord } from './finish.ts'
@@ -27,22 +28,6 @@ import { loadWarned, memberWarnings, roleWarnings, saveWarned, stressWarnings } 
 
 // ==== start ====
 
-// A goal file's `## Heading` sections as {heading: text}; the text before the first heading is under "".
-export function goalSections(text: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  let key = ''
-  let buf: string[] = []
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^## (.+?)\s*$/.exec(line)
-    if (m) {
-      out[key] = buf.join('\n').trim()
-      key = m[1]
-      buf = []
-    } else buf.push(line)
-  }
-  out[key] = buf.join('\n').trim()
-  return out
-}
 // The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else project manager with the reason.
 function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'project-manager'; reason: string } {
   if (merge === 'single') return { engine: 'project-manager', reason: 'merge mode single runs on the project manager path' }
@@ -128,10 +113,9 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0019 item 7, the lean entry: no goal; scope and acceptanceTest only when the goal file lacks their section,
   // since stage.js then points members to goalFile for them
   const has = (h: string) => Object.hasOwn(sections, h)
-  // the goal file holds the acceptance test only when its section quotes the plan's command; a section that only points
-  // elsewhere (such as to the plan's acceptanceTest) leaves the command in the entry, so the prompts still print it
-  const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
-  const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
+  // the goal file is what crews read and the PM edits, so its `## Acceptance test` section wins over plan.json's acceptanceTest
+  // (stageOut warns when the two differ); without the section, the plan's command goes in the entry so the prompts still print it
+  const atInGoal = has('Acceptance test')
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
   const ux = uxOn(crew.ux, uxText)
@@ -157,6 +141,13 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     spent: spentOf(c.dir, slug), labelFrom: mergeLabelFrom(labelFromOf(c.dir, slug), extra.runLabels ?? {}),
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
+}
+// The refusal reason for a goal file whose `## Acceptance test` section is malformed (not exactly one fenced code block), else
+// undefined. `factory check` refuses the same section with the same message, so the PM sees it before a crew runs.
+export function acceptanceRefusal(goalFile: string): string | undefined {
+  if (!existsSync(goalFile)) return undefined
+  const r = acceptanceCommand(readFileSync(goalFile, 'utf8'))
+  return typeof r === 'object' ? `goal file ${flat(goalFile)}: ${r.error}` : undefined
 }
 function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
@@ -422,6 +413,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const goalFile = `${c.dir}/goals/${slug}.md`
   const membersDeny = membersOf(goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '').Members, goalFile).refuse
   if (membersDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: membersDeny }], [], [])
+  const atDeny = acceptanceRefusal(goalFile)
+  if (atDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: atDeny }], [], [])
   // R-89: one finisher per crew; a live finisher lease refuses the resume
   const lease = takeLease(c.dir, `finisher-${slug}`)
   if (lease === null) throw refuse({ slug, why: 'finisher live' })
@@ -655,6 +648,11 @@ export function cmdStart(f: Flags): Obj {
     const membersDeny = membersOf(sections.Members, goalFile).refuse
     if (membersDeny !== undefined) {
       refused.push({ slug, reason: membersDeny })
+      continue
+    }
+    const atDeny = acceptanceRefusal(goalFile)
+    if (atDeny !== undefined) {
+      refused.push({ slug, reason: atDeny })
       continue
     }
     const wt = ensureWorktree(repo, slug, settings.target)

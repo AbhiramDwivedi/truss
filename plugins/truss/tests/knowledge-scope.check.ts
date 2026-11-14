@@ -191,7 +191,7 @@ t('scope 5d (ADR-0046 review): an agent file is a prompt file at any depth: a bu
   assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['plugins/p/agents/checking-engineer.md', 'plugins/p/agents/qc-engineer.md'], exempt: ['plugins/p/agents/writer.md'] })
 })
 
-t('scope 5e (0.32.0 hotfix): a knowledge commit\'s rule fragment may carry verified and sources frontmatter; the rule file itself, or a fragment that changes paths, is never exempt', () => {
+t('scope 5e (0.32.0 hotfix): a knowledge commit\'s rule fragment may carry verified and sources frontmatter; a fragment that changes paths is never exempt, and a rule file is exempt only for a verified and sources change', () => {
   const R = (fm, body) => `---\n${fm}---\n\n${body}`
   const base = { 'a.txt': 'base\n', '.claude/rules/area.md': R('paths:\n  - "src/**"\nsources:\n  - src/a.ts\nverified: aaa\n', '## Rules\n\n- old\n') }
   const a = world(undefined, base)
@@ -201,7 +201,8 @@ t('scope 5e (0.32.0 hotfix): a knowledge commit\'s rule fragment may carry verif
   const b = world(undefined, base)
   commitAll(b.wt, { '.claude/rules/area.md': R('paths:\n  - "src/**"\nsources:\n  - src/a.ts\n  - src/b.ts\nverified: bbb\n', '## Rules\n\n- old\n'), '.claude/rules.d/area/s.md': R('paths:\n  - "lib/**"\n', '## More\n\n- new\n') }, KNOWLEDGE)
   record(b.env, b.wt)
-  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['.claude/rules.d/area/s.md', '.claude/rules/area.md'], exempt: [] })
+  // the rule file's own change is only verified and sources, bookkeeping the owns check accepts; the fragment that changes paths is not
+  assert.deepEqual(ownsFull(b.env), { status: 1, outside: ['.claude/rules.d/area/s.md'], exempt: ['.claude/rules/area.md'] })
 })
 
 t('scope 6: the configured featureMap and adrDir (as .md) are doc paths of the recorded knowledge commit; without the key they are not', () => {
