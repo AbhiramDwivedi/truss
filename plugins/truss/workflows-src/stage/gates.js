@@ -64,9 +64,13 @@ async function gates(crew, want) {
   const met = r.parsed && isPlainObject(r.parsed.gates) ? r.parsed.gates : {}
   const codes = r.parsed && isPlainObject(r.parsed.codes) ? r.parsed.codes : {}
   const results = {}
+  // factory gates prints green's head at the top level (bin/factory/gates.ts), and its green step body need not hold it: a met
+  // green sub-result without it read as a pass with no head, even when the gates call stopped later, on owns
+  const topHead = r.parsed && typeof r.parsed.head === 'string' && r.parsed.head ? r.parsed.head : null
   for (const s of steps) {
-    const body = subs[s]
-    if (!isPlainObject(body)) break
+    const sub = subs[s]
+    if (!isPlainObject(sub)) break
+    const body = s === 'green' && topHead && !(typeof sub.head === 'string' && sub.head) ? { ...sub, head: topHead } : sub
     const exit = Number.isInteger(codes[s]) ? codes[s] : r.exit
     // met as the step's own runFactory call would judge it (the same key); gates' own met only says where it stopped
     results[s] = { met: body[GATE_KEY[s]] === true, parsed: body, exit, out: `exit ${exit}\n${JSON.stringify(body)}`, ...(s === 'admit' && admitWait === 0 ? { noWait: true } : {}) }

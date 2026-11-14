@@ -303,7 +303,8 @@ t('knowledge prompt: routing table, reconcile, source, verified, budgets and now
   const p = callOf(r, 'a-writer').prompt
   assert.ok(p.startsWith('Knowledge: crew a\n'))
   has(p, 'Where each item goes:')
-  has(p, '| Area-scoped stack rule or invariant | `.claude/rules/<area>.md`, with `paths` globs |')
+  // 0.32.0 hotfix: a rule change goes to the crew's fragment, never to a file under the rules dir
+  has(p, '| Area-scoped stack rule or invariant | your rule fragment `.claude/rules.d/<rule name>/a.md` |')
   has(p, '| Cross-cutting persona rule | the persona file, under `## Standards` |')
   has(p, '| Capability | the feature map (docs/features.md) |')
   has(p, '| Product call | the product decisions file (docs/knowledge/product-decisions.md) |')
@@ -319,7 +320,7 @@ t('knowledge prompt: routing table, reconcile, source, verified, budgets and now
   has(p, 'persona 120')
   has(p, '15 items under `## Standards`')
   has(p, 'Nothing to record is a valid outcome')
-  has(p, 'A new knowledge or rule file is linked from the feature map or the agents index (AGENTS.md)')
+  has(p, 'A new knowledge doc or rule is linked from the feature map or the agents index (AGENTS.md)')
   has(p, 'Rule files that exist: .claude/rules/ui.md, .claude/rules/api.md')
 })
 
@@ -327,7 +328,8 @@ t('knowledge prompt: the rules, knowledge and agents-index paths are overridable
   const truss = { rulesDir: 'ctx/rules', knowledgeDir: 'ctx/docs', agentsIndex: 'ctx/INDEX.md', productDecisions: 'ctx/docs/calls.md', knowledgeBudgets: { rule: 25 } }
   const r = await runStage([OLD()], { labels: labelsFor(), truss })
   const p = callOf(r, 'a-writer').prompt
-  has(p, '`ctx/rules/<area>.md`')
+  has(p, '`ctx/rules.d/<rule name>/a.md`')
+  has(p, 'Never create or edit a file under `ctx/rules/`')
   has(p, 'ctx/docs/calls.md')
   has(p, 'ctx/INDEX.md')
   has(p, 'rule file 25')
