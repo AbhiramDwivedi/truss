@@ -277,17 +277,21 @@ function stopHolder(resources: string, pid: number, platform: string, spawn: typ
   } catch {
     names = []
   }
+  let ownerSurvives = false
   for (const name of names) {
     try {
       const rec = JSON.parse(readFileSync(`${resources}/groups/${name}`, 'utf8'))
       if (rec && (rec.heavyPid === pid || rec.pgid === pid) && Number.isInteger(rec.pgid)) {
         killGroup(rec.pgid, 'SIGKILL', platform, spawn)
         rmSync(`${resources}/groups/${name}`, { force: true })
+        // a direct check (heavyPid = its own pid) waits on that suite: with the suite stopped it lives on to record the stop and name the limit
+        if (rec.heavyPid === pid && rec.pgid !== pid) ownerSurvives = true
       }
     } catch {
       // an unreadable record is the reap's to sort out
     }
   }
+  if (ownerSurvives) return
   if (platform === 'win32') {
     treeKill(pid, spawn)
     return

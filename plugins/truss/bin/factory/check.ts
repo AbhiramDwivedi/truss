@@ -12,7 +12,7 @@ import { releaseHeavySlot } from '../../resources/index.ts'
 import type { Catalog } from '../../retro/catalog.ts'
 import { isTestPath } from './crew.ts'
 import { acceptanceCommand } from './goal-file.ts'
-import { acquireSlot, heavyWaitMs, recordHeavyTime, slotsAt } from './slot.ts'
+import { acquireSlot, heavyWaitMs, limitNote, recordHeavyTime, runMsOf, slotsAt } from './slot.ts'
 import { retro } from './retro-mods.ts'
 import { baseOf, dirOf, gitOrFail, PLUGIN, repoOf, run } from './cli.ts'
 import { loadPlan } from './plan-file.ts'
@@ -129,7 +129,7 @@ export const MKTEMP_PREFIX =
 // Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
 // group (a direct full-suite check, which holds the heavy slot itself): the suite runs as its own process group, recorded in
 // resources/groups with heavyPid = this process, so the `until` takeover (stopHolder in resources/index.ts) stops it with the owner.
-export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }, platform: string = process.platform): { exit: number; text: string } {
+export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }, platform: string = process.platform): { exit: number; text: string; signal?: string } {
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
@@ -156,7 +156,7 @@ export function bashRun(cwd: string, command: string, group?: { dir: string; lab
       if (!alive) rmSync(`${gdir}/${r.pid}.json`, { force: true })
     }
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
-    return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8') }
+    return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8'), ...(r.signal ? { signal: r.signal } : {}) }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -203,14 +203,18 @@ function suiteRun(f: Flags, dir: string, slug: string, cwd: string, command: str
   const a = acquireSlot(dir, { label, slug }, slotsAt(cwd), limit)
   if (a.token === null) return { exit: 1, text: '', slot: { ran: false, waitedMs: a.waitedMs, waitLimitMs: limit, why: `waited ${a.waitedMs} ms (limit ${limit} ms) for the heavy slot and free memory` } }
   const t1 = Date.now()
-  let r: { exit: number; text: string }
+  const runMs = runMsOf(dir)
+  let r: { exit: number; text: string; signal?: string }
   try {
     r = bashRun(cwd, command, { dir, label, slug })
   } finally {
     releaseHeavySlot(dir, a.token)
   }
-  recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
-  return r
+  // a waiter took the slot past its `until` and stopped the suite's group (stopHolder in resources/index.ts): this process lives on,
+  // so it records the stopped run and tells the caller the limit, as heavyJobMain does for a wrapped command
+  const timedOut = r.signal !== undefined && Date.now() - t1 >= runMs
+  recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
+  return timedOut ? { exit: r.exit, text: `${r.text}\n${limitNote(runMs)}\n` } : r
 }
 
 export function cmdCheck(f: Flags): Obj {
