@@ -4,7 +4,7 @@ sources:
   - plugins/truss/workflows-src/stage/crew.js
   - plugins/truss/workflows-src/stage/runner.js
   - plugins/truss/docs/adr/0054-heavy-slot-run-limit.md
-verified: 6a8e47539d17342144e745b5d22df4d76701f030
+verified: dc6453a1f443e3944290e131c8fb72f0e6ca0bc4
 ---
 
 ## heavy-slots: the run limit stops a hung suite (R-145)
