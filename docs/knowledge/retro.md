@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/fixtures/retro-generic/non-truss.ts
   - plugins/truss/tests/fixtures/retro-generic/rubric.ts
   - plugins/truss/docs/adr/0051-generic-retro.md
-verified: 9e2b429035cc740adc632344be023c741cdf2a90
+verified: 4c50197645d508b185df58bd64d9c7251ec456e9
 ---
 
 # Generic retro: where things live
@@ -31,9 +31,9 @@ The design is in `plugins/truss/docs/adr/0051-generic-retro.md`. This page holds
 - Read `.claude/truss.json` with a tolerant `readJson` in `problems.ts` `readCtx`, never `bin/store.ts` `configOf`. `configOf` throws a `CliError` on text that is not JSON, and the wave-4 fixture's repo holds filler there. A failed read means no pricing.
 - A `refusal` event in `events.jsonl` has `agent` set to the agent id for a subagent (crew is `main`) and `main` for the main session. `rulesPart` finds a refusal's retry cost from that agent's next usage row.
 
-## Still reads the transcript extract
+## Recur reads structured files
 
-`retro/cli.ts` `runRecur` reads `catalogHits` from `retro/extract.json`, which `bin/factory/finish.ts` still writes. ADR-0051 says no retro step reads the extract, so R-31 recurrence checks stop until `recur` gets a source outside the transcripts.
+`retro/cli.ts` `runRecur` reads `catalogHits` from `retro/extract.json` only when that file exists, and also matches each fixed catalog entry against `retro/problems.json` titles and measure keys, `decisions.md` lines and `events*.jsonl` lines (`structuredHits`). It never reads a transcript. A missing extract gives no hits; a malformed one still exits 2.
 
 ## Test fixtures (`plugins/truss/tests/fixtures/retro-generic/`)
 

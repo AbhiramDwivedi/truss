@@ -6,10 +6,10 @@
 // the extract's files and line counts, never the transcripts (R-35). Erasable TypeScript only, Node standard library
 // only (P19).
 import { execFileSync } from 'node:child_process'
-import { existsSync,mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync,mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { fixShipped, loadCatalog, recurrences } from './catalog.ts'
+import { fixShipped, loadCatalog, matchLine, recurrences } from './catalog.ts'
 import type { Catalog } from './catalog.ts'
 import { counts, problems } from './counts.ts'
 import type { Finding as Counted } from './counts.ts'
@@ -86,8 +86,10 @@ const catalogAt = (path: string | undefined): Catalog => {
 }
 
 /** The extract's files list, read from <truss dir>/retro/extract.json; the catalog hits ride along for recur. */
-const loadExtract = (trussDir: string): { files: FilesList; catalogHits: unknown[] } => {
+const loadExtract = (trussDir: string, optional = false): { files: FilesList; catalogHits: unknown[] } => {
   const path = join(trussDir, 'retro', 'extract.json')
+  // only a missing extract is optional (recur, since the automatic retro writes none); a malformed one still fails
+  if (optional && !existsSync(path)) return { files: [], catalogHits: [] }
   let x: unknown
   try {
     x = JSON.parse(read(path))
@@ -317,11 +319,40 @@ function ranVersion(trussDir: string): string | null {
   return null
 }
 
+/** Catalog hits in the structured files the counting step reads (R-31, never a transcript): problems.json titles and measure keys, decisions.md lines, events*.jsonl lines. */
+function structuredHits(trussDir: string, catalog: Catalog): { id: string; file: string; line: number }[] {
+  const out: { id: string; file: string; line: number }[] = []
+  const lineHits = (file: string, text: string) => {
+    text.split('\n').forEach((l, i) => { for (const id of matchLine(l, catalog)) out.push({ id, file, line: i + 1 }) })
+  }
+  const textOf = (rel: string): string | null => {
+    try { return readFileSync(join(trussDir, rel), 'utf8') } catch { return null }
+  }
+  const pj = textOf('retro/problems.json')
+  if (pj !== null) {
+    try {
+      const p = JSON.parse(pj) as { measures?: Record<string, number>; findings?: { title?: unknown }[] }
+      const strings = [...(p.findings ?? []).map((f) => f.title), ...Object.keys(p.measures ?? {})].filter((s): s is string => typeof s === 'string')
+      const lines = pj.split('\n')
+      for (const s of strings) {
+        const at = lines.findIndex((l) => l.includes(JSON.stringify(s).slice(1, -1)))
+        for (const id of matchLine(s, catalog)) out.push({ id, file: 'retro/problems.json', line: at < 0 ? 1 : at + 1 })
+      }
+    } catch { /* a malformed problems.json is the counting step's to report */ }
+  }
+  const dec = textOf('decisions.md')
+  if (dec !== null) lineHits('decisions.md', dec)
+  let names: string[] = []
+  try { names = readdirSync(trussDir).filter((n) => /^events(\.\d+)?\.jsonl$/.test(n)).sort() } catch { /* no dir, no events */ }
+  for (const n of names) lineHits(n, textOf(n) ?? '')
+  return out
+}
+
 function runRecur(trussDir: string, catalogPath: string | undefined): string[] {
-  const x = loadExtract(trussDir)
+  const x = loadExtract(trussDir, true)
   const catalog = catalogAt(catalogPath)
   const fixed = catalog.entries.filter((e) => e.fixedBy !== null)
-  const hits = recurrences({ catalogHits: x.catalogHits as never }, catalog)
+  const hits = recurrences({ catalogHits: [...(x.catalogHits as never[]), ...structuredHits(trussDir, catalog)] as never }, catalog)
   const ran = ranVersion(trussDir)
   const lines: string[] = []
   const byId = new Map<string, typeof hits>()

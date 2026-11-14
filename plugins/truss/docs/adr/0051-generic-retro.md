@@ -170,7 +170,7 @@ Negative:
 - The stored finding shape changes, and the judge, triage, the retro skill and the PM all depend on it. Client item E-20261113-ef869e names the reversal as costly.
 - `plugins/truss/docs/findings.schema.json` is outside this crew's owns. It still describes the old shape: the seven kinds, transcript evidence and string `cost` and `target`. Until it is updated it is wrong.
 - The `out of scope (R-30)` drop in `skills/run/SKILL.md` (section on the retro after the sweep) contradicts Decision 4. That file is outside this crew's owns.
-- `recur` reads the extract's `catalogHits` (`retro/cli.ts` `runRecur`). With no retro step reading the extract (Decision 8), the retro no longer checks R-31's recurrences unless `recur` gets a source outside the transcripts.
+- `recur` reads the extract's `catalogHits` when an extract exists, and also the structured files the counting step reads: `retro/problems.json` finding titles and measure keys, `decisions.md` lines and `events*.jsonl` lines (`retro/cli.ts` `runRecur`, `structuredHits`). It never reads a transcript. A missing `retro/extract.json` gives no extract hits, since the automatic retro writes none; a malformed one still exits 2. R-31's recurrence check therefore still runs in the automatic retro.
 - `docs/retro-state.schema.json` describes the `extract` step as writing `extract.json`. Its shape is unchanged, but that description is now stale, and the file is outside this crew's owns.
 - `tests/retro-contract.check.ts` pins the seven kinds and transcript evidence, so the crew must change those cases.
 - A grade on a recording proves nothing about a fresh judge run. Only the opt-in live eval does, and only when the PM runs it.
