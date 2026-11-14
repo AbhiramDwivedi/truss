@@ -377,6 +377,7 @@ t('draft 5: a refused plan-write (no plan block) writes no drafts', () => {
 t('plan-args 1: truss.personas holds the project personas as factory start builds them', () => {
   const repo = mkRepo({ files: { '.claude/agents/product-owner.md': `---\nname: product-owner\ndescription: judge\ntools: Read, Grep, Glob\nmodel: opus\n---\n\nBody.\n\n## Standards\n\n- s\n`, '.claude/agents/java-dev.md': `---\nname: java-dev\ndescription: java\n---\n\nJ.\n\n## Standards\n\n- s\n` } })
   const dir = mkTrussDir()
+  writeFileSync(`${dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
   const r = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', dir, '--repo', repo, '--brief-file', brief], repo, { TRUSS_SESSION_START: String(Date.now() + 3_600_000) })
@@ -391,7 +392,12 @@ t('plan-args 1: truss.personas holds the project personas as factory start build
 t('plan-args 3 (review 10): plan-args carries truss.featureMap (the key or docs/features.md) only when that file exists in the repo', () => {
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
-  const argsOf = (repo) => runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', mkTrussDir(), '--repo', repo, '--brief-file', brief], repo).json.truss
+  const worthDir = () => {
+    const d = mkTrussDir()
+    writeFileSync(`${d}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
+    return d
+  }
+  const argsOf = (repo) => runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', worthDir(), '--repo', repo, '--brief-file', brief], repo).json.truss
   assert.ok(!Object.hasOwn(argsOf(mkRepo()), 'featureMap'))
   assert.equal(argsOf(mkRepo({ files: { 'docs/features.md': '# map\n' } })).featureMap, 'docs/features.md')
   assert.equal(argsOf(mkRepo({ config: { featureMap: 'docs/caps.md' }, files: { 'docs/caps.md': '# map\n' } })).featureMap, 'docs/caps.md')
@@ -401,6 +407,7 @@ t('plan-args 3 (review 10): plan-args carries truss.featureMap (the key or docs/
 t('plan-args 2: a repo with no .claude/agents has personas {}', () => {
   const repo = mkRepo()
   const dir = mkTrussDir()
+  writeFileSync(`${dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
   const r = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', dir, '--repo', repo, '--brief-file', brief], repo)
