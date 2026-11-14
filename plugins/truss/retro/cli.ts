@@ -7,7 +7,7 @@
 // only (P19).
 import { execFileSync } from 'node:child_process'
 import { existsSync,mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fixShipped, loadCatalog, matchLine, recurrences } from './catalog.ts'
 import type { Catalog } from './catalog.ts'
@@ -122,7 +122,8 @@ const PLUGIN_DIRS = ['agents', 'skills', 'bin', 'hooks', 'retro', 'workflows', '
 
 /** ADR-0051 Decision 4: product code is any path that is neither the truss plugin nor project config (CLAUDE.md, .claude/). */
 const isProductPath = (p: string, kind: unknown): boolean => {
-  const s = p.replace(/\\/g, '/').replace(/^\.\//, '')
+  // normalize first, so `.claude/../src/app.ts` is judged as the `src/app.ts` it names
+  const s = posix.normalize(p.replace(/\\/g, '/')).replace(/^\.\//, '')
   if (s === 'CLAUDE.md' || s.startsWith('.claude/') || s.startsWith('plugins/truss/')) return false
   // a bare top-level bin/, hooks/ ... is the plugin only when the judge says kind plugin; in any other project it is product code (R-128)
   return !(kind === 'plugin' && PLUGIN_DIRS.includes(s.split('/')[0]))

@@ -307,7 +307,7 @@ function attributor(dir: string, repo: string, slugs: string[], platform: NodeJS
 
 // ==== pricing ====
 
-export const RATES = ['inputPerMTok', 'outputPerMTok', 'cacheReadPerMTok', 'cacheWrite5mPerMTok', 'cacheWrite1hPerMTok'] as const
+const RATES =['inputPerMTok', 'outputPerMTok', 'cacheReadPerMTok', 'cacheWrite5mPerMTok', 'cacheWrite1hPerMTok'] as const
 const ratesOk = (v: unknown): v is Record<(typeof RATES)[number], number> => isObj(v) && RATES.every((k) => typeof v[k] === 'number' && Number.isFinite(v[k]) && v[k] >= 0)
 
 // The rates for a model: the longest pricing key that is a prefix of its id, its fast rates for a fast row; null when there are none.
