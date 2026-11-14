@@ -47,7 +47,7 @@ Code: `bin/core.ts`, `bin/lock.ts`, `bin/transcripts.ts`, and `bin/factory/` `cl
 
 ## Consequences
 
-R-139's target of at most 50 selected test files per changed leaf was not met. The PM filled that default; the client did not rule on it. It measures the load graph of `bin/factory.ts`, not the hub split. About 104 tests run the factory CLI, and its load path reaches `parseFlags`, `withLock` and `CliError`. A change to any leaf that holds one of those names selects all of those tests, however the hub is cut.
+R-139's target of at most 50 selected test files per changed leaf was not met. The program manager filled that default; the client did not rule on it. It measures the load graph of `bin/factory.ts`, not the hub split. About 104 tests run the factory CLI, and its load path reaches `parseFlags`, `withLock` and `CliError`. A change to any leaf that holds one of those names selects all of those tests, however the hub is cut.
 
 The selection counts below come from the diagnostics of `tests/hub-split-032.check.ts` test "hub-split 032: the selection count for each new module (logged for the builders report)", out of 176 test files. At the crew base, a change to `bin/store.ts` selected 103 files, a change to `bin/factory/shared.ts` selected 95 and a change to `bin/factory/resources.ts` selected 95.
 
