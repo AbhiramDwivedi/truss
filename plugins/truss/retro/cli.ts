@@ -24,6 +24,7 @@ export const COMMANDS = {
   recur: { min: 1, max: 2 },
   scrub: { min: 1, max: Infinity },
   state: { min: 3, max: 4 },
+  triage: { min: 2, max: 2 },
 }
 
 export type Result = { code: number; out: string; err?: string }
@@ -138,6 +139,7 @@ function judgedProblem(v: unknown, measures: Record<string, number>): string | n
   v.title = v.title.slice(0, 200)
   if (!nonEmpty(v.fix)) return 'fix must be a non-empty string'
   if (!Array.isArray(v.evidence) || v.evidence.length === 0) return 'no evidence entry'
+  const cited: number[] = []
   for (const e of v.evidence) {
     if (!isObj(e)) return 'evidence entry is not an object'
     const bad = onlyKeys(e, ['measure', 'value'])
@@ -145,12 +147,15 @@ function judgedProblem(v: unknown, measures: Record<string, number>): string | n
     if (!nonEmpty(e.measure)) return 'evidence measure must be a non-empty string'
     if (!Object.hasOwn(measures, e.measure)) return `evidence measure ${e.measure} is not counted`
     if (e.value !== measures[e.measure]) return `evidence measure ${e.measure} is ${JSON.stringify(e.value)}, counted ${measures[e.measure]}`
+    cited.push(measures[e.measure])
   }
   const c = v.cost
   if (!isObj(c) || onlyKeys(c, ['wallMs', 'tokens', 'usd'])) return 'cost must be {wallMs, tokens, usd}'
   const costs = ['wallMs', 'tokens', 'usd'].map((k) => c[k])
   if (!costs.every((x) => x === null || (typeof x === 'number' && Number.isFinite(x) && x >= 0))) return 'cost wallMs, tokens and usd must each be a number of at least 0 or null'
   if (costs.every((x) => x === null)) return 'cost has no number'
+  // a cost is counted, never guessed: each number equals the value of a measure the evidence cites
+  for (const k of ['wallMs', 'tokens', 'usd']) if (c[k] !== null && !cited.includes(c[k] as number)) return `cost ${k} ${c[k]} matches no measure the evidence cites`
   const t = v.target
   if (!isObj(t) || onlyKeys(t, ['kind', 'path'])) return 'target must be {kind, path?}'
   if (!TARGET_KINDS.includes(t.kind as string)) return `target kind must be one of ${TARGET_KINDS.join(', ')}`
@@ -202,8 +207,8 @@ export function parseFindings(report: string, measures: Record<string, number>):
   return { kept, dropped }
 }
 
-/** The measures the counting step wrote to <truss dir>/retro/problems.json, which findings check evidence against. */
-const loadMeasures = (trussDir: string): Record<string, number> => {
+/** The counting step's <truss dir>/retro/problems.json, checked to be a problems file of version 2. */
+const loadProblemsFile = (trussDir: string): Obj => {
   const path = join(trussDir, 'retro', 'problems.json')
   let x: unknown
   try {
@@ -213,8 +218,11 @@ const loadMeasures = (trussDir: string): Record<string, number> => {
     throw new Fatal(`bad problems ${path}: not JSON`)
   }
   if (!isObj(x) || x.retro !== 2 || !isObj(x.measures)) throw new Fatal(`bad problems ${path}: not a problems file of version 2`)
-  return x.measures as Record<string, number>
+  return x
 }
+
+/** The measures the counting step wrote to <truss dir>/retro/problems.json, which findings check evidence against. */
+const loadMeasures = (trussDir: string): Record<string, number> => loadProblemsFile(trussDir).measures as Record<string, number>
 
 type FindingsFile = { v: 1; findings: (Finding | Recurred)[] }
 
@@ -287,6 +295,27 @@ export function parseTriage(text: string, findings: { id: string; target: { kind
     if (m[2] === 'fix now') (f.target.kind === 'proposed-goal' ? proposedGoals : fixGoal).push(f.id)
   }
   return { decisions, fixGoal, proposedGoals, dropped }
+}
+
+/**
+ * Parses the triage agent's report against the findings of <truss dir>/retro/problems.json and the kept findings of
+ * retro/findings.json, and writes the result to <truss dir>/retro/triage.json (ADR-0051 Decision 7). A `recur` finding
+ * targets the catalog, a plugin file, so it counts as kind plugin.
+ */
+function runTriage(trussDir: string, reportPath: string): string[] {
+  const report = read(reportPath)
+  const p = loadProblemsFile(trussDir)
+  const known: { id: string; target: { kind: string } }[] = []
+  for (const f of [...(Array.isArray(p.findings) ? p.findings : []), ...loadFindings(trussDir).findings] as unknown[]) {
+    if (!isObj(f) || !nonEmpty(f.id) || known.some((k) => k.id === f.id)) continue
+    known.push({ id: f.id, target: { kind: isObj(f.target) && nonEmpty(f.target.kind) ? f.target.kind : 'plugin' } })
+  }
+  const t = parseTriage(report, known)
+  writeAtomic(join(trussDir, 'retro', 'triage.json'), JSON.stringify({ v: 1, ...t }, null, 2) + '\n')
+  return [
+    ...t.dropped.map((d) => `DROPPED: ${d.line} | ${d.reason}`),
+    `OK: ${t.decisions.length} decided, ${t.fixGoal.length} for the fix goal, ${t.proposedGoals.length} proposed goals, ${t.dropped.length} dropped`,
+  ]
 }
 
 // ---------- problems (ADR-0051 Decision 6) ----------
@@ -537,6 +566,7 @@ const run = (cmd: string, a: string[]): { code: number; lines: string[] } => {
   if (cmd === 'extract') return { code: 0, lines: runExtract(a[0], a[1], a[2]) }
   if (cmd === 'findings') return { code: 0, lines: runFindings(a[0], a[1], a[2]) }
   if (cmd === 'problems') return { code: 0, lines: runProblems(a[0]) }
+  if (cmd === 'triage') return { code: 0, lines: runTriage(a[0], a[1]) }
   if (cmd === 'recur') return { code: 0, lines: runRecur(a[0], a[1]) }
   if (cmd === 'scrub') return runScrub(a)
   writeState(a[0], a[1], a[2], a[3])
