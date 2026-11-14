@@ -98,6 +98,7 @@ const file = (name, tools) => `---\nname: ${name}\ndescription: ${name} area\n${
 function personasOf(files) {
   const repo = mkRepo({ files: Object.fromEntries(Object.entries(files).map(([n, text]) => [`.claude/agents/${n}.md`, text])) })
   const dir = mkTrussDir()
+  writeFileSync(`${dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const brief = `${tmp('pp-brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
   const r = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', dir, '--repo', repo, '--brief-file', brief], repo, { TRUSS_SESSION_START: String(Date.now() + 3_600_000) })
@@ -128,6 +129,7 @@ t('inline 1: a read-only persona carries inlineType, an editing persona does not
 t('inline 2: inlineType is present on an unloaded and a loaded read-only persona alike', () => {
   const repo = mkRepo({ files: { '.claude/agents/judge.md': file('judge', 'Read, Grep, Glob') } })
   const dir = mkTrussDir()
+  writeFileSync(`${dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const brief = `${tmp('pp-brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
   for (const [start, loaded] of [[Date.now() + 3_600_000, true], [Date.now() - 3_600_000, false]]) {

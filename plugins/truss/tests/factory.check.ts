@@ -123,6 +123,7 @@ test('settings: this checkout, run from the real bin, gives "merge":"sequential"
 function briefFile(env, text = 'Build the thing.\nSecond line.') {
   const p = `${env.dir}/brief.md`
   writeFileSync(p, text)
+  writeFileSync(`${env.dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   return p
 }
 
