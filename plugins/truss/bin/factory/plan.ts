@@ -123,7 +123,18 @@ export function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
+    const had = existsSync(`${dir}/plan.json`)
     keepExisting(true, seenApproved)
+    // the replaced run's per-crew state (reply checkpoint, answers, learned, crew decisions) moves aside, so a new run's crew of the same slug starts clean
+    if (had) {
+      let name = 'run-state'
+      for (let n = 2; existsSync(`${dir}/${name}`); n++) name = `run-state-${n}`
+      for (const [sub, to] of [['crews', 'crews'], ['crew-decisions', 'decisions']]) {
+        if (!existsSync(`${dir}/${sub}`)) continue
+        mkdirSync(`${dir}/${name}`, { recursive: true })
+        renameSync(`${dir}/${sub}`, `${dir}/${name}/${to}`)
+      }
+    }
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
