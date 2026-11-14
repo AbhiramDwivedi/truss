@@ -32,4 +32,4 @@ There is no pointer file: the plan files are the index. `results` lists the file
 | The PM session ended with crews running | A new session runs `find-run` and resumes the listed `dir`. |
 | Two sessions resume one run at once | Not supported: one PM session drives a run. |
 | `ensureWorktree` fails after a claim | The crew is back to `planned`; run `start` again. |
-| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event (a direct crew: no worktree) (a crew stamped `engine: "project-manager"`, listed under `projectManagers`, is never reset). The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |
+| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event (a direct crew: no worktree) (a crew with a `pm-crew` event, logged when `start` lists it under `projectManagers`, is never reset). The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |
