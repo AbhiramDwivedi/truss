@@ -36,6 +36,17 @@ test('the rules carry the foreground, no-poll and pid lines', () => {
   assert.match(constant, /Stop it with TaskStop when you are done/)
 })
 
+test('a worktree Agent call whose brief lacks the shell rules is refused, quoting the block', async () => {
+  const { SHELL_RULES, worktreeBriefVerdict } = await import('../hooks/register.ts')
+  const refused = worktreeBriefVerdict({ isolation: 'worktree', prompt: 'build the thing' })
+  assert.ok(refused !== undefined)
+  assert.ok(refused.deny.includes(`"${SHELL_RULES}"`), 'the refusal quotes the block word for word')
+  // controls: a brief carrying the rules, and a call without a worktree, go through
+  assert.equal(worktreeBriefVerdict({ isolation: 'worktree', prompt: `build the thing\n\n${SHELL_RULES}` }), undefined)
+  assert.equal(worktreeBriefVerdict({ isolation: 'none', prompt: 'x' }), undefined)
+  assert.equal(worktreeBriefVerdict({ prompt: 'search' }), undefined)
+})
+
 test('SKILL.md no longer tells the PM to Edit or Write decisions.md', () => {
   assert.doesNotMatch(skill, /plugin stamps HH:MM/)
   assert.match(skill, /written only through `factory\.ts decide`/)
