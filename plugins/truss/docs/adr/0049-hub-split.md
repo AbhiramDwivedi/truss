@@ -47,29 +47,32 @@ Code: `bin/core.ts`, `bin/lock.ts`, `bin/transcripts.ts`, and `bin/factory/` `cl
 
 ## Consequences
 
-The selection counts after the split, from the diagnostics of `tests/hub-split-032.check.ts` test "the selection count for each new module", out of 166 test files:
+R-139's target of at most 50 selected test files per changed leaf was not met. The PM filled that default; the client did not rule on it. It measures the load graph of `bin/factory.ts`, not the hub split. About 104 tests run the factory CLI, and its load path reaches `parseFlags`, `withLock` and `CliError`. A change to any leaf that holds one of those names selects all of those tests, however the hub is cut.
+
+The selection counts below come from the diagnostics of `tests/hub-split-032.check.ts` test "the selection count for each new module", out of 173 test files. At the crew base, a change to `bin/store.ts` selected 103 files, a change to `bin/factory/shared.ts` selected 95 and a change to `bin/factory/resources.ts` selected 95.
 
 | Changed file | Tests selected |
 | --- | --- |
 | `bin/store.ts` (barrel) | 6 |
 | `bin/factory/shared.ts` (barrel) | 1 |
 | `bin/factory/resources.ts` (barrel) | 1 |
-| `bin/factory.ts` | 104 |
-| `bin/core.ts` | 105 |
-| `bin/lock.ts` | 110 |
-| `bin/transcripts.ts` | 105 |
-| `bin/factory/cli.ts` | 104 |
-| `bin/factory/plan-file.ts` | 102 |
-| `bin/factory/settings.ts` | 102 |
-| `bin/factory/log.ts` | 102 |
-| `bin/factory/roles.ts` | 56 |
-| `bin/factory/slot.ts` | 104 |
-| `bin/factory/admit.ts` | 84 |
-| `bin/factory/reap.ts` | 104 |
+| `bin/factory.ts` | 109 |
+| `bin/core.ts` | 110 |
+| `bin/lock.ts` | 115 |
+| `bin/transcripts.ts` | 110 |
+| `bin/factory/cli.ts` | 109 |
+| `bin/factory/plan-file.ts` | 107 |
+| `bin/factory/settings.ts` | 107 |
+| `bin/factory/log.ts` | 107 |
+| `bin/factory/roles.ts` | 58 |
+| `bin/factory/slot.ts` | 109 |
+| `bin/factory/admit.ts` | 88 |
+| `bin/factory/reap.ts` | 109 |
 
-- The barrels select few tests only because nothing imports them now. The three tests that pin "at most 50 test files" for the old hub paths pass for that reason. They do not show that a change to the moved code selects fewer tests.
-- Most leaves still select about as many tests as the hubs did. About 104 of 166 tests reach `bin/factory.ts`, and the dispatcher reaches most leaves through its command modules, so those leaves stay near that count. Only `roles.ts` (56) and `admit.ts` (84) dropped. R-139 is met for those two leaves only. Cutting the other counts needs a split of the dispatcher's load graph, not of the hubs. `tests/hub-split-032.check.ts` test "a change to bin/factory.ts still selects more than 50 test files, so the measure is live" pins that this measure still tells a hub from a leaf.
-- The plan expected the stage-1 crews' targeted runs to fall to at most 50 files. That holds for a change to a barrel, and not for a change to most leaves.
+- The barrels select few tests only because nothing imports them now. That does not show that a change to the moved code selects fewer tests.
+- The split did not cut the worst count for any hub. Its worst leaves select 107 (`shared.ts`), 109 (`resources.ts`) and 115 (`store.ts`) files, against 95, 95 and 103 before. The counts rose because the leaves are now loaded by every module that imported a hub, and the total grew from 166 to 173 test files. Only `roles.ts` (58) and `admit.ts` (88) are well below the hub counts.
+- Cutting the counts needs per-command dispatch in `bin/factory.ts`, so that a test of one command loads only that command's modules. Lazy imports in `bin/factory.ts` were rejected because they hide references from the selector without changing what an edit to `parseFlags` or `withLock` can break. The release report records R-139 as not met and proposes that dispatch work as a follow-up goal.
+- `tests/hub-split-032.check.ts` pins the live measure with "a change to bin/factory.ts still selects more than 50 test files, so the measure is live".
 - Text that pins the lock constants reads `bin/lock.ts`: `release-026.check.ts` and `hygiene-029.check.ts` look for `OWNERLESS_MS` and `STALE_AGE_MS` there.
 - A test that stubs one seam of a moved name stubs the leaf, not the barrel. `tests/fixtures/inbox/proof-plugin.ts` now replaces `bin/transcripts.ts`.
 - ADR-0037 Decision says "`bin/store.ts` is the only code that locks files, writes shared state or sets a transcript root", and ADR-0048 cites `bin/store.ts` for the lease code. That code now lives in `bin/lock.ts` (the lock, the leases and the writes) and `bin/transcripts.ts` (the transcript roots); `bin/store.ts` only re-exports it. This ADR amends the wording of those citations and nothing else: the single-locker rule holds, now in `bin/lock.ts`. Read every `bin/store.ts` citation in ADR-0037 and ADR-0048 as the leaf that holds the named symbol.
