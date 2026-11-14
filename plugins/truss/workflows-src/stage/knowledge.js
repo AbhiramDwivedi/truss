@@ -57,7 +57,13 @@ function alwaysLoaded(p) {
 const ruleFragment = (slug) => `\`${RULES_DIR}.d/<rule name>/${slug}.md\``
 const ruleFragmentLine = (slug) => `Rule files take only fragments: write every rule change, including \`sources\` and \`verified\`, to your fragment ${ruleFragment(slug)} (whole sections, plus frontmatter holding the \`sources\` you add and the \`verified\` stamp; a new rule's fragment also holds its \`paths\`). Never create or edit a file under \`${RULES_DIR}/\`, its frontmatter included: no crew owns one, so the owns gate stops the crew on it.`
 // the files under RULES_DIR itself (never its `.d` fragments dir) among the knowledge diff's files
-const sharedRuleEdits = (files) => (Array.isArray(files) ? files : []).map(String).filter((f) => f.startsWith(`${RULES_DIR}/`))
+// minus the files `factory knowledge-commit` reports in `bookkeeping`: a base rule file changed only in `verified` and `sources`,
+// which owns-check accepts too (bin/factory/rule-bookkeeping.ts holds the one rule)
+const sharedRuleEdits = (rec) => {
+  const files = rec && Array.isArray(rec.files) ? rec.files : []
+  const ok = new Set(rec && Array.isArray(rec.bookkeeping) ? rec.bookkeeping.map(String) : [])
+  return files.map(String).filter((f) => f.startsWith(`${RULES_DIR}/`) && !ok.has(f))
+}
 
 // again (0.29.0, ADR-0046 item 6): a re-run after a fix round ({why, from, items}) or to clear knowledge-lint failures ({why, from,
 // items: [], lint}); it reviews only the fix's diff, from `from` (the head before that round)
@@ -140,7 +146,7 @@ async function knowledge(crew, again = null) {
   // a refusal (the sha is not in before..head) or a failure is logged and the crew carries on: green re-runs, and owns-check then
   // refuses any out-of-owns doc change because no commit is exempt
   const rec = await recordKnowledgeCommit(crew, sha, before, head)
-  let shared = sharedRuleEdits(rec && rec.files)
+  let shared = sharedRuleEdits(rec)
   if (!shared.length) return true
   // 0.32.0 hotfix: the knowledge diff changed a rule file the crew does not own. Sent back once (bound 1: the member had the
   // fragment rule in its brief and now has the files named; a second miss will not fix itself), checked again on the whole
@@ -151,7 +157,7 @@ async function knowledge(crew, again = null) {
     crew.knowledgeSha = back.sha
     const again2 = await recordKnowledgeCommit(crew, back.sha, before, back.head)
     // an unconfirmed record keeps the first list: the step stops rather than leave the edit for the owns gate
-    if (again2) shared = sharedRuleEdits(again2.files)
+    if (again2) shared = sharedRuleEdits(again2)
   }
   if (shared.length) throw new Stop('BLOCKED', `the knowledge step changed ${shared.join(', ')}, under ${RULES_DIR}/, and left the change after one send-back. No crew owns a rule file; rule changes go to the crew's fragment under ${RULES_DIR}.d/. Restore those files on the crew branch and resume the crew.`, 'knowledge')
   return true

@@ -11,6 +11,7 @@ import type { Selection, TestsConfig } from '../testmap.ts'
 import { releaseHeavySlot } from '../../resources/index.ts'
 import type { Catalog } from '../../retro/catalog.ts'
 import { isTestPath } from './crew.ts'
+import { acceptanceCommand } from './goal-file.ts'
 import { acquireSlot, heavyWaitMs, recordHeavyTime, slotsAt } from './slot.ts'
 import { retro } from './retro-mods.ts'
 import { baseOf, dirOf, gitOrFail, PLUGIN, repoOf, run } from './cli.ts'
@@ -201,13 +202,19 @@ export function cmdCheck(f: Flags): Obj {
   if (expect !== 'red' && expect !== 'green') throw usage('--expect must be red or green')
   const crew = loadPlan(dir).crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  if (typeof crew.acceptanceTest !== 'string' || crew.acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
+  // the goal file is the one home of the acceptance command: its `## Acceptance test` fenced block wins; plan.json's acceptanceTest
+  // is the fallback only when the goal file has no such section, and a malformed section is refused, never guessed at
+  const goalFile = `${dir}/goals/${slug}.md`
+  const fromGoal = existsSync(goalFile) ? acceptanceCommand(readFileSync(goalFile, 'utf8')) : undefined
+  if (typeof fromGoal === 'object') throw refuse({ ok: false, why: `goal file ${flat(goalFile)}: ${fromGoal.error}` })
+  const acceptanceTest = fromGoal ?? crew.acceptanceTest
+  if (typeof acceptanceTest !== 'string' || acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
   // 0.31.0 item 1: a trailing whole-suite step (`&& npm test`) is cut; the green check adds the targeted set itself. An acceptance
   // test that is nothing but the suite stays as it is, and since it is the whole suite it runs inside the heavy slot (suiteRun,
   // item 2); its green run is then the full suite already, so no tests are added after it.
-  const cut = stripBlanketSuite(crew.acceptanceTest)
+  const cut = stripBlanketSuite(acceptanceTest)
   const suiteOnly = cut.blanket && cut.command.trim() === ''
-  const command = cut.blanket && !suiteOnly ? cut.command : crew.acceptanceTest
+  const command = cut.blanket && !suiteOnly ? cut.command : acceptanceTest
   // a failed install goes into the check text, so the env catalog sees it
   const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
   const acc = suiteOnly ? suiteRun(f, dir, slug, cwd, command) : bashRun(cwd, command)

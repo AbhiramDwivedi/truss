@@ -22,7 +22,8 @@ class Stop {
 const SHARED = '.claude/rules/plugin-tests.md'
 
 // diffs: what `factory knowledge-commit --base --head` reports as files, one entry per knowledge run
-async function load(diffs) {
+// bookkeeping: the base rule files of each run's diff that changed only `verified` and `sources` (the command's `bookkeeping` list)
+async function load(diffs, bookkeeping = []) {
   const { loadStageStep } = await import('../bin/build-stage.ts')
   const prompts = []
   const commits = []
@@ -63,7 +64,7 @@ async function load(diffs) {
     runFactory: async (crew, command) => {
       commits.push(command)
       const m = /--sha (\S+)/.exec(command)
-      return { met: true, parsed: { slug: 's', sha: m[1], files: diffs[commits.length - 1] ?? [] } }
+      return { met: true, parsed: { slug: 's', sha: m[1], files: diffs[commits.length - 1] ?? [], bookkeeping: bookkeeping[commits.length - 1] ?? [] } }
     },
   }
   const m = await loadStageStep(STEP, stubs)
@@ -108,4 +109,22 @@ test('knowledge rules: a second knowledge commit that still leaves the shared ru
     return true
   })
   assert.equal(prompts.length, 2, 'one send-back, no more')
+})
+
+test('knowledge rules: a base rule file whose diff changes only verified and sources is bookkeeping: no send-back, no stop', async () => {
+  const { m, prompts, commits } = await load([['docs/features.md', SHARED]], [[SHARED]])
+  const crew = crewOf()
+  assert.equal(await m.knowledge(crew), true)
+  assert.equal(prompts.length, 1, 'a bookkeeping-only rule file edit is not sent back')
+  assert.equal(commits.length, 1)
+  assert.equal(crew.knowledgeSha, '1111111')
+})
+
+test('knowledge rules: a bookkeeping rule file does not excuse another base rule file in the same diff', async () => {
+  const OTHER = '.claude/rules/other.md'
+  const { m, prompts } = await load([[SHARED, OTHER], ['docs/features.md']], [[SHARED], []])
+  assert.equal(await m.knowledge(crewOf()), true)
+  assert.equal(prompts.length, 2)
+  assert.match(prompts[1], /other\.md/)
+  assert.match(prompts[1], /your knowledge commit changed \.claude\/rules\/other\.md, under/)
 })
