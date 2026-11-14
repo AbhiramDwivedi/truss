@@ -107,6 +107,19 @@ async function ask(crew, role, prompt, opts = {}) {
   }
 }
 
+// R-142: the member start the next factory call carries the admission for. Sets crew.admitPlan (runFactory sends it as
+// --admit-first) for the label, title, persona and high that ask() will admit with; the step's call must be the very next runner call.
+function planAdmit(crew, role, title, persona = null, high = false) {
+  crew.admitPlan = { label: peekLabel(crew, role), title: titleOf(crew, role, title), persona, high }
+}
+
+// the admit-first answer of the last factory call (runFactory), once: only for the member start it was planned for
+function takeAdmitFirst(crew, label, title, persona, high) {
+  const f = crew.admitFirst
+  crew.admitFirst = null
+  return label && f && f.label === label && f.title === title && f.persona === (persona || null) && f.high === !!high ? f : null
+}
+
 // admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
@@ -115,9 +128,12 @@ async function ask(crew, role, prompt, opts = {}) {
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
-  const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
+  // R-142: or the factory call just before this member start (--admit-first) answered for it, with this label, title, persona and high
+  const first = takeAdmitFirst(crew, label, title, persona, high)
+  const pre = first ?? (label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null)
   // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
-  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  // the folded --admit-first answer counts as a memory or parallelism hold only when it carries admit's own figures (minFreeMB)
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true && (pre !== first || typeof pre.parsed.minFreeMB === 'number')
   let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
