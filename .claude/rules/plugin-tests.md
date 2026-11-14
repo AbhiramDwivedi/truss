@@ -29,7 +29,7 @@ sources:
   - plugins/truss/tests/lifecycle-029.check.ts
   - plugins/truss/tests/fixtures/citations/line-citations.ts
   - plugins/truss/tests/retro-generic-fixture.check.ts
-verified: ca310a291f7ad8ebb3c803bd9199871e8f3084bb
+verified: c794d8dc8ac9f6836e2cc3c541faff0a234338b0
 ---
 
 - Stub one seam of the plugin without knowing the real module's exports: in a private copy, move `bin/X.ts` to `bin/X-real.ts` and write `bin/X.ts` as `export * from './X-real.ts'` plus the local overrides. A local export shadows the star re-export, so only the named seam changes (`stubbedPlugin()`, `wiring-025.check.ts` `stubbedPlugin`). Copy the plugin with `pluginCopy()` into your own tmp dir (`cpSync(pluginCopy(), d, {recursive: true})`); never write inside the shared copy.

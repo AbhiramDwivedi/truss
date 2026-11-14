@@ -7,7 +7,7 @@ import { test } from 'node:test'
 const BIN = new URL('../bin/', import.meta.url)
 const MODULES = [
   'shared', 'runs', 'retro-mods', 'plan', 'check', 'doctor', 'crew', 'start', 'warnings', 'personas', 'resources', 'heavy', 'gates',
-  'finish', 'audit', 'retire', 'decide', 'decisions', 'knowledge-cmds',
+  'finish', 'audit', 'retire', 'decide', 'decisions', 'knowledge-cmds', 'consolidate',
 ]
 // The only functions factory.ts declares: the dispatch around the command table and the CLI flags it handles itself.
 const DISPATCH = ['positionalsToFlags', 'attach', 'main', 'statusLine', 'takeStatusFlag', 'takeReapFlag', 'reapFirst']

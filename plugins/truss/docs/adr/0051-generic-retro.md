@@ -126,7 +126,7 @@ The rest of ADR-0012 Decision 6 holds: the fix goal goes through amend, its appr
 
 The retro judge reads `retro/problems.json` and the structured files, never transcripts. Its brief says it is empowered and expected to find problems outside the checklist, and that it may name a new category.
 
-The retro state steps keep their five names: `extract`, `judges`, `triage`, `fixGoal` and `applied` (`retro/cli.ts` `STEPS`). The `extract` step now runs the counting step, so `docs/retro-state.schema.json` does not change. `retro/extract.ts`, and the transcript extract that `factory finish` writes, stay as they are, but no retro step reads them.
+The retro state steps keep their five names: `extract`, `judges`, `triage`, `fixGoal` and `applied` (`retro/cli.ts` `STEPS`). The `extract` step now runs the counting step, so `docs/retro-state.schema.json` does not change. `retro/extract.ts`, and the transcript extract that `factory finish` writes, stay as they are. Only `recur` still reads the extract, and only its `catalogHits` (see Consequences).
 
 ### 9. The quote audit stays
 
@@ -178,7 +178,10 @@ Negative:
 Neutral:
 
 - `retro/timing.ts` keeps its behaviour. Its bound of a crew period by the first and last agent activity is pinned by a test (R-148), not changed.
-- `retro/extract.ts` and the extract `factory finish` writes stay, unread by the retro.
+- `retro/extract.ts` and the extract `factory finish` writes stay; only `recur` reads its `catalogHits`.
+- A code finding's cost is measured: a file costs the commit-to-commit time of the commits that touched it, gaps over 2 hours dropped, and a flaky or repeated full run costs the crew's median heavy-slot run time times the repeat count (`retro/problems-code.ts` `structurePart`, `testsPart`). Checks hold no per-run duration except the reporter's `duration_ms` line in the tail.
+- The acceptance test pins two things this ADR leaves open: the `parseTriage` return shape `{decisions, fixGoal, proposedGoals, dropped}` and the rubric's known-id rule (`F-<n>` or a `problems` finding id; `tests/fixtures/retro-generic/rubric.ts` `grade`). The recordings in `retro/evals/` follow both.
+- `tests/retro-skill.check.ts` no longer pins the transcript-is-data sentence for the judge, which reads no transcripts (Decision 8). The ADR-0005 fetch rule keeps its own pin, word for word.
 - The quote audit stays as an approval audit (Decision 9).
 - The `TRIAGE:` sentence is unchanged, so `skills/run/SKILL.md` and its tests need no change for it.
 
