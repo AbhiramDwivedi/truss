@@ -225,6 +225,7 @@ function sessionWorld(sub = '') {
 const brief = (env: any): string => {
   const p = `${env.dir}/brief.md`
   writeFileSync(p, 'Build the thing.\n')
+  writeFileSync(`${env.dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   return p
 }
 
