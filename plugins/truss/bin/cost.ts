@@ -363,7 +363,7 @@ function sumOf(rows: Obj[], pricing: unknown): { usd: number | null; tokens: num
 // ==== budgets ====
 
 const scoped = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined)
-const approvedSince = (plan: Obj | null): number | undefined => {
+export const approvedSince = (plan: Obj | null): number | undefined => {
   const t = plan !== null && typeof plan.approvedAt === 'string' ? Date.parse(plan.approvedAt) : NaN
   return Number.isFinite(t) ? t : undefined
 }
