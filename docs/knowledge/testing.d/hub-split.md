@@ -3,7 +3,7 @@ sources:
   - plugins/truss/bin/testmap.ts
   - plugins/truss/bin/fragments.ts
   - plugins/truss/tests/hub-split-032.check.ts
-verified: faca93659184649f2923a3cf0832d75b5fb5ab99
+verified: 6b9157063194b1f2d394570a270454b159dadec9
 ---
 
 ## Why a leaf still selects about 110 test files
