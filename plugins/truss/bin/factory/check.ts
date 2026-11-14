@@ -129,7 +129,7 @@ export const MKTEMP_PREFIX =
 // Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
 // group (a direct full-suite check, which holds the heavy slot itself): the suite runs as its own process group, recorded in
 // resources/groups with heavyPid = this process, so the `until` takeover (stopHolder in resources/index.ts) stops it with the owner.
-export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }): { exit: number; text: string } {
+export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }, platform: string = process.platform): { exit: number; text: string } {
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
@@ -137,7 +137,7 @@ export function bashRun(cwd: string, command: string, group?: { dir: string; lab
     // node --test that sees it skips every file and exits 0
     const { NODE_TEST_CONTEXT: _, ...env } = process.env
     // under `factory heavy` the wrapper's own group already holds the suite and stops it on the run limit
-    const rec = group !== undefined && process.platform !== 'win32' && !process.env.TRUSS_HEAVY_JOB ? group : undefined
+    const rec = group !== undefined && platform !== 'win32' && !process.env.TRUSS_HEAVY_JOB ? group : undefined
     const gdir = rec ? `${rec.dir}/resources/groups` : ''
     const body = rec ? JSON.stringify({ heavyPid: process.pid, label: rec.label, slug: rec.slug, since: Date.now() }).slice(1, -1) : ''
     const q = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`

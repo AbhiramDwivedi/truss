@@ -251,8 +251,8 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
     if (token !== null) {
       releaseHeavySlot(dir, token, platform)
       token = null
-      // a run the limit stopped is not a suite time: recording it would stretch every later wait and limit
-      if (!timedOut) recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
+      // a run the limit stopped is no suite time (slotWaitMs skips it), but it stretches the next default run limit (runMsOf)
+      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
     }
     if (pgid !== undefined && !groupAlive(pgid, platform)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
     done({ ran: true, exit, waitedMs, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
