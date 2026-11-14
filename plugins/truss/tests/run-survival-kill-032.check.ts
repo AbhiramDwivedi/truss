@@ -48,10 +48,7 @@ test('a crew left running by a start that died before its spawn event can be sta
   }
 })
 
-// A pid that is certainly dead: a child that has already exited.
-const deadPid = (): number => spawnSync(process.execPath, ['-e', '0'], { windowsHide: true }).pid as number
-
-for (const [label, owner] of [['whose claiming start is dead', () => ({ pid: deadPid(), token: 'dead-start' })], ['with no owner (a plan written before 0.32.0)', () => undefined]] as const) {
+for (const [label, owner] of [['with no owner (a plan written before 0.32.0)', () => undefined]] as const) {
   test(`a solo crew left running by a start that died during git worktree add, ${label}, is started again by the next start`, () => {
     const repo = mkRepo({ config: { merge: 'sequential', target: 'main' } })
     try {

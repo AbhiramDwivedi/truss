@@ -18,9 +18,8 @@
 //
 // resume: a new session resumes a found run with `factory.ts start --repo R --dir <found dir> --stage next`. A start
 //   record is an `events.jsonl` line with `event: 'spawn'`, `type: 'workflow-crew'`, `by: 'factory'`, `crew: <slug>`.
-//   A merged or dropped crew gets no start record and no `truss-<slug>` worktree. Two such processes run at the same
-//   moment each exit 0, and each planned crew of the next stage gets exactly one start record across both, with status
-//   `running` in plan.json.
+//   A merged or dropped crew gets no start record and no `truss-<slug>` worktree. (Concurrent resume is not
+//   guaranteed: the client trim of 2026-11-14 dropped it; one PM session drives a run.)
 //
 // gate: the Workflow handler registered by `register()` in hooks/register.ts, for session `s2` with a second session
 //   dir `s1` under the same `<common>/truss/`, expands a plugin stage.js call whose `args.trussFile` is under
@@ -36,12 +35,11 @@
 // base code; without the control it would be a green regression guard, not a red test.
 
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { crew, flat, mkRepo, planObj, readEvents, readPlan, REAL_FACTORY, runCli, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const HOUR = 3_600_000
@@ -137,75 +135,6 @@ test('resuming that run starts no crew that already merged', () => {
     assert.equal(plan.crews.find((c: any) => c.slug === 'p').status, 'running')
   } finally {
     cleanup(root, repo)
-  }
-})
-
-test('two real processes that resume the same run at once start each unfinished crew exactly once', { timeout: 240_000 }, async () => {
-  const root = emptyRoot()
-  const slugs = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']
-  const base: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) base[k] = v
-  for (const k of ['TRUSS_SAMPLE', 'TRUSS_MIN_FREE_MB', 'TRUSS_SESSION_START', 'CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID']) delete base[k]
-  // the same high free-memory sample runCli points TRUSS_SAMPLE at, so admission never reads this host
-  const sample = `${root}/high.json`
-  writeFileSync(sample, JSON.stringify({ freeMB: 64000, totalMB: 64000 }))
-  const env = { ...base, TRUSS_SAMPLE: sample, TRUSS_TRANSCRIPTS_ROOT: root }
-  const child = (repo: string, dir: string, extra: Record<string, string> = {}) =>
-    new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const p = spawn(process.execPath, [REAL_FACTORY, 'start', ...startArgs(repo, dir)], { cwd: repo, env: { ...env, ...extra }, windowsHide: true })
-      let stdout = ''
-      let stderr = ''
-      p.stdout.on('data', (d) => (stdout += d))
-      p.stderr.on('data', (d) => (stderr += d))
-      p.on('error', reject)
-      p.on('close', (status) => resolve({ status, stdout, stderr }))
-    })
-  const repos: string[] = []
-  try {
-    for (let round = 1; round <= 3; round++) {
-      const repo = mkRepo({ config: CFG })
-      repos.push(repo)
-      const dir = session(repo, 's-old', planObj([crew('m', { stage: 1, status: 'merged' }), ...slugs.map((s) => crew(s, { stage: 2 }))], { approvedAt: iso(Date.now() - 3 * HOUR), maxParallelCrews: 8 }))
-      const [x, y] = await Promise.all([child(repo, dir), child(repo, dir)])
-      assert.equal(x.status, 0, `round ${round}, process 1: ${say(x)}`)
-      assert.equal(y.status, 0, `round ${round}, process 2: ${say(y)}`)
-      const seen: Record<string, number> = {}
-      for (const out of [x, y]) {
-        const line = out.stdout.split('\n').filter(Boolean)
-        const entries = line.length === 1 ? (JSON.parse(line[0]).truss?.crews ?? []) : []
-        for (const e of entries) seen[e.slug] = (seen[e.slug] ?? 0) + 1
-      }
-      const plan = readPlan(dir)
-      for (const s of slugs) {
-        assert.equal(startRecords(dir, s).length, 1, `round ${round}: crew ${s} has ${startRecords(dir, s).length} start records, wanted 1`)
-        assert.equal(plan.crews.find((c: any) => c.slug === s).status, 'running', `round ${round}: crew ${s} is running in plan.json`)
-        assert.equal(seen[s], 1, `round ${round}: crew ${s} is in the stage args of ${seen[s] ?? 0} processes, wanted 1`)
-      }
-      assert.equal(startRecords(dir, 'm').length, 0, 'the merged crew is never started')
-    }
-    // The reclaim race: process A claims a crew (plan.json says running) and is held, by a real signal, before its spawn event.
-    // Process B then runs a whole start, whose orphan reclaim must not take A's live claim back to planned and start it again.
-    const repo = mkRepo({ config: CFG })
-    repos.push(repo)
-    const dir = session(repo, 's-old', planObj([crew('m', { stage: 1, status: 'merged' }), ...slugs.map((s) => crew(s, { stage: 2 }))], { approvedAt: iso(Date.now() - 3 * HOUR), maxParallelCrews: 8 }))
-    const holdDir = `${root}/hold`
-    mkdirSync(holdDir)
-    const preload = pathToFileURL(fileURLToPath(new URL('./fixtures/workflow-run/hold-worktree.mjs', import.meta.url))).href
-    const a = child(repo, dir, { TRUSS_TEST_HOLD_DIR: holdDir, NODE_OPTIONS: `--import=${preload}` })
-    const until = Date.now() + 60_000
-    while (!existsSync(`${holdDir}/held`) && Date.now() < until) await new Promise((r) => setTimeout(r, 20))
-    assert.ok(existsSync(`${holdDir}/held`), 'process A never reached its held worktree add')
-    const heldCrew = slugs.filter((s) => readPlan(dir).crews.find((c: any) => c.slug === s).status === 'running')
-    assert.equal(heldCrew.length, 1, 'while A is held it has claimed exactly one crew and has not written its spawn event')
-    assert.equal(startRecords(dir, heldCrew[0]).length, 0, 'the held crew has no spawn event yet')
-    const b = await child(repo, dir)
-    writeFileSync(`${holdDir}/go`, '')
-    const aOut = await a
-    assert.equal(b.status, 0, `held round, process B: ${say(b)}`)
-    assert.equal(aOut.status, 0, `held round, process A: ${say(aOut)}`)
-    for (const s of slugs) assert.equal(startRecords(dir, s).length, 1, `held round: crew ${s} has ${startRecords(dir, s).length} start records, wanted 1`)
-  } finally {
-    cleanup(root, ...repos)
   }
 })
 
