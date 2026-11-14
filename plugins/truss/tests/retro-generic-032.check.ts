@@ -236,9 +236,9 @@ test('the retro judge brief says it is empowered and expected to find problems o
 test('cli.ts triage parsing keeps a finding whose category is not in the checklist', () => {
   const parseFindings = cliFn('parseFindings')
   const measures = { 'time.slotWaitMs.alpha': 1000, 'cost.tokens.alpha.builder': 2000000 }
-  const block = (o: Json): string => '```finding\n' + JSON.stringify({ title: 'A problem', cost: { wallMs: 5, tokens: null, usd: null }, fix: 'Fix it.', target: { kind: 'plugin', path: 'plugins/truss/bin/factory.ts' }, ...o }) + '\n```\n'
+  const block = (o: Json): string => '```finding\n' + JSON.stringify({ title: 'A problem', cost: { wallMs: 1000, tokens: null, usd: null }, fix: 'Fix it.', target: { kind: 'plugin', path: 'plugins/truss/bin/factory.ts' }, ...o }) + '\n```\n'
   const report = [
-    block({ category: 'build cache misses', evidence: [{ measure: 'cost.tokens.alpha.builder', value: 2000000 }] }),
+    block({ category: 'build cache misses', evidence: [{ measure: 'cost.tokens.alpha.builder', value: 2000000 }], cost: { wallMs: null, tokens: 2000000, usd: null } }),
     block({ category: 'time', evidence: [{ measure: 'time.slotWaitMs.alpha', value: 1000 }] }),
     block({ category: 'time', evidence: [{ measure: 'time.slotWaitMs.alpha', value: 999 }] }),
     block({ category: 'time', evidence: [{ measure: 'time.slotWaitMs.ghost', value: 1 }] }),
