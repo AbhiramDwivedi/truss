@@ -208,6 +208,24 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
   return left
 }
 
+// plan-cap: sets plan.maxParallelCrews under the plan lock and logs why. Running crews keep running when the cap drops below their count; start admits no new crew until the count falls.
+export function cmdPlanCap(f: Flags): Obj {
+  const dir = dirOf(f)
+  const raw = need(f, 'max-parallel-crews')
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN
+  if (!Number.isInteger(n) || n < 1 || n > 16) throw usage(`--max-parallel-crews must be an integer from 1 to 16, got ${raw}`)
+  const reason = need(f, 'reason')
+  let from = 4
+  let running = 0
+  patchPlan(dir, (plan) => {
+    from = intOr(plan.maxParallelCrews, 4, 1)
+    running = plan.crews.filter((c) => isObj(c) && c.status === 'running').length
+    plan.maxParallelCrews = n
+  })
+  appendDecision(dir, `maxParallelCrews changed from ${from} to ${n} (${running} running): ${reason}`)
+  return { ok: true, from, to: n, running }
+}
+
 const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'refactor']
 export const SLUG = /^(?!.*-[0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$/
 
