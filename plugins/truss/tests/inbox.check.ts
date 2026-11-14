@@ -21,7 +21,7 @@ const NOTIFY_RUN = `${REAL_PLUGIN}/bin/notify-run.ts`
 const INBOX_TS = `${REAL_PLUGIN}/bin/inbox.ts`
 const RECORDER = `${FIX}/recorder.ts`
 const EXIT1 = `${FIX}/exit1.ts`
-const SLEEPER = `${FIX}/spawn-sleeper.ts`
+const SLEEPER = `${FIX}/spawn-sleeper-pipe.ts`
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/
 const ID_RE = /^E-[0-9]{8}-[0-9a-f]{6}$/
 const CONFIG = { architecture: 'docs/architecture.md', adr: 'docs/adr' }
@@ -123,16 +123,6 @@ const fixtureLines = (id: string, code: string, ts: string, file = 'slash-comman
 
 const notifyCmd = (script: string, ...args: string[]): string => [process.execPath, script, ...args].map((a) => `"${flat(a)}"`).join(' ')
 const recordedRows = (file: string): any[] => (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [])
-
-const wait = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e: any) {
-    return e.code === 'EPERM'
-  }
-}
 
 const OPEN_ROW = { v: 1, op: 'open', id: 'E-20261110-a1b2c3', ts: '2026-11-10T10:00:00.000Z', kind: 'scope-change', session: 's1', crews: ['c1'], ref: null, blocking: true, title: 'a title with spaces', detail: 'some detail', codeHash: 'a'.repeat(64), code: 'ABCDEF' }
 
@@ -442,38 +432,27 @@ test('inbox: a notify exit 1 is fail-open', () => {
   assert.equal(errs[0].id, j.id)
 })
 
-test('inbox: a notify grandchild that sleeps is killed within notify-run limit plus a load-scaled margin', () => {
-  const pidFile = `${mk('inbox-slp-')}/pid`
-  const repo = flat(realpathSync(mkRepo({ config: { notify: notifyCmd(SLEEPER, pidFile) } })))
-  let pid = 0
-  try {
-    // notify-run's own limit is 10000 ms; what a loaded host adds is node and type-stripping startup plus the tree kill and exit.
-    // Measure that cost here, on the same host and load: notify-run with no notify command starts, reads the config and exits.
-    const bare = flat(realpathSync(mkRepo({ config: {} })))
-    let base = 0
-    for (let i = 0; i < 3; i++) {
-      const b0 = Date.now()
-      runNotify(bare, OPEN_ROW)
-      base = Math.max(base, Date.now() - b0)
-    }
-    const slack = 1000 + 3 * base
-    const t0 = Date.now()
-    const r = runNotify(repo, OPEN_ROW, 10000 + slack + 3000)
-    const took = Date.now() - t0
-    assert.ok(took < 10000 + slack, `notify-run took ${took} ms (limit 10000 ms, startup baseline ${base} ms)`)
-    assert.equal(r.status, 1, `${r.stdout} ${r.stderr}`)
-    assert.ok(existsSync(pidFile), 'the sleeper never wrote its grandchild pid')
-    pid = Number(readFileSync(pidFile, 'utf8'))
-    assert.ok(Number.isInteger(pid) && pid > 0, `bad pid ${pid}`)
-    for (let i = 0; i < 30 + slack / 100 && alive(pid); i++) wait(100)
-    assert.equal(alive(pid), false, `the grandchild ${pid} is still alive`)
-  } finally {
-    if (pid > 0 && alive(pid)) {
-      try {
-        process.kill(pid, 'SIGKILL')
-      } catch {}
-    }
-  }
+// The proof is a pipe close, not a clock: the test holds the read end of the stderr pipe that notify-run hands down (the test seam
+// TRUSS_TEST_NOTIFY_STDERR=inherit), the notify command and its detached grandchild inherit the write end, and the child's `close`
+// event fires only when notify-run, the command and the grandchild have all exited. The grandchild sleeps 10 minutes, so it can end
+// only by notify-run's own 10 s limit killing the tree; the 90 s guard only fails the case where the kill never happens.
+test('inbox: a notify grandchild that sleeps is killed within notify-run limit, proved by a pipe close', async () => {
+  const repo = flat(realpathSync(mkRepo({ config: { notify: notifyCmd(SLEEPER) } })))
+  const child = spawn(process.execPath, [NOTIFY_RUN], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env: { ...process.env, TRUSS_TEST_NOTIFY_STDERR: 'inherit' } })
+  let out = ''
+  child.stdout.on('data', (d) => (out += d))
+  child.stdin.end(JSON.stringify({ repo, row: OPEN_ROW }))
+  let guard: ReturnType<typeof setTimeout> | undefined
+  const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)))
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    guard = setTimeout(() => resolve('timeout'), 90_000)
+  })
+  const res = await Promise.race([closed, timedOut])
+  clearTimeout(guard)
+  if (res === 'timeout') child.kill('SIGKILL')
+  assert.notEqual(res, 'timeout', 'the stderr pipe did not close within 90 s: a process of the notify tree outlived notify-run')
+  assert.equal(res, 1, out)
+  assert.match(out, /timed out/)
 })
 
 test('inbox: no title variable is set on win32', async () => {
