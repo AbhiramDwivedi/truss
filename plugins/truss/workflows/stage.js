@@ -334,8 +334,17 @@ const seededLearned = (list) =>
     .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null, stepEnds: [] }
 }
+
+// stage.js has no clock: finish reads the time a step ended from the transcript of the last agent that returned while the crew was at it.
+// A step entered again (a QC fix round) moves its entry to the end, so the array stays in the order the steps ended, one entry a step.
+function endStep(crew, label) {
+  crew.stepEnds = crew.stepEnds.filter((s) => s.step !== crew.step)
+  crew.stepEnds.push({ step: crew.step, agent: label })
+}
+const stepEndsOf = (crew) => ({ stepEnds: crew.stepEnds.map((s) => ({ ...s })) })
+
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
 const uxOn = (crew) => crew.e.ux === true
@@ -357,7 +366,7 @@ const knowledgeResult = (crew, stopped = false) => {
 }
 
 function stopResult(crew, err) {
-  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
+  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true), ...stepEndsOf(crew) }
   if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
   return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
@@ -397,7 +406,12 @@ function memberFor(crew, role) {
 // item 1 the reap runs inside the crew's next factory call, --reap-first, or the crew-end reap).
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
-  if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
+  if (role === 'runner') {
+    const label = nextLabel(crew, role)
+    const out = await spawn(role, label, prompt, opts)
+    endStep(crew, label)
+    return out
+  }
   const { at, labelOut, title, ...rest } = opts
   const persona = typeof rest.persona === 'string' && rest.persona ? rest.persona : null
   if (!persona) delete rest.persona
@@ -414,7 +428,9 @@ async function ask(crew, role, prompt, opts = {}) {
   // a member can change the crew branch: no gates result outlives it
   dropGates(crew)
   try {
-    return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    const out = await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    endStep(crew, label)
+    return out
   } finally {
     // ADR-0046 item 1: the reap rides on the crew's next factory call (--reap-first), not a runner spawn of its own;
     // reap() runs it alone only where no factory call follows (the crew's end)
@@ -2597,6 +2613,7 @@ async function runQc(crew) {
   try {
     dropGates(crew)
     text = await spawn('qc', label, qcPrompt(crew))
+    endStep(crew, label)
   } finally {
     crew.reapDue = true
   }
@@ -2632,7 +2649,7 @@ async function qc(crew) {
       await knowledgeAgain(crew, 'full suite before merge', from)
       continue
     }
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew), ...stepEndsOf(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length

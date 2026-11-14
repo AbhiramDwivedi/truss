@@ -230,12 +230,24 @@ const stopped = (r, tag, at) => {
   assert.equal(r.tag, tag, JSON.stringify(r))
   assert.equal(r.at, at, JSON.stringify(r))
   assert.equal(typeof r.text, 'string')
-  assert.deepEqual(Object.keys(r).sort(), ['at', 'slug', 'state', 'tag', 'text'])
+  assert.deepEqual(Object.keys(r).sort(), ['at', 'slug', 'state', 'stepEnds', 'tag', 'text'])
+  stepEndsShape(r.stepEnds)
+}
+// stage-events (PM ruling, decisions.md 02:58): every stopped and passed crew result carries stepEnds, [{step, agent}] in the order the steps ended
+const stepEndsShape = (ends) => {
+  assert.ok(Array.isArray(ends), `stepEnds is an array: ${JSON.stringify(ends)}`)
+  for (const s of ends) {
+    assert.deepEqual(Object.keys(s).sort(), ['agent', 'step'], JSON.stringify(s))
+    assert.equal(typeof s.step, 'string')
+    assert.equal(typeof s.agent, 'string')
+  }
 }
 const passedShape = (r, slug, head, qc, e = entry(slug), deferred = []) => {
   // ADR-0033: a passed crew also carries knowledge {items, ran, sourceChanges} (tests/crew-knowledge.check.ts pins its values)
-  const { knowledge, ...rest } = r
+  const { knowledge, stepEnds, ...rest } = r
   assert.deepEqual(Object.keys(knowledge ?? {}).sort(), ['items', 'ran', 'sourceChanges'])
+  stepEndsShape(stepEnds)
+  assert.ok(stepEnds.some((s) => s.agent === qc), `stepEnds names the qc agent ${qc}: ${JSON.stringify(stepEnds)}`)
   assert.deepEqual(rest, { slug, state: 'passed', head, base: e.base, qc, ...(e.stressTest ? { deferred } : {}) })
 }
 const call = (r, label) => r.calls.find((c) => c.label === label)
