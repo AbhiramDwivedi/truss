@@ -181,7 +181,7 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
     writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures, findings: [] }, null, 2) + '\n')
   }
-  // findings.json holds the ADR-0051 finding shape; docs/findings.schema.json still describes the old one (ADR-0051 Consequences), so the shape is asserted by hand
+  // findings.json holds the ADR-0051 finding shape, which docs/findings.schema.json now describes; the shape is asserted by hand here (no ajv)
   const assertNewShape = (saved: any) => {
     assert.equal(saved.v, 1)
     for (const f of saved.findings) {
