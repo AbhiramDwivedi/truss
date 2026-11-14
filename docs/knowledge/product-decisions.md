@@ -1,11 +1,11 @@
 ---
 sources:
   - plugins/truss/tests/store.check.ts
-  - plugins/truss/bin/store.ts
+  - plugins/truss/bin/lock.ts
   - plugins/truss/tests/workflows.check.ts
   - .claude/truss.json
   - plugins/truss/tests/inbox.check.ts
-verified: 6d0eff67a4af29c618892543c276d2e00a8d4122
+verified: 5713f3d13f0a66a4ed72a3eae517b07a9cd1284e
 ---
 
 # Product decisions

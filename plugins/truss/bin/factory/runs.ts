@@ -3,8 +3,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { flat, isObj, parseLabel, readJson } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { flat, isObj, parseLabel, readJson } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { qcFails, qcK, unbannered } from '../../hooks/register.ts'
 import type { QcFile } from '../../hooks/register.ts'
 

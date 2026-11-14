@@ -3,15 +3,16 @@
 // factory.ts, whose top-level await would make an import cycle.
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { CliError, configOf, isObj, need, refuse, repoPathOf, str, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { CliError, configOf, isObj, need, refuse, repoPathOf, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
 import { lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from '../knowledge.ts'
 import type { KCfg, LintResult } from '../knowledge.ts'
 import { docOfFragment, stitchTree } from '../fragments.ts'
 import { redRecord } from './finish.ts'
 import { SLUG } from './plan.ts'
 import { worktreesOf } from './retire.ts'
-import { crewWorktree, dirOf, knowledgeCfgFrom, knowledgeCfgOf, repoOf, run, settingsOf } from './shared.ts'
+import { crewWorktree, dirOf, repoOf, run } from './cli.ts'
+import { knowledgeCfgFrom, knowledgeCfgOf, settingsOf } from './settings.ts'
 
 // ==== knowledge (ADR-0035) ====
 

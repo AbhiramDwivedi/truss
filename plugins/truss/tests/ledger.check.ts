@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { test } from 'node:test'
 import * as reg from '../hooks/register.ts'
 import { ledgerAppend } from '../bin/ledger.ts'
-import { sharedDir } from '../bin/store.ts'
+import { sharedDir } from '../bin/core.ts'
 import { REAL_PLUGIN, addCrewWorktree, appendEvent, crew, factorySpawn, git, head, mkEnv, mkRepo, mkRun, planObj, putFile, qcReport, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const WORKER = new URL('./fixtures/cost/ledger-worker.ts', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
