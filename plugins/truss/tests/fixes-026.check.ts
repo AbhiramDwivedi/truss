@@ -13,7 +13,8 @@ import { test } from 'node:test'
 import { gatesAware } from './fixtures/gates-stub.ts'
 import { isSessionDirUnderCommon } from '../bin/factory.ts'
 import { killTree } from '../bin/notify-run.ts'
-import { createExclusive, sharedDir, withLock, writeJsonAtomic } from '../bin/store.ts'
+import { sharedDir } from '../bin/core.ts'
+import { createExclusive, withLock, writeJsonAtomic } from '../bin/lock.ts'
 import { REAL_PLUGIN, crew, flat, mkEnv, mkRepo, planObj, pluginCopy, runCli, tmp, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const REPO_ROOT = path.resolve(REAL_PLUGIN, '../..')
