@@ -563,7 +563,7 @@ describe('retro/cli.ts findings: a finding with no cited line is dropped, a vali
     mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
     writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures, findings: [] }, null, 2) + '\n')
   }
-  // findings.json holds the ADR-0051 finding shape; docs/findings.schema.json still describes the old one (ADR-0051 Consequences), so the shape is asserted by hand
+  // findings.json holds the ADR-0051 finding shape, which docs/findings.schema.json now describes; the shape is asserted by hand here (no ajv)
   const assertNewShape = (f: any) => {
     assert.match(f.id, /^F-\d+$/)
     assert.equal(typeof f.judge, 'string')
