@@ -1093,7 +1093,8 @@ export function mainEditVerdict(
 
 // A command split at the shell operators &&, ||, ;, | (|& counts as |) and newline, outside quotes and backslash
 // escapes, as the shell reads it. A redirection such as 2>&1 or &> holds no operator. ops[i] joins segments i and i+1.
-export function commandSegments(command: string): { segments: string[]; ops: string[] } {
+// With splitAmp a lone & (background) is an operator too, as the decision-log guard reads it.
+export function commandSegments(command: string, splitAmp = false): { segments: string[]; ops: string[] } {
   const segments: string[] = []
   const ops: string[] = []
   let cur = ''
@@ -1128,6 +1129,7 @@ export function commandSegments(command: string): { segments: string[]; ops: str
     else if (c === '|') op = '|'
     else if (c === ';') op = ';'
     else if (c === '\n') op = '\n'
+    else if (splitAmp && c === '&' && command[i + 1] !== '>' && !/[<>]/.test(command[i - 1] ?? '')) op = '&'
     if (op === undefined) {
       cur += c
       continue
@@ -1183,6 +1185,246 @@ export function pushGateVerdict(command: unknown): { deny: string } | undefined 
     }
   }
   return undefined
+}
+
+// R-134 (0.32.0): decisions.md is written only by `factory.ts decide`, whichever tool writes it. The Edit and Write guard
+// cannot see a Bash redirect, so a main-session Bash command that names decisions.md is read as the shell reads it, and
+// refused when it writes the file or when it names it with a target this guard cannot resolve (a variable, a glob, a
+// substitution, eval, a shell it cannot read). Reads (cat, grep, tail, ...) and the decide command stay allowed.
+const DECISIONS_NAME = /decisions\.md/i
+// quotes and backslashes removed, so `decisions.m""d` and `decision\s.md` still name the file
+export function namesDecisionLog(command: unknown): boolean {
+  return typeof command === 'string' && DECISIONS_NAME.test(command.replace(/['"\\]/g, ''))
+}
+
+type ShellTok = { kind: 'word' | 'out' | 'in'; text: string; dyn: boolean }
+
+// One command segment as the shell reads it: words with the quotes removed (`dyn` where the shell would expand them: a $,
+// a backtick, an unquoted glob character or ~), the redirection operators, and the bodies of every command or process
+// substitution. Unquoted parentheses and whitespace separate words.
+function shellTokens(seg: string): { toks: ShellTok[]; subs: string[] } {
+  const toks: ShellTok[] = []
+  const subs: string[] = []
+  let cur = ''
+  let dyn = false
+  let has = false
+  let quote: "'" | '"' | undefined
+  const flush = () => {
+    if (has) toks.push({ kind: 'word', text: cur, dyn })
+    cur = ''
+    dyn = false
+    has = false
+  }
+  // the index of the paren closing the group that opens at seg[i], or the segment's end
+  const group = (i: number): number => {
+    let depth = 0
+    let q: string | undefined
+    for (let j = i; j < seg.length; j++) {
+      const c = seg[j]
+      if (q !== undefined) {
+        if (c === '\\' && q === '"') j++
+        else if (c === q) q = undefined
+        continue
+      }
+      if (c === '\\') j++
+      else if (c === "'" || c === '"') q = c
+      else if (c === '(') depth++
+      else if (c === ')' && --depth === 0) return j
+    }
+    return seg.length
+  }
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (quote === "'") {
+      if (c === "'") quote = undefined
+      else cur += c
+      continue
+    }
+    if (c === '\\' && i + 1 < seg.length) {
+      cur += seg[i + 1]
+      has = true
+      i++
+      continue
+    }
+    if (c === '$' && seg[i + 1] === '(') {
+      const end = group(i + 1)
+      subs.push(seg.slice(i + 2, end))
+      cur += seg.slice(i, end + 1)
+      dyn = has = true
+      i = end
+      continue
+    }
+    if (c === '`') {
+      const close = seg.indexOf('`', i + 1)
+      const end = close < 0 ? seg.length : close
+      subs.push(seg.slice(i + 1, end))
+      cur += seg.slice(i, end + 1)
+      dyn = has = true
+      i = end
+      continue
+    }
+    if (c === '$') {
+      cur += c
+      dyn = has = true
+      continue
+    }
+    if (quote === '"') {
+      if (c === '"') quote = undefined
+      else cur += c
+      continue
+    }
+    if (c === "'" || c === '"') {
+      quote = c
+      has = true
+      continue
+    }
+    if (/\s/.test(c)) {
+      flush()
+      continue
+    }
+    if (c === '(' || c === ')') {
+      flush()
+      continue
+    }
+    if (c === '>' || c === '<') {
+      if (seg[i + 1] === '(') {
+        flush()
+        const end = group(i + 1)
+        subs.push(seg.slice(i + 2, end))
+        toks.push({ kind: 'word', text: seg.slice(i, end + 1), dyn: true })
+        i = end
+        continue
+      }
+      // a leading fd (2>) or & (&>) belongs to the operator
+      if (has && (cur === '&' || /^\d+$/.test(cur))) {
+        cur = ''
+        dyn = false
+        has = false
+      } else flush()
+      let op = c
+      if (seg[i + 1] === c) {
+        op += c
+        i++
+        if (c === '<' && seg[i + 1] === '<') {
+          op += '<'
+          i++
+        }
+      }
+      if (op === '<<' && seg[i + 1] === '-') {
+        op += '-'
+        i++
+      } else if (c === '>' && (seg[i + 1] === '|' || seg[i + 1] === '&')) {
+        op += seg[++i]
+      } else if (c === '<' && op === '<' && (seg[i + 1] === '&' || seg[i + 1] === '>')) {
+        op += seg[++i]
+      }
+      toks.push({ kind: c === '>' || op === '<>' ? 'out' : 'in', text: op, dyn: false })
+      continue
+    }
+    if (c === '*' || c === '?' || c === '[' || (c === '{' && (cur !== '' || (i + 1 < seg.length && !/\s/.test(seg[i + 1])))) || (c === '~' && !has)) dyn = true
+    cur += c
+    has = true
+  }
+  flush()
+  return { toks, subs }
+}
+
+// read-only commands: a command that only reads the file may name it
+const READ_ONLY = new Set(['cat', 'grep', 'egrep', 'fgrep', 'rg', 'tail', 'head', 'wc', 'less', 'more', 'ls', 'stat', 'file', 'diff', 'cmp', 'test', '[', '[[', 'echo', 'printf', 'nl', 'tac', 'od', 'cut', 'uniq', 'md5sum', 'shasum', 'sha256sum', 'realpath', 'dirname', 'basename', 'true', ':'])
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'csh', 'tcsh'])
+// words in front of the command word that run it
+const WRAPPERS = new Set(['env', 'command', 'sudo', 'nohup', 'nice', 'time', 'exec', 'builtin', 'stdbuf', '!', '{', 'if', 'then', 'else', 'elif', 'do', 'while', 'until'])
+const INTERPRETERS = new Set(['node', 'nodejs', 'tsx', 'deno', 'bun', 'python', 'python3', 'perl', 'ruby', 'awk', 'gawk', 'php', 'lua'])
+// commands that run text this guard cannot read
+const OPAQUE = new Set(['eval', 'source', '.', 'xargs', 'find'])
+
+const baseName = (w: string): string => (w.replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase().replace(/\.exe$/, '')
+
+function normalizePath(p: string): string {
+  const head = /^(?:[A-Za-z]:)?\//.exec(p)?.[0] ?? ''
+  const out: string[] = []
+  for (const part of p.slice(head.length).split('/')) {
+    if (part === '' || part === '.') continue
+    if (part === '..') out.pop()
+    else out.push(part)
+  }
+  return head + out.join('/')
+}
+
+type DecisionWalk = { sid: string }
+
+// Is this write target the session's decision log, or one the guard cannot resolve? A relative path is never resolved: a
+// Bash cd carries over between calls, so the hook cannot know the shell's cwd, and only the file's name is judged.
+function hitsDecisionLog(t: ShellTok, k: DecisionWalk): boolean {
+  if (t.dyn) return true
+  const p = slashed(t.text)
+  const absolute = /^(?:[A-Za-z]:)?\//.test(p)
+  if (!absolute) return baseName(p) === 'decisions.md'
+  return isDecisionLog(normalizePath(p).toLowerCase(), k.sid.toLowerCase())
+}
+
+function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): boolean {
+  const { toks, subs } = shellTokens(seg)
+  const words: ShellTok[] = []
+  const outs: ShellTok[] = []
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i]
+    if (t.kind === 'word') {
+      words.push(t)
+      continue
+    }
+    const target = toks[i + 1]
+    if (target === undefined || target.kind !== 'word') {
+      if (t.kind === 'out') return true // an output operator with no target the guard can read
+      continue
+    }
+    i++
+    // >&2 and 2>&1 copy a descriptor; every other output target is a file
+    if (t.kind === 'out' && !(t.text.endsWith('&') && /^(?:\d+|-)$/.test(target.text))) outs.push(target)
+  }
+  if (outs.some((t) => hitsDecisionLog(t, k))) return true
+  if (subs.some((s) => writesDecisionLog(s, k, depth + 1))) return true
+  let n = 0
+  while (n < words.length) {
+    if (/^\w+=/.test(words[n].text)) n++
+    else if (WRAPPERS.has(baseName(words[n].text))) {
+      n++
+      while (n < words.length && words[n].text.startsWith('-')) n++
+    } else break
+  }
+  if (n >= words.length) return false
+  const cmd = baseName(words[n].text)
+  const args = words.slice(n + 1)
+  if (cmd === 'cd' || cmd === 'pushd' || cmd === 'popd') return false
+  if ((cmd === 'node' || cmd === 'nodejs') && args.some((a, j) => /(?:^|[\\/])factory\.ts$/.test(a.text) && args[j + 1]?.text === 'decide')) return false
+  if (SHELLS.has(cmd)) {
+    const c = args.findIndex((a) => /^-[a-z]*c[a-z]*$/i.test(a.text))
+    if (c >= 0 && args[c + 1] !== undefined) return writesDecisionLog(args[c + 1].text, k, depth + 1)
+  }
+  if (cmd === 'tee') return args.filter((a) => !a.text.startsWith('-')).some((a) => hitsDecisionLog(a, k))
+  if (cmd === 'sed' && args.some((a) => /^-[a-z]*i|^--in-place/i.test(a.text))) return true
+  // uniq writes its second operand
+  if (cmd === 'uniq') return args.filter((a) => a.text === '-' || !a.text.startsWith('-')).slice(1).some((a) => hitsDecisionLog(a, k))
+  if (READ_ONLY.has(cmd)) return false
+  if (OPAQUE.has(cmd)) return true
+  if (INTERPRETERS.has(cmd)) return args.some((a) => DECISIONS_NAME.test(a.text))
+  // any other command (cp, mv, dd, truncate, ...) is refused when one of its words is the file itself
+  return words.slice(n).some((w) => baseName(w.text) === 'decisions.md')
+}
+
+function writesDecisionLog(text: string, k: DecisionWalk, depth: number): boolean {
+  if (depth > 6) return true
+  for (const seg of commandSegments(text, true).segments) {
+    if (!namesDecisionLog(seg)) continue
+    if (segmentWritesDecisionLog(seg, k, depth)) return true
+  }
+  return false
+}
+
+// Fail closed: the caller refuses when this throws on a command that names decisions.md (see the Bash handler).
+export function decisionLogBashVerdict(command: unknown, sessionId: string): { deny: string } | undefined {
+  if (!namesDecisionLog(command)) return undefined
+  return writesDecisionLog(command as string, { sid: sessionId }, 0) ? { deny: DECISION_LOG_REFUSAL } : undefined
 }
 
 async function homeDir($: $): Promise<string | undefined> {
@@ -2352,6 +2594,24 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const input = e as unknown as { command?: unknown; args?: unknown }
       const command = typeof input.command === 'string' ? input.command : isRecord(input.args) ? input.args.command : undefined
+      // R-134: a Bash command that writes decisions.md is refused. Unlike safely() and failOpen, this guard fails closed: an
+      // error while judging a command that names the file refuses it, because a letting-through here is the very write the
+      // guard exists to stop, while a refused read is cheap to redo through `factory.ts decide` or a plain read.
+      let decisionLog: { deny: string } | undefined
+      if (namesDecisionLog(command)) {
+        try {
+          decisionLog = decisionLogBashVerdict(command, await $.session.id())
+        } catch (error) {
+          decisionLog = { deny: DECISION_LOG_REFUSAL }
+          try {
+            $.ui.log(`truss: decision log Bash guard failed, refusing the call: ${String(error)}`, { to: 'debug' })
+          } catch {
+            // nothing left to do
+          }
+        }
+        if (decisionLog !== undefined) await safely($, 'decision log guard log', () => logRule($, 'decision log guard refused a Bash call: it writes decisions.md'))
+      }
+      if (decisionLog !== undefined) return refuse($, state, refusalsLogged, e, decisionLog)
       const verdict = await safely($, 'push gate', async () => {
         const v = pushGateVerdict(command)
         if (v !== undefined) await logRule($, 'push gate refused a call: scrub is not joined to a push or merge by &&')

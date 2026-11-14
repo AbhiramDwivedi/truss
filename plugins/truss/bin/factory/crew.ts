@@ -224,14 +224,19 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const kc = knowledgeCfgOf(c.repo)
   // ADR-0046: every exempt file keeps its YAML frontmatter, except a knowledge doc's `verified` stamp and `sources` list, which
   // knowledge-lint checks and a builder keeps true with its doc change (an indented line under `sources:` belongs to it)
+  // 0.32.0 hotfix: a rule fragment (`<rulesDir>.d/<rule>/<crew>.md`) likewise, since the knowledge step writes a rule's `verified`
+  // and `sources` there, never into the rule file; stitchDoc merges them into the rule's frontmatter. A frontmatter left with only
+  // its fences counts as none, so a new fragment holding only those keys is kept.
   const kept = (file: string, text: string): string => {
     const fm = frontmatter(text)
-    if (!file.startsWith(`${kc.knowledgeDir}/`)) return fm
+    const frag = fragOf(file)
+    if (!file.startsWith(`${kc.knowledgeDir}/`) && !(frag !== undefined && frag.startsWith(`${kc.rulesDir}/`))) return fm
     let skip = false
-    return fm.split('\n').filter((l) => {
+    const rest = fm.split('\n').filter((l) => {
       if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
       return !skip
-    }).join('\n')
+    })
+    return rest.every((l) => l.trim() === '---' || l.trim() === '') ? '' : rest.join('\n')
   }
   const frontmatterKept = (file: string): boolean => {
     const was = run(c.wt, ['show', `${base}:${file}`])
