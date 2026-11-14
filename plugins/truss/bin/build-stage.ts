@@ -71,6 +71,50 @@ export function buildStage(srcDir: string = STAGE_SRC_DIR): string {
   return out
 }
 
+/** The top-level names a script body declares: function, class, const, let and var at column 0 (stage modules are formatted so). */
+function declaredNames(body: string): string[] {
+  const names = new Set<string>()
+  for (const m of body.matchAll(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)|^class\s+([A-Za-z_$][\w$]*)|^(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) names.add((m[1] ?? m[2] ?? m[3]) as string)
+  return [...names]
+}
+
+/** Runs a script body as an AsyncFunction whose parameters are the stub names, and returns what it declares at top level. */
+async function runBody(body: string, stubs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const names = declaredNames(body)
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const fn = new AsyncFunction(...Object.keys(stubs), `${body}\n;return { ${names.join(', ')} }`)
+  return (await fn(...Object.values(stubs))) as Record<string, unknown>
+}
+
+/** Loads one workflows-src/stage/ module alone, for a single-step test (ADR-0050). Every free name the module uses and does not
+ * declare must be in `stubs` (`agent`, `args`, `log`, the runner calls); a missing one throws a ReferenceError when reached. Returns
+ * the module's top-level declarations as `scope`. */
+export async function loadStageStep(file: string, stubs: Record<string, unknown> = {}): Promise<{ loaded: string[]; scope: Record<string, unknown> }> {
+  const abs = path.resolve(file)
+  const rel = path.relative(STAGE_SRC_DIR, abs)
+  if (rel.startsWith('..') || path.isAbsolute(rel) || !abs.endsWith('.js')) throw new Error(`${file} is not a module in ${STAGE_SRC_DIR}`)
+  const text = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n')
+  if (!MODULE_HEAD.test(text)) throw new Error(`${file}: the first line must be a "// stage.js module: ..." comment`)
+  const body = text.replace(MODULE_HEAD, '').replace(/^export\s+/gm, '')
+  return { loaded: [abs], scope: await runBody(body, stubs) }
+}
+
+/** Loads the committed workflows/stage.js with the same stubs, without running the stage: `meta` is not exported and the top-level
+ * run (`const results = await Promise.all(F.crews.map(runCrew))` and what follows) is cut off. */
+export async function loadStageBundle(stubs: Record<string, unknown> = {}): Promise<{ loaded: string[]; scope: Record<string, unknown> }> {
+  const file = path.join(WORKFLOWS_DIR, 'stage.js')
+  const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+  const run = 'const results = await Promise.all(F.crews.map(runCrew))'
+  const at = text.indexOf(`\n${run}`)
+  if (at < 0) throw new Error(`${file}: the top-level run line "${run}" was not found`)
+  const body = text.slice(0, at + 1).replace(/^export\s+/gm, '')
+  // the bundle stops at load when args.truss is not an object (args.js) and reads F.dir while it loads (RUN_KEY); a test that has no
+  // crew to run gets an args.truss with no crews, so the same load works
+  const a = stubs.args
+  const seeded = a && typeof a === 'object' && !Array.isArray(a) && !('truss' in a) ? { ...stubs, args: { ...a, truss: { dir: '/', repo: '/' } } } : stubs
+  return { loaded: [file], scope: await runBody(body, seeded) }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2)
   const target = path.join(WORKFLOWS_DIR, 'stage.js')
