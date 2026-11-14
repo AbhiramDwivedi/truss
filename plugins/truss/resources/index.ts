@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync,
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { takeOver } from '../bin/store.ts'
+import { takeOver } from '../bin/lock.ts'
 
 export const DEFAULT_MIN_FREE_MB = 2048
 
