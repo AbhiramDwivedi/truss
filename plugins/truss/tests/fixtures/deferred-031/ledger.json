@@ -48,7 +48,8 @@
       "key": "item8-stamps",
       "text": "Item 8 has no requirements (R) entry, only a CHANGELOG line. The R-116 to R-124 \"Added\" stamps use a placeholder time of day.",
       "test": "tests/deferred-032.check.ts",
-      "title": "R-116 to R-124 Added stamps are not the T00:00:00Z placeholder"
+      "title": "R-116 to R-124 Added stamps are not the T00:00:00Z placeholder",
+      "reason": "item8-stamps: 0.32.0 adds R-148 as item 8's requirement entry, and the stamps half is covered by the named test."
     },
     {
       "key": "proposed-for-032",

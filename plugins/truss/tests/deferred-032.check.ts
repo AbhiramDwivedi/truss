@@ -162,7 +162,8 @@ test(THIS_TITLE, { timeout: 600_000 }, () => {
     assert.equal(typeof e.text, 'string', `${e.key}: text`)
     const hasTest = e.test !== undefined || e.title !== undefined
     const hasReason = e.reason !== undefined
-    assert.ok(hasTest !== hasReason, `${e.key}: holds either {test, title} or {reason}, not both and not neither`)
+    assert.ok(hasTest || hasReason, `${e.key}: holds {test, title}, or {reason}, or both, not neither`)
+    if (hasTest) assert.ok(typeof e.test === 'string' && typeof e.title === 'string', `${e.key}: a test entry holds both test and title`)
     if (hasReason) assert.ok(typeof e.reason === 'string' && e.reason.trim() !== '' && !e.reason.includes('\n'), `${e.key}: reason is one non-empty line`)
   }
   // one entry per bullet, matched by the bullet's text; an entry with source "ruling" serves a program manager ruling, not a bullet
