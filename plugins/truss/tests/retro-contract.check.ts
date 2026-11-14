@@ -548,74 +548,120 @@ describe('retro/catalog.json: the six seed entries (ADR-0012 Decision 3)', () =>
 
 describe('retro/cli.ts findings: a finding with no cited line is dropped, a valid one is kept (R-27)', () => {
   const block = (o: any) => '```finding\n' + JSON.stringify(o, null, 2) + '\n```\n'
-  const judged = (t: string, file: string, line: number, extra: any = {}) => ({
-    kind: 'friction',
-    title: `finding ${t}`,
-    evidence: [{ file, line }],
-    cost: `lost 2 turns on ${t}`,
-    fix: `change the prompt for ${t}`,
-    target: 'agents/project-manager.md',
-    signature: [`${t}: planted`],
+  // ADR-0051 Decisions 2 and 6: any category is kept; evidence is a counted measure and its value
+  const counted = (title: string, category: string, measure: string, value: number, extra: any = {}) => ({
+    category,
+    title,
+    evidence: [{ measure, value }],
+    cost: { wallMs: 1200, tokens: null, usd: null },
+    fix: `change the prompt for ${title}`,
+    target: { kind: 'plugin', path: 'agents/project-manager.md' },
+    signature: [`${title}: planted`],
     ...extra,
   })
+  const withProblems = (a: any, measures: Record<string, number>) => {
+    mkdirSync(join(a.trussDir, 'retro'), { recursive: true })
+    writeFileSync(join(a.trussDir, 'retro', 'problems.json'), JSON.stringify({ retro: 2, dir: a.trussDir, measures, findings: [] }, null, 2) + '\n')
+  }
+  // findings.json holds the ADR-0051 finding shape; docs/findings.schema.json still describes the old one (ADR-0051 Consequences), so the shape is asserted by hand
+  const assertNewShape = (f: any) => {
+    assert.match(f.id, /^F-\d+$/)
+    assert.equal(typeof f.judge, 'string')
+    assert.equal(typeof f.category, 'string')
+    assert.equal(typeof f.title, 'string')
+    assert.ok(Array.isArray(f.evidence) && f.evidence.length > 0 && f.evidence.every((e: any) => typeof e.measure === 'string' && typeof e.value === 'number'), JSON.stringify(f.evidence))
+    for (const k of ['wallMs', 'tokens', 'usd']) assert.ok(f.cost[k] === null || typeof f.cost[k] === 'number', `cost.${k}`)
+    assert.equal(typeof f.fix, 'string')
+    assert.ok(['plugin', 'project-config', 'proposed-goal'].includes(f.target.kind), f.target.kind)
+  }
 
-  test('keeps the valid finding as F-1, drops the one with no evidence and the one citing a line past the file', async () => {
+  test('keeps the valid finding as F-1, drops the one with no evidence, the one naming a missing measure and the one with a different value', async () => {
     const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200 })
     const { main } = await cliMod()
     const label = `judge-${hex(3)}`
     const report = join(a.root, 'report.md')
-    const good = judged(a.t.ERR, a.s.main, 7)
+    const good = counted(a.t.ERR, 'time', 'time.slotWaitMs.alpha', 1200)
     writeFileSync(
       report,
       [
         'Some prose from the judge.\n',
-        block(judged(`${a.t.HOOK}`, a.s.main, 7, { evidence: [] })),
+        block(counted(a.t.HOOK, 'time', 'time.slotWaitMs.alpha', 1200, { evidence: [] })),
         block(good),
-        block(judged(`${a.t.CLS}`, a.s.agent, 999)),
-        block(judged(`${a.t.CMD}`, `${a.sid}/subagents/not-in-the-extract.jsonl`, 1)),
+        block(counted(a.t.CLS, 'time', 'time.slotWaitMs.alpha', 1999)),
+        block(counted(a.t.CMD, 'time', 'time.slotWaitMs.ghost', 1200)),
         'trailing prose\n',
       ].join('\n'),
     )
-    rmSync(join(a.root, 'proj'), { recursive: true, force: true }) // the session dir is gone: evidence is checked against the extract (R-35)
+    rmSync(join(a.root, 'proj'), { recursive: true, force: true }) // the session dir is gone: evidence is checked against retro/problems.json, never a transcript
     const r = await main(['findings', a.trussDir, label, report])
     const lines = r.out.split('\n').filter(Boolean)
-    assert.ok(lines.includes(`KEPT: F-1 | finding ${a.t.ERR}`), r.out)
+    assert.ok(lines.includes(`KEPT: F-1 | ${a.t.ERR}`), r.out)
     assert.ok(lines.some(l => l.startsWith('DROPPED: 1 | ')), `block 1 (no evidence) dropped: ${r.out}`)
-    assert.ok(lines.some(l => l.startsWith('DROPPED: 3 | ')), `block 3 (line past the file) dropped: ${r.out}`)
-    assert.ok(lines.some(l => l.startsWith('DROPPED: 4 | ')), `block 4 (file not in the extract) dropped: ${r.out}`)
-    assert.ok(!lines.some(l => l.startsWith('KEPT: ') && l !== `KEPT: F-1 | finding ${a.t.ERR}`), 'nothing else is kept')
+    assert.ok(lines.some(l => l.startsWith('DROPPED: 3 | ') && l.includes('time.slotWaitMs.alpha')), `block 3 (different value) dropped, naming the measure: ${r.out}`)
+    assert.ok(lines.some(l => l.startsWith('DROPPED: 4 | ') && l.includes('time.slotWaitMs.ghost')), `block 4 (missing measure) dropped, naming the measure: ${r.out}`)
+    assert.ok(!lines.some(l => l.startsWith('KEPT: ') && l !== `KEPT: F-1 | ${a.t.ERR}`), 'nothing else is kept')
     assert.equal(lines[lines.length - 1], 'OK: 1 kept, 3 dropped')
     const saved = JSON.parse(readFileSync(join(a.trussDir, 'retro', 'findings.json'), 'utf8'))
-    assertSchema('findings', null, saved)
     assert.equal(saved.findings.length, 1)
+    assertNewShape(saved.findings[0])
     assert.equal(saved.findings[0].id, 'F-1')
     assert.equal(saved.findings[0].judge, label)
     assert.deepEqual(saved.findings[0].evidence, good.evidence)
+    assert.deepEqual(saved.findings[0].cost, good.cost)
+    assert.deepEqual(saved.findings[0].target, good.target)
   })
 
   test('a second batch continues the numbering at F-2 and appends', async () => {
     const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200, 'cost.tokens.alpha.builder': 5000 })
     const { main } = await cliMod()
     const report = join(a.root, 'report.md')
-    writeFileSync(report, block(judged(a.t.ERR, a.s.main, 7)))
+    writeFileSync(report, block(counted(a.t.ERR, 'time', 'time.slotWaitMs.alpha', 1200)))
     await main(['findings', a.trussDir, 'j1', report])
     const again = `second-${a.t.CMD}`
-    writeFileSync(report, block(judged(again, a.s.agent, 13)))
+    writeFileSync(report, block(counted(again, 'cost', 'cost.tokens.alpha.builder', 5000, { cost: { wallMs: null, tokens: 5000, usd: null } })))
     const r = await main(['findings', a.trussDir, 'j2', report])
-    assert.ok(r.out.includes(`KEPT: F-2 | finding ${again}`), r.out)
+    assert.ok(r.out.includes(`KEPT: F-2 | ${again}`), r.out)
     const saved = JSON.parse(readFileSync(join(a.trussDir, 'retro', 'findings.json'), 'utf8'))
     assert.deepEqual(saved.findings.map((f: any) => `${f.id}/${f.judge}`), ['F-1/j1', 'F-2/j2'])
-    assertSchema('findings', null, saved)
+    for (const f of saved.findings) assertNewShape(f)
   })
 
-  test('a finding whose kind is not one of the seven is dropped', async () => {
+  test('a finding with a category outside CHECKLIST is kept, beside one inside it', async () => {
     const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200 })
     const { main } = await cliMod()
     const report = join(a.root, 'report.md')
-    writeFileSync(report, block(judged(a.t.ERR, a.s.main, 7, { kind: 'cosmetic' })) + block(judged(a.t.CMD, a.s.main, 7, { kind: 'missing hook or gate' })))
+    const outside = `outside ${a.t.ERR}`
+    const inside = `inside ${a.t.CMD}`
+    writeFileSync(report, block(counted(outside, 'cosmetic', 'time.slotWaitMs.alpha', 1200)) + block(counted(inside, 'time', 'time.slotWaitMs.alpha', 1200)))
     const r = await main(['findings', a.trussDir, 'j', report])
-    assert.ok(r.out.includes('DROPPED: 1 | '), r.out)
-    assert.ok(r.out.includes(`KEPT: F-1 | finding ${a.t.CMD}`), r.out)
+    const lines = r.out.split('\n').filter(Boolean)
+    assert.ok(lines.includes(`KEPT: F-1 | ${outside}`), r.out)
+    assert.ok(lines.includes(`KEPT: F-2 | ${inside}`), r.out)
+    assert.equal(lines[lines.length - 1], 'OK: 2 kept, 0 dropped')
+    const saved = JSON.parse(readFileSync(join(a.trussDir, 'retro', 'findings.json'), 'utf8'))
+    assert.deepEqual(saved.findings.map((f: any) => f.category), ['cosmetic', 'time'])
+  })
+
+  test('evidence must name a counted measure with its value: a missing measure and a different value are dropped, naming the measure', async () => {
+    const a = await plantedRun()
+    withProblems(a, { 'time.slotWaitMs.alpha': 1200 })
+    const { main } = await cliMod()
+    const report = join(a.root, 'report.md')
+    writeFileSync(
+      report,
+      block(counted(`good ${a.t.ERR}`, 'time', 'time.slotWaitMs.alpha', 1200)) +
+        block(counted(`nomeasure ${a.t.CMD}`, 'time', 'time.slotWaitMs.ghost', 1200)) +
+        block(counted(`wrongvalue ${a.t.HOOK}`, 'time', 'time.slotWaitMs.alpha', 1201)),
+    )
+    const r = await main(['findings', a.trussDir, 'j', report])
+    const lines = r.out.split('\n').filter(Boolean)
+    assert.ok(lines.includes(`KEPT: F-1 | good ${a.t.ERR}`), r.out)
+    assert.ok(lines.some((l) => l.startsWith('DROPPED: 2 | ') && l.includes('time.slotWaitMs.ghost')), `block 2 dropped naming its measure: ${r.out}`)
+    assert.ok(lines.some((l) => l.startsWith('DROPPED: 3 | ') && l.includes('time.slotWaitMs.alpha')), `block 3 dropped naming its measure: ${r.out}`)
+    assert.equal(lines[lines.length - 1], 'OK: 1 kept, 2 dropped')
   })
 })
 
