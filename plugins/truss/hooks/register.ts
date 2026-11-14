@@ -1093,7 +1093,8 @@ export function mainEditVerdict(
 
 // A command split at the shell operators &&, ||, ;, | (|& counts as |) and newline, outside quotes and backslash
 // escapes, as the shell reads it. A redirection such as 2>&1 or &> holds no operator. ops[i] joins segments i and i+1.
-export function commandSegments(command: string): { segments: string[]; ops: string[] } {
+// With splitAmp a lone & (background) is an operator too, as the decision-log guard reads it.
+export function commandSegments(command: string, splitAmp = false): { segments: string[]; ops: string[] } {
   const segments: string[] = []
   const ops: string[] = []
   let cur = ''
@@ -1128,6 +1129,7 @@ export function commandSegments(command: string): { segments: string[]; ops: str
     else if (c === '|') op = '|'
     else if (c === ';') op = ';'
     else if (c === '\n') op = '\n'
+    else if (splitAmp && c === '&' && command[i + 1] !== '>' && !/[<>]/.test(command[i - 1] ?? '')) op = '&'
     if (op === undefined) {
       cur += c
       continue
@@ -1404,6 +1406,8 @@ function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): 
   }
   if (cmd === 'tee') return args.filter((a) => !a.text.startsWith('-')).some((a) => hitsDecisionLog(a, k))
   if (cmd === 'sed' && args.some((a) => /^-[a-z]*i|^--in-place/i.test(a.text))) return true
+  // uniq writes its second operand
+  if (cmd === 'uniq') return args.filter((a) => a.text === '-' || !a.text.startsWith('-')).slice(1).some((a) => hitsDecisionLog(a, k))
   if (READ_ONLY.has(cmd)) return false
   if (OPAQUE.has(cmd)) return true
   if (INTERPRETERS.has(cmd)) return args.some((a) => DECISIONS_NAME.test(a.text))
@@ -1413,7 +1417,7 @@ function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): 
 
 function writesDecisionLog(text: string, k: DecisionWalk, depth: number): boolean {
   if (depth > 6) return true
-  for (const seg of commandSegments(text).segments) {
+  for (const seg of commandSegments(text, true).segments) {
     if (!namesDecisionLog(seg)) {
       if (/^\s*(?:cd|pushd|popd)(?:\s|$)/.test(seg)) k.cd = true
       continue
