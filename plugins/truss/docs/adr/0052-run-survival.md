@@ -98,6 +98,7 @@ Negative:
 - The handler's `readReal` checks only that the real path is inside `<trussRoot>`. A path written inside a session dir that is a symlink to a file directly in `<trussRoot>` passes.
 - Outside a git repo the truss dir is `~/.claude/truss/<session id>` (`trussDir`), so the root is `~/.claude/truss` and spans every such session.
 - The claim does not re-check the parallel cap under the lock. Each `start` counts the running crews it read when it began, so two concurrent resumes can together pass `maxParallelCrews`.
+- `find-run` cannot tell whether a listed run's PM session is alive, because the run holds no PM pid or heartbeat. `skills/run/SKILL.md` has the new PM ask the client whether the old PM ended before it takes the run over. A real liveness signal is not built.
 - Any later gate or hook that reads `args.trussFile` must assume the file may belong to another session (Decision 4).
 
 Neutral:
