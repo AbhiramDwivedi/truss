@@ -422,6 +422,7 @@ t('cf 6: plan-args maps the same roles, and without --type', () => {
   const e = mkEnv({ config: rolesCfg({ build: 'kit:builder', test: 'kit:test-writer' }) })
   const brief = `${e.dir}/brief.md`
   writeFileSync(brief, 'brief\n')
+  writeFileSync(`${e.dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const r = runCli(e.factory, 'plan-args', ['--dir', e.dir, '--repo', e.repo, '--brief-file', brief], e.repo, {})
   assert.equal(r.status, 0, say(r))
   const roles = r.json.truss.roles
