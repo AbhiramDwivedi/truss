@@ -210,9 +210,10 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
     const t1 = Date.now()
     let pgid: number | undefined
     let timedOut = false
+    // a check takes the slot inside its own command, so its slot wait runs on this timer too: the limit adds the wait limit
     const runMs = runMsOf(dir)
     const exit = await new Promise<number>((resolve) => {
-      const env = { ...process.env, ...(isObj(job.env) ? (job.env as Record<string, string>) : {}) }
+      const env = { ...process.env, TRUSS_HEAVY_JOB: '1', ...(isObj(job.env) ? (job.env as Record<string, string>) : {}) }
       const child = spawnFn(job.cmd[0], job.cmd.slice(1), { cwd: String(job.cwd), env, detached: true, stdio: ['ignore', outFd, errFd], windowsHide: true })
       const timers: NodeJS.Timeout[] = []
       child.on('error', () => resolve(127))
@@ -226,7 +227,7 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
             timedOut = true
             stop(gid, 'SIGTERM')
             timers.push(setTimeout(() => stop(gid, 'SIGKILL'), KILL_GRACE_MS))
-          }, runMs),
+          }, job.slot === true ? runMs : runMs + Number(job.waitLimit)),
         )
       }
       child.on('exit', (code, signal) => {

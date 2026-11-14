@@ -76,7 +76,7 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   // the admission answer, as admit() takes it: no answer (a factory without --admit-first) leaves the member its own admit call
   const af1 = plan && fromStdout && isPlainObject(fromStdout.admittedFirst) ? fromStdout.admittedFirst : null
   if (af1) {
-    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
+    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, noWait: true, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
     crew.admitPlan = null
   }
   const status = statusOf(res.status)
