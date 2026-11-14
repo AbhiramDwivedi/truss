@@ -1,7 +1,7 @@
 # ADR-0054: a heavy slot past its deadline is stale, even with a live owner
 
 Status: accepted, 2026-11-14
-Decided by: crew heavy-slots (goal 0.32.0, R-145 and the heavy-job requirements), accepted by the program manager as a design decision
+Decided by: crew heavy-slots (goal 0.32.0, R-145 and the heavy-job requirements), the client accepted the run limit on 2026-11-14 (decisions.md 09:33), on condition that the stop message names TRUSS_HEAVY_RUN_MS and how to raise it
 Amends: ADR-0015 Decision 3 (stale-lock takeover), ADR-0046 (heavy job from 0.31.0)
 
 ## Context

@@ -65,6 +65,10 @@ export function runMsOf(dir: string, env: Record<string, string | undefined> = p
   const stopped = recentRows(dir).filter((r) => r.timedOut).map((r) => r.ms)
   return stopped.length === 0 ? slotWaitMs(dir) : Math.min(HEAVY_WAIT_MAX_MS, Math.max(slotWaitMs(dir), 2 * Math.max(...stopped)))
 }
+// The one sentence every report of a run-limit stop carries: the limit in force, the variable, and how to raise it (client condition on R-145).
+export function limitNote(ms: number): string {
+  return `stopped after the run limit of ${ms} ms; set TRUSS_HEAVY_RUN_MS to a larger number of milliseconds to raise it`
+}
 // Takes one of `slots` heavy slots once free memory admits a run, waiting up to limitMs. The token is null when the wait ran out.
 // The slot's owner.json carries until = now + the run limit + HEAVY_GRACE_MS, which takeHeavySlot treats as a stale deadline.
 export function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number, platform: NodeJS.Platform = process.platform): { token: string | null; waitedMs: number } {
