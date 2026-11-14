@@ -2,7 +2,7 @@
 sources:
   - plugins/truss/bin/factory/runs.ts
   - plugins/truss/bin/factory/start.ts
-verified: f8d19f899e3d5f1cd2414996452adf4871ec6a27
+verified: bf921913ee4304fc06c29bbb46af33e61529d115
 ---
 
 ## Finding a run another session left
