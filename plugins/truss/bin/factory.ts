@@ -24,7 +24,7 @@ import { heavyJobMain, heavyMain } from './factory/heavy.ts'
 import { cmdGatedMerge, cmdKnowledgeConfigGate, cmdKnowledgeLint, cmdKnowledgeMigrate, cmdRulesIndex, cmdStitch } from './factory/knowledge-cmds.ts'
 import { cmdPersonaInstall } from './factory/personas.ts'
 import { cmdApprove, cmdPlanArgs, cmdPlanCap, cmdPlanCheck, cmdPlanWrite, cmdSettings } from './factory/plan.ts'
-import { cmdAdmit } from './factory/admit.ts'
+import { admitFirst, cmdAdmit, takeAdmitFlag } from './factory/admit.ts'
 import { cmdReap } from './factory/reap.ts'
 import { parseFlags } from './factory/cli.ts'
 import { argsFileOut, checkArgsFile, cmdStart } from './factory/start.ts'
@@ -193,11 +193,14 @@ export function reapFirst(argv: string[], slug: string): Obj {
   }
 }
 if (isMain) {
-  const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
+  const { on, argv: plain0 } = takeStatusFlag(process.argv.slice(2))
+  const { admit: admitArgs, argv: plain } = takeAdmitFlag(plain0)
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
+  const admitted = admitArgs === null ? null : admitFirst(argv, admitArgs)
   const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
+  if (admitted) body.admittedFirst = admitted
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
   else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
