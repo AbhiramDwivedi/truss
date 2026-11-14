@@ -320,3 +320,26 @@ test('the run skill tells a new PM session to find and resume an unfinished run 
   assert.ok(near.includes('--dir'), 'the 40 lines from find-run do not name --dir')
   assert.ok(near.includes('--stage next'), 'the 40 lines from find-run do not name --stage next')
 })
+
+// ADR-0052 Decision 1: reclaimOrphans resets only a crew a start that died left running. A project-manager-path crew (listed by
+// `start --no-workflow`, then set running by hand per SKILL section 9) has no spawn event and no owner, and must stay as it is.
+test('a later start without --no-workflow leaves a running project-manager-path crew alone', () => {
+  const root = emptyRoot()
+  const repo = mkRepo({ config: CFG })
+  try {
+    const dir = session(repo, 's-pm', planObj([crew('x', { stage: 1 }), crew('y', { stage: 1 })]))
+    const first = runCli(REAL_FACTORY, 'start', [...startArgs(repo, dir), '--no-workflow'], repo, { TRUSS_TRANSCRIPTS_ROOT: root })
+    assert.equal(first.status, 0, say(first))
+    assert.equal(first.json?.projectManagers?.length, 2, `start --no-workflow lists both crews under projectManagers; ${say(first)}`)
+    const p = readPlan(dir)
+    for (const c of p.crews) c.status = 'running' // what SKILL section 9 tells the PM to do by hand
+    writePlan(dir, p)
+    runCli(REAL_FACTORY, 'start', startArgs(repo, dir), repo, { TRUSS_TRANSCRIPTS_ROOT: root })
+    assert.equal(startRecords(dir, 'x').length, 0, 'no workflow crew starts for x')
+    assert.equal(startRecords(dir, 'y').length, 0, 'no workflow crew starts for y')
+    assert.deepEqual(readPlan(dir).crews.map((c: any) => c.status), ['running', 'running'], 'both crews stay running')
+    assert.ok(!/left running by a start that died/.test(readFileSync(`${dir}/decisions.md`, 'utf8')), 'no false "start that died" decision')
+  } finally {
+    cleanup(root, repo)
+  }
+})
