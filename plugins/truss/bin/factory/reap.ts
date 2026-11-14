@@ -7,7 +7,8 @@ import { groupAlive, killGroup } from '../../resources/index.ts'
 import { dirOf } from './cli.ts'
 import { GROUPS, pidAlive, sleepSync } from './slot.ts'
 
-export function cmdReap(f: Flags): Obj {
+// The platform is a parameter: on win32 a group is its leader's pid, with no negative-pid signal, killed as a tree.
+export function cmdReap(f: Flags, platform: NodeJS.Platform = process.platform): Obj {
   const dir = dirOf(f)
   const slug = need(f, 'slug')
   const label = need(f, 'label')
@@ -23,14 +24,14 @@ export function cmdReap(f: Flags): Obj {
       continue
     }
     if (!isObj(rec) || rec.slug !== slug || rec.label !== label || !Number.isInteger(rec.pgid)) continue
-    if (pidAlive(rec.heavyPid)) {
+    if (pidAlive(rec.heavyPid, platform)) {
       skipped.push(rec.pgid)
       continue
     }
-    if (groupAlive(rec.pgid)) {
-      killGroup(rec.pgid, 'SIGTERM')
-      for (let i = 0; i < 20 && groupAlive(rec.pgid); i++) sleepSync(100)
-      if (groupAlive(rec.pgid)) killGroup(rec.pgid, 'SIGKILL')
+    if (groupAlive(rec.pgid, platform)) {
+      killGroup(rec.pgid, 'SIGTERM', platform)
+      for (let i = 0; i < 20 && groupAlive(rec.pgid, platform); i++) sleepSync(100)
+      if (groupAlive(rec.pgid, platform)) killGroup(rec.pgid, 'SIGKILL', platform)
     }
     rmSync(file, { force: true })
     reaped.push(rec.pgid)
