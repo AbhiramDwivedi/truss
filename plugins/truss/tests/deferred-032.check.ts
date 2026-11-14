@@ -8,9 +8,10 @@
 // - plan-args and start never fail because the session workflows folder refuses mkdir. This file simulates the refusal portably: the folder
 //   <transcripts root>/<project>/<sid>/workflows is a regular file, so mkdir of workflows/scripts fails (ENOTDIR, the portable stand-in for the
 //   sandbox's EPERM). The commands then pick another writable place and still hand back a scriptPath that exists and holds the real script.
-// - TRUSS_REPORT_031 names report-0.31.0.md. The ledger holds one entry per bullet of its "Deferred or unverified" section.
+// - tests/fixtures/deferred-031/deferred-section-031.md is a verbatim copy of the "Deferred or unverified" section of the 0.31.0 report.
+//   The ledger holds one entry per bullet of that section. The test reads only the fixture and never skips.
 //
-// Run with: TRUSS_REPORT_031=<report> node --test tests/deferred-032.check.ts
+// Run with: node --test tests/deferred-032.check.ts
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -127,7 +128,7 @@ test('R-116 to R-124 Added stamps are not the T00:00:00Z placeholder', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // the deferred ledger
 
-const REPORT = process.env.TRUSS_REPORT_031
+const REPORT = new URL('./fixtures/deferred-031/deferred-section-031.md', import.meta.url)
 const LEDGER = `${REAL_PLUGIN}/tests/fixtures/deferred-031/ledger.json`
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const THIS_TITLE = 'every deferred item in report-0.31.0.md has a passing test title or a reason line in the deferred ledger'
@@ -146,8 +147,8 @@ function deferredBullets(report: string): string[] {
   return out
 }
 
-test(THIS_TITLE, { skip: REPORT === undefined ? 'TRUSS_REPORT_031 is not set' : false, timeout: 600_000 }, () => {
-  const bullets = deferredBullets(readFileSync(REPORT as string, 'utf8'))
+test(THIS_TITLE, { timeout: 600_000 }, () => {
+  const bullets = deferredBullets(readFileSync(REPORT, 'utf8'))
   assert.ok(bullets.length >= 10, `the report lists its deferred bullets (found ${bullets.length})`)
   assert.ok(existsSync(LEDGER), `the ledger is missing: ${LEDGER}`)
   const ledger = JSON.parse(readFileSync(LEDGER, 'utf8'))
@@ -165,6 +166,9 @@ test(THIS_TITLE, { skip: REPORT === undefined ? 'TRUSS_REPORT_031 is not set' : 
     if (hasReason) assert.ok(typeof e.reason === 'string' && e.reason.trim() !== '' && !e.reason.includes('\n'), `${e.key}: reason is one non-empty line`)
   }
   // one entry per bullet, matched by the bullet's text; an entry with source "ruling" serves a program manager ruling, not a bullet
+  // each bullet of the fixture equals the text of its ledger entry, word for word
+  const bulletEntries = entries.filter((e) => e.source !== 'ruling')
+  assert.deepEqual(bulletEntries.map((e) => e.text), bullets, 'the fixture bullets equal the ledger entry texts, in order')
   for (const b of bullets) assert.ok(entries.some((e) => e.text === b), `no ledger entry for the deferred item: ${b}`)
   for (const e of entries) assert.ok(e.source === 'ruling' || bullets.includes(e.text), `${e.key}: its text is no bullet of the report (stale entry)`)
 
