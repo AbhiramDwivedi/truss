@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/fixtures/retro-generic/non-truss.ts
   - plugins/truss/tests/fixtures/retro-generic/rubric.ts
   - plugins/truss/docs/adr/0051-generic-retro.md
-verified: 944c4ac1930b818f0dc6e61f8c6a63cdc917dbf9
+verified: 9e2b429035cc740adc632344be023c741cdf2a90
 ---
 
 # Generic retro: where things live
