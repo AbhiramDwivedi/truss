@@ -18,7 +18,7 @@ import { join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { parseLabel } from '../bin/store.ts'
+import { parseLabel } from '../bin/core.ts'
 import { codeOnly } from './hooks-load.check.ts'
 import { mkRepo, REAL_FACTORY, runCli } from './fixtures/workflow-run/harness.ts'
 

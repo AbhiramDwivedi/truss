@@ -1,10 +1,10 @@
 // The gates command (ADR-0046 item 1): several pre-QC gate steps in one runner call. Moved unchanged from bin/factory.ts
 // (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import path from 'node:path'
-import { CliError, isObj, need, str, usage } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { CliError, isObj, need, str, usage } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { heavyMain } from './heavy.ts'
-import { dirOf, FACTORY, parseFlags, repoOf } from './shared.ts'
+import { dirOf, FACTORY, parseFlags, repoOf } from './cli.ts'
 
 // ==== gates (ADR-0046 item 1, batching) ====
 

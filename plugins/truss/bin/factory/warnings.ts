@@ -4,10 +4,10 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { isObj } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { isObj } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { READ_ONLY_HOST } from './personas.ts'
-import { PLUGIN, run } from './shared.ts'
+import { PLUGIN, run } from './cli.ts'
 import { goalSections } from './start.ts'
 import type { Members, StartCtx } from './start.ts'
 
