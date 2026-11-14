@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/fixtures/retro-generic/non-truss.ts
   - plugins/truss/tests/fixtures/retro-generic/rubric.ts
   - plugins/truss/docs/adr/0051-generic-retro.md
-verified: c794d8dc8ac9f6836e2cc3c541faff0a234338b0
+verified: 27a5bd53581237c1e73033e4b1ff6daea2cddeac
 ---
 
 # Generic retro: where things live
@@ -31,7 +31,7 @@ The design is in `plugins/truss/docs/adr/0051-generic-retro.md`. This page holds
 - Read `.claude/truss.json` with a tolerant `readJson` in `problems.ts` `readCtx`, never `bin/store.ts` `configOf`. `configOf` throws a `CliError` on text that is not JSON, and the wave-4 fixture's repo holds filler there. A failed read means no pricing.
 - A `refusal` event in `events.jsonl` has `agent` set to the agent id for a subagent (crew is `main`) and `main` for the main session. `rulesPart` finds a refusal's retry cost from that agent's next usage row.
 - `problems.ts` imports `ratesFor` from `bin/cost.ts`; importing that module opens no transcript, so the counting step still reads none. Never copy the pricing lookup back.
-- `retro/cli.ts` `judgedProblem` drops a judge finding whose non-null `cost` number equals no measure the evidence cites. `runTriage` (the `triage` command) parses the triage report into `retro/triage.json`.
+- `retro/cli.ts` `judgedProblem` drops a judge finding whose non-null `cost` number equals no measure the evidence cites. `isProductPath` runs `posix.normalize` before its prefix check, so `.claude/../x` is product code; a bare top-level `bin/` or `hooks/` is the plugin only when the judge declared kind `plugin`. `runTriage` (the `triage` command) parses the triage report into `retro/triage.json`.
 
 ## Recur reads structured files
 
