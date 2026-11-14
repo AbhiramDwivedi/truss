@@ -49,28 +49,28 @@ Code: `bin/core.ts`, `bin/lock.ts`, `bin/transcripts.ts`, and `bin/factory/` `cl
 
 R-139's target of at most 50 selected test files per changed leaf was not met. The PM filled that default; the client did not rule on it. It measures the load graph of `bin/factory.ts`, not the hub split. About 104 tests run the factory CLI, and its load path reaches `parseFlags`, `withLock` and `CliError`. A change to any leaf that holds one of those names selects all of those tests, however the hub is cut.
 
-The selection counts below come from the diagnostics of `tests/hub-split-032.check.ts` test "the selection count for each new module", out of 173 test files. At the crew base, a change to `bin/store.ts` selected 103 files, a change to `bin/factory/shared.ts` selected 95 and a change to `bin/factory/resources.ts` selected 95.
+The selection counts below come from the diagnostics of `tests/hub-split-032.check.ts` test "hub-split 032: the selection count for each new module (logged for the builders report)", out of 176 test files. At the crew base, a change to `bin/store.ts` selected 103 files, a change to `bin/factory/shared.ts` selected 95 and a change to `bin/factory/resources.ts` selected 95.
 
 | Changed file | Tests selected |
 | --- | --- |
-| `bin/store.ts` (barrel) | 6 |
+| `bin/store.ts` (barrel) | 7 |
 | `bin/factory/shared.ts` (barrel) | 1 |
 | `bin/factory/resources.ts` (barrel) | 1 |
-| `bin/factory.ts` | 109 |
-| `bin/core.ts` | 110 |
-| `bin/lock.ts` | 115 |
-| `bin/transcripts.ts` | 110 |
-| `bin/factory/cli.ts` | 109 |
-| `bin/factory/plan-file.ts` | 107 |
-| `bin/factory/settings.ts` | 107 |
-| `bin/factory/log.ts` | 107 |
-| `bin/factory/roles.ts` | 58 |
-| `bin/factory/slot.ts` | 109 |
-| `bin/factory/admit.ts` | 88 |
-| `bin/factory/reap.ts` | 109 |
+| `bin/factory.ts` | 111 |
+| `bin/core.ts` | 112 |
+| `bin/lock.ts` | 117 |
+| `bin/transcripts.ts` | 112 |
+| `bin/factory/cli.ts` | 111 |
+| `bin/factory/plan-file.ts` | 109 |
+| `bin/factory/settings.ts` | 109 |
+| `bin/factory/log.ts` | 109 |
+| `bin/factory/roles.ts` | 59 |
+| `bin/factory/slot.ts` | 111 |
+| `bin/factory/admit.ts` | 89 |
+| `bin/factory/reap.ts` | 111 |
 
 - The barrels select few tests only because nothing imports them now. That does not show that a change to the moved code selects fewer tests.
-- The split did not cut the worst count for any hub. Its worst leaves select 107 (`shared.ts`), 109 (`resources.ts`) and 115 (`store.ts`) files, against 95, 95 and 103 before. The counts rose because the leaves are now loaded by every module that imported a hub, and the total grew from 166 to 173 test files. Only `roles.ts` (58) and `admit.ts` (88) are well below the hub counts.
+- The split did not cut the worst count for any hub. Its worst leaves select 111 (`shared.ts`), 111 (`resources.ts`) and 117 (`store.ts`) files, against 95, 95 and 103 of 164 before. The counts rose because the leaves are now loaded by every module that imported a hub, and the suite grew from 164 to 176 test files. Only `roles.ts` (59) and `admit.ts` (89) are well below the hub counts.
 - Cutting the counts needs per-command dispatch in `bin/factory.ts`, so that a test of one command loads only that command's modules. Lazy imports in `bin/factory.ts` were rejected because they hide references from the selector without changing what an edit to `parseFlags` or `withLock` can break. The release report records R-139 as not met and proposes that dispatch work as a follow-up goal.
 - `tests/hub-split-032.check.ts` pins the live measure with "a change to bin/factory.ts still selects more than 50 test files, so the measure is live".
 - Text that pins the lock constants reads `bin/lock.ts`: `release-026.check.ts` and `hygiene-029.check.ts` look for `OWNERLESS_MS` and `STALE_AGE_MS` there.
