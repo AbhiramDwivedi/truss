@@ -302,3 +302,27 @@ test('a crew that changes a file a doc cites by symbol outside its owns needs no
   assert.deepEqual(citationLintFailures(wt), ['.claude/rules/area.md:1 cites mod.ts:3'])
   assert.ok(!readFileSync(`${wt}/src/a/mod.ts`, 'utf8').split('\n')[2].includes('function helper'), 'line 3 no longer holds the cited symbol after the crew\'s change')
 })
+
+test('a read-only first command followed by a single & and a write into decisions.md is refused', async () => {
+  await drive(async (call, at) => {
+    const writes = [
+      `echo done & tee -a ${at.log} < ${at.dir}/line`,
+      `cat ${at.dir}/line & cp ${at.dir}/line ${at.log}`,
+      `echo done & sed -i '' 's/a/b/' ${at.log}`,
+      `cat /tmp/l & mv /tmp/l ${at.log}`,
+      `test -f ${at.log} & perl -pi -e 's/a/b/' ${at.log}`,
+    ]
+    for (const c of writes) denied(await call(c), c)
+    // positive control: a backgrounded read is not a write
+    assert.equal(await call(`echo done & cat ${at.log}`), ALLOWED, 'a backgrounded read is allowed')
+  })
+})
+
+test('uniq writing its second operand into decisions.md is refused', async () => {
+  await drive(async (call, at) => {
+    const writes = [`uniq ${at.dir}/line ${at.log}`, `cat ${at.dir}/line | uniq - ${at.log}`]
+    for (const c of writes) denied(await call(c), c)
+    // positive control: uniq reading the log, or writing elsewhere, is allowed
+    for (const c of [`uniq ${at.log}`, `uniq ${at.log} ${at.dir}/out.txt`]) assert.equal(await call(c), ALLOWED, c)
+  })
+})
