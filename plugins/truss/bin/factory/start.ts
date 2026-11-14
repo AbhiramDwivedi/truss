@@ -498,7 +498,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
     // 0.31.0 item 6: the new answers come first and their count goes on the entry, so stage.js builds a new ruling at qc once
     const fresh = answers.length
-    answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
+    // bug J: --withdraw-answers carries no stored ruling, so the crew's answers and the store are exactly the fresh ones
+    answers = f['withdraw-answers'] === true ? (answers as Answer[]).map((a) => ({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) })) : carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
     const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
     // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
     // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
@@ -585,6 +586,7 @@ function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): 
 }
 
 export function cmdStart(f: Flags): Obj {
+  if (f['withdraw-answers'] !== undefined && (f['withdraw-answers'] !== true || str(f, 'answers') === undefined)) throw usage('start --withdraw-answers is a flag that needs --answers F (with --resume answers)')
   const dir = path.resolve(startDirOf(f))
   const repo = path.resolve(repoOf(f))
   useSessionStart(dir, str(f, 'transcript'))
