@@ -3,7 +3,7 @@
 //   node plugins/truss/tests/fixtures/retro-generic/load.ts <out dir>
 // to build the same thing in <out dir> and print the truss dir. Erasable TypeScript, Node built-ins only.
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ export const WAVE4_SID = 'sid-wave4'
 type GitFile = { path: string; added: number; deleted: number }
 type GitCommit = { subject: string; ts: string; trailers: string[]; files: GitFile[] }
 export type Wave4Git = { commits: GitCommit[]; sizes: Record<string, number> }
-export type Wave4Run = { files: Record<string, string> }
+export type Wave4Run = { files: Record<string, string>; mtimes: Record<string, number> }
 
 export const readWave4Git = (): Wave4Git => JSON.parse(readFileSync(path.join(HERE, 'wave4-git.json'), 'utf8'))
 export const readWave4Run = (): Wave4Run => JSON.parse(readFileSync(path.join(HERE, 'wave4-run.json'), 'utf8'))
@@ -78,10 +78,13 @@ export const materialise = (root: string): { repo: string; dir: string } => {
   const repo = root
   replay(repo, readWave4Git())
   const dir = path.join(repo, '.git', 'truss', WAVE4_SID)
-  for (const [rel, text] of Object.entries(readWave4Run().files)) {
+  const run = readWave4Run()
+  for (const [rel, text] of Object.entries(run.files)) {
     const p = path.join(dir, rel)
     mkdirSync(path.dirname(p), { recursive: true })
     writeFileSync(p, text)
+    const ms = run.mtimes[rel]
+    if (ms !== undefined) utimesSync(p, ms / 1000, ms / 1000)
   }
   return { repo, dir }
 }

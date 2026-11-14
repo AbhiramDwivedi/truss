@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { problems } from '../retro/counts.ts'
 import { scrub } from '../retro/scrub.ts'
 import { loadWave4, readWave4Git, readWave4Run } from './fixtures/retro-generic/load.ts'
 
@@ -76,5 +77,21 @@ test('retro-generic fixture: loadWave4 builds a repo whose git log holds the rec
     assert.equal(path.dirname(path.dirname(w.dir)), path.join(w.repo, '.git'))
   } finally {
     w.cleanup()
+  }
+})
+
+test('two loads of the wave-4 fixture give identical problems() measures', { timeout: 280_000 }, async () => {
+  const first = loadWave4()
+  let second: ReturnType<typeof loadWave4> | undefined
+  try {
+    const a = problems(first.dir).measures
+    await new Promise((r) => setTimeout(r, 1500))
+    second = loadWave4()
+    const b = problems(second.dir).measures
+    assert.ok(Object.keys(a).length > 0, 'problems() returned measures')
+    assert.deepStrictEqual(b, a)
+  } finally {
+    first.cleanup()
+    second?.cleanup()
   }
 })

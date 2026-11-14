@@ -78,8 +78,10 @@ const cleanText = (s: string): string => {
 }
 
 const files: Record<string, string> = {}
+const mtimes: Record<string, number> = {}
 const add = (rel: string, text: string): void => {
   files[rel] = text
+  mtimes[rel] = Math.round(statSync(join(runDir, rel)).mtimeMs)
 }
 const readText = (rel: string): string => readFileSync(join(runDir, rel), 'utf8')
 const listFiles = (rel: string): string[] => {
@@ -165,7 +167,7 @@ for (const c of commits) {
 }
 
 const bundleKeys = Object.keys(files).sort()
-const bundle = `{"files":{\n${bundleKeys.map((k) => `${JSON.stringify(k)}:${JSON.stringify(files[k])}`).join(',\n')}\n}}\n`
+const bundle = `{"files":{\n${bundleKeys.map((k) => `${JSON.stringify(k)}:${JSON.stringify(files[k])}`).join(',\n')}\n},"mtimes":${JSON.stringify(Object.fromEntries(bundleKeys.map((k) => [k, mtimes[k]])))}}\n`
 writeFileSync(join(HERE, 'wave4-run.json'), bundle)
 writeFileSync(join(HERE, 'wave4-git.json'), `${JSON.stringify({ commits, sizes }, null, 1)}\n`)
 process.stdout.write(`${JSON.stringify({ ok: true, files: bundleKeys.length, bytes: bundle.length, commits: commits.length, window: [lo, hi], sids: sids.size, msgs: msgs.size })}\n`)
