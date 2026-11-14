@@ -809,7 +809,10 @@ export function hasTrussFile(args: unknown): boolean {
 
 // ADR-0024 Item 29. args.trussFile names a file in the session's truss dir holding the `start` output; its `.truss`
 // becomes args.truss, so a stage launch need not paste the object inline. Pure but for `read`, which may be sync or
-// async. Without trussFile the args come back as given and nothing is read. `realPathOf`, when given, resolves a path's
+// async. Without trussFile the args come back as given and nothing is read. `trussRoot`, when given (the repo's
+// `<git common dir>/truss`, ADR-0052), widens the gate from the session's truss dir to every `<trussRoot>/<session>/`
+// dir of the repo, so a PM session can pass another session's start output; the path and its real path must both stay
+// inside one such dir. `realPathOf`, when given, resolves a path's
 // symlinks: a path not inside the truss dir as written is still taken when its real path is inside the truss dir's real
 // path, as factory.ts argsFileOut decides `inside` on real paths and prints workflowArgs for such a spelling.
 export async function expandTrussFile(
@@ -817,6 +820,7 @@ export async function expandTrussFile(
   trussDir: string | undefined,
   read: (path: string) => string | Promise<string>,
   realPathOf?: (path: string) => string | undefined | Promise<string | undefined>,
+  trussRoot?: string,
 ): Promise<{ args: unknown; deny?: undefined } | { deny: string; args?: undefined }> {
   if (!hasTrussFile(args)) return { args }
   const refuse = (reason: string) => ({ deny: `${MARK} Refused: ${reason}` })
@@ -829,19 +833,32 @@ export async function expandTrussFile(
   if (!/^(\/|[A-Za-z]:\/)/.test(flat)) return refuse(`args.trussFile must be an absolute path, not ${JSON.stringify(file)}`)
   if (trussDir === undefined || trussDir === '') return refuse(`this session has no truss dir, so args.trussFile cannot be read`)
   const normal = normalPath(flat)
-  const dir = normalPath(slashed(trussDir))
+  const sessionDir = normalPath(slashed(trussDir))
+  // with a truss root, any `<root>/<session>/` dir of the repo is allowed (ADR-0052), else only the session's own dir
+  const dir = trussRoot === undefined || trussRoot === '' ? sessionDir : normalPath(slashed(trussRoot))
+  const within = (path: string): boolean => {
+    if (!path.startsWith(`${dir}/`)) return false
+    return dir === sessionDir || path.slice(dir.length + 1).split('/').length >= 2
+  }
   const realInside = async (): Promise<boolean> => {
     if (realPathOf === undefined) return false
     try {
       const [realFile, realDir] = await Promise.all([realPathOf(normal), realPathOf(dir)])
       if (typeof realFile !== 'string' || typeof realDir !== 'string') return false
-      return normalPath(slashed(realFile)).startsWith(`${normalPath(slashed(realDir))}/`)
+      const real = normalPath(slashed(realFile))
+      const base = normalPath(slashed(realDir))
+      if (!real.startsWith(`${base}/`)) return false
+      return dir === sessionDir || real.slice(base.length + 1).split('/').length >= 2
     } catch {
       return false
     }
   }
-  if (!normal.startsWith(`${dir}/`) && !(await realInside())) {
-    return refuse(`args.trussFile must be inside the session's truss dir ${dir}, not ${JSON.stringify(file)}`)
+  if (!within(normal) && !(await realInside())) {
+    return refuse(
+      dir === sessionDir
+        ? `args.trussFile must be inside the session's truss dir ${dir}, not ${JSON.stringify(file)}`
+        : `args.trussFile must be inside one of the repo's truss dirs ${dir}/<session>, not ${JSON.stringify(file)}`,
+    )
   }
   let text: string
   try {
@@ -2571,12 +2588,14 @@ export const register: Register = on => {
           const match = pluginScriptMatch({ scriptPath, scriptText, pluginDir: pluginDir ?? '\0', pluginScriptTexts: texts })
           if (match.byPath || match.byText) {
             const root = await rootOf($, state)
-            // the file's real path must stay inside the truss dir too, so a symlink cannot lead out of it
+            // the repo's truss root, parent of every session's truss dir (ADR-0052)
+            const trussRoot = root === undefined ? undefined : slashed(root).replace(/\/[^/]+$/, '')
+            // the file's real path must stay inside the truss root too, so a symlink cannot lead out of it
             const realPathOf = async (path: string): Promise<string | undefined> => (await $.fs.stat(path, { resolve: true })).realPath
             const readReal = async (path: string): Promise<string> => {
-              if (root !== undefined) {
+              if (root !== undefined && trussRoot !== undefined) {
                 const realFile = await realPathOf(path)
-                const realDir = await realPathOf(root)
+                const realDir = await realPathOf(trussRoot)
                 if (realFile === undefined || realDir === undefined) throw new Error('its real path could not be resolved')
                 const real = normalPath(slashed(realFile))
                 const dir = normalPath(slashed(realDir))
@@ -2584,7 +2603,7 @@ export const register: Register = on => {
               }
               return String(await $.fs.read(path))
             }
-            const expanded = await expandTrussFile(e.args, root, readReal, realPathOf)
+            const expanded = await expandTrussFile(e.args, root, readReal, realPathOf, trussRoot)
             if (expanded.deny !== undefined) {
               await logRule($, `Workflow gate refused a call: ${expanded.deny}`)
               return expanded
