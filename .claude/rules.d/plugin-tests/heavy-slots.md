@@ -12,7 +12,7 @@ sources:
   - plugins/truss/bin/factory.ts
   - plugins/truss/workflows-src/stage/check.js
   - plugins/truss/tests/heavy-slots-fullcheck-032.check.ts
-verified: f353aa2924bc02e36eff7ae30c2162ff92e3de90
+verified: 6837b97d51671e2ec60c5c273620d7d890490024
 ---
 
 ## Heavy job seams (0.32.0)
