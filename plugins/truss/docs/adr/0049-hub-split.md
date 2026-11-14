@@ -13,6 +13,8 @@ Decided by: program manager (auto): the approved 0.32.0 plan, section "Item 8 go
 | `bin/factory/resources.ts` | 95 |
 | `bin/store.ts` | 103 |
 
+The measure is `selectTests` on `git ls-files`, with a one-file diff, config `{}` and the `scripts.test` of `package.json` (`selected()` in `tests/hub-split-032.check.ts`). A count is valid only when the result's `mode` is `targeted`: a full selection returns zero files. At the crew base the same measure gave `bin/store.ts` 103, `bin/factory/shared.ts` 95, `bin/factory/resources.ts` 95 and `bin/factory.ts` 95, of 164 test files.
+
 Each hub held unrelated code. `bin/store.ts` held the CLI error helpers, the git roots, the lock, the leases, the atomic writes, the JSONL helpers and the transcript roots. `bin/factory/shared.ts` held flag parsing, the plan file, settings, the event log and the roles table. `bin/factory/resources.ts` held the heavy slot, admission and reaping. A test that needed one of these parts loaded all of them, so a change to any part selected that test.
 
 ## Decision
