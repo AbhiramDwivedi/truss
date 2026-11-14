@@ -115,7 +115,7 @@ function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boole
   for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
 }
 
-export type StartCtx ={ dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
+export type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
 // A ## UX section that says UX is off: starts with none, no, off, or "ux: false" (also "ux: no" / "ux: off").
@@ -581,7 +581,7 @@ export function cmdStart(f: Flags): Obj {
   const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
-  if (resumeFlag === undefined) reclaimOrphans(dir, plan, settings.merge, f['no-workflow'] === true)
+  if (resumeFlag === undefined && slugFlag === undefined) reclaimOrphans(dir, plan, settings.merge, f['no-workflow'] === true)
   if (resumeFlag !== undefined) {
     if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
