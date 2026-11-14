@@ -1,11 +1,13 @@
 // The doctor command: the retro catalog probes and the role model check. Moved unchanged from bin/factory.ts (0.31.0 item
 // 5). Never imports factory.ts, whose top-level await would make an import cycle.
-import { CliError, configOf, flat, isObj, refuse, str, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { CliError, configOf, flat, isObj, refuse, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
 import type { Catalog } from '../../retro/catalog.ts'
 import { runProbe } from './check.ts'
 import { retro } from './retro-mods.ts'
-import { dirOf, loadPlan, PLUGIN, repoOf, rolesWithTypes } from './shared.ts'
+import { dirOf, PLUGIN, repoOf } from './cli.ts'
+import { loadPlan } from './plan-file.ts'
+import { rolesWithTypes } from './roles.ts'
 
 export function cmdDoctor(f: Flags): Obj {
   const dir = dirOf(f)

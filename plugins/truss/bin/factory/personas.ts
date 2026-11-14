@@ -2,9 +2,9 @@
 // unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { flat, need, readText, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
-import { gitOrFail, repoOf, run } from './shared.ts'
+import { flat, need, readText, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { gitOrFail, repoOf, run } from './cli.ts'
 import { sessionStartOnce } from './warnings.ts'
 
 // ==== personas (ADR-0032) ====
