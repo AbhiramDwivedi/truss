@@ -438,6 +438,19 @@ async function ask(crew, role, prompt, opts = {}) {
   }
 }
 
+// R-142: the member start the next factory call carries the admission for. Sets crew.admitPlan (runFactory sends it as
+// --admit-first) for the label, title, persona and high that ask() will admit with; the step's call must be the very next runner call.
+function planAdmit(crew, role, title, persona = null, high = false) {
+  crew.admitPlan = { label: peekLabel(crew, role), title: titleOf(crew, role, title), persona, high }
+}
+
+// the admit-first answer of the last factory call (runFactory), once: only for the member start it was planned for
+function takeAdmitFirst(crew, label, title, persona, high) {
+  const f = crew.admitFirst
+  crew.admitFirst = null
+  return label && f && f.label === label && f.title === title && f.persona === (persona || null) && f.high === !!high ? f : null
+}
+
 // admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
 // object or no boolean admitted stops the crew BLOCKED with the runner output ("admission check failed:", never the
 // "held by admission:" prefix the run skill reads as a memory hold). admitted: true admits, freeMB: null included (G7).
@@ -446,9 +459,12 @@ async function ask(crew, role, prompt, opts = {}) {
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
-  const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
+  // R-142: or the factory call just before this member start (--admit-first) answered for it, with this label, title, persona and high
+  const first = takeAdmitFirst(crew, label, title, persona, high)
+  const pre = first ?? (label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null)
   // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
-  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  // the folded --admit-first answer counts as a memory or parallelism hold only when it carries admit's own figures (minFreeMB)
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true && (pre !== first || typeof pre.parsed.minFreeMB === 'number')
   let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
@@ -543,9 +559,14 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   // before heavy's `--`), so it costs no runner spawn. A reap command itself never carries it.
   const fold = !!crew.reapDue && !/^reap\b/.test(String(command || ''))
   const rf = fold ? ` --reap-first ${sh(crew.slug)}` : ''
-  // the flag goes just before --dir, so --dir, --repo and --status-line stay last
-  const base = line ? (fold ? line.replace(/ --dir /, `${rf} --dir `) : line) : null
-  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
+  // R-142: the admission of the member that starts right after this call (crew.admitPlan, set by the step before it) rides on the
+  // call too (--admit-first), and its answer waits in crew.admitFirst for admit(). Any other runner call voids an earlier answer.
+  const plan = crew.admitPlan && !/^reap\b/.test(String(command || '')) ? crew.admitPlan : null
+  crew.admitFirst = null
+  const af = plan ? ` --admit-first ${sh(crew.slug)} --admit-label ${sh(plan.label)} --admit-title ${sh(plan.title)}${plan.persona ? ` --admit-persona ${sh(plan.persona)}` : ''}${plan.high ? ' --admit-high' : ''}` : ''
+  // the flags go just before --dir, so --dir, --repo and --status-line stay last
+  const base = line ? (rf || af ? line.replace(/ --dir /, `${rf}${af} --dir `) : line) : null
+  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf}${af} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
@@ -563,6 +584,12 @@ async function runFactory(crew, command, key, line = null, extra = null) {
     crew.reapDue = false
     const rr = fromStdout && fromStdout.reapedFirst
     if (isPlainObject(rr) && !Array.isArray(rr.reaped)) crew.proofs.push(`reap failed: ${typeof rr.error === 'string' ? rr.error : JSON.stringify(rr)}`)
+  }
+  // the admission answer, as admit() takes it: no answer (a factory without --admit-first) leaves the member its own admit call
+  const af1 = plan && fromStdout && isPlainObject(fromStdout.admittedFirst) ? fromStdout.admittedFirst : null
+  if (af1) {
+    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, noWait: true, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
+    crew.admitPlan = null
   }
   const status = statusOf(res.status)
   // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or
@@ -2830,7 +2857,17 @@ async function syncStep(crew) {
 
 async function redStep(crew) {
   crew.step = 'red'
-  const r = await check(crew, 'red')
+  // R-142: the red check is the factory call just before the first member start (the UX direction, else the planner), so its
+  // call carries that member's admission. Saved tasks leave the first member to runMembers: no admission rides here.
+  crew.admitPlan = null
+  if (uxOn(crew) && !crew.direction) planAdmit(crew, 'ux', `UX direction ${crew.slug}`)
+  else if (!(crew.e.tasks || []).length) planAdmit(crew, 'planner')
+  let r
+  try {
+    r = await check(crew, 'red')
+  } finally {
+    crew.admitPlan = null
+  }
   const env = envOf(r)
   if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(r)}\n${r.out}`, 'red')
   if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:${knownOf(r)}\n${r.out}`, 'red')
@@ -2895,9 +2932,16 @@ async function runCrew(entry) {
   } catch (err) {
     result = stopResult(crew, err)
   }
-  await reap(crew)
   // replies that arrived after the checkpoint are not applied here; the main session turns a late change into a fix at merge
-  const { late, unknown } = await lateReplies(crew)
+  // R-142: the crew-end reap rides on the crew's next factory call (the late-reply read, --reap-first) and runs alone only when
+  // that read makes no call or fails before the reap ran. A Stop there still leaves the reap to run.
+  let lateRead
+  try {
+    lateRead = await lateReplies(crew)
+  } finally {
+    if (crew.reapDue) await reap(crew)
+  }
+  const { late, unknown } = lateRead
   return { ...result, ...(late.length ? { late } : {}), ...(unknown ? { lateUnknown: true } : {}), ...(crew.unrecorded.length ? { unrecorded: crew.unrecorded } : {}) }
 }
 
