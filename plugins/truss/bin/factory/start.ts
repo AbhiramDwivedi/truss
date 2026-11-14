@@ -4,6 +4,7 @@
 import path from 'node:path'
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { CliError, configOf, flat, isObj, listOf, need, parseLabel, readJson, refuse, str, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
 import { releaseLease, takeLease, writeJsonAtomic } from '../lock.ts'
@@ -84,6 +85,7 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
     const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug)
     if (e !== undefined && e.status === 'planned') {
       e.status = 'running'
+      e.owner = { pid: process.pid, token: randomUUID() }
       won = true
     }
   })
@@ -91,8 +93,20 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
   try {
     return ensureWorktree(repo, slug, target)
   } catch (err) {
-    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'running') e.status = 'planned' })
+    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'running') { e.status = 'planned'; delete e.owner } })
     throw err
+  }
+}
+
+// ADR-0052 Decision 1: the claim's owner is dead when its pid no longer exists (ESRCH); EPERM means the process lives. A claim
+// with no owner (a plan written before 0.32.0) has no live process to wait for, so it counts as dead.
+function ownerDead(owner: unknown): boolean {
+  if (!isObj(owner) || !Number.isInteger(owner.pid)) return true
+  try {
+    process.kill(owner.pid as number, 0)
+    return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ESRCH'
   }
 }
 
@@ -101,7 +115,7 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
 // never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
 function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boolean): void {
   const orphans = plan.crews.filter((c: unknown) => {
-    if (!isObj(c) || c.status !== 'running' || isDirect(c) || factorySpawned(dir, String(c.slug)) !== undefined) return false
+    if (!isObj(c) || c.status !== 'running' || isDirect(c) || factorySpawned(dir, String(c.slug)) !== undefined || !ownerDead(c.owner)) return false
     const goalFile = `${dir}/goals/${String(c.slug)}.md`
     if (!existsSync(goalFile)) return false
     return engineOf(goalSections(readFileSync(goalFile, 'utf8')), merge, noWorkflow).engine === 'workflow'
@@ -109,7 +123,7 @@ function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boole
   if (orphans.length === 0) return
   const slugs = new Set(orphans.map((c) => String(c.slug)))
   patchPlan(dir, (p) => {
-    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && factorySpawned(dir, String(e.slug)) === undefined) e.status = 'planned'
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && factorySpawned(dir, String(e.slug)) === undefined && ownerDead(e.owner)) { e.status = 'planned'; delete e.owner }
   })
   for (const c of orphans) c.status = 'planned'
   for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
