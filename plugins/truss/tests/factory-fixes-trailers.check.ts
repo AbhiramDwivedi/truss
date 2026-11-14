@@ -41,7 +41,7 @@ test('unparsedTrailers flags a blank line before Co-Authored-By and accepts the 
   const bad = commit('1', 'bad\n\nTruss-Crew: x\nTruss-Role: builder\n\nCo-Authored-By: A <a@example.com>\nClaude-Session: s')
   const good = commit('2', 'good\n\nBody.\n\nTruss-Crew: x\nTruss-Role: builder\nCo-Authored-By: A <a@example.com>\nClaude-Session: s')
   git(dir, 'checkout', '-q', 'main')
-  const out = unparsedTrailers(dir, 'member')
+  const out = unparsedTrailers(dir, 'main', 'member')
   assert.deepEqual(out, [`${bad} bad`])
   assert.ok(!out.some((l) => l.startsWith(good)))
 })

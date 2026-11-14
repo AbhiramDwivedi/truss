@@ -48,9 +48,12 @@ export function cmdSync(f: Flags): Obj {
 }
 // Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
 // a blank line inside the trailer block, or between it and a later one such as Co-Authored-By. QC reads the role with
-// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; [] when the range can't be read.
-export function unparsedTrailers(wt: string, branch: string): string[] {
-  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`])
+// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; a commit the target already
+// holds (another crew's landed work) never counts. [] when the range can't be read.
+export function unparsedTrailers(wt: string, target: string, branch: string): string[] {
+  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`, '--not', notTarget(wt, target)])
+  // Keeps its [] contract on an unreadable range, though that is not fail-open: cmdIntegrate runs `untrailered` next, which walks
+  // the same range (same exclusion) and refuses fail-closed when it cannot be read, so the unchecked trailers never merge.
   if (r.status !== 0) return []
   const missed = (parsed: string | undefined, key: string, body: string | undefined): boolean => String(parsed).trim() === '' && new RegExp(`^${key}:`, 'm').test(String(body))
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
@@ -58,11 +61,13 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
 }
 // Non-merge commits in HEAD..branch that the target does not hold and that carry neither Truss-Crew nor Truss-Role, `<sha> <subject>`
 // each; [] when the range can't be read. A commit already in the target (a main commit that reached the branch by a merge) never counts.
-function untrailered(wt: string, target: string, branch: string): string[] {
-  // a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits
+// The ref to exclude for a target: a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits.
+function notTarget(wt: string, target: string): string {
   const local = run(wt, ['rev-parse', '-q', '--verify', `refs/heads/${target}^{commit}`]).status === 0
-  const not = local ? `refs/heads/${target}` : target
-  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', not])
+  return local ? `refs/heads/${target}` : target
+}
+function untrailered(wt: string, target: string, branch: string): string[] {
+  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', notTarget(wt, target)])
   // fail closed: an unreadable range (an unknown target, a bad branch) is no proof that every commit carries a trailer
   if (r.status !== 0) throw refuse({ merged: false, conflicts: [], missingTrailers: [], why: `could not read the commits of ${branch} that ${target} does not hold, so their trailers are unchecked: ${r.err.trim().split('\n')[0] ?? ''}` })
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
@@ -91,7 +96,7 @@ export function cmdIntegrate(f: Flags): Obj {
   if (inProgress !== undefined) {
     throw refuse({ merged: false, conflicts: [], inProgress, why: `a ${inProgress} is in progress in ${c.wt}; conclude or abort it before integrating ${branch}` })
   }
-  const trailers = unparsedTrailers(c.wt, branch)
+  const trailers = unparsedTrailers(c.wt, c.target, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   const missingTrailers = untrailered(c.wt, c.target, branch)
   if (missingTrailers.length > 0) throw refuse({ merged: false, conflicts: [], missingTrailers })
