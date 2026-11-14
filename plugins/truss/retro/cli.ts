@@ -1,16 +1,18 @@
 // The retro's command line (ADR-0012 Seams, Decisions 5, 7 and 8): extract, findings, recur, scrub and state, plus
-// `counts <truss dir>` (ADR-0003 section 3; retro/counts.ts), which prints its JSON and its failures on stdout and stderr.
+// `counts <truss dir>` (ADR-0003 section 3; retro/counts.ts), which prints its JSON and its failures on stdout and stderr,
+// and `problems <truss dir>` (ADR-0051), which prints the counting step's JSON and writes <truss dir>/retro/problems.json.
 // `main` returns the text and exit code; running the file prints the text and sets the code. Exit 0 means OK, 1 means
 // the input failed a check (a scrub hit), 2 means a usage error or a file it cannot read. Evidence is checked against
 // the extract's files and line counts, never the transcripts (R-35). Erasable TypeScript only, Node standard library
 // only (P19).
 import { execFileSync } from 'node:child_process'
-import { existsSync,mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync,mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { fixShipped, KINDS, loadCatalog, recurrences } from './catalog.ts'
+import { fixShipped, loadCatalog, matchLine, recurrences } from './catalog.ts'
 import type { Catalog } from './catalog.ts'
-import { counts } from './counts.ts'
+import { counts, problems } from './counts.ts'
+import type { Finding as Counted } from './counts.ts'
 import { extractSession, writeExtract } from './extract.ts'
 import { scrub } from './scrub.ts'
 
@@ -18,6 +20,7 @@ import { scrub } from './scrub.ts'
 export const COMMANDS = {
   extract: { min: 2, max: 3 },
   findings: { min: 3, max: 3 },
+  problems: { min: 1, max: 1 },
   recur: { min: 1, max: 2 },
   scrub: { min: 1, max: Infinity },
   state: { min: 3, max: 4 },
@@ -30,7 +33,13 @@ export const STATUSES = ['pending', 'running', 'done', 'failed', 'skipped'] as c
 
 type Obj = Record<string, unknown>
 export type Evidence = { file: string; line: number; quote?: string }
-export type Judged = {
+// ADR-0051 Decision 2: the judge's block is the counting step's finding without its id, plus an optional signature
+export type Judged = Omit<Counted, 'id'> & { signature?: string[] }
+export type Finding = Judged & { id: string; judge: string }
+// a `recur` finding keeps the catalog entry's shape (docs/findings.schema.json): its `kind` is the entry's kind and its evidence is file and line
+export type Recurred = {
+  id: string
+  judge: 'recur'
   kind: string
   title: string
   evidence: Evidence[]
@@ -38,9 +47,8 @@ export type Judged = {
   fix: string
   target: string
   signature: string[]
-  recurs?: { catalog: string; fixedBy: { finding: string; date: string } }
+  recurs: { catalog: string; fixedBy: { finding: string; date: string } }
 }
-export type Finding = Judged & { id: string; judge: string }
 export type FilesList = { path: string; lines: number }[]
 export type Step = { status: string; at: string | null; detail: string | null }
 export type RetroState = { v: 1; updatedAt: string; steps: Record<string, Step> }
@@ -78,8 +86,10 @@ const catalogAt = (path: string | undefined): Catalog => {
 }
 
 /** The extract's files list, read from <truss dir>/retro/extract.json; the catalog hits ride along for recur. */
-const loadExtract = (trussDir: string): { files: FilesList; catalogHits: unknown[] } => {
+const loadExtract = (trussDir: string, optional = false): { files: FilesList; catalogHits: unknown[] } => {
   const path = join(trussDir, 'retro', 'extract.json')
+  // only a missing extract is optional (recur, since the automatic retro writes none); a malformed one still fails
+  if (optional && !existsSync(path)) return { files: [], catalogHits: [] }
   let x: unknown
   try {
     x = JSON.parse(read(path))
@@ -105,52 +115,63 @@ const onlyKeys = (o: Obj, allowed: string[]): string | null => {
   return null
 }
 
-/** Why a value breaks $defs.judged against the extract's files, or null when it holds. */
-function judgedProblem(v: unknown, files: FilesList): string | null {
+const TARGET_KINDS = ['plugin', 'project-config', 'proposed-goal']
+// first path segments of the truss plugin; a path under plugins/truss/ is the plugin too
+const PLUGIN_DIRS = ['agents', 'skills', 'bin', 'hooks', 'retro', 'workflows', 'workflows-src', '.claude-plugin']
+
+/** ADR-0051 Decision 4: product code is any path that is neither the truss plugin nor project config (CLAUDE.md, .claude/). */
+const isProductPath = (p: string, kind: unknown): boolean => {
+  const s = p.replace(/\\/g, '/').replace(/^\.\//, '')
+  if (s === 'CLAUDE.md' || s.startsWith('.claude/') || s.startsWith('plugins/truss/')) return false
+  // a bare top-level bin/, hooks/ ... is the plugin only when the judge says kind plugin; in any other project it is product code (R-128)
+  return !(kind === 'plugin' && PLUGIN_DIRS.includes(s.split('/')[0]))
+}
+
+/** Why a judge's block breaks the finding shape of ADR-0051 Decision 2 against the counted measures, or null when it holds. It cuts a long title and marks product code as a proposed goal in place (v is this call's own parsed JSON). */
+function judgedProblem(v: unknown, measures: Record<string, number>): string | null {
   if (!isObj(v)) return 'block is not a JSON object'
-  const extra = onlyKeys(v, ['kind', 'title', 'evidence', 'cost', 'fix', 'target', 'signature', 'recurs'])
+  const extra = onlyKeys(v, ['category', 'title', 'evidence', 'cost', 'fix', 'target', 'signature'])
   if (extra) return extra
-  if (!(KINDS as readonly unknown[]).includes(v.kind)) return 'kind is not one of the seven kinds'
+  if (!nonEmpty(v.category)) return 'category must be a non-empty string'
   if (!nonEmpty(v.title)) return 'title must be 1 to 200 characters'
-  // over 200: cut to the first 200 instead of dropping (v is this call's own parsed JSON)
+  // over 200: cut to the first 200 instead of dropping
   v.title = v.title.slice(0, 200)
-  for (const k of ['cost', 'fix', 'target'] as const) if (!nonEmpty(v[k])) return `${k} must be a non-empty string`
-  if (!Array.isArray(v.evidence) || v.evidence.length === 0) return 'no evidence line'
+  if (!nonEmpty(v.fix)) return 'fix must be a non-empty string'
+  if (!Array.isArray(v.evidence) || v.evidence.length === 0) return 'no evidence entry'
   for (const e of v.evidence) {
     if (!isObj(e)) return 'evidence entry is not an object'
-    const bad = onlyKeys(e, ['file', 'line', 'quote'])
+    const bad = onlyKeys(e, ['measure', 'value'])
     if (bad) return `evidence ${bad}`
-    if (!nonEmpty(e.file)) return 'evidence file must be a non-empty string'
-    if (!Number.isInteger(e.line) || (e.line as number) < 1) return 'evidence line must be a whole number of at least 1'
-    if ('quote' in e) {
-      if (typeof e.quote !== 'string') return 'evidence quote must be a string of at most 200 characters'
-      e.quote = e.quote.slice(0, 200)
-    }
-    const f = files.find((x) => x.path === e.file)
-    if (!f) return `evidence file ${e.file} is not in the extract`
-    if ((e.line as number) > f.lines) return `evidence line ${e.line} is past the end of ${e.file} (${f.lines} lines)`
+    if (!nonEmpty(e.measure)) return 'evidence measure must be a non-empty string'
+    if (!Object.hasOwn(measures, e.measure)) return `evidence measure ${e.measure} is not counted`
+    if (e.value !== measures[e.measure]) return `evidence measure ${e.measure} is ${JSON.stringify(e.value)}, counted ${measures[e.measure]}`
   }
-  if (!Array.isArray(v.signature) || v.signature.length === 0) return 'signature must be a non-empty array'
-  for (const p of v.signature) {
-    if (!nonEmpty(p)) return 'every signature pattern must be a non-empty string'
-    try {
-      new RegExp(p)
-    } catch {
-      return `signature pattern ${JSON.stringify(p)} does not compile`
-    }
-  }
-  if ('recurs' in v) {
-    const r = v.recurs
-    const f = isObj(r) ? r.fixedBy : null
-    if (!isObj(r) || onlyKeys(r, ['catalog', 'fixedBy']) || !nonEmpty(r.catalog) || !isObj(f) || onlyKeys(f, ['finding', 'date']) || !nonEmpty(f.finding) || !nonEmpty(f.date)) {
-      return 'recurs must be {catalog, fixedBy: {finding, date}}'
+  const c = v.cost
+  if (!isObj(c) || onlyKeys(c, ['wallMs', 'tokens', 'usd'])) return 'cost must be {wallMs, tokens, usd}'
+  const costs = ['wallMs', 'tokens', 'usd'].map((k) => c[k])
+  if (!costs.every((x) => x === null || (typeof x === 'number' && Number.isFinite(x) && x >= 0))) return 'cost wallMs, tokens and usd must each be a number of at least 0 or null'
+  if (costs.every((x) => x === null)) return 'cost has no number'
+  const t = v.target
+  if (!isObj(t) || onlyKeys(t, ['kind', 'path'])) return 'target must be {kind, path?}'
+  if (!TARGET_KINDS.includes(t.kind as string)) return `target kind must be one of ${TARGET_KINDS.join(', ')}`
+  if ('path' in t && !nonEmpty(t.path)) return 'target path must be a non-empty string'
+  if (typeof t.path === 'string' && isProductPath(t.path, t.kind)) t.kind = 'proposed-goal'
+  if ('signature' in v) {
+    if (!Array.isArray(v.signature) || v.signature.length === 0) return 'signature must be a non-empty array'
+    for (const p of v.signature) {
+      if (!nonEmpty(p)) return 'every signature pattern must be a non-empty string'
+      try {
+        new RegExp(p)
+      } catch {
+        return `signature pattern ${JSON.stringify(p)} does not compile`
+      }
     }
   }
   return null
 }
 
-/** The fenced `finding` blocks of a judge's report, in order: each is kept (a valid $defs.judged) or dropped with a reason. `n` is the block's 1-based position. */
-export function parseFindings(report: string, files: FilesList): { kept: { n: number; finding: Judged }[]; dropped: { n: number; reason: string }[] } {
+/** The fenced `finding` blocks of a judge's report, in order: each is kept (a valid finding whose evidence matches `measures`, any category) or dropped with a reason. `n` is the block's 1-based position. */
+export function parseFindings(report: string, measures: Record<string, number>): { kept: { n: number; finding: Judged }[]; dropped: { n: number; reason: string }[] } {
   const kept: { n: number; finding: Judged }[] = []
   const dropped: { n: number; reason: string }[] = []
   const lines = report.split(/\r?\n/)
@@ -174,14 +195,28 @@ export function parseFindings(report: string, files: FilesList): { kept: { n: nu
       dropped.push({ n, reason: 'block is not valid JSON' })
       continue
     }
-    const why = judgedProblem(v, files)
+    const why = judgedProblem(v, measures)
     if (why) dropped.push({ n, reason: why })
     else kept.push({ n, finding: v as Judged })
   }
   return { kept, dropped }
 }
 
-type FindingsFile = { v: 1; findings: Finding[] }
+/** The measures the counting step wrote to <truss dir>/retro/problems.json, which findings check evidence against. */
+const loadMeasures = (trussDir: string): Record<string, number> => {
+  const path = join(trussDir, 'retro', 'problems.json')
+  let x: unknown
+  try {
+    x = JSON.parse(read(path))
+  } catch (e) {
+    if (e instanceof Fatal) throw e
+    throw new Fatal(`bad problems ${path}: not JSON`)
+  }
+  if (!isObj(x) || x.retro !== 2 || !isObj(x.measures)) throw new Fatal(`bad problems ${path}: not a problems file of version 2`)
+  return x.measures as Record<string, number>
+}
+
+type FindingsFile = { v: 1; findings: (Finding | Recurred)[] }
 
 const loadFindings = (trussDir: string): FindingsFile => {
   try {
@@ -198,10 +233,10 @@ const saveFindings = (trussDir: string, f: FindingsFile): void => writeAtomic(jo
 const nextId = (f: FindingsFile): number => f.findings.reduce((m, x) => Math.max(m, Number(/^F-(\d+)$/.exec(x.id)?.[1] ?? 0)), 0) + 1
 
 function runFindings(trussDir: string, label: string, reportPath: string): string[] {
-  const { files } = loadExtract(trussDir)
+  const measures = loadMeasures(trussDir)
   const report = read(reportPath)
   if (label === '') throw new Fatal('judge label must not be empty')
-  const { kept, dropped } = parseFindings(report, files)
+  const { kept, dropped } = parseFindings(report, measures)
   const file = loadFindings(trussDir)
   let id = nextId(file)
   const rows: { n: number; line: string }[] = []
@@ -216,6 +251,63 @@ function runFindings(trussDir: string, label: string, reportPath: string): strin
   return [...rows.map((r) => r.line), `OK: ${kept.length} kept, ${dropped.length} dropped`]
 }
 
+// ---------- triage (ADR-0051 Decision 7) ----------
+
+export type TriageDecision = { id: string; decision: 'fix now' | 'defer' | 'drop'; reason: string }
+
+/**
+ * The `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>` lines of the triage agent's report. A finding is never
+ * dropped for its category. `fix now` on a proposed-goal finding goes to `proposedGoals`, outside the fix goal; the fix
+ * goal takes only fix-now findings whose target kind is plugin or project-config. A TRIAGE line that is malformed, names
+ * an unknown finding or repeats one is reported in `dropped`; every other line is ignored.
+ */
+export function parseTriage(text: string, findings: { id: string; target: { kind: string } }[]): { decisions: TriageDecision[]; fixGoal: string[]; proposedGoals: string[]; dropped: { line: string; reason: string }[] } {
+  const decisions: TriageDecision[] = []
+  const fixGoal: string[] = []
+  const proposedGoals: string[] = []
+  const dropped: { line: string; reason: string }[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line.startsWith('TRIAGE:')) continue
+    const m = /^TRIAGE:\s*(\S+)\s*\|\s*(fix now|defer|drop)\s*\|\s*(.+)$/.exec(line)
+    if (!m) {
+      dropped.push({ line, reason: 'not `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`' })
+      continue
+    }
+    const f = findings.find((x) => x.id === m[1])
+    if (!f) {
+      dropped.push({ line, reason: `no finding ${m[1]}` })
+      continue
+    }
+    if (decisions.some((d) => d.id === f.id)) {
+      dropped.push({ line, reason: `${f.id} is already decided` })
+      continue
+    }
+    decisions.push({ id: f.id, decision: m[2] as TriageDecision['decision'], reason: m[3].trim() })
+    if (m[2] === 'fix now') (f.target.kind === 'proposed-goal' ? proposedGoals : fixGoal).push(f.id)
+  }
+  return { decisions, fixGoal, proposedGoals, dropped }
+}
+
+// ---------- problems (ADR-0051 Decision 6) ----------
+
+/** Counts the problems of a truss dir, writes <truss dir>/retro/problems.json (this file is its only writer) and returns the JSON line. */
+function runProblems(trussDir: string): string[] {
+  try {
+    if (!statSync(trussDir).isDirectory()) throw new Error('not a directory')
+  } catch {
+    throw new Fatal(`cannot read truss dir ${trussDir}`)
+  }
+  let p: ReturnType<typeof problems>
+  try {
+    p = problems(trussDir)
+  } catch (e) {
+    throw new Fatal(`problems failed: ${(e as Error).message}`)
+  }
+  writeAtomic(join(trussDir, 'retro', 'problems.json'), JSON.stringify(p, null, 2) + '\n')
+  return [JSON.stringify(p)]
+}
+
 // ---------- recur (Decision 7) ----------
 
 /** The plugin version the session ran: the extract's pluginVersion, else null (R-35: the extract alone, no transcript rescan). */
@@ -227,11 +319,40 @@ function ranVersion(trussDir: string): string | null {
   return null
 }
 
+/** Catalog hits in the structured files the counting step reads (R-31, never a transcript): problems.json titles and measure keys, decisions.md lines, events*.jsonl lines. */
+function structuredHits(trussDir: string, catalog: Catalog): { id: string; file: string; line: number }[] {
+  const out: { id: string; file: string; line: number }[] = []
+  const lineHits = (file: string, text: string) => {
+    text.split('\n').forEach((l, i) => { for (const id of matchLine(l, catalog)) out.push({ id, file, line: i + 1 }) })
+  }
+  const textOf = (rel: string): string | null => {
+    try { return readFileSync(join(trussDir, rel), 'utf8') } catch { return null }
+  }
+  const pj = textOf('retro/problems.json')
+  if (pj !== null) {
+    try {
+      const p = JSON.parse(pj) as { measures?: Record<string, number>; findings?: { title?: unknown }[] }
+      const strings = [...(p.findings ?? []).map((f) => f.title), ...Object.keys(p.measures ?? {})].filter((s): s is string => typeof s === 'string')
+      const lines = pj.split('\n')
+      for (const s of strings) {
+        const at = lines.findIndex((l) => l.includes(JSON.stringify(s).slice(1, -1)))
+        for (const id of matchLine(s, catalog)) out.push({ id, file: 'retro/problems.json', line: at < 0 ? 1 : at + 1 })
+      }
+    } catch { /* a malformed problems.json is the counting step's to report */ }
+  }
+  const dec = textOf('decisions.md')
+  if (dec !== null) lineHits('decisions.md', dec)
+  let names: string[] = []
+  try { names = readdirSync(trussDir).filter((n) => /^events(\.\d+)?\.jsonl$/.test(n)).sort() } catch { /* no dir, no events */ }
+  for (const n of names) lineHits(n, textOf(n) ?? '')
+  return out
+}
+
 function runRecur(trussDir: string, catalogPath: string | undefined): string[] {
-  const x = loadExtract(trussDir)
+  const x = loadExtract(trussDir, true)
   const catalog = catalogAt(catalogPath)
   const fixed = catalog.entries.filter((e) => e.fixedBy !== null)
-  const hits = recurrences({ catalogHits: x.catalogHits as never }, catalog)
+  const hits = recurrences({ catalogHits: [...(x.catalogHits as never[]), ...structuredHits(trussDir, catalog)] as never }, catalog)
   const ran = ranVersion(trussDir)
   const lines: string[] = []
   const byId = new Map<string, typeof hits>()
@@ -250,7 +371,7 @@ function runRecur(trussDir: string, catalogPath: string | undefined): string[] {
     const e = catalog.entries.find((c) => c.id === entryId)!
     const fixedBy = e.fixedBy!
     // running recur twice on one truss dir adds the entry once
-    if (file.findings.some((f) => f.judge === 'recur' && f.recurs?.catalog === entryId && f.recurs.fixedBy.finding === fixedBy.finding && f.recurs.fixedBy.date === fixedBy.date)) continue
+    if (file.findings.some((f) => f.judge === 'recur' && (f as Recurred).recurs?.catalog === entryId && (f as Recurred).recurs.fixedBy.finding === fixedBy.finding && (f as Recurred).recurs.fixedBy.date === fixedBy.date)) continue
     const seen = new Set<string>()
     const evidence: Evidence[] = []
     for (const h of hs) {
@@ -415,6 +536,7 @@ function runScrub(paths: string[]): { code: number; lines: string[] } {
 const run = (cmd: string, a: string[]): { code: number; lines: string[] } => {
   if (cmd === 'extract') return { code: 0, lines: runExtract(a[0], a[1], a[2]) }
   if (cmd === 'findings') return { code: 0, lines: runFindings(a[0], a[1], a[2]) }
+  if (cmd === 'problems') return { code: 0, lines: runProblems(a[0]) }
   if (cmd === 'recur') return { code: 0, lines: runRecur(a[0], a[1]) }
   if (cmd === 'scrub') return runScrub(a)
   writeState(a[0], a[1], a[2], a[3])

@@ -1,0 +1,4631 @@
+{
+ "commits": [
+  {
+   "subject": "docs(req): truss 0.29.0 plugin-fix release R-85..R-98",
+   "ts": "2026-11-12T07:02:40-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/docs/requirements.md",
+     "added": 96,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "docs(req): mark R-65..R-71, R-75, R-76, R-78..R-81 met",
+   "ts": "2026-11-12T07:06:23-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/docs/requirements.md",
+     "added": 13,
+     "deleted": 13
+    }
+   ]
+  },
+  {
+   "subject": "test(truss): approve-proof acceptance test, red first",
+   "ts": "2026-11-12T07:37:00-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/approve-029.check.ts",
+     "added": 133,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-20' into truss-approve-proof",
+   "ts": "2026-11-12T07:47:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): approve --by client tests pass a typed proof item",
+   "ts": "2026-11-12T07:44:11-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/factory.check.ts",
+     "added": 24,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/tests/ltc-guard.check.ts",
+     "added": 21,
+     "deleted": 9
+    },
+    {
+     "path": "plugins/truss/tests/trust-026.check.ts",
+     "added": 11,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/tests/wiring-025.check.ts",
+     "added": 7,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-21' into truss-approve-proof",
+   "ts": "2026-11-12T07:50:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T07:52:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): approve --by client needs a typed client proof (ADR-0045)",
+   "ts": "2026-11-12T08:16:34-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 17,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 65,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-39' into truss-approve-proof",
+   "ts": "2026-11-12T08:50:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T08:50:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): ADR-0045 approve proof; run and inbox skills",
+   "ts": "2026-11-12T08:55:00-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 47,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 6,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/skills/inbox/SKILL.md",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): re-point factory.ts citations the approve change shifted",
+   "ts": "2026-11-12T09:06:19-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 6,
+     "deleted": 6
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-78' into truss-approve-proof",
+   "ts": "2026-11-12T09:14:58-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T09:40:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): re-point store.md stageOut citation after approve-proof edits",
+   "ts": "2026-11-12T09:40:18-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-107' into truss-approve-proof",
+   "ts": "2026-11-12T09:40:41-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:01:15-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): approve-proof learned",
+   "ts": "2026-11-12T10:01:48-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "docs/features.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-117' into truss-approve-proof",
+   "ts": "2026-11-12T10:02:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:13:12-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): approve --by client refuses a proof older than the current plan",
+   "ts": "2026-11-12T10:15:44-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 4,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-126' into truss-approve-proof",
+   "ts": "2026-11-12T10:16:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:24:11-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): approve --by client confirms an already-approved plan without the plan-write staleness check",
+   "ts": "2026-11-12T10:27:48-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 3,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-133' into truss-approve-proof",
+   "ts": "2026-11-12T10:28:12-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:46:56-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): pin the approve proof replay and already-approved cases",
+   "ts": "2026-11-12T10:48:02-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/approve-029.check.ts",
+     "added": 46,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-146' into truss-approve-proof",
+   "ts": "2026-11-12T10:48:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:48:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): approve-proof QC fixes, replay guard documented, ADR-0045 citations",
+   "ts": "2026-11-12T10:51:02-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 1,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 8,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "docs(knowledge): store.md verified at the ADR-0045 proof change",
+   "ts": "2026-11-12T10:51:08-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-151' into truss-approve-proof",
+   "ts": "2026-11-12T10:51:30-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T10:59:45-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): re-point four architecture.md factory.ts line citations",
+   "ts": "2026-11-12T10:59:56-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-158' into truss-approve-proof",
+   "ts": "2026-11-12T11:00:10-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T11:37:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): approve-proof learned",
+   "ts": "2026-11-12T11:37:30-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_250b8743-f30-4' into truss-approve-proof",
+   "ts": "2026-11-12T11:37:50-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T13:12:16-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): approve-proof learned",
+   "ts": "2026-11-12T13:12:34-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_17fdbb39-c59-4' into truss-approve-proof",
+   "ts": "2026-11-12T13:12:50-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T13:58:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): approve-proof learned",
+   "ts": "2026-11-12T13:59:01-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-4' into truss-approve-proof",
+   "ts": "2026-11-12T13:59:22-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T14:14:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): approve proof needs a run-ref item resolved in this session",
+   "ts": "2026-11-12T14:15:29-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 6,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 3,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-13' into truss-approve-proof",
+   "ts": "2026-11-12T14:15:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T14:18:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): approve proof is run-ref only",
+   "ts": "2026-11-12T14:18:36-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/approve-029.check.ts",
+     "added": 11,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-23' into truss-approve-proof",
+   "ts": "2026-11-12T14:18:51-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T14:46:22-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): correct approve-proof knowledge, ADR-0045 citations, run skill wording",
+   "ts": "2026-11-12T14:46:48-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 4,
+     "deleted": 4
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-40' into truss-approve-proof",
+   "ts": "2026-11-12T14:47:13-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T15:13:42-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): approve-029 forged, different-item, reject and superseded cases use run-ref items",
+   "ts": "2026-11-12T15:16:06-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/approve-029.check.ts",
+     "added": 21,
+     "deleted": 12
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-52' into truss-approve-proof",
+   "ts": "2026-11-12T15:16:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-approve-proof",
+   "ts": "2026-11-12T15:16:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): fix ADR-0045 spent-item text, re-stamp verified",
+   "ts": "2026-11-12T15:17:06-05:00",
+   "trailers": [
+    "Truss-Crew: approve-proof",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0045-approve-proof.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e60a00d8-35b-57' into truss-approve-proof",
+   "ts": "2026-11-12T15:17:42-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): a crew resume carries every unbuilt ruling (0.29.0 item 5)",
+   "ts": "2026-11-12T19:00:01-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 7,
+     "deleted": 0
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 5,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 50,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 28,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 7,
+     "deleted": 7
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 110,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): price the Claude 5.5 family in factory cost (0.29.0)",
+   "ts": "2026-11-12T19:05:17-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": ".claude/truss.json",
+     "added": 19,
+     "deleted": 1
+    },
+    {
+     "path": "docs/features.md",
+     "added": 7,
+     "deleted": 0
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/cost.ts",
+     "added": 11,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/adr/0038-cost-budgets-and-ledger.md",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 7,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/truss-config.schema.json",
+     "added": 15,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/skills/init/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 44,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): fewer runner spawns, knowledge after stress and every fix round (0.29.0 items 1, 6, 7)",
+   "ts": "2026-11-12T19:34:01-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 14,
+     "deleted": 0
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/agents/project-manager.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 22,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0015-resource-aware.md",
+     "added": 2,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 25,
+     "deleted": 4
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 8,
+     "deleted": 8
+    },
+    {
+     "path": "plugins/truss/tests/crew-knowledge.check.ts",
+     "added": 18,
+     "deleted": 11
+    },
+    {
+     "path": "plugins/truss/tests/stage-resources-contract.check.ts",
+     "added": 5,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/tests/stage-resources.check.ts",
+     "added": 23,
+     "deleted": 9
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029-stage.check.ts",
+     "added": 241,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 22,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 110,
+     "deleted": 23
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): heavySlots: numbered heavy slot locks, count from truss.json or the host (ADR-0046 item 4)",
+   "ts": "2026-11-12T19:41:07-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 15,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/docs/truss-config.schema.json",
+     "added": 6,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/resources/index.ts",
+     "added": 38,
+     "deleted": 8
+    },
+    {
+     "path": "plugins/truss/tests/factory-resources-contract.check.ts",
+     "added": 2,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/factory-resources.check.ts",
+     "added": 2,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 83,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): heavy slots in ADR-0046/0015, architecture, features, README; re-point shifted factory.ts citations; tests-check count after same-head skip",
+   "ts": "2026-11-12T19:43:44-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 8,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/README.md",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/adr/0015-resource-aware.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0017-member-heavy-commands.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 9,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 4,
+     "deleted": 4
+    },
+    {
+     "path": "plugins/truss/skills/init/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/workflows.check.ts",
+     "added": 6,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): ADR-0038 cites cost.ts and factory.ts by symbol, not stale line numbers",
+   "ts": "2026-11-12T19:45:05-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0038-cost-budgets-and-ledger.md",
+     "added": 21,
+     "deleted": 21
+    }
+   ]
+  },
+  {
+   "subject": "docs(knowledge): store.md verified at 816919c6",
+   "ts": "2026-11-12T19:45:23-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): owns-check exempts docs any crew commit edits; check --tests-since (ADR-0046 items 0, 3)",
+   "ts": "2026-11-12T20:07:38-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 24,
+     "deleted": 16
+    },
+    {
+     "path": "plugins/truss/tests/knowledge-lint.check.ts",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/tests/knowledge-scope.check.ts",
+     "added": 41,
+     "deleted": 20
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): builders own docs; tester-first regression cases; QC converges (ADR-0046 items 0, 2, 3, 8-13)",
+   "ts": "2026-11-12T20:07:52-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/tests/throughput-029-stage.check.ts",
+     "added": 133,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/tests/workflows.check.ts",
+     "added": 7,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 116,
+     "deleted": 18
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): a project skill's markdown body is a crew doc path (ADR-0046 item 0)",
+   "ts": "2026-11-12T20:11:36-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 2,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/knowledge-scope.check.ts",
+     "added": 8,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): crews own their docs in every prose file; ADR-0046 builder B items; re-point drifted citations",
+   "ts": "2026-11-12T20:13:52-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 9,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/README.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/agents/planning-engineer.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/agents/project-manager.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/agents/qc-engineer.md",
+     "added": 7,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/agents/writer.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md",
+     "added": 3,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 45,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 8,
+     "deleted": 8
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/crew-knowledge-prose.check.ts",
+     "added": 5,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/diff-hygiene.check.ts",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "docs(knowledge): store.md verified at 62d1a83e",
+   "ts": "2026-11-12T20:14:01-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "feat(truss): factory gates runs the checks before QC as one runner call (ADR-0046 item 1)",
+   "ts": "2026-11-12T20:57:08-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 79,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 4,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 7,
+     "deleted": 6
+    },
+    {
+     "path": "plugins/truss/tests/compose-runtime-contract.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/compose-runtime.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/crew-knowledge.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/factory-retro.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/fixes-026.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/fixtures/gates-stub.ts",
+     "added": 150,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/gates-026.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/harness-banner.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/knowledge-stage.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/personas-routing.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/retro-fixes2-stage.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-briefs.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-factory-cli.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-fixes2.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-fixes3.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-fixes5.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-resources-contract.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-resources.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029-stage.check.ts",
+     "added": 41,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 58,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/ux-runtime.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/workflows.check.ts",
+     "added": 11,
+     "deleted": 4
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 94,
+     "deleted": 5
+    }
+   ]
+  },
+  {
+   "subject": "fix(truss): 0.29.0 review fixes (ADR-0046)",
+   "ts": "2026-11-12T21:34:01-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": ".claude/truss.json",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "docs/features.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/README.md",
+     "added": 4,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/agents/project-manager.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/agents/qc-engineer.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/agents/writer.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 72,
+     "deleted": 33
+    },
+    {
+     "path": "plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-factory-throughput.md",
+     "added": 16,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 6,
+     "deleted": 6
+    },
+    {
+     "path": "plugins/truss/docs/truss-config.schema.json",
+     "added": 5,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/skills/init/SKILL.md",
+     "added": 1,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/knowledge-scope.check.ts",
+     "added": 86,
+     "deleted": 24
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029-stage.check.ts",
+     "added": 104,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/throughput-029.check.ts",
+     "added": 20,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 19,
+     "deleted": 10
+    }
+   ]
+  },
+  {
+   "subject": "release(truss): 0.29.0 factory throughput and QC quality",
+   "ts": "2026-11-12T21:43:22-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/.claude-plugin/plugin.json",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/CHANGELOG.md",
+     "added": 16,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/requirements.md",
+     "added": 133,
+     "deleted": 14
+    }
+   ]
+  },
+  {
+   "subject": "Merge pull request #18 from Abhiramperson/release-0.29.0",
+   "ts": "2026-11-12T21:44:05-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): factory-gaps acceptance tests, red first (items 3, 4, 7, 8)",
+   "ts": "2026-11-12T22:00:59-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/gaps-029.check.ts",
+     "added": 263,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-5' into truss-factory-gaps",
+   "ts": "2026-11-12T22:01:45-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-12T22:02:03-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): inbox and cost refuse a relative --dir like dirOf (ADR-0027 F-67 item 2)",
+   "ts": "2026-11-12T22:11:50-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/cost.ts",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 11,
+     "deleted": 4
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-11' into truss-factory-gaps",
+   "ts": "2026-11-12T22:12:57-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-12T22:12:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): stage split treats a bare dir/ owns entry as dir/**",
+   "ts": "2026-11-12T22:12:39-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 1,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-13' into truss-factory-gaps",
+   "ts": "2026-11-12T22:13:09-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-12T22:02:12-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): factory-gaps items 3, 4, 8: plan-write fenced plan, bare dir owns, green npm ci",
+   "ts": "2026-11-12T22:17:38-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 5,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 35,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 5,
+     "deleted": 5
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-12' into truss-factory-gaps",
+   "ts": "2026-11-12T22:18:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-12T22:35:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): cite qc by symbol in architecture.md, not a stale line",
+   "ts": "2026-11-12T22:35:17-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-20' into truss-factory-gaps",
+   "ts": "2026-11-12T22:35:29-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-12T23:00:32-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): factory-gaps learned",
+   "ts": "2026-11-12T23:01:17-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 4,
+     "deleted": 4
+    },
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_22f853ae-741-28' into truss-factory-gaps",
+   "ts": "2026-11-12T23:01:31-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): resume-guard lock and CLI cases (R-89, R-90), red on base",
+   "ts": "2026-11-12T07:50:22-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/resume-029.check.ts",
+     "added": 241,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-32' into truss-resume-guard",
+   "ts": "2026-11-12T07:51:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T08:10:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): resume-guard stage.js resume sync cases",
+   "ts": "2026-11-12T08:11:39-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/resume-029.check.ts",
+     "added": 116,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-44' into truss-resume-guard",
+   "ts": "2026-11-12T08:12:25-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T08:46:43-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): sync the target into the crew branch on every resume (R-90)",
+   "ts": "2026-11-12T08:47:54-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 2,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-62' into truss-resume-guard",
+   "ts": "2026-11-12T08:49:37-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T11:27:36-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T08:33:26-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): crew finisher lease in store.ts (takeLease, refreshLease, releaseLease)",
+   "ts": "2026-11-12T08:46:20-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/store.ts",
+     "added": 126,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "merge worktree-wf_faad254e-8e2-61",
+   "ts": "2026-11-12T11:33:20-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7e94fb01-d03-3' into truss-resume-guard",
+   "ts": "2026-11-12T11:33:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T11:34:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): one finisher per crew and a target merge on resume (R-89, R-90)",
+   "ts": "2026-11-12T11:50:21-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 74,
+     "deleted": 36
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7e94fb01-d03-8' into truss-resume-guard",
+   "ts": "2026-11-12T11:50:49-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T11:51:01-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): ADR-0047 resume guard, architecture and run skill",
+   "ts": "2026-11-12T12:03:18-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0047-resume-guard.md",
+     "added": 35,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 7,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7e94fb01-d03-13' into truss-resume-guard",
+   "ts": "2026-11-12T12:04:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T12:54:02-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(resume-029): fix race worker argv and keep workers alive until both finish",
+   "ts": "2026-11-12T12:54:31-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/resume-029.check.ts",
+     "added": 8,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7e94fb01-d03-22' into truss-resume-guard",
+   "ts": "2026-11-12T12:54:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T16:07:51-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): resume timeline starts with decisions and sync before the red check",
+   "ts": "2026-11-12T16:08:10-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/workflows.check.ts",
+     "added": 4,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-4' into truss-resume-guard",
+   "ts": "2026-11-12T16:08:28-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T16:24:25-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): re-point stale line citations after resume-guard shifted factory.ts and store.ts",
+   "ts": "2026-11-12T16:24:49-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 4,
+     "deleted": 4
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-10' into truss-resume-guard",
+   "ts": "2026-11-12T16:25:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T16:46:05-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): resume-guard learned",
+   "ts": "2026-11-12T16:46:57-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 5,
+     "deleted": 3
+    },
+    {
+     "path": "docs/features.md",
+     "added": 7,
+     "deleted": 0
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-18' into truss-resume-guard",
+   "ts": "2026-11-12T16:47:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T17:17:49-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): resume and sync keep a resolver merge in progress; a finisher that lost its lease never moves the target",
+   "ts": "2026-11-12T17:19:26-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 16,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): ADR-0047 in-progress merge and lease-lost refusal; re-point factory.ts citations",
+   "ts": "2026-11-12T17:25:33-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-resume-guard.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 6,
+     "deleted": 6
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-27' into truss-resume-guard",
+   "ts": "2026-11-12T17:26:02-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T17:53:17-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): a live same-host finisher keeps its lease; trim plugin-tests rule; doc the lease",
+   "ts": "2026-11-12T17:55:40-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 4
+    },
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/bin/store.ts",
+     "added": 5,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-resume-guard.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): re-stamp knowledge docs, record lease decision",
+   "ts": "2026-11-12T17:55:55-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 8,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-44' into truss-resume-guard",
+   "ts": "2026-11-12T17:56:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T18:30:32-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): pin sync and start --resume keeping a resolver's merge in progress",
+   "ts": "2026-11-12T18:32:01-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/factory-fixes4-resume.check.ts",
+     "added": 40,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-56' into truss-resume-guard",
+   "ts": "2026-11-12T18:32:28-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T18:32:38-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): resume-guard QC findings: lease doc and citations",
+   "ts": "2026-11-12T18:33:24-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/store.ts",
+     "added": 4,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-resume-guard.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_ce16bde8-675-61' into truss-resume-guard",
+   "ts": "2026-11-12T18:33:50-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge main (0.29.0) into truss-resume-guard",
+   "ts": "2026-11-12T21:49:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): renumber resume-guard ADR to 0048",
+   "ts": "2026-11-12T21:49:58-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: resolver"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-resume-guard.md",
+     "added": 0,
+     "deleted": 35
+    },
+    {
+     "path": "plugins/truss/docs/adr/0048-resume-guard.md",
+     "added": 35,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "docs(truss): re-point the finish lease refresh citation after the 0.29.0 merge",
+   "ts": "2026-11-12T22:18:00-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: resolver"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "merge truss-resume-guard",
+   "ts": "2026-11-12T22:59:48-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): resume-guard learned",
+   "ts": "2026-11-12T23:00:06-05:00",
+   "trailers": [
+    "Truss-Crew: resume-guard",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 7,
+     "deleted": 7
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_80b2bdce-291-8' into truss-resume-guard",
+   "ts": "2026-11-12T23:00:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "Merge main into truss-factory-gaps",
+   "ts": "2026-11-13T00:57:48-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: resolver"
+   ],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-13T01:17:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): factory-gaps learned",
+   "ts": "2026-11-13T01:18:19-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 5
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_1c467c75-add-8' into truss-factory-gaps",
+   "ts": "2026-11-13T01:18:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(hygiene): red acceptance test for R-96, R-97, R-98",
+   "ts": "2026-11-12T07:39:14-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/hygiene-029.check.ts",
+     "added": 114,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/release-026.check.ts",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-22' into truss-hygiene",
+   "ts": "2026-11-12T08:12:10-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T08:13:05-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): citation check accepts a named symbol after line drift; fix ruleWorld comment",
+   "ts": "2026-11-12T08:14:53-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/gates-026.check.ts",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/release-026.check.ts",
+     "added": 7,
+     "deleted": 5
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-57' into truss-hygiene",
+   "ts": "2026-11-12T08:49:49-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T08:15:11-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): derive the notify timing bound from a measured startup baseline",
+   "ts": "2026-11-12T08:30:05-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/inbox.check.ts",
+     "added": 13,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-58' into truss-hygiene",
+   "ts": "2026-11-12T08:53:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T08:55:16-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(hooks): workflowRoleVerdict refuses the project-manager role key by name",
+   "ts": "2026-11-12T08:59:59-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/hooks/register.ts",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-85' into truss-hygiene",
+   "ts": "2026-11-12T09:07:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T08:53:59-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "chore(truss): price the Claude 5.5 family in the repo pricing config",
+   "ts": "2026-11-12T08:54:49-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": ".claude/truss.json",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-84' into truss-hygiene",
+   "ts": "2026-11-12T09:07:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T09:00:14-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(hygiene): fix drifted line citations, name their symbols",
+   "ts": "2026-11-12T09:06:06-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 4,
+     "deleted": 4
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 14,
+     "deleted": 14
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-86' into truss-hygiene",
+   "ts": "2026-11-12T09:07:29-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T12:08:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): hygiene learned",
+   "ts": "2026-11-12T12:09:35-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 5,
+     "deleted": 5
+    },
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 9,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_56a25180-566-5' into truss-hygiene",
+   "ts": "2026-11-12T12:09:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T09:30:31-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(hygiene): cut the inbox file to a third and run the load case in waves",
+   "ts": "2026-11-12T09:48:29-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/hygiene-029.check.ts",
+     "added": 14,
+     "deleted": 5
+    },
+    {
+     "path": "plugins/truss/tests/inbox.check.ts",
+     "added": 3,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-105' into truss-hygiene",
+   "ts": "2026-11-12T21:48:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge main (0.29.0) into truss-hygiene",
+   "ts": "2026-11-12T21:49:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T22:38:45-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): hygiene learned",
+   "ts": "2026-11-12T22:39:33-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 2
+    },
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3b27bb33-3d2-4' into truss-hygiene",
+   "ts": "2026-11-12T22:39:46-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T23:30:42-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): red cases for stale Haiku pricing text and retro inbox.ts citations",
+   "ts": "2026-11-12T23:31:17-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/hygiene-029.check.ts",
+     "added": 26,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3b27bb33-3d2-13' into truss-hygiene",
+   "ts": "2026-11-12T23:31:46-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-12T23:32:02-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): hygiene QC findings, product-decisions Haiku pricing text and retro citations",
+   "ts": "2026-11-12T23:32:41-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/skills/retro/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3b27bb33-3d2-17' into truss-hygiene",
+   "ts": "2026-11-12T23:33:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-hygiene",
+   "ts": "2026-11-13T00:25:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): hygiene learned",
+   "ts": "2026-11-13T00:26:19-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3b27bb33-3d2-25' into truss-hygiene",
+   "ts": "2026-11-13T00:26:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): hygiene learned",
+   "ts": "2026-11-13T01:07:44-05:00",
+   "trailers": [
+    "Truss-Crew: hygiene",
+    "Truss-Role: writer"
+   ],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3b27bb33-3d2-31' into truss-hygiene",
+   "ts": "2026-11-13T01:08:00-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "Merge main into truss-factory-gaps",
+   "ts": "2026-11-13T02:57:55-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: resolver"
+   ],
+   "files": []
+  },
+  {
+   "subject": "merge truss-factory-gaps",
+   "ts": "2026-11-13T03:17:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): factory-gaps learned",
+   "ts": "2026-11-13T03:18:12-05:00",
+   "trailers": [
+    "Truss-Crew: factory-gaps",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 5
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_a826af85-426-8' into truss-factory-gaps",
+   "ts": "2026-11-13T03:18:26-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): red tests for run-lifecycle (goal-check, second run, session scripts dir)",
+   "ts": "2026-11-13T01:01:23-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/lifecycle-029.check.ts",
+     "added": 216,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-5' into truss-run-lifecycle",
+   "ts": "2026-11-13T01:01:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T01:02:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): factory goal-check runs goalCheck at the target head in a temp worktree",
+   "ts": "2026-11-13T01:09:59-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 6,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 38,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-9' into truss-run-lifecycle",
+   "ts": "2026-11-13T01:10:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T01:10:39-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): archive a finished run's plan on plan-write; default scriptPath to the session scripts dir",
+   "ts": "2026-11-13T01:16:46-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 28,
+     "deleted": 10
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-13' into truss-run-lifecycle",
+   "ts": "2026-11-13T01:17:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T01:17:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): run skill, architecture and feature map for goal-check, second run and session scripts dir",
+   "ts": "2026-11-13T01:26:31-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 17,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 13,
+     "deleted": 10
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 7,
+     "deleted": 5
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-16' into truss-run-lifecycle",
+   "ts": "2026-11-13T01:27:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T01:35:59-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(lifecycle-029): pin plugin.json and CHANGELOG at 0.29.0",
+   "ts": "2026-11-13T01:36:37-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/lifecycle-029.check.ts",
+     "added": 9,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-23' into truss-run-lifecycle",
+   "ts": "2026-11-13T01:36:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T02:56:09-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": []
+  },
+  {
+   "subject": "fix(plan-write): refuse a plan approved while it waited for the plan lock",
+   "ts": "2026-11-13T02:57:04-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 9,
+     "deleted": 6
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_96b390a2-482-41' into truss-run-lifecycle",
+   "ts": "2026-11-13T02:57:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T03:38:36-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): plan-write case follows the approved archive contract",
+   "ts": "2026-11-13T03:53:24-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/factory.check.ts",
+     "added": 12,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7cf964d9-cf4-4' into truss-run-lifecycle",
+   "ts": "2026-11-13T03:53:35-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T05:04:14-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test: gates-026 plan-lock case no longer depends on how long the child takes",
+   "ts": "2026-11-13T05:07:56-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/gates-026-regress.check.ts",
+     "added": 4,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7cf964d9-cf4-19' into truss-run-lifecycle",
+   "ts": "2026-11-13T05:08:15-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T06:02:43-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): run-lifecycle learned",
+   "ts": "2026-11-13T06:03:21-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 4,
+     "deleted": 3
+    },
+    {
+     "path": "docs/features.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/testing.md",
+     "added": 21,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 3,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-5' into truss-run-lifecycle",
+   "ts": "2026-11-13T06:03:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T06:17:43-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): run-lifecycle learned",
+   "ts": "2026-11-13T06:18:02-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 3
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-10' into truss-run-lifecycle",
+   "ts": "2026-11-13T06:18:10-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T06:54:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(run-lifecycle): plan-write must refuse while a crew of the earlier plan is planned",
+   "ts": "2026-11-13T06:55:00-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/lifecycle-029.check.ts",
+     "added": 17,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-18' into truss-run-lifecycle",
+   "ts": "2026-11-13T06:55:11-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T06:55:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(plan-write): refuse while a crew of the earlier plan is planned, not only running",
+   "ts": "2026-11-13T06:58:34-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-21' into truss-run-lifecycle",
+   "ts": "2026-11-13T06:58:53-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T07:19:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): run-lifecycle learned",
+   "ts": "2026-11-13T07:19:39-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/features.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-27' into truss-run-lifecycle",
+   "ts": "2026-11-13T07:19:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T07:46:43-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(run-lifecycle): deterministic plan-lock test, unpin version case",
+   "ts": "2026-11-13T07:53:29-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 10,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/tests/gates-026-regress.check.ts",
+     "added": 12,
+     "deleted": 7
+    },
+    {
+     "path": "plugins/truss/tests/lifecycle-029.check.ts",
+     "added": 4,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_f1120b00-f56-34' into truss-run-lifecycle",
+   "ts": "2026-11-13T07:53:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T08:18:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): run-lifecycle learned",
+   "ts": "2026-11-13T08:18:44-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/testing.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_28fbfd02-7ec-4' into truss-run-lifecycle",
+   "ts": "2026-11-13T08:18:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T09:28:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): run-lifecycle learned",
+   "ts": "2026-11-13T09:28:26-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/testing.md",
+     "added": 5,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_a005de99-31d-4' into truss-run-lifecycle",
+   "ts": "2026-11-13T09:28:37-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-run-lifecycle",
+   "ts": "2026-11-13T09:49:05-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(factory): goal-check git calls run with core.quotepath=off",
+   "ts": "2026-11-13T09:49:24-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 3,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "docs(adr): ADR-0009 states the plan-write archive rule and the session scripts dir default",
+   "ts": "2026-11-13T09:53:54-05:00",
+   "trailers": [
+    "Truss-Crew: run-lifecycle",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0009-workflow-factory.md",
+     "added": 5,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_a005de99-31d-9' into truss-run-lifecycle",
+   "ts": "2026-11-13T09:54:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): R-86 factory-CLI cases for crew decisions reaching the PM inbox",
+   "ts": "2026-11-12T07:46:22-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 95,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-23' into truss-crew-decisions",
+   "ts": "2026-11-12T07:51:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T08:07:39-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): stage.js cases for escalated crew product calls, red first",
+   "ts": "2026-11-12T08:10:16-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 209,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-40' into truss-crew-decisions",
+   "ts": "2026-11-12T08:12:18-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T08:17:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): pm-question inbox kind; status line carries checkpoint",
+   "ts": "2026-11-12T08:20:53-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/bin/inbox.ts",
+     "added": 1,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_faad254e-8e2-59' into truss-crew-decisions",
+   "ts": "2026-11-12T08:49:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T11:28:10-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T08:21:09-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "feat(truss): stage product calls reach the inbox and the asking task waits (R-86)",
+   "ts": "2026-11-12T08:32:55-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 117,
+     "deleted": 10
+    }
+   ]
+  },
+  {
+   "subject": "merge worktree-wf_faad254e-8e2-60",
+   "ts": "2026-11-12T11:28:12-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): make the crew-call inbox ref unique per run",
+   "ts": "2026-11-12T11:32:27-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 17,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3ac94d9e-55b-3' into truss-crew-decisions",
+   "ts": "2026-11-12T11:33:06-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T11:33:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): ADR-0046 crew decisions reach the program manager",
+   "ts": "2026-11-12T11:37:53-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/adr/0046-crew-decisions-reach-pm.md",
+     "added": 95,
+     "deleted": 0
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_3ac94d9e-55b-8' into truss-crew-decisions",
+   "ts": "2026-11-12T11:38:41-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T13:44:31-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test: script the inbox and escalate runner calls in the stage stubs",
+   "ts": "2026-11-12T13:48:36-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/stage-fixes2.check.ts",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/tests/workflows.check.ts",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-7' into truss-crew-decisions",
+   "ts": "2026-11-12T13:49:01-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T14:00:50-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): repoint stage.js citations after crew-decisions edits",
+   "ts": "2026-11-12T14:01:08-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 3,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-19' into truss-crew-decisions",
+   "ts": "2026-11-12T14:01:31-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T14:22:48-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(gates-026): script the inbox runner call in the stage stub",
+   "ts": "2026-11-12T14:22:56-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/gates-026.check.ts",
+     "added": 1,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-29' into truss-crew-decisions",
+   "ts": "2026-11-12T14:23:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T14:54:02-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-12T14:55:01-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "docs/features.md",
+     "added": 7,
+     "deleted": 0
+    },
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 16,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-37' into truss-crew-decisions",
+   "ts": "2026-11-12T14:55:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T15:17:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): knowledge writer and fix members read the resolved PM item on a resume",
+   "ts": "2026-11-12T15:18:45-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 8,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-46' into truss-crew-decisions",
+   "ts": "2026-11-12T15:19:11-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T15:42:41-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): stale stage.js citations and inbox runner in stage-briefs harness",
+   "ts": "2026-11-12T15:56:02-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/tests/stage-briefs.check.ts",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_9c1b365f-5a9-53' into truss-crew-decisions",
+   "ts": "2026-11-12T15:56:31-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-12T16:39:11-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_dbe5c2b7-241-4' into truss-crew-decisions",
+   "ts": "2026-11-12T16:39:34-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T16:55:17-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): log each program-manager answer once per inbox item, not once per task",
+   "ts": "2026-11-12T16:56:55-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 6,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_dbe5c2b7-241-13' into truss-crew-decisions",
+   "ts": "2026-11-12T16:57:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T17:07:26-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): re-point stage.js line citations after crew-decisions edits",
+   "ts": "2026-11-12T17:07:38-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_dbe5c2b7-241-20' into truss-crew-decisions",
+   "ts": "2026-11-12T17:07:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T17:47:25-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(decide): crew-call logging keyed by inbox item id, used call cleared, unbound client note refused; re-stamp knowledge",
+   "ts": "2026-11-12T17:49:43-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 4,
+     "deleted": 4
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0046-crew-decisions-reach-pm.md",
+     "added": 3,
+     "deleted": 3
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 8,
+     "deleted": 6
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_dbe5c2b7-241-36' into truss-crew-decisions",
+   "ts": "2026-11-12T17:50:14-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T17:59:39-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): architecture.md cites stage.js:2167 for the qc longTermCosts line",
+   "ts": "2026-11-12T17:59:49-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_dbe5c2b7-241-43' into truss-crew-decisions",
+   "ts": "2026-11-12T18:00:12-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge main (0.29.0) into truss-crew-decisions",
+   "ts": "2026-11-12T21:50:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(pm-calls-029): route the stage stub through gatesAware for the 0.29.0 gates runner call",
+   "ts": "2026-11-12T21:56:03-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 3,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T23:16:01-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): regression cases for stale client answer and awaiting text on resume (failing on purpose)",
+   "ts": "2026-11-12T23:17:12-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 40,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-6' into truss-crew-decisions",
+   "ts": "2026-11-12T23:17:38-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T23:17:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): resume keeps the newer call row and a held fix step names the program manager (ADR-0047)",
+   "ts": "2026-11-12T23:18:52-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 11,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-10' into truss-crew-decisions",
+   "ts": "2026-11-12T23:19:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-12T23:53:42-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): cite qc and ltcLinesOf by symbol, not line",
+   "ts": "2026-11-12T23:54:01-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-19' into truss-crew-decisions",
+   "ts": "2026-11-12T23:54:16-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T00:25:08-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T00:26:38-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/agents/truss-workflow-scripts.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 11,
+     "deleted": 6
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md",
+     "added": 19,
+     "deleted": 17
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-24' into truss-crew-decisions",
+   "ts": "2026-11-13T00:27:00-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T00:56:59-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-29' into truss-crew-decisions",
+   "ts": "2026-11-13T00:57:16-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T01:17:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(truss): re-point the resume sync citations in architecture.md",
+   "ts": "2026-11-13T01:18:07-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-34' into truss-crew-decisions",
+   "ts": "2026-11-13T01:18:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T01:35:25-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T01:35:40-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 3
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_7f17c309-011-40' into truss-crew-decisions",
+   "ts": "2026-11-13T01:35:51-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T02:10:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(truss): approvedAt reaches args.truss and makes the crew-call ref per-run (red first)",
+   "ts": "2026-11-13T02:11:52-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 46,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-5' into truss-crew-decisions",
+   "ts": "2026-11-13T02:12:07-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T02:12:21-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(truss): factory start passes plan approvedAt to stage.js args",
+   "ts": "2026-11-13T02:14:57-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/bin/factory.ts",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-8' into truss-crew-decisions",
+   "ts": "2026-11-13T02:15:13-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T02:57:33-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-14' into truss-crew-decisions",
+   "ts": "2026-11-13T02:57:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T03:31:38-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(retro): re-point typedText and OUTPUT_TAG line citations after the inbox.ts line shift",
+   "ts": "2026-11-13T03:32:00-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/skills/retro/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-25' into truss-crew-decisions",
+   "ts": "2026-11-13T03:32:11-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T04:07:19-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(crew-decisions): regression for an inbox item resolved with no note stopping the crew on every resume",
+   "ts": "2026-11-13T04:07:52-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 21,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-32' into truss-crew-decisions",
+   "ts": "2026-11-13T04:08:02-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T04:08:16-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(stage): an inbox item resolved with no note no longer stops the crew once the resume answers the task",
+   "ts": "2026-11-13T04:08:56-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 2,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-35' into truss-crew-decisions",
+   "ts": "2026-11-13T04:09:15-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T04:33:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T04:34:39-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/docs/architecture.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_e68d1e65-9fa-41' into truss-crew-decisions",
+   "ts": "2026-11-13T04:34:54-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T06:00:09-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(crew-decisions): regression for a used inbox answer reaching a later fix member",
+   "ts": "2026-11-13T06:00:34-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 17,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_36987d7d-06d-6' into truss-crew-decisions",
+   "ts": "2026-11-13T06:00:52-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T06:01:00-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(stage): an inbox item the crew already used answers no later fix or writer member",
+   "ts": "2026-11-13T06:02:15-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 9,
+     "deleted": 4
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_36987d7d-06d-10' into truss-crew-decisions",
+   "ts": "2026-11-13T06:02:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T06:22:49-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T06:23:11-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 2,
+     "deleted": 3
+    },
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_36987d7d-06d-15' into truss-crew-decisions",
+   "ts": "2026-11-13T06:23:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T06:43:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T06:44:10-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 2,
+     "deleted": 2
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_36987d7d-06d-20' into truss-crew-decisions",
+   "ts": "2026-11-13T06:44:20-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T07:29:10-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(crew-decisions): a long program manager answer must reach the member whole",
+   "ts": "2026-11-13T07:29:32-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/pm-calls-029.check.ts",
+     "added": 21,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-6' into truss-crew-decisions",
+   "ts": "2026-11-13T07:29:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T07:29:55-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(stage): a long program manager answer reaches the member whole",
+   "ts": "2026-11-13T07:30:10-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/workflows/stage.js",
+     "added": 2,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-9' into truss-crew-decisions",
+   "ts": "2026-11-13T07:30:17-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T07:39:39-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T07:40:04-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": ".claude/rules/plugin-tests.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/product-decisions.md",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "docs/knowledge/store.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-14' into truss-crew-decisions",
+   "ts": "2026-11-13T07:40:18-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T08:03:29-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "test(crew-decisions): regression cases for the inbox hold wording and run SKILL product-call paragraph",
+   "ts": "2026-11-13T08:05:10-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/tests/crew-decisions.check.ts",
+     "added": 21,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-20' into truss-crew-decisions",
+   "ts": "2026-11-13T08:05:23-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T08:05:35-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(docs): inbox hold wording and run skill product-call paragraph agree with the code",
+   "ts": "2026-11-13T08:07:34-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 2,
+     "deleted": 2
+    },
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-23' into truss-crew-decisions",
+   "ts": "2026-11-13T08:17:49-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T08:43:48-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(run skill): name the escalate reasons so the prose check passes",
+   "ts": "2026-11-13T08:45:13-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: builder"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-28' into truss-crew-decisions",
+   "ts": "2026-11-13T08:45:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T09:05:35-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T09:05:54-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "docs/knowledge/inbox.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-33' into truss-crew-decisions",
+   "ts": "2026-11-13T09:06:04-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T09:39:24-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "fix(run skill): pm-question is answered by resolve --by pm, not an answers resume",
+   "ts": "2026-11-13T09:39:35-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: test-writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-40' into truss-crew-decisions",
+   "ts": "2026-11-13T09:39:44-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "merge truss-crew-decisions",
+   "ts": "2026-11-13T09:48:46-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "docs(knowledge): crew-decisions learned",
+   "ts": "2026-11-13T09:49:04-05:00",
+   "trailers": [
+    "Truss-Crew: crew-decisions",
+    "Truss-Role: writer"
+   ],
+   "files": [
+    {
+     "path": "plugins/truss/skills/run/SKILL.md",
+     "added": 1,
+     "deleted": 1
+    }
+   ]
+  },
+  {
+   "subject": "Merge branch 'worktree-wf_54400430-894-48' into truss-crew-decisions",
+   "ts": "2026-11-13T09:49:15-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "Merge branch 'truss-crew-decisions'",
+   "ts": "2026-11-13T10:03:26-05:00",
+   "trailers": [],
+   "files": []
+  },
+  {
+   "subject": "release: truss 0.30.0",
+   "ts": "2026-11-13T10:03:49-05:00",
+   "trailers": [],
+   "files": [
+    {
+     "path": "plugins/truss/.claude-plugin/plugin.json",
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "path": "plugins/truss/CHANGELOG.md",
+     "added": 13,
+     "deleted": 0
+    }
+   ]
+  },
+  {
+   "subject": "Merge pull request #19 from Abhiramperson/release-0.30.0",
+   "ts": "2026-11-13T10:16:14-05:00",
+   "trailers": [],
+   "files": []
+  }
+ ],
+ "sizes": {
+  "plugins/truss/docs/requirements.md": 812,
+  "plugins/truss/tests/approve-029.check.ts": 195,
+  "plugins/truss/tests/factory.check.ts": 1194,
+  "plugins/truss/tests/ltc-guard.check.ts": 391,
+  "plugins/truss/tests/trust-026.check.ts": 1011,
+  "plugins/truss/tests/wiring-025.check.ts": 371,
+  "plugins/truss/bin/factory.ts": 4450,
+  "plugins/truss/bin/inbox.ts": 695,
+  "plugins/truss/docs/adr/0045-approve-proof.md": 51,
+  "plugins/truss/docs/architecture.md": 1545,
+  "plugins/truss/skills/inbox/SKILL.md": 47,
+  "plugins/truss/skills/run/SKILL.md": 609,
+  "docs/knowledge/store.md": 92,
+  ".claude/rules/plugin-tests.md": 40,
+  "docs/features.md": 207,
+  "plugins/truss/docs/adr/0046-factory-throughput.md": 121,
+  "plugins/truss/tests/throughput-029.check.ts": 335,
+  ".claude/truss.json": 20,
+  "plugins/truss/bin/cost.ts": 419,
+  "plugins/truss/docs/adr/0038-cost-budgets-and-ledger.md": 187,
+  "plugins/truss/docs/truss-config.schema.json": 277,
+  "plugins/truss/skills/init/SKILL.md": 178,
+  "plugins/truss/agents/project-manager.md": 242,
+  "plugins/truss/docs/adr/0015-resource-aware.md": 302,
+  "plugins/truss/docs/adr/0033-crew-knowledge-and-product-calls.md": 128,
+  "plugins/truss/tests/crew-knowledge.check.ts": 926,
+  "plugins/truss/tests/stage-resources-contract.check.ts": 343,
+  "plugins/truss/tests/stage-resources.check.ts": 393,
+  "plugins/truss/tests/throughput-029-stage.check.ts": 511,
+  "plugins/truss/workflows/stage.js": 2700,
+  "plugins/truss/resources/index.ts": 224,
+  "plugins/truss/tests/factory-resources-contract.check.ts": 393,
+  "plugins/truss/tests/factory-resources.check.ts": 287,
+  "plugins/truss/README.md": 352,
+  "plugins/truss/docs/adr/0017-member-heavy-commands.md": 113,
+  "plugins/truss/tests/workflows.check.ts": 1595,
+  "plugins/truss/tests/knowledge-lint.check.ts": 927,
+  "plugins/truss/tests/knowledge-scope.check.ts": 371,
+  "plugins/truss/agents/planning-engineer.md": 53,
+  "plugins/truss/agents/qc-engineer.md": 113,
+  "plugins/truss/agents/writer.md": 97,
+  "plugins/truss/tests/crew-knowledge-prose.check.ts": 212,
+  "plugins/truss/tests/diff-hygiene.check.ts": 131,
+  "plugins/truss/tests/compose-runtime-contract.check.ts": 430,
+  "plugins/truss/tests/compose-runtime.check.ts": 333,
+  "plugins/truss/tests/factory-retro.check.ts": 517,
+  "plugins/truss/tests/fixes-026.check.ts": 488,
+  "plugins/truss/tests/fixtures/gates-stub.ts": 150,
+  "plugins/truss/tests/gates-026.check.ts": 810,
+  "plugins/truss/tests/harness-banner.check.ts": 246,
+  "plugins/truss/tests/knowledge-stage.check.ts": 652,
+  "plugins/truss/tests/personas-routing.check.ts": 412,
+  "plugins/truss/tests/retro-fixes2-stage.check.ts": 416,
+  "plugins/truss/tests/stage-briefs.check.ts": 313,
+  "plugins/truss/tests/stage-factory-cli.check.ts": 208,
+  "plugins/truss/tests/stage-fixes2.check.ts": 641,
+  "plugins/truss/tests/stage-fixes3.check.ts": 541,
+  "plugins/truss/tests/stage-fixes5.check.ts": 371,
+  "plugins/truss/tests/ux-runtime.check.ts": 630,
+  "plugins/truss/.claude-plugin/plugin.json": 17,
+  "plugins/truss/CHANGELOG.md": 543,
+  "plugins/truss/tests/gaps-029.check.ts": 263,
+  "plugins/truss/tests/resume-029.check.ts": 362,
+  "plugins/truss/bin/store.ts": 607,
+  "docs/knowledge/product-decisions.md": 57,
+  "plugins/truss/tests/factory-fixes4-resume.check.ts": 266,
+  "plugins/truss/docs/adr/0048-resume-guard.md": 35,
+  "plugins/truss/tests/hygiene-029.check.ts": 149,
+  "plugins/truss/tests/release-026.check.ts": 272,
+  "plugins/truss/tests/inbox.check.ts": 902,
+  "plugins/truss/skills/retro/SKILL.md": 114,
+  "plugins/truss/tests/lifecycle-029.check.ts": 244,
+  "plugins/truss/tests/gates-026-regress.check.ts": 281,
+  "docs/knowledge/testing.md": 25,
+  "plugins/truss/docs/adr/0009-workflow-factory.md": 463,
+  "plugins/truss/tests/pm-calls-029.check.ts": 448,
+  "docs/knowledge/inbox.md": 21,
+  ".claude/agents/truss-workflow-scripts.md": 28,
+  "plugins/truss/docs/adr/0047-crew-decisions-reach-pm.md": 97,
+  "plugins/truss/tests/crew-decisions.check.ts": 366
+ }
+}
