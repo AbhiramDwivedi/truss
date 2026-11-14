@@ -3,7 +3,7 @@ sources:
   - plugins/truss/tests/factory-split-031.check.ts
   - plugins/truss/bin/factory/runs.ts
   - plugins/truss/bin/factory.ts
-verified: 8e1f813b3a6e97d2ae00d29adbce38a879131b76
+verified: ec7039be658dac848206fb3185ad3a37215a7d3c
 ---
 
 ## Factory module list

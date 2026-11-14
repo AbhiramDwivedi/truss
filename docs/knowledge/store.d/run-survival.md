@@ -2,7 +2,7 @@
 sources:
   - plugins/truss/bin/factory/runs.ts
   - plugins/truss/bin/factory/start.ts
-verified: ca77739a96b69f9aba4c808d7bd5d3040e992369
+verified: ec7039be658dac848206fb3185ad3a37215a7d3c
 ---
 
 ## Finding a run another session left
@@ -20,3 +20,5 @@ Two `start` processes can run on one plan, for example two PM sessions that resu
 The claim sits after every refusal, hold and admission check, so those keep their order. It applies to the direct path (solo and lean crews) and the workflow path alike. A crew that is `merged` or `dropped` is never `planned`, so it is never claimed. If creating the worktree fails, the claim is handed back (`running` to `planned`) before the error is thrown, so a failed start leaves the crew startable.
 
 The claim does not re-check the parallel cap under the lock. Each process counts the running crews it read at the start of the call, so two processes can together exceed `maxParallelCrews` by up to one stage's worth. A later `admit` still sees the real running count.
+
+A start killed after the claim leaves a `running` crew nobody runs. `reclaimOrphans` in `start.ts` sets it back to `planned` at the top of a `start` that has neither `--resume` nor `--slug` (`start --slug` on a running crew stays a no-op). It takes a workflow crew with no `spawn` event, and a direct crew (no spawn event ever) with no crew worktree, when the claim's owner pid is dead or absent. ADR-0052 holds the detail.
