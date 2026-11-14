@@ -11,7 +11,8 @@ sources:
   - plugins/truss/bin/fragments.ts
   - plugins/truss/bin/factory.ts
   - plugins/truss/workflows-src/stage/check.js
-verified: b1bd38736ee9eebb0d7b79a787c40451a14c6886
+  - plugins/truss/tests/heavy-slots-fullcheck-032.check.ts
+verified: f353aa2924bc02e36eff7ae30c2162ff92e3de90
 ---
 
 ## Heavy job seams (0.32.0)
@@ -22,6 +23,7 @@ verified: b1bd38736ee9eebb0d7b79a787c40451a14c6886
 - Test the `until` takeover without waiting for a run limit: plant `D/resources/heavy.lock/owner.json` whose `pid` is a live detached sleeper and whose `until` is `Date.now() + 1500`, then run `heavy` and wait on the sleeper's `exit` event ("a second real check process takes the slot a hung real job held once the limit passes"). Wait on a real signal, never a fixed sleep.
 - A `node:test` `{ timeout }` cannot interrupt a case blocked in `runCli` (`spawnSync`). Bound such a case with the command's own wait and attach env (`TRUSS_HEAVY_WAIT_MS`, `TRUSS_HEAVY_ATTACH_MS`) so a red run fails fast, and kill any real sleeper the case spawned in a `finally` block (`heavy-slots-032.check.ts` cases 4 and 5).
 - A real-CLI heavy test uses `mkEnv({useRealPlugin:true})`, scrubs `GIT_*` and `NODE_TEST_CONTEXT` from the env, and sets `TRUSS_HEAVY_ATTACH_MS`, `TRUSS_HEAVY_WAIT_MS` and `TRUSS_HEAVY_RUN_MS` (`heavy-slots-stress-032.check.ts` `world`, `cleanEnv`). The `heavy-031.check.ts` case "a heavy run longer than the attach budget..." asserts the slot lock exists 300 ms after the caller returns, so a loaded host can fail it; re-run it alone before suspecting a code change.
+- A test that drives `factory check` through `factory heavy` passes `--expect green` (or `red`) with `--full`, or the check exits 2 with `missing --expect` before it runs the suite (`heavy-slots-fullcheck-032.check.ts` `world`).
 - A stage-bundle behavior can be a standalone `.check.ts` that drives `loadStageBundle` with a `gatesAware` stub agent and parses runner prompts for `factory.ts <cmd>` (`heavy-slots-stress-stage-032.check.ts` `drive`, `parseRunner`).
 - A doc fragment starts with its shallowest heading: `fragmentSections` (`bin/fragments.ts`) drops text before the first shallowest heading, so a `###` section placed first is lost. Put a `###` under a `##` that comes first.
 - A file named `*.cases.ts` holds tests that one `*.check.ts` imports for its side effect (`import './heavy-slots-stage-032.cases.ts'`), so the case titles run under that check and the acceptance test can match them. The default suite globs only `*.check.ts`, so the cases run once.
