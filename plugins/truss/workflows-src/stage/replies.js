@@ -35,11 +35,11 @@ const holdStop = (row, question, branch, at) =>
 // already resolved). When no item can be opened the question stops the crew as a QUESTION, the old path, never a faked wait.
 async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
   const ref = callRef(crew, at)
-  const question = oneLine(report.text)
+  const question = multiLine(report.text, 2000)
   let id = null
   let failed = ''
   try {
-    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${question} The product owner's reason: ${why}`, 3000))}`, 'id')
+    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${oneLine(question)} The product owner's reason: ${why}`, 3000))}`, 'id')
     if (r.parsed && typeof r.parsed.id === 'string' && r.parsed.id !== '') id = r.parsed.id
     else failed = clip(r.out, 200)
   } catch (err) {
@@ -63,7 +63,7 @@ async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
 // note holds no answer, so the question stops the crew as a QUESTION.
 async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
   // the cap is resolve's own (inbox.ts resolveItem keeps 4000), so no stored answer reaches the member cut short
-  const note = oneLine(row.note, 4000)
+  const note = multiLine(row.note, 4000)
   if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
   // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
   if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
@@ -217,13 +217,13 @@ async function applyReplies(crew) {
         await ackReply(crew, d.id)
         continue
       }
-      const note = oneLine(x.note, 800) || 'no note given'
+      const note = multiLine(x.note, 800) || 'no note given'
       if (!(await d.rerun(`Main session changed product call ${d.id}: ${note}`))) continue
       d.reply = 'change'
       d.note = note
       d.answer = note
       const k = crew.learned.indexOf(d.item)
-      d.item = { kind: 'product', text: `${d.question} -> ${note} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
+      d.item = { kind: 'product', text: `${d.question} -> ${oneLine(note)} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
       if (k >= 0) crew.learned[k] = d.item
       else crew.learned.push(d.item)
       // review 3: acked right after its own rerun integrated, so a Stop on a later change leaves this one acked and a resume does not reapply it

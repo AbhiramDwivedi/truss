@@ -589,63 +589,63 @@ Source: client
 Example: Given two crews in one stage whose owns both list skills/run/SKILL.md, when plan-check runs, then it reports no overlap error; both crews build at the same time in their own worktrees; on the program manager's go-ahead the first merges to the target, and the second, on its go-ahead, merges the latest target into its branch, resolves conflicts, reruns its checks and QC, then merges to the target.
 
 ## R-85: An agent cannot approve a plan or goal as the client
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan with approval client, when an agent runs `factory approve --by client` without the typed-prompt proof `/truss:inbox` resolve requires (ADR-0037), then the factory refuses and approvedAt stays null; with a genuine typed client prompt it approves; and the run skill tells the program manager never to call a client-only command.
 
 ## R-86: A crew decision that needs the program manager reaches the program manager's inbox and waits
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a running crew whose product owner escalates a call that needs the program manager, when the crew posts it, then an item appears in the program manager's inbox and the asking task waits for the reply instead of counting the call as accepted.
 
 ## R-87: plan-write writes the full plan on every path
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan.js result whose designer hand-back holds a full plan.json and plan.md, when plan-write runs on the path that wrote a stub in wave 3, then plan.json and plan.md on disk hold every crew of the hand-back.
 
 ## R-88: A bare-directory owns entry matches the files under it
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose owns lists `plugins/truss/bin/`, when owns-check or globToRegExp tests `plugins/truss/bin/factory.ts`, then it matches, as `plugins/truss/bin/**` would; and plan-check warns on the bare-directory entry.
 
 ## R-89: Only one finisher runs per crew
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose resumed agent is still finishing, when the program manager runs finish or a resume for the same crew, then the second is refused by a lock or state check and no duplicate finisher starts; once the first ends, a later finish runs.
 
 ## R-90: A resume merges the target into the crew branch before the crew restarts
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew branch cut from main at A, and another crew merged to main at B, when the program manager resumes the crew, then the crew branch contains B before any resumed member starts, and a conflict goes to a resolver, never a silent drop.
 
 ## R-91: Every factory command accepts or refuses a relative --dir the same way
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given any factory command run with a relative `--dir`, when it starts, then it either resolves the path against the cwd or refuses with a message naming --dir, never writing to a wrong directory.
 
 ## R-92: Stage green installs ui dependencies when they are missing
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew worktree whose ui/node_modules is missing, when the stage green check runs, then it runs `npm --prefix ui ci` first and the ui checks run instead of failing on missing modules.
 
 ## R-93: The goal check has a factory command
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
@@ -658,7 +658,7 @@ Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-95: A second run in one session dir has a supported start
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
@@ -672,13 +672,13 @@ Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-97: Docs cite code by symbol, or the release check tolerates line drift, and the wrong citations on main are fixed
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-98: factory cost prices the Claude 5.5 family
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal

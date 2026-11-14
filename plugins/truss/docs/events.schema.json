@@ -27,7 +27,7 @@
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true,
           "id": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
-          "kind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage"] },
+          "kind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage", "pm-question"] },
           "blocking": { "type": "boolean" }
         }
       }
