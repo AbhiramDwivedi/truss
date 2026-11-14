@@ -110,7 +110,7 @@ No module is a stub any more: all six are implemented (the `worktypes.ts` header
 
 ## Finding a run another session left
 
-`factory.ts find-run --repo R` lists the runs an earlier PM session left unfinished (`cmdFindRun` in `bin/factory/runs.ts`). It reads `<git common dir>/truss/<name>/plan.json` one level deep, so it sees the dirs of every session of the repo, not only the caller's. There is no pointer file: the plan files are the index. A run is listed when its plan parses as a plan, its `approvedAt` is not null, and at least one crew is neither `merged` nor `dropped`. A dir with no plan, a broken plan or a file that is not a plan is skipped, never an error.
+`factory.ts find-run --repo R` lists the runs an earlier program manager (PM) session left unfinished (`cmdFindRun` in `bin/factory/runs.ts`). It reads `<git common dir>/truss/<name>/plan.json` one level deep, so it sees the dirs of every session of the repo, not only the caller's. There is no pointer file: the plan files are the index. A run is listed when its plan parses as a plan, its `approvedAt` is not null, and at least one crew is neither `merged` nor `dropped`. A dir with no plan, a broken plan or a file that is not a plan is skipped, never an error.
 
 Each run is `{dir, session, approvedAt, transcript, crews}`, newest `approvedAt` first. `session` is the last segment of `dir`. `transcript` is the main transcript from `transcriptsOf(session)`, or null. `crews` holds only the unfinished crews, each as `{slug, status, stage, results}`, where `results` is the sorted list of files directly under `<dir>/reports/<slug>/` and `<dir>/crews/<slug>/`. The command only reads: it takes no lock and writes nothing, so it is safe next to a live run.
 
