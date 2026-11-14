@@ -382,7 +382,10 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   let answers: unknown[] = []
   if (kind === 'answers') {
     const a = readJson(need(f, 'answers'))
-    if (!Array.isArray(a) || !a.every((x) => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string')) throw usage('--answers must be a JSON array of {"at","text"}')
+    if (!Array.isArray(a) || !a.every((x) => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string')) throw usage('--answers must be a JSON array of {"at","text"} (and an optional "role")')
+    // 0.32.0: an answer ordering a test change carries "role": "tester", so a test-writer builds it before the stopped task reruns
+    const bad = a.find((x) => isObj(x) && x.role !== undefined && x.role !== 'tester')
+    if (bad !== undefined) throw usage(`--answers: the answer at ${String((bad as Obj).at)} has role ${JSON.stringify((bad as Obj).role)}; role must be "tester" or absent`)
     answers = a
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
@@ -481,13 +484,13 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
 
 // 0.29.0 item 5: the crew's answers store, <dir>/crews/<slug>/answers.json. Each row is one ruling {at, text} plus `after`, the
 // id of the crew's newest Workflow run when the ruling was given (null when the resume had no runs), and `ts`.
-type Answer = { at: string; text: string }
+type Answer = { at: string; text: string; role?: 'tester' }
 type StoredAnswer = Answer & { after: string | null; ts: string }
 const ANSWERS_FILE = (dir: string, slug: string): string => `${CREW_STATE(dir, slug)}/answers.json`
-const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text
+const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text && a.role === b.role
 function storedAnswers(dir: string, slug: string): StoredAnswer[] {
   const v = readQuiet(ANSWERS_FILE(dir, slug))
-  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
+  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, ...(x.role === 'tester' ? { role: 'tester' as const } : {}), after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
 }
 
 // The answers a resume hands stage.js: the new ones first, then each stored one that is still unbuilt and not repeated. A stored
@@ -496,7 +499,7 @@ function storedAnswers(dir: string, slug: string): StoredAnswer[] {
 // stress or UX step) is a standing ruling and always rides along. When `after` names no run of the crew, the answer counts as
 // unbuilt: carrying a ruling twice costs one rerun, losing one costs a QC round.
 function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[], from: number, wt: string, target: string, rebuild: boolean): Answer[] {
-  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text }))
+  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) }))
   const taskNames = new Set(rebuild ? plannerTasks(runs, slug).tasks.filter(isObj).map((t: Obj) => String(t.name)) : [])
   const builtAfter = new Map<string, string[]>()
   for (const a of storedAnswers(dir, slug)) {
@@ -509,7 +512,7 @@ function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[
         if ((builtAfter.get(key) ?? []).includes(a.at)) continue
       }
     }
-    out.push({ at: a.at, text: a.text })
+    out.push({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) })
   }
   return out
 }
@@ -520,7 +523,7 @@ function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): 
   const old = storedAnswers(dir, slug)
   const newest = runs.length > 0 ? runs[runs.length - 1].id : null
   const now = new Date().toISOString()
-  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, after: newest, ts: now })
+  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}), after: newest, ts: now })
   if (rows.length === 0 && old.length === 0) return
   mkdirSync(CREW_STATE(dir, slug), { recursive: true })
   writeJsonAtomic(ANSWERS_FILE(dir, slug), rows)
