@@ -127,15 +127,34 @@ export const MKTEMP_PREFIX =
   'else command mktemp "$@"; fi; }; '
 
 // Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
-export function bashRun(cwd: string, command: string): { exit: number; text: string } {
+// group (a direct full-suite check, which holds the heavy slot itself): the suite runs as its own process group, recorded in
+// resources/groups with heavyPid = this process, so the `until` takeover (stopHolder in resources/index.ts) stops it with the owner.
+export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }): { exit: number; text: string } {
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
     // a check started under node --test (the plugin's own tests) must not hand NODE_TEST_CONTEXT to the tests it runs: a nested
     // node --test that sees it skips every file and exits 0
     const { NODE_TEST_CONTEXT: _, ...env } = process.env
-    const r = spawnSync('bash', ['-c', MKTEMP_PREFIX + command], { cwd, env, stdio: ['ignore', fd, fd] })
+    // under `factory heavy` the wrapper's own group already holds the suite and stops it on the run limit
+    const rec = group !== undefined && process.platform !== 'win32' && !process.env.TRUSS_HEAVY_JOB ? group : undefined
+    const gdir = rec ? `${rec.dir}/resources/groups` : ''
+    const body = rec ? JSON.stringify({ heavyPid: process.pid, label: rec.label, slug: rec.slug, since: Date.now() }).slice(1, -1) : ''
+    const q = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`
+    const record = rec ? `mkdir -p ${q(gdir)}; printf '{"pgid":%s,%s}' "$$" ${q(body)} > ${q(gdir)}/"$$".json; ` : ''
+    const r = spawnSync('bash', ['-c', record + MKTEMP_PREFIX + command], { cwd, env, stdio: ['ignore', fd, fd], ...(rec ? { detached: true } : {}) })
     closeSync(fd)
+    if (rec && r.pid) {
+      let alive = false
+      try {
+        process.kill(-r.pid, 0)
+        alive = true
+      } catch {
+        alive = false
+      }
+      // a member that outlived the suite keeps its record for the reap
+      if (!alive) rmSync(`${gdir}/${r.pid}.json`, { force: true })
+    }
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
     return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8') }
   } finally {
@@ -186,7 +205,7 @@ function suiteRun(f: Flags, dir: string, slug: string, cwd: string, command: str
   const t1 = Date.now()
   let r: { exit: number; text: string }
   try {
-    r = bashRun(cwd, command)
+    r = bashRun(cwd, command, { dir, label, slug })
   } finally {
     releaseHeavySlot(dir, a.token)
   }

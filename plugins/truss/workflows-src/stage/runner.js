@@ -47,9 +47,14 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   // before heavy's `--`), so it costs no runner spawn. A reap command itself never carries it.
   const fold = !!crew.reapDue && !/^reap\b/.test(String(command || ''))
   const rf = fold ? ` --reap-first ${sh(crew.slug)}` : ''
-  // the flag goes just before --dir, so --dir, --repo and --status-line stay last
-  const base = line ? (fold ? line.replace(/ --dir /, `${rf} --dir `) : line) : null
-  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
+  // R-142: the admission of the member that starts right after this call (crew.admitPlan, set by the step before it) rides on the
+  // call too (--admit-first), and its answer waits in crew.admitFirst for admit(). Any other runner call voids an earlier answer.
+  const plan = crew.admitPlan && !/^reap\b/.test(String(command || '')) ? crew.admitPlan : null
+  crew.admitFirst = null
+  const af = plan ? ` --admit-first ${sh(crew.slug)} --admit-label ${sh(plan.label)} --admit-title ${sh(plan.title)}${plan.persona ? ` --admit-persona ${sh(plan.persona)}` : ''}${plan.high ? ' --admit-high' : ''}` : ''
+  // the flags go just before --dir, so --dir, --repo and --status-line stay last
+  const base = line ? (rf || af ? line.replace(/ --dir /, `${rf}${af} --dir `) : line) : null
+  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf}${af} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
@@ -67,6 +72,12 @@ async function runFactory(crew, command, key, line = null, extra = null) {
     crew.reapDue = false
     const rr = fromStdout && fromStdout.reapedFirst
     if (isPlainObject(rr) && !Array.isArray(rr.reaped)) crew.proofs.push(`reap failed: ${typeof rr.error === 'string' ? rr.error : JSON.stringify(rr)}`)
+  }
+  // the admission answer, as admit() takes it: no answer (a factory without --admit-first) leaves the member its own admit call
+  const af1 = plan && fromStdout && isPlainObject(fromStdout.admittedFirst) ? fromStdout.admittedFirst : null
+  if (af1) {
+    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, noWait: true, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
+    crew.admitPlan = null
   }
   const status = statusOf(res.status)
   // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or

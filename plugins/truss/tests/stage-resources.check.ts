@@ -276,7 +276,7 @@ st('case: heavy ran false at red', async () => {
 })
 
 st('case: crew-end reap', async () => {
-  // a crew that stops at red spawns no member, and still reaps once when its chain ends
+  // a crew that stops at red spawns no member, so nothing is due and no reap runs alone (heavy-slots: the crew-end reap rides on the late-reply read)
   const red = await runStage([entry('a')], {
     labels: base('a'),
     runner: (p) => (checkExpect(p) === 'red' ? rj({ ok: false }, 1) : undefined),
@@ -285,10 +285,7 @@ st('case: crew-end reap', async () => {
   assert.equal(red.res[0].at, 'red')
   assert.equal(members(red.calls).length, 0, 'the crew stopped before any member')
   const reaps = runnersOf(red.calls, 'reap')
-  assert.equal(reaps.length, 1, `a crew that stops at red issues exactly one reap, got ${reaps.length}`)
-  assert.equal(reaps[0].runner.slug, 'a')
-  assert.equal(reaps[0].runner.label, 'a-check')
-  assert.match(reaps[0].runner.line, /factory\.ts\s+reap\s+--slug a --label a-check\b/)
+  assert.equal(reaps.length, 0, `a crew that stops at red issues no standalone reap, got ${reaps.length}`)
 
   // two crews: every admit and reap carries its own crew's slug
   const two = await runStage([entry('a'), entry('b')], { labels: { ...base('a'), ...base('b') } })
@@ -298,10 +295,10 @@ st('case: crew-end reap', async () => {
     const admits = runnersOf(two.calls, 'admit', slug)
     const reapsOf = runnersOf(two.calls, 'reap', slug)
     assert.equal(admits.length, mine.length, `crew ${slug}: one admit per member spawn`)
-    // ADR-0046 item 1: the reap after a member rides on the crew's next factory call; only the chain's end reaps alone
-    assert.equal(reapsOf.length, 1, `crew ${slug}: one standalone reap, at the chain's end`)
+    // ADR-0046 item 1 and heavy-slots: every reap, the crew-end one included, rides on the crew's next factory call
+    assert.equal(reapsOf.length, 0, `crew ${slug}: no standalone reap`)
     const folded = two.calls.filter((c) => c.runner && c.crew === slug && / --reap-first (\S+)/.test(c.runner.line))
-    assert.ok(folded.length >= mine.length - 1, `crew ${slug}: ${folded.length} folded reaps for ${mine.length} member spawns`)
+    assert.ok(folded.length >= mine.length, `crew ${slug}: ${folded.length} folded reaps for ${mine.length} member spawns`)
     for (const c of folded) assert.equal(/ --reap-first (\S+)/.exec(c.runner.line)[1], slug, `crew ${slug}'s folded reap names its own slug: ${c.runner.line}`)
     for (const c of [...admits, ...reapsOf]) {
       assert.equal(c.runner.slug, slug, `crew ${slug}'s ${c.runner.cmd} call carries slug ${c.runner.slug}: ${c.runner.line}`)
@@ -329,18 +326,13 @@ st('case: failed reap logged', async () => {
     const proofs = (qc.prompt.split('Member proofs:')[1] || '').split('Last stress-test report:')[0]
     assert.ok(proofs.includes('REAP-ERR-XYZ'), `${name}: the failed reap's text is in the QC prompt under Member proofs:\n${proofs}`)
   }
-  // the standalone crew-end reap comes after QC: its non-JSON output or exit 1 never stops the crew
-  for (const [name, fail] of [
-    ['non-JSON output', { exit: 0, stdout: 'REAP-BOOM-XYZ not json' }],
-    ['exit 1', { exit: 1, stdout: JSON.stringify({ error: 'REAP-ERR-XYZ' }) }],
-  ]) {
-    const r = await runStage([entry('a')], {
-      labels: base('a'),
-      runner: (p) => (p.cmd === 'reap' ? fail : undefined),
-    })
-    assert.equal(runnersOf(r.calls, 'reap', 'a').length, 1, `${name}: the crew-end reap ran`)
-    assert.equal(r.res[0].state, 'passed', `${name}: a failed reap does not stop the crew: ${JSON.stringify(r.res[0])}`)
-  }
+  // heavy-slots: the crew-end reap rides on the late-reply read, so no standalone reap runs even when a folded one failed
+  const r = await runStage([entry('a')], {
+    labels: base('a'),
+    runner: (p) => (p.cmd === 'admit' && / --reap-first a\b/.test(p.line) ? rj({ admitted: true, parallelism: 4, running: 0, freeMB: 8000, minFreeMB: 2048, reapedFirst: { error: 'REAP-ERR-XYZ' } }) : undefined),
+  })
+  assert.equal(runnersOf(r.calls, 'reap', 'a').length, 0, 'a failed folded reap does not bring back a standalone reap')
+  assert.equal(r.res[0].state, 'passed', JSON.stringify(r.res[0]))
 })
 
 st('case: runner calls get no admit', async () => {
