@@ -26,7 +26,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 2f9f654ab35b54f8d03b4e4cdc3c151fa33c8648
+verified: e601aad31fd2bc5703db1ec25536e44218ecd194
 ---
 
 # Store, holds and contract-025 stubs
@@ -59,7 +59,7 @@ Crew a0-foundation. `plugins/truss/docs/architecture.md` was left at its base te
 
 Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (`bin/factory/shared.ts`) re-reads `plan.json` under the `plan` lock before it edits and saves. `approve`, `start`, `mark-merged`, the merge gate, `plan-write` and `owns-extend` all write the plan that way, so none drops another's edit. `plan-write` over an approved plan with no running or planned crew archives it as `plan-<approvedAt>.json/.md` (`keepExisting` in `cmdPlanWrite`); a running or planned crew (a run not finished) refuses it. `workflows-src/stage/check.js` `check()` runs `heavy` up to 3 times (`HEAVY_WAIT_ROUNDS`) before it stops `heavy slot busy`.
 
-`workflows-src/stage/crew.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (`admit` in `workflows-src/stage/crew.js`). There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, `bin/factory/resources.ts`). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (`ltcLinesOf` and `qc` in `workflows-src/stage/qc.js`).
+`workflows-src/stage/crew.js` `admit()` maps those answers to `Stop BLOCKED` with `BLOCKED: budget: <why>` or `BLOCKED: awaiting client: <why>`, and retries once, straight away, on exit 2 `store busy` (`admit` in `workflows-src/stage/crew.js`). Each `cmdAdmit` first reaps the crew's `<slug>-check` process groups; a reap failure rides on the body as `reapError` and never changes the verdict. `factory.ts` also takes `--admit-first <slug>` (`takeAdmitFlag`, `admitFirst`), which runs that admit before the command and returns its body as `admittedFirst`. There is no pause: scripts have no timers, and factory's own 5 s lock wait already ran. A budget or awaiting hold is never retried: `admit --wait-ms 90000` refuses it at once. Only a memory hold is re-checked inside factory, every 2 s first (`cmdAdmit`, `bin/factory/resources.ts`). `qc()` returns `longTermCosts` (lines starting, after optional bullet, number, quote or bold/code markup, with `LONG-TERM-COST:`; a none-word body is skipped; same regex as `LINE_RE` in `bin/guard.ts`) only when non-empty (`ltcLinesOf` and `qc` in `workflows-src/stage/qc.js`).
 
 `start` output has no top-level `entries`: started full crews are in `truss.crews`, direct crews in `direct`, project manager crews in `projectManagers`, held ones in `held` with `why` (`stageOut` in `bin/factory/start.ts`).
 
