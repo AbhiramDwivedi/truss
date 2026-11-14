@@ -16,6 +16,8 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export type HeavySys = { platform?: NodeJS.Platform; spawn?: typeof spawn }
 // How long a timed-out command gets between SIGTERM and SIGKILL.
 const KILL_GRACE_MS = 2000
+// The most a caller waits past its attach budget for a slot job to take its slot (job dir file `held`).
+const SETTLE_MS = 10000
 
 // How long the heavy caller waits for its job's result before it returns pending: TRUSS_HEAVY_ATTACH_MS, else 540 s, under the
 // 600000 ms Bash timeout stage.js sets. A run that takes longer goes on in the background; the same line, run again, collects it.
@@ -84,7 +86,13 @@ export async function heavyMain(argv: string[], sys: HeavySys = {}): Promise<{ b
     for (let restarts = 0; ; ) {
       startJob(dir, key, job, spawnFn)
       while (!existsSync(`${jdir}/result.json`) && Date.now() - t0 < attach && jobAlive(jdir)) await sleep(200)
-      if (existsSync(`${jdir}/result.json`) || Date.now() - t0 >= attach) break
+      if (existsSync(`${jdir}/result.json`) || Date.now() - t0 >= attach) {
+        // a job still starting up (a loaded host is slow to boot the wrapper and sample memory) has not taken its slot yet: give it a
+        // bounded extra wait so a pending return means the job holds the slot or is queued for it, not that it has not looked yet
+        const settle = Date.now() + SETTLE_MS
+        while (job.slot === true && !existsSync(`${jdir}/result.json`) && !existsSync(`${jdir}/held`) && Date.now() < settle && jobAlive(jdir)) await sleep(50)
+        break
+      }
       // the job died with no result (killed, or the host rebooted): start it once more, then give up
       if (restarts++ >= 1) return { body: { heavy: { label, ran: false, waitedMs: Date.now() - t0, why: 'the heavy job ended without a result' } }, code: 1 }
       rmSync(jdir, { recursive: true, force: true })
@@ -204,6 +212,7 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
         return { body: { ok: false }, code: 1 }
       }
       token = a.token
+      writeFileSync(`${jdir}/held`, '')
     }
     const outFd = openSync(`${jdir}/out.txt`, 'w')
     const errFd = openSync(`${jdir}/err.txt`, 'w')
