@@ -48,6 +48,32 @@ test('a crew left running by a start that died before its spawn event can be sta
   }
 })
 
+// A pid that is certainly dead: a child that has already exited.
+const deadPid = (): number => spawnSync(process.execPath, ['-e', '0'], { windowsHide: true }).pid as number
+
+for (const [label, owner] of [['whose claiming start is dead', () => ({ pid: deadPid(), token: 'dead-start' })], ['with no owner (a plan written before 0.32.0)', () => undefined]] as const) {
+  test(`a solo crew left running by a start that died during git worktree add, ${label}, is started again by the next start`, () => {
+    const repo = mkRepo({ config: { merge: 'sequential', target: 'main' } })
+    try {
+      const dir = `${repo}/.git/truss/s-old`
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(`${dir}/decisions.md`, '')
+      writeFileSync(`${dir}/events.jsonl`, '')
+      const o = owner()
+      writePlan(dir, planObj([crew('c1', { stage: 1, status: 'running', process: 'solo', ...(o ? { owner: o } : {}) })]))
+      writeGoal(dir, 'c1', {})
+      const first = runCli(REAL_FACTORY, 'start', ['--repo', repo, '--dir', dir, '--stage', 'next'], repo)
+      assert.equal(first.status, 0, say(first))
+      const direct = (first.json?.truss?.direct ?? first.json?.direct ?? []) as any[]
+      assert.ok(direct.some((e) => e.slug === 'c1'), `a plain start does not list the solo crew c1 under direct; ${say(first)}`)
+      const wt = spawnSync('git', ['-C', repo, 'worktree', 'list'], { encoding: 'utf8', windowsHide: true }).stdout
+      assert.match(wt, /truss-c1/, `no truss-c1 worktree after recovery: ${wt}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+}
+
 test('the run skill says a new session passes its own Workflow run dir as --transcript when it resumes a stale crew', () => {
   const text = readFileSync(new URL('../skills/run/SKILL.md', import.meta.url), 'utf8').split('\n')
   const at = text.findIndex((l) => l.includes('find-run'))
