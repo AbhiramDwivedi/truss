@@ -1,4 +1,4 @@
-# ADR-0052: find an unfinished run from a new PM session and let the trussFile gate read any of the repo's truss dirs
+# ADR-0052: find an unfinished run from a new program manager (PM) session and let the trussFile gate read any of the repo's truss dirs
 
 Status: decided, 2026-11-13
 Decided by: program manager (auto): the approved 0.32.0 plan (`plan.md`, crew notes for run-survival, "I set the design default, which the crew records in ADR-0052 as decided by program manager (auto), resting on R-141 and this plan"), resting on requirements R-141 "A run survives its PM session ending" and R-135 "The trussFile gate lets a PM use another session's truss dir it legitimately runs", and the long-term cost line of the goal's approved scope (16:58)
@@ -33,7 +33,7 @@ Two PM sessions can also resume one run at the same moment. Before this ADR, `cm
 
 ### 1. The find-run scan
 
-We add the `find-run` command (`bin/factory/find-run.ts` `cmdFindRun`, wired in `bin/factory.ts` `CORE_COMMANDS`). `node <plugin>/bin/factory.ts find-run --repo R` reads every directory directly under `<git common dir of R>/truss/` and loads its `plan.json` with `loadPlan`. There is no pointer file. A dir is skipped, never an error, when it has no plan, a broken plan, or a file that is not a plan.
+We add the `find-run` command (`bin/factory/runs.ts` `cmdFindRun`, wired in `bin/factory.ts` `CORE_COMMANDS`). `node <plugin>/bin/factory.ts find-run --repo R` reads every directory directly under `<git common dir of R>/truss/` and loads its `plan.json` with `loadPlan`. There is no pointer file. A dir is skipped, never an error, when it has no plan, a broken plan, or a file that is not a plan.
 
 A run is listed when its `approvedAt` is not null, undefined or empty, and at least one crew's `status` is neither `merged` nor `dropped`. The output is `{runs}`, newest `approvedAt` first. Each run is `{dir, session, approvedAt, transcript, crews}`:
 
@@ -76,7 +76,7 @@ The goal's approved scope records it, word for word: "16:58 | long-term cost (ch
 | Seam | Who calls it | Contract |
 | --- | --- | --- |
 | `node <plugin>/bin/factory.ts find-run --repo R` | the PM, per `skills/run/SKILL.md` | Prints `{runs}`, newest first; reads only; skips a dir with no valid plan. |
-| `bin/factory/find-run.ts` `cmdFindRun` | `bin/factory.ts` `CORE_COMMANDS` | Decision 1. |
+| `bin/factory/runs.ts` `cmdFindRun` | `bin/factory.ts` `CORE_COMMANDS` | Decision 1. |
 | `bin/factory/start.ts` `claimedWorktree` | `cmdStart`, direct and workflow paths | `planned` to `running` under the plan lock; undefined when another process won; hands the claim back if the worktree fails. |
 | `hooks/register.ts` `expandTrussFile(args, trussDir, read, realPathOf?, trussRoot?)` | the Workflow `tool.call` handler | With `trussRoot`, any `<trussRoot>/<name>/` dir; without it, the session's dir only. |
 
@@ -101,4 +101,4 @@ Neutral:
 - `find-run` lists runs only. The PM still decides whether to resume one or start a new run.
 - The narrow refusal text, `args.trussFile must be inside the session's truss dir`, is kept for a caller that passes no `trussRoot`. The Workflow handler always passes one when the session has a truss dir.
 
-Reversing this decision would touch `hooks/register.ts` (`expandTrussFile` and the Workflow handler's `trussRoot` and `readReal`), `bin/factory/find-run.ts`, the `find-run` entry in `bin/factory.ts`, the `claimedWorktree` calls in `bin/factory/start.ts`, the "Resume a run an earlier session left" section of `skills/run/SKILL.md`, and `tests/run-survival-032.check.ts`. The approved scope names it cheap to reverse.
+Reversing this decision would touch `hooks/register.ts` (`expandTrussFile` and the Workflow handler's `trussRoot` and `readReal`), `bin/factory/runs.ts`, the `find-run` entry in `bin/factory.ts`, the `claimedWorktree` calls in `bin/factory/start.ts`, the "Resume a run an earlier session left" section of `skills/run/SKILL.md`, and `tests/run-survival-032.check.ts`. The approved scope names it cheap to reverse.

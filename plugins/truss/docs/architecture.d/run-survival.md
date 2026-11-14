@@ -12,7 +12,7 @@ The refusals of ADR-0024 item 29 stand: both keys at once, a non-absolute path, 
 
 ```
 new PM session
-  └─ factory.ts find-run --repo R           (bin/factory/find-run.ts cmdFindRun; reads only, no lock)
+  └─ factory.ts find-run --repo R           (bin/factory/runs.ts cmdFindRun; reads only, no lock)
        scans <git common dir>/truss/*/plan.json
        keeps approvedAt set + some crew not merged/dropped
        └─ {runs: [{dir, session, approvedAt, transcript, crews: [{slug, status, stage, results}]}]}
