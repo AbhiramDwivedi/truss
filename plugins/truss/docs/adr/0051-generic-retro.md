@@ -21,7 +21,7 @@ The retro of ADR-0012 cannot meet them, for four reasons in the code:
 
 Since 0.31.0 the run dir records what a generic retro needs, outside transcripts. `retro/timing.ts` `analyze` splits each crew's wall-clock from `events.jsonl`, `usage.jsonl`, runner and QC reports, and file mtimes, and it already bounds a period by the crew's first and last `usage.jsonl` row rather than by event stamps (its header comment; architecture.md, "Timing baseline (0.31.0, speed goal step 0)"). Each `usage.jsonl` row carries `ts`, `agentId`, `model` and token counts (`in`, `out`, `cr`, `cw5m`, `cw1h`), as the wave-4 run dir shows. Spawn events in `events.jsonl` carry `crew`, `agent`, `agentId`, `type`, `model` and `effort`.
 
-The client approved the long-term cost of a new stored finding shape, which the judge, triage and the PM all read, as item E-20261113-ef869e. That item names the reversal as costly.
+The client approved the long-term cost of a new stored finding shape, which the judge, triage and the program manager (PM) all read, as item E-20261113-ef869e. That item names the reversal as costly.
 
 ## Decision Drivers
 
