@@ -32,4 +32,4 @@ There is no pointer file: the plan files are the index. `results` lists the file
 | The PM session ended with crews running | A new session runs `find-run` and resumes the listed `dir`. |
 | Two sessions resume one run at once | Each crew is claimed once; the losing `start` skips it and exits 0. |
 | `ensureWorktree` fails after a claim | The crew is back to `planned`; run `start` again. |
-| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event. The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |
+| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event (a direct crew: no worktree) and a dead owner. The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |
