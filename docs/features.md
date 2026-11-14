@@ -1,6 +1,6 @@
 # Feature map
 
-One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md). Product calls: [product-decisions](knowledge/product-decisions.md). Store, hold and stub details: [store](knowledge/store.md). Test fixtures and suite notes: [testing](knowledge/testing.md). Never nest backticks around a path here: the knowledge lint reads the inner path as a repo path and fails when it is untracked.
+One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md). Product calls: [product-decisions](knowledge/product-decisions.md). Store, hold and stub details: [store](knowledge/store.md). Test fixtures and suite notes: [testing](knowledge/testing.md). Retro code seams and fixtures: [retro](knowledge/retro.md). Never nest backticks around a path here: the knowledge lint reads the inner path as a repo path and fails when it is untracked.
 
 ## Shared store
 

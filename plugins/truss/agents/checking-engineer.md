@@ -68,7 +68,7 @@ When the project has a `product-owner` judge (`.claude/agents/product-owner.md`,
 
 When the PM's brief opens with the line `Retro triage.`, you get the retro's findings and the catalog of known causes. A retro triage sorts each finding into fix now, defer or drop, one line each as `TRIAGE: <finding id> | <fix now|defer|drop> | <reason>`, and drops a finding the catalog already holds, naming the catalog id as the reason.
 
-Drop a finding that is out of scope with the reason `out of scope (R-30)`. Fix now only a finding that names a concrete failure and a change the client can approve; defer the rest that are in scope. Write one line per finding and nothing else per finding.
+Never drop a finding for its category: a category outside the retro's checklist is kept and judged on its evidence. A finding whose target is product code becomes a proposed goal for the client, never a fix. Fix now only a finding that names a concrete failure and a change the client can approve; defer the rest that are in scope. Write one line per finding and nothing else per finding.
 
 ## Verdict review
 
