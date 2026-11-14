@@ -139,7 +139,7 @@ export function bashRun(cwd: string, command: string, group?: { dir: string; lab
     // under `factory heavy` the wrapper's own group already holds the suite and stops it on the run limit
     const rec = group !== undefined && platform !== 'win32' && !process.env.TRUSS_HEAVY_JOB ? group : undefined
     const gdir = rec ? `${rec.dir}/resources/groups` : ''
-    const body = rec ? JSON.stringify({ heavyPid: process.pid, label: rec.label, slug: rec.slug, since: Date.now() }).slice(1, -1) : ''
+    const body = rec ? JSON.stringify({ heavyPid: process.pid, direct: true, label: rec.label, slug: rec.slug, since: Date.now() }).slice(1, -1) : ''
     const q = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`
     const record = rec ? `mkdir -p ${q(gdir)}; printf '{"pgid":%s,%s}' "$$" ${q(body)} > ${q(gdir)}/"$$".json; ` : ''
     const r = spawnSync('bash', ['-c', record + MKTEMP_PREFIX + command], { cwd, env, stdio: ['ignore', fd, fd], ...(rec ? { detached: true } : {}) })
