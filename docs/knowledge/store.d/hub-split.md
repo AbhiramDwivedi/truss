@@ -5,6 +5,7 @@ sources:
   - plugins/truss/bin/transcripts.ts
   - plugins/truss/bin/factory/admit.ts
   - plugins/truss/bin/factory/plan-file.ts
+verified: faca93659184649f2923a3cf0832d75b5fb5ab99
 ---
 
 ## The store (`bin/store.ts`)

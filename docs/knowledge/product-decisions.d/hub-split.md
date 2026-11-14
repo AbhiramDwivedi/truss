@@ -2,7 +2,7 @@
 sources:
   - plugins/truss/bin/lock.ts
   - plugins/truss/tests/hub-split-032.check.ts
-verified: 437983e2009ce0a692761a50299c9243956ff8d8
+verified: faca93659184649f2923a3cf0832d75b5fb5ab99
 ---
 
 ## a0-foundation: store staleness test title
