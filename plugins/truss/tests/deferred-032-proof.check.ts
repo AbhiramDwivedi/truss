@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
@@ -24,15 +24,40 @@ const FIX = 'dccb501f'
 const REPO = flat(path.resolve(REAL_PLUGIN, '..', '..'))
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-// What a failure on the old code looks like: a failed assertion of the new behaviour, or the old code's import that lacks `jobAlive`.
-const SYMPTOM = /not ok \d+ - |does not provide an export named 'jobAlive'|ERR_ASSERTION/
-const CASES: { file: string; titles: string[] }[] = [
-  { file: 'tests/lifecycle-029.check.ts', titles: ['goal-check runs as a background heavy job: a wait that runs out says it is still running in one line, kills nothing, and the same line collects the result'] },
+// What each title's failure on the old code looks like: that title's own failed assertion of the new behaviour, named by its message
+// (or its expected/actual) and by the line of the test file as dccb501f committed it. Any other failure, an import error included,
+// is not the reported reason and fails this case.
+const CASES: { file: string; title: string; symptom: RegExp[] }[] = [
+  {
+    file: 'tests/lifecycle-029.check.ts',
+    title: 'goal-check runs as a background heavy job: a wait that runs out says it is still running in one line, kills nothing, and the same line collects the result',
+    // assert.equal(j.pending, true): the old goal-check waited in the foreground and printed no pending flag
+    symptom: [/\+ undefined\s*\n\s*- true/, /lifecycle-029\.check\.ts:95:\d+\)/],
+  },
   {
     file: 'tests/heavy-031.check.ts',
-    titles: ['an acceptance test that is only npm test runs the whole suite, so it takes the heavy slot', 'a job dir whose wrapper has not written anything yet stays alive while its spawner runs, however old the dir'],
+    title: 'an acceptance test that is only npm test runs the whole suite, so it takes the heavy slot',
+    // the old check ran a bare `npm test` as a targeted run, outside the slot another crew held
+    symptom: [/error: 'the suite did not run while another crew held the only slot'/, /heavy-031\.check\.ts:149:\d+\)/],
+  },
+  {
+    file: 'tests/heavy-031.check.ts',
+    title: 'a job dir whose wrapper has not written anything yet stays alive while its spawner runs, however old the dir',
+    // the old jobAlive judged a job dir with no pid.json by its age alone, so a 60 s old dir was dead though its spawner ran
+    symptom: [/a live spawner keeps the job alive\s*\n\s*\n\s*false !== true/, /heavy-031\.check\.ts:160:\d+\)/],
   },
 ]
+
+// The one shim on the old tree. The dccb501f heavy-031.check.ts imports `jobAlive`, which the old bin/factory/heavy.ts declares as a
+// module-private `function jobAlive`. Without an export the whole file fails at ESM link time, before any test runs, which proves
+// nothing about behaviour. Adding `export` to that declaration changes no behaviour: the old body is what runs.
+function shimOldTree(oldPlugin: string): void {
+  const p = `${oldPlugin}/bin/factory/heavy.ts`
+  const src = readFileSync(p, 'utf8')
+  const from = '\nfunction jobAlive(jdir: string): boolean {'
+  assert.equal(src.split(from).length, 2, 'the old heavy.ts declares one module-private jobAlive')
+  writeFileSync(p, src.replace(from, `\nexport ${from.slice(1)}`))
+}
 
 function git(args: string[], env: NodeJS.ProcessEnv = process.env): Buffer {
   const r = spawnSync('git', ['-C', REPO, '-c', 'core.quotepath=off', ...args], { env, windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
@@ -64,18 +89,18 @@ test('the goalCheck pending test and the fixer tests fail against the old code u
     const old = flat(`${scratch}/old`)
     checkout(`${FIX}^`, old, scratch)
     const oldPlugin = `${old}/plugins/truss`
-    for (const c of CASES) writeFileSync(`${oldPlugin}/${c.file}`, git(['show', `${FIX}:plugins/truss/${c.file}`]))
+    for (const file of new Set(CASES.map((c) => c.file))) writeFileSync(`${oldPlugin}/${file}`, git(['show', `${FIX}:plugins/truss/${file}`]))
+    shimOldTree(oldPlugin)
     const failures: string[] = []
-    for (const c of CASES) {
-      for (const title of c.titles) {
-        // the new tests, on the old code: the old goal-check hangs until its own limit (3 s here), and the test must fail
-        const before = runTitle(oldPlugin, c.file, title, { TRUSS_GOALCHECK_TIMEOUT_MS: '3000' })
-        if (before.ok) failures.push(`passes on the old code (${FIX}^): ${title}`)
-        else if (!SYMPTOM.test(before.text)) failures.push(`fails on the old code, but not for the reported reason (exit ${before.status}): ${title}\n${before.text.slice(-900)}`)
-        // the control: the same title on this checkout passes
-        const after = runTitle(REAL_PLUGIN, c.file, title, {})
-        if (!after.ok) failures.push(`does not pass on this checkout (exit ${after.status}): ${title}\n${after.text.slice(-600)}`)
-      }
+    for (const { file, title, symptom } of CASES) {
+      // the new tests, on the old code: the old goal-check hangs until its own limit (3 s here), and the test must fail
+      const before = runTitle(oldPlugin, file, title, { TRUSS_GOALCHECK_TIMEOUT_MS: '3000' })
+      const failed = before.text.split('\n').some((l) => new RegExp(`^\\s*not ok \\d+ - ${esc(title)}\\s*$`).test(l))
+      if (before.ok) failures.push(`passes on the old code (${FIX}^): ${title}`)
+      else if (!failed || !symptom.every((s) => s.test(before.text))) failures.push(`fails on the old code, but not at its own assertion (exit ${before.status}): ${title}\n${before.text.slice(-1200)}`)
+      // the control: the same title on this checkout passes
+      const after = runTitle(REAL_PLUGIN, file, title, {})
+      if (!after.ok) failures.push(`does not pass on this checkout (exit ${after.status}): ${title}\n${after.text.slice(-600)}`)
     }
     assert.deepEqual(failures, [], failures.join('\n'))
   } finally {
