@@ -276,7 +276,7 @@ The plan gives each crew its slug, stage, verdict, modules, owned paths, accepta
 Section 4's `plan-check` has passed before you get here. Show the client the agent count and the queue whatever the run's approval:
 
 - **Agent count:** each crew's `estAgents`, and the total.
-- **Queue:** the crews stage by stage, in the order of the `crews` array, which is the queue order within a stage, and `maxParallelCrews`.
+- **Queue:** the crews stage by stage, in the order of the `crews` array, which is the queue order within a stage, and `maxParallelCrews`. A client ruling that changes the cap mid-run goes through `factory.ts plan-cap --dir <truss dir> --max-parallel-crews <n> --reason <text>`, never a hand edit of `plan.json`.
 
 The agent count is a size estimate, not a limit.
 
