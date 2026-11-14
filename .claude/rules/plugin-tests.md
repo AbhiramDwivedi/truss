@@ -6,6 +6,9 @@ sources:
   - plugins/truss/tests/store.check.ts
   - plugins/truss/tests/workflows.check.ts
   - plugins/truss/bin/store.ts
+  - plugins/truss/bin/lock.ts
+  - plugins/truss/bin/transcripts.ts
+  - plugins/truss/tests/hub-split-032.check.ts
   - plugins/truss/tests/inbox.check.ts
   - plugins/truss/bin/factory.ts
   - plugins/truss/bin/factory/audit.ts

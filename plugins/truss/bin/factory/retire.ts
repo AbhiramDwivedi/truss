@@ -2,9 +2,10 @@
 // unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import path from 'node:path'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { flat, parseLabel } from '../store.ts'
+import { flat, parseLabel } from '../core.ts'
 import { crewRunsOf, jsonLines, runOf, runsNextTo } from './runs.ts'
-import { appendEvent, run } from './shared.ts'
+import { run } from './cli.ts'
+import { appendEvent } from './log.ts'
 
 // The git worktrees of the repo as {path, branch}.
 export function worktreesOf(repo: string): { path: string; branch: string | undefined; locked: boolean }[] {
