@@ -14,7 +14,17 @@ async function syncStep(crew) {
 
 async function redStep(crew) {
   crew.step = 'red'
-  const r = await check(crew, 'red')
+  // R-142: the red check is the factory call just before the first member start (the UX direction, else the planner), so its
+  // call carries that member's admission. Saved tasks leave the first member to runMembers: no admission rides here.
+  crew.admitPlan = null
+  if (uxOn(crew) && !crew.direction) planAdmit(crew, 'ux', `UX direction ${crew.slug}`)
+  else if (!(crew.e.tasks || []).length) planAdmit(crew, 'planner')
+  let r
+  try {
+    r = await check(crew, 'red')
+  } finally {
+    crew.admitPlan = null
+  }
   const env = envOf(r)
   if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(r)}\n${r.out}`, 'red')
   if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:${knownOf(r)}\n${r.out}`, 'red')
@@ -79,9 +89,16 @@ async function runCrew(entry) {
   } catch (err) {
     result = stopResult(crew, err)
   }
-  await reap(crew)
   // replies that arrived after the checkpoint are not applied here; the main session turns a late change into a fix at merge
-  const { late, unknown } = await lateReplies(crew)
+  // R-142: the crew-end reap rides on the crew's next factory call (the late-reply read, --reap-first) and runs alone only when
+  // that read makes no call or fails before the reap ran. A Stop there still leaves the reap to run.
+  let lateRead
+  try {
+    lateRead = await lateReplies(crew)
+  } finally {
+    if (crew.reapDue) await reap(crew)
+  }
+  const { late, unknown } = lateRead
   return { ...result, ...(late.length ? { late } : {}), ...(unknown ? { lateUnknown: true } : {}), ...(crew.unrecorded.length ? { unrecorded: crew.unrecorded } : {}) }
 }
 

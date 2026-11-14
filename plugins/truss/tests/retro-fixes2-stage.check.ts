@@ -198,7 +198,7 @@ t('F67 1: with a relative F.dir, every command line runFactory sends to the runn
     assert.ok(dirs.length >= 1, `${c.label} (${c.runner.cmd}) carries no --dir:\n${c.prompt}`)
     for (const d of dirs) assert.equal(d, '/proj/.git/truss/abc', `${c.label} (${c.runner.cmd}) --dir ${d}`)
   }
-  for (const k of ['admit', 'reap', 'tests-check', 'check']) assert.ok(kinds.has(k), `no ${k} runner call was checked: ${[...kinds].join(',')}`)
+  for (const k of ['admit', 'tests-check', 'check']) assert.ok(kinds.has(k), `no ${k} runner call was checked: ${[...kinds].join(',')}`)
 })
 
 const admitRunner = (out) => ({ cmd, slug }) => (cmd === 'admit' ? (typeof out === 'function' ? out(slug) : out) : undefined)
