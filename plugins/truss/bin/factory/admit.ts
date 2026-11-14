@@ -2,15 +2,16 @@
 // from bin/factory/resources.ts (0.32.0 item 8). Never imports factory.ts, whose top-level await would make an import cycle.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { configOf, isObj, need, parseLabel, refuse, str, usage } from '../core.ts'
+import { CliError, configOf, isObj, need, parseLabel, refuse, str, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
 import { StoreBusy } from '../lock.ts'
 import { admits, minFreeMB, sample } from '../../resources/index.ts'
 import { blockingFor, escalate } from '../inbox.ts'
 import { budgetVerdict } from '../cost.ts'
 import { eventsOf } from './runs.ts'
-import { dirOf, intOr, repoOf } from './cli.ts'
+import { dirOf, intOr, parseFlags, repoOf } from './cli.ts'
 import { appendEvent } from './log.ts'
+import { cmdReap } from './reap.ts'
 import { loadPlan } from './plan-file.ts'
 import { sleepSync } from './slot.ts'
 
@@ -91,6 +92,16 @@ export function cmdAdmit(f: Flags): Obj {
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
   const running = (): number => plan.crews.filter((c: Obj) => isObj(c) && c.status === 'running').length
   const repo = repoOf(f)
+  // ADR-0046 item 1: reap the crew's `<slug>-check` groups first; a reap failure rides on the body and never changes the verdict
+  let reaped: number[] | undefined
+  let reapError: string | undefined
+  try {
+    const r = cmdReap({ ...f, slug, label: `${slug}-check` })
+    if (Array.isArray(r.reaped)) reaped = r.reaped as number[]
+  } catch (e) {
+    reapError = (e instanceof CliError ? JSON.stringify(e.body) : e instanceof Error ? e.message : String(e)).slice(0, 200)
+  }
+  const reapBody = { ...(reaped === undefined ? {} : { reaped }), ...(reapError === undefined ? {} : { reapError }) }
   let a = admission(dir, repo, plan, crew, 'admit', running())
   // --wait-ms N: a hold re-checks every 2 s for up to N ms (bounded) before it refuses, so a short memory dip does not stop the crew
   const waitMs = Math.min(intOr(Number(str(f, 'wait-ms') ?? 0), 0, 0), 600000)
@@ -100,7 +111,7 @@ export function cmdAdmit(f: Flags): Obj {
     sleepSync(Math.min(2000, Math.max(1, waitMs - (Date.now() - t0))))
     a = admission(dir, repo, plan, crew, 'admit', running())
   }
-  if (!a.admitted) throw refuse({ ...a, ...(waitMs > 0 ? { waitedMs: Date.now() - t0 } : {}) })
+  if (!a.admitted) throw refuse({ ...a, ...reapBody, ...(waitMs > 0 ? { waitedMs: Date.now() - t0 } : {}) })
   // ADR-0015 Decision 6: --label and --title together record the agent's card title for the UI
   const label = str(f, 'label')
   const title = str(f, 'title')
@@ -114,7 +125,7 @@ export function cmdAdmit(f: Flags): Obj {
     if (persona !== undefined && !/^[A-Za-z0-9][\w.-]{0,99}$/.test(persona)) throw usage(`--persona ${persona} is not a persona name`)
     appendEvent(dir, { event: 'title', crew: slug, agent: label, label, title: one, ...(persona !== undefined ? { persona } : {}), ...(f.high === true ? { high: true } : {}) })
   }
-  return a
+  return { ...a, ...reapBody }
 }
 
 // start's admission: a busy usage lock with no reading (StoreBusy from budgetVerdict, ADR-0038 amendment 2026-11-11) is never an
@@ -125,5 +136,34 @@ export function heldOnBusy(f: () => Admission): Admission {
   } catch (e) {
     if (!(e instanceof StoreBusy)) throw e
     return { admitted: false, parallelism: 0, running: 0, freeMB: null, minFreeMB: 0, why: String(e.body.error) }
+  }
+}
+
+// ADR-0046 item 1: `--admit-first <slug>` (with optional --admit-label, --admit-title, --admit-persona and the boolean --admit-high)
+// runs `admit --slug <slug>` with no memory wait before the command, so a member start needs no separate admit call. Taken only
+// before the `--`. Its body (a refusal's too) rides on the output as admittedFirst.
+export function takeAdmitFlag(argv: string[]): { admit: Obj | null; argv: string[] } {
+  const cut = argv.indexOf('--')
+  const head = cut < 0 ? argv : argv.slice(0, cut)
+  const rest = cut < 0 ? [] : argv.slice(cut)
+  if (!head.includes('--admit-first')) return { admit: null, argv }
+  const admit: Obj = {}
+  const kept: string[] = []
+  for (let i = 0; i < head.length; i++) {
+    const a = head[i]
+    if (a === '--admit-high') admit.high = true
+    else if (['--admit-first', '--admit-label', '--admit-title', '--admit-persona'].includes(a)) admit[a === '--admit-first' ? 'slug' : a.slice(8)] = head[++i] ?? ''
+    else kept.push(a)
+  }
+  return { admit, argv: [...kept, ...rest] }
+}
+export function admitFirst(argv: string[], admit: Obj): Obj {
+  try {
+    const cut = argv.indexOf('--')
+    const f = parseFlags((cut < 0 ? argv : argv.slice(0, cut)).slice(1))
+    return cmdAdmit({ ...f, ...admit })
+  } catch (e) {
+    if (e instanceof CliError) return e.body
+    return { admitted: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
