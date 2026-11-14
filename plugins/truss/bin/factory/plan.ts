@@ -21,7 +21,8 @@ import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
 import { docKeysOf, knowledgeArgsOf, settingsOf } from './settings.ts'
 import { appendDecision } from './log.ts'
 import { rolesWithTypes, scriptPathFor, sessionScriptsDir } from './roles.ts'
-import { goalSections, uxSaysOff } from './start.ts'
+import { goalSections } from './goal-file.ts'
+import { uxSaysOff } from './start.ts'
 
 export function cmdSettings(f: Flags): Obj {
   return settingsOf(repoOf(f))

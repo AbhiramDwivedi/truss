@@ -8,7 +8,7 @@ import { isObj } from '../core.ts'
 import type { Obj } from '../core.ts'
 import { READ_ONLY_HOST } from './personas.ts'
 import { PLUGIN, run } from './cli.ts'
-import { goalSections } from './start.ts'
+import { goalSections } from './goal-file.ts'
 import type { Members, StartCtx } from './start.ts'
 
 // ADR-0026 item 49 (b): <truss dir>/agent-warnings.json maps each agent file a newer-than-session warning named (absolute

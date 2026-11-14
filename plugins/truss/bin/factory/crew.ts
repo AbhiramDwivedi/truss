@@ -1,12 +1,14 @@
 // The crew git commands: sync, integrate, mark-merged, owns-check, owns-extend and tests-check. Moved unchanged from
 // bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { acceptanceCommand } from './goal-file.ts'
 import path from 'node:path'
 import { configOf, isObj, need, refuse, repoPathOf, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
 import { withLock } from '../lock.ts'
 import { concludeFrontmatterMerge, docOfFragment } from '../fragments.ts'
 import { knowledgeShas } from './decisions.ts'
+import { frontmatter, ruleBookkeepingOnly, withoutBookkeeping } from './rule-bookkeeping.ts'
 import { gateGit, knowledgeConfigRefusal, preMergeOf } from './knowledge-cmds.ts'
 import { baseOf, crewWorktree, dirOf, gitOrFail, repoOf, run } from './cli.ts'
 import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
@@ -215,26 +217,12 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
-  const frontmatter = (text: string): string => {
-    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
-    if (lines[0]?.trim() !== '---') return ''
-    const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
-    return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
-  }
   const kc = knowledgeCfgOf(c.repo)
   // ADR-0046: every exempt file keeps its YAML frontmatter, except a knowledge doc's `verified` stamp and `sources` list, which
   // knowledge-lint checks and a builder keeps true with its doc change (an indented line under `sources:` belongs to it)
   // 0.32.0 hotfix: a rule fragment (`<rulesDir>.d/<rule>/<crew>.md`) likewise, since the knowledge step writes a rule's `verified`
   // and `sources` there, never into the rule file; stitchDoc merges them into the rule's frontmatter. A frontmatter left with only
   // its fences counts as none, so a new fragment holding only those keys is kept.
-  const withoutBookkeeping = (fm: string): string => {
-    let skip = false
-    const rest = fm.split('\n').filter((l) => {
-      if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
-      return !skip
-    })
-    return rest.every((l) => l.trim() === '---' || l.trim() === '') ? '' : rest.join('\n')
-  }
   const kept = (file: string, text: string): string => {
     const fm = frontmatter(text)
     const frag = fragOf(file)
@@ -248,13 +236,7 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const frontmatterKept = (file: string): boolean => kept(file, contentAt(base, file)) === kept(file, contentAt('HEAD', file))
   // a base rule file (under rulesDir itself, not a fragment): a change of only its `verified` and `sources` keys is bookkeeping, not
   // rule text, whoever committed it; the body and every other frontmatter key must be unchanged
-  const bookkeepingOnly = (file: string): boolean => {
-    if (!file.startsWith(`${kc.rulesDir}/`)) return false
-    const was = contentAt(base, file)
-    const now = contentAt('HEAD', file)
-    const bodyOf = (t: string): string => t.slice(frontmatter(t).length)
-    return was !== '' && withoutBookkeeping(frontmatter(was)) === withoutBookkeeping(frontmatter(now)) && bodyOf(was) === bodyOf(now)
-  }
+  const bookkeepingOnly = (file: string): boolean => ruleBookkeepingOnly(c.wt, base, 'HEAD', file, kc.rulesDir)
   const name = (file: string): string => file.split('/').pop() ?? ''
   // free docs: any member may change them with its code, every round
   // (only these: a README, a changelog or any other .md is a crew's to change only when its owns name it)
@@ -295,6 +277,10 @@ export function cmdTestsCheck(f: Flags): Obj {
 // The one guarded-set rule, used by tests-check and by the start entry's `guarded`.
 export function guardedOf(c: { dir: string; slug: string; wt: string; target: string }): { touched: Obj[]; tests: string[] } {
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--cc', '--name-status', '-M', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  // a merge commit's --cc name list holds every file that differs from all parents, a clean auto-merge included; the resolver
+  // wrote a line of it only when the combined diff of that file has a hunk
+  const merges = new Set(gitOrFail(c.wt, ['log', '--merges', '--format=%H', `${baseOf(c.wt, c.target)}..HEAD`]).split('\n').map((l) => l.trim()).filter(Boolean))
+  const hunked = (sha: string, file: string): boolean => gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'show', '--cc', '--format=', sha, '--', file]) !== ''
   // Oldest first; each entry is a status letter (R keeps its score) with the old path and, for a rename, the new one.
   const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
     const [first = '', ...rest] = b.split('\n')
@@ -309,8 +295,12 @@ export function guardedOf(c: { dir: string; slug: string; wt: string; target: st
   const plan = loadPlan(c.dir)
   const crew = Array.isArray(plan.crews) ? plan.crews.find((x: unknown) => isObj(x) && x.slug === c.slug) : undefined
   const base = baseOf(c.wt, c.target)
-  const named = typeof crew?.acceptanceTest === 'string'
-    ? crew.acceptanceTest.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
+  // the goal file's command wins, as in `factory check`; a malformed section is that command's refusal, not this rule's
+  const goalFile = `${c.dir}/goals/${c.slug}.md`
+  const fromGoal = existsSync(goalFile) ? acceptanceCommand(readFileSync(goalFile, 'utf8')) : undefined
+  const accepted = typeof fromGoal === 'string' ? fromGoal : crew?.acceptanceTest
+  const named = typeof accepted === 'string'
+    ? accepted.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
     : []
   const guarded = new Set<string>(named.filter(isTestPath))
   const touched: Obj[] = []
@@ -327,7 +317,7 @@ export function guardedOf(c: { dir: string; slug: string; wt: string; target: st
       }
       if (!guarded.has(e.from)) continue
       if (renamed && e.st === 'R100') { guarded.delete(e.from); guarded.add(e.to); continue }
-      if (role !== undefined) files.push(e.to)
+      if (role !== undefined && (!merges.has(x.sha) || hunked(x.sha, e.to))) files.push(e.to)
       if (renamed) { guarded.delete(e.from); guarded.add(e.to) }
     }
     if (role !== undefined && !writer && files.length > 0) touched.push({ commit: x.sha, role, files })
