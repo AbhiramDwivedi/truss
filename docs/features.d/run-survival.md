@@ -1,7 +1,7 @@
 ## Find and resume a run another session left
 
 - What: `factory.ts find-run --repo R` lists the approved runs under the repo's `<git common dir>/truss/*/plan.json` that still have a crew neither `merged` nor `dropped`, newest first, each with its `dir`, `session`, main `transcript`, and unfinished `crews` with their saved `results`. It only reads, and there is no pointer file. A new PM session resumes a listed run with that `dir` as `--dir`; `start` claims each `planned` crew under the plan lock, so two sessions resuming one run start each crew once.
-- Entry points: `plugins/truss/bin/factory/find-run.ts` `cmdFindRun`; `plugins/truss/bin/factory/start.ts` `claimedWorktree`; `plugins/truss/skills/run/SKILL.md`, section "Resume a run an earlier session left"; ADR-0052.
+- Entry points: `plugins/truss/bin/factory/runs.ts` `cmdFindRun`; `plugins/truss/bin/factory/start.ts` `claimedWorktree`; `plugins/truss/skills/run/SKILL.md`, section "Resume a run an earlier session left"; ADR-0052.
 - Limits: the PM decides whether to resume; `find-run` starts nothing. The claim does not re-check `maxParallelCrews` under the lock, so two concurrent resumes can together pass the cap.
 - Tests: `plugins/truss/tests/run-survival-032.check.ts` cases 1 to 3 and 6.
 
