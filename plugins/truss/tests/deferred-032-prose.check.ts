@@ -4,7 +4,8 @@
 // prompt side, which no code test reaches (truss-prompts Standard 1: a prompt change that changes behaviour lands with a prose test).
 //
 // Skills are outside the line-citation lint, so the lines are found by their own opening words, never by line number. The all-solo
-// path ("4. Merge the task branch into the target") has no plan.json and so no plan target; it is left alone.
+// path ("4. Merge the task branch into the target") has no plan.json and so no plan target; it is left alone, as is the integrator's
+// `--into` merge, whose target is the integration branch it names.
 // Run with: node --test plugins/truss/tests/deferred-032-prose.check.ts
 
 import assert from 'node:assert/strict'
@@ -31,6 +32,12 @@ test('deferred-032 prose: the PM-path gated-merge and the plan-table settings co
   assert.equal(gm.length, 1, `the step names one gated-merge command: ${merge}`)
   assert.match(gm[0] as string, /--ff-only/, gm[0])
   assert.match(gm[0] as string, /(^|\s)--dir <truss dir>(\s|$)/, `the PM-path gated-merge passes the truss dir, so the plan target is the one it moves: ${gm[0]}`)
+
+  // the retro fix goal's scrub-then-merge example: the retro runs inside a run that has a truss dir
+  const scrub = lineStarting('**Scrub before merge.**')
+  const sm = commands(scrub, 'gated-merge')
+  assert.ok(sm.length >= 1, `the paragraph names the gated-merge command: ${scrub}`)
+  for (const c of sm) assert.match(c, /(^|\s)--dir <truss dir>(\s|$)/, `the scrub-then-merge gated-merge passes the truss dir: ${c}`)
 
   // the plan table's merge mode and target, which the PM shows the client and logs
   const table = lineStarting('**Merge mode and target.**')

@@ -5,9 +5,10 @@
 // hides an agent file changed in between; and a --continue session's transcript starts hours before the process that resumed it.
 //
 // The seam. The main session's `classic.SessionStart` handler in hooks/register.ts (no `agent_id`) writes
-// `<truss dir>/session-start.json` when the hook input's `source` is `startup` or `resume`, and only then: `clear` and `compact`
-// keep the process and its loaded agents, so they never move the start. The record is one JSON object,
-// {"v":1,"ts":"<$.clock.now() as an ISO 8601 UTC string>","source":"startup"|"resume","session":"<the hook input's session_id>"},
+// `<truss dir>/session-start.json` when the hook input's `source` is `startup`, `resume`, `clear` or `fork` (PM ruling: clear and
+// fork give the session a new id, so a new truss dir, and reload agents). Only `compact` keeps the same session and its loaded
+// agents, so it never moves the start. The record is one JSON object,
+// {"v":1,"ts":"<$.clock.now() as an ISO 8601 UTC string>","source":"<the hook input's source>","session":"<the hook input's session_id>"},
 // written whole (it replaces any earlier record). A write error fails open: the dir note still goes out. `factory start --dir D`
 // measures from D's record when it parses with v 1 and a finite ts; else from `--transcript`'s first timestamped record; else
 // from CLAUDE_PID. TRUSS_SESSION_START, the test override, still wins over all three.
@@ -121,12 +122,17 @@ test('the session-start hook writes the record on startup and on resume, with th
   assert.deepEqual(h.record(), { v: 1, ts: iso(T0), source: 'resume', session: 's1' }, 'a resume replaces the record with the resume time')
 })
 
-test('the session-start hook leaves the record alone on clear and compact, and a subagent start writes nothing', async () => {
+test('the session-start hook leaves the record alone on compact, writes it on clear and fork, and a subagent start writes nothing', async () => {
   const h = await sessionStartHook()
   await h.fire('startup', T0 - HOUR)
+  await h.fire('compact', T0 - 40 * MIN)
+  assert.deepEqual(h.record(), { v: 1, ts: iso(T0 - HOUR), source: 'startup', session: 's1' }, 'compact keeps the session and its agents, so the start does not move')
   await h.fire('clear', T0 - 30 * MIN)
+  assert.deepEqual(h.record(), { v: 1, ts: iso(T0 - 30 * MIN), source: 'clear', session: 's1' }, 'clear starts a new session that reloads its agents')
+  await h.fire('fork', T0 - 20 * MIN)
+  assert.deepEqual(h.record(), { v: 1, ts: iso(T0 - 20 * MIN), source: 'fork', session: 's1' }, 'fork starts a new session that reloads its agents')
   await h.fire('compact', T0)
-  assert.deepEqual(h.record(), { v: 1, ts: iso(T0 - HOUR), source: 'startup', session: 's1' }, 'clear and compact keep the process and its agents, so the start does not move')
+  assert.deepEqual(h.record(), { v: 1, ts: iso(T0 - 20 * MIN), source: 'fork', session: 's1' }, 'a later compact still leaves it alone')
   const sub = await sessionStartHook()
   await sub.fire('startup', T0, { agent_id: 'A1', agent_type: 'kit:builder' })
   assert.equal(sub.record(), undefined, "a subagent's SessionStart writes no record")
