@@ -6,11 +6,18 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { CliError, flat, isObj, need, readText, usage } from '../core.ts'
 import type { Obj } from '../core.ts'
-import { groupAlive, releaseHeavySlot } from '../../resources/index.ts'
-import { acquireSlot, explicitWaitMs, GROUPS, pidAlive, recordHeavyTime, slotsAt, slotWaitMs } from './slot.ts'
+import { groupAlive, killGroup, releaseHeavySlot } from '../../resources/index.ts'
+import { acquireSlot, explicitWaitMs, GROUPS, limitNote, pidAlive, recordHeavyTime, runMsOf, slotsAt, slotWaitMs } from './slot.ts'
 import { dirOf, FACTORY, parseFlags, run } from './cli.ts'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+// The seams of the heavy commands: the platform and the spawn layer, so a test runs the win32 branch with fixture values.
+export type HeavySys = { platform?: NodeJS.Platform; spawn?: typeof spawn }
+// How long a timed-out command gets between SIGTERM and SIGKILL.
+const KILL_GRACE_MS = 2000
+// The most a caller waits past its attach budget for a slot job to take its slot (job dir file `held`).
+const SETTLE_MS = 10000
 
 // How long the heavy caller waits for its job's result before it returns pending: TRUSS_HEAVY_ATTACH_MS, else 540 s, under the
 // 600000 ms Bash timeout stage.js sets. A run that takes longer goes on in the background; the same line, run again, collects it.
@@ -48,7 +55,8 @@ const readObj = (p: string): Obj | undefined => {
 // The one async command: runs argv (after the first `--`) as a background job (heavyJobMain), through the heavy slot unless the
 // command is `factory check`, which takes the slot itself and only for a full suite (0.31.0 items 1-2: targeted runs don't take
 // it). Waits up to HEAVY_ATTACH_MS for the result; a run still going returns {heavy: {pending: true}} with exit 1.
-export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+export async function heavyMain(argv: string[], sys: HeavySys = {}): Promise<{ body: Obj; code: number }> {
+  const spawnFn = sys.spawn ?? spawn
   try {
     const cut = argv.indexOf('--')
     const cmd = cut < 0 ? [] : argv.slice(cut + 1)
@@ -76,9 +84,15 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
     const job = { cmd: argv2, cwd, slug, label, slots, slot: !isCheck, waitLimit, budgetMs: waitLimit + slotWaitMs(dir), ...(explicit !== undefined ? { env: { TRUSS_HEAVY_WAIT_MS: String(explicit) } } : {}) }
     const attach = attachMsOf()
     for (let restarts = 0; ; ) {
-      startJob(dir, key, job)
+      startJob(dir, key, job, spawnFn)
       while (!existsSync(`${jdir}/result.json`) && Date.now() - t0 < attach && jobAlive(jdir)) await sleep(200)
-      if (existsSync(`${jdir}/result.json`) || Date.now() - t0 >= attach) break
+      if (existsSync(`${jdir}/result.json`) || Date.now() - t0 >= attach) {
+        // a job still starting up (a loaded host is slow to boot the wrapper and sample memory) has not taken its slot yet: give it a
+        // bounded extra wait so a pending return means the job holds the slot or is queued for it, not that it has not looked yet
+        const settle = Date.now() + SETTLE_MS
+        while (job.slot === true && !existsSync(`${jdir}/result.json`) && !existsSync(`${jdir}/held`) && Date.now() < settle && jobAlive(jdir)) await sleep(50)
+        break
+      }
       // the job died with no result (killed, or the host rebooted): start it once more, then give up
       if (restarts++ >= 1) return { body: { heavy: { label, ran: false, waitedMs: Date.now() - t0, why: 'the heavy job ended without a result' } }, code: 1 }
       rmSync(jdir, { recursive: true, force: true })
@@ -96,7 +110,8 @@ export async function heavyMain(argv: string[]): Promise<{ body: Obj; code: numb
       if (res.ran === false) return { body: { heavy: { label, ran: false, waitedMs: res.waitedMs, waitLimitMs: res.waitLimitMs, why: res.why } }, code: 1 }
       const exit = Number.isInteger(res.exit) ? (res.exit as number) : 1
       const stdout = readText(`${jdir}/out.txt`) ?? ''
-      let meta: Obj = { label, waitedMs: res.waitedMs, exit, slots }
+      // timedOut: the command ran past TRUSS_HEAVY_RUN_MS and the job stopped it (R-145)
+      let meta: Obj = { label, waitedMs: res.waitedMs, exit, slots, ...(res.timedOut === true ? { timedOut: true, limitNote: res.limitNote } : {}) }
       let parsed: unknown
       try {
         // a factory child run with --status-line prints its truss-status line after the JSON result; parse the result alone
@@ -139,7 +154,7 @@ export function jobAlive(jdir: string): boolean {
 
 // Makes the job dir (exclusive mkdir) and starts its wrapper, detached so the runner's Bash timeout can't kill it. A live job of
 // the same key is attached to, never started twice; a dead one without a result is replaced.
-function startJob(dir: string, key: string, job: Obj): void {
+function startJob(dir: string, key: string, job: Obj, spawnFn: typeof spawn = spawn): void {
   const jdir = `${JOBS(dir)}/${key}`
   mkdirSync(JOBS(dir), { recursive: true })
   try {
@@ -152,7 +167,7 @@ function startJob(dir: string, key: string, job: Obj): void {
   }
   writeFileSync(`${jdir}/job.json`, JSON.stringify({ ...job, since: Date.now(), spawner: process.pid }))
   const self = [...process.execArgv, FACTORY, 'heavy-job', '--dir', dir, '--job', key]
-  const child = spawn(process.execPath, self, { detached: true, stdio: 'ignore', windowsHide: true })
+  const child = spawnFn(process.execPath, self, { detached: true, stdio: 'ignore', windowsHide: true })
   child.on('error', () => {})
   child.unref()
   // the spawner records the wrapper's pid, not the wrapper: no window where a live job has no pid on disk
@@ -163,7 +178,15 @@ function startJob(dir: string, key: string, job: Obj): void {
 // `heavy-job --dir D --job KEY` (internal, started by heavyMain): takes the slot when the job needs it, runs the command in its
 // own process group with output to the job dir, releases the slot the moment the command ends, records a slot run's time for
 // slotWaitMs, and writes result.json last (atomically), which is what the caller waits for.
-export async function heavyJobMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+// R-144: sys.platform and sys.spawn default to process.platform and child_process.spawn. R-145: a command still running after
+// TRUSS_HEAVY_RUN_MS (default slotWaitMs) has its group stopped (SIGTERM, then SIGKILL KILL_GRACE_MS later), the slot released and
+// result.json written with timedOut: true. killGroup in resources/index.ts does the tree stop on win32, so this file holds no OS kill tool.
+export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<{ body: Obj; code: number }> {
+  const platform = sys.platform ?? process.platform
+  const spawnFn = sys.spawn ?? spawn
+  const stop = (pid: number, signal: NodeJS.Signals): void => {
+    killGroup(pid, signal, platform)
+  }
   const f = parseFlags(argv)
   const dir = need(f, 'dir')
   const jdir = `${JOBS(dir)}/${need(f, 'job')}`
@@ -182,43 +205,69 @@ export async function heavyJobMain(argv: string[]): Promise<{ body: Obj; code: n
   try {
     let waitedMs = 0
     if (job.slot === true) {
-      const a = acquireSlot(dir, { label, slug }, Number(job.slots), Number(job.waitLimit))
+      const a = acquireSlot(dir, { label, slug }, Number(job.slots), Number(job.waitLimit), platform)
       waitedMs = a.waitedMs
       if (a.token === null) {
         done({ ran: false, waitedMs, waitLimitMs: job.waitLimit, why: `waited ${waitedMs} ms (limit ${job.waitLimit} ms) for the heavy slot and free memory` })
         return { body: { ok: false }, code: 1 }
       }
       token = a.token
+      writeFileSync(`${jdir}/held`, '')
     }
     const outFd = openSync(`${jdir}/out.txt`, 'w')
     const errFd = openSync(`${jdir}/err.txt`, 'w')
     const t1 = Date.now()
     let pgid: number | undefined
+    let timedOut = false
+    // a check takes the slot inside its own command, so its slot wait runs on this timer too: the limit adds the wait limit
+    const runMs = runMsOf(dir)
     const exit = await new Promise<number>((resolve) => {
-      const env = { ...process.env, ...(isObj(job.env) ? (job.env as Record<string, string>) : {}) }
-      const child = spawn(job.cmd[0], job.cmd.slice(1), { cwd: String(job.cwd), env, detached: true, stdio: ['ignore', outFd, errFd], windowsHide: true })
+      const env = { ...process.env, TRUSS_HEAVY_JOB: '1', ...(isObj(job.env) ? (job.env as Record<string, string>) : {}) }
+      const child = spawnFn(job.cmd[0], job.cmd.slice(1), { cwd: String(job.cwd), env, detached: true, stdio: ['ignore', outFd, errFd], windowsHide: true })
+      const timers: NodeJS.Timeout[] = []
       child.on('error', () => resolve(127))
       if (child.pid !== undefined) {
-        pgid = child.pid
+        const gid = child.pid
+        pgid = gid
         mkdirSync(GROUPS(dir), { recursive: true })
-        writeFileSync(`${GROUPS(dir)}/${pgid}.json`, JSON.stringify({ pgid, heavyPid: process.pid, label, slug, since: Date.now() }))
+        writeFileSync(`${GROUPS(dir)}/${gid}.json`, JSON.stringify({ pgid: gid, heavyPid: process.pid, label, slug, since: Date.now() }))
+        timers.push(
+          setTimeout(() => {
+            timedOut = true
+            stop(gid, 'SIGTERM')
+            timers.push(setTimeout(() => stop(gid, 'SIGKILL'), KILL_GRACE_MS))
+          // setTimeout runs any delay over 2^31-1 ms after 1 ms, so a huge limit is clamped to the longest real delay (about 24.8 days)
+          }, Math.min(job.slot === true ? runMs : runMs + Number(job.waitLimit), 2147483647)),
+        )
       }
-      child.on('exit', (code, signal) => resolve(code ?? (signal === null ? 1 : 128)))
+      child.on('exit', (code, signal) => {
+        for (const t of timers) clearTimeout(t)
+        // the command is gone; a member of its group that outlived it dies with the timeout too
+        // a check holds the slot inside its own command (slot: false), so a waiting crew's `until` takeover can kill it by signal
+        // before this timer fires: a signal death past the run limit is the limit stopping it
+        if (!timedOut && job.slot !== true && signal !== null && Date.now() - t1 >= runMs) timedOut = true
+        if (timedOut && pgid !== undefined && groupAlive(pgid, platform)) stop(pgid, 'SIGKILL')
+        resolve(code ?? (signal === null ? 1 : 128))
+      })
     })
     closeSync(outFd)
     closeSync(errFd)
     if (token !== null) {
-      releaseHeavySlot(dir, token)
+      releaseHeavySlot(dir, token, platform)
       token = null
-      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
+      // a run the limit stopped is no suite time (slotWaitMs skips it), but it stretches the next default run limit (runMsOf)
+      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
+    } else if (timedOut) {
+      // a check job holds no wrapper token and the check never reached its own recordHeavyTime: the stopped run is recorded here
+      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, timedOut: true })
     }
-    if (pgid !== undefined && !groupAlive(pgid)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
-    done({ ran: true, exit, waitedMs, ms: Date.now() - t1 })
+    if (pgid !== undefined && !groupAlive(pgid, platform)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
+    done({ ran: true, exit, waitedMs, ms: Date.now() - t1, ...(timedOut ? { timedOut: true, limitNote: limitNote(runMs) } : {}) })
     return { body: { ok: exit === 0 }, code: 0 }
   } catch (e) {
     done({ ran: false, waitedMs: 0, why: `the heavy job failed: ${e instanceof Error ? e.message : String(e)}` })
     return { body: { ok: false }, code: 1 }
   } finally {
-    if (token !== null) releaseHeavySlot(dir, token)
+    if (token !== null) releaseHeavySlot(dir, token, platform)
   }
 }
