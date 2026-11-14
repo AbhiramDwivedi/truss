@@ -76,6 +76,49 @@ function ensureWorktree(repo: string, slug: string, target: string): string {
   return wt
 }
 
+// ADR-0052: claims a planned crew under the plan lock (planned to running, only if plan.json still says planned), then creates
+// its worktree. Undefined when another process claimed the crew first. A worktree failure hands the claim back before it throws.
+function claimedWorktree(dir: string, repo: string, slug: string, target: string): string | undefined {
+  let won = false
+  patchPlan(dir, (p) => {
+    const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug)
+    if (e !== undefined && e.status === 'planned') {
+      e.status = 'running'
+      delete e.engine
+      won = true
+    }
+  })
+  if (!won) return undefined
+  try {
+    return ensureWorktree(repo, slug, target)
+  } catch (err) {
+    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'running') { e.status = 'planned' } })
+    throw err
+  }
+}
+
+// ADR-0052 Decision 1: a start that died after claimedWorktree set the crew running and before its spawn event leaves a
+// running workflow crew that no start form can restart (no spawn event, so it is neither stale nor resumable). Such a crew
+// never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
+// A direct (solo or lean) crew writes no spawn event, so its sign of a start that died is no crew worktree.
+function reclaimOrphans(dir: string, repo: string, plan: Obj, merge: string, noWorkflow: boolean): void {
+  const orphaned = (c: Obj): boolean => isDirect(c) ? !existsSync(crewWorktree(repo, String(c.slug))) : factorySpawned(dir, String(c.slug)) === undefined
+  const orphans = plan.crews.filter((c: unknown) => {
+    if (!isObj(c) || c.status !== 'running' || c.engine === 'project-manager' || !orphaned(c)) return false
+    if (isDirect(c)) return true
+    const goalFile = `${dir}/goals/${String(c.slug)}.md`
+    if (!existsSync(goalFile)) return false
+    return engineOf(goalSections(readFileSync(goalFile, 'utf8')), merge, noWorkflow).engine === 'workflow'
+  }) as Obj[]
+  if (orphans.length === 0) return
+  const slugs = new Set(orphans.map((c) => String(c.slug)))
+  patchPlan(dir, (p) => {
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && e.engine !== 'project-manager' && orphaned(e)) e.status = 'planned'
+  })
+  for (const c of orphans) c.status = 'planned'
+  for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
+}
+
 export type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
@@ -545,6 +588,7 @@ export function cmdStart(f: Flags): Obj {
   const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
+  if (resumeFlag === undefined && slugFlag === undefined) reclaimOrphans(dir, repo, plan, settings.merge, f['no-workflow'] === true)
   if (resumeFlag !== undefined) {
     if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
@@ -623,9 +667,9 @@ export function cmdStart(f: Flags): Obj {
         refused.push({ slug, reason: directVerdict.deny })
         continue
       }
-      const wt = ensureWorktree(repo, slug, settings.target)
+      const wt = claimedWorktree(dir, repo, slug, settings.target)
+      if (wt === undefined) continue // another start process claimed this crew first
       crew.status = 'running'
-      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
       appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
       slots--
       direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
@@ -639,6 +683,8 @@ export function cmdStart(f: Flags): Obj {
         continue
       }
       projectManagers.push({ slug, reason })
+      // ADR-0052: stamp the crew as the project manager's, so a later start's reclaim does not take its by-hand running for a dead start's
+      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'planned') e.engine = 'project-manager' })
       slots--
       continue
     }
@@ -658,9 +704,9 @@ export function cmdStart(f: Flags): Obj {
       refused.push({ slug, reason: atDeny })
       continue
     }
-    const wt = ensureWorktree(repo, slug, settings.target)
+    const wt = claimedWorktree(dir, repo, slug, settings.target)
+    if (wt === undefined) continue // another start process claimed this crew first
     crew.status = 'running'
-    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
     appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(roles, 'planner'), by: 'factory' })
     appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--
