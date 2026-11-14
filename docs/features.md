@@ -219,8 +219,8 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Session scripts dir default
 
-- What: `plan-args` and `start` copy `plan.js` or `stage.js` to `<dir of the session transcript>/<session id>/workflows/scripts/truss-<script>` and print that as `scriptPath`, so the Workflow tool accepts it; the session id is the path segment under `<git common dir>/truss/` of the truss dir. `--scripts-dir` overrides; with no session found, `scriptPath` stays the plugin's own file.
-- Entry points: `plugins/truss/bin/factory/roles.ts` (`sessionScriptsDir`, `scriptPathFor`), `plugins/truss/bin/factory/plan.ts` (`cmdPlanArgs`), `plugins/truss/bin/factory/start.ts` (`cmdStart`), `plugins/truss/tests/lifecycle-029.check.ts`.
+- What: `plan-args` and `start` copy `plan.js` or `stage.js` to `<dir of the session transcript>/<session id>/workflows/scripts/truss-<script>` and print that as `scriptPath`, so the Workflow tool accepts it; the session id is the path segment under `<git common dir>/truss/` of the truss dir. `--scripts-dir` overrides, and its failure stays an error; with no session found, `scriptPath` stays the plugin's own file. Since 0.32.0, when the session folder refuses the copy (the macOS sandbox gives EPERM, a regular file in the way gives ENOTDIR), the copy goes to `<truss dir>/scripts/truss-<script>`, then to `<os.tmpdir()>/truss-scripts/truss-<script>`, and only then does `scriptPath` fall back to the plugin's own file.
+- Entry points: `plugins/truss/bin/factory/roles.ts` (`sessionScriptsDir`, `scriptPathFor`, `scriptPathAuto`), `plugins/truss/bin/factory/plan.ts` (`cmdPlanArgs`), `plugins/truss/bin/factory/start.ts` (`cmdStart`), `plugins/truss/tests/lifecycle-029.check.ts`, `plugins/truss/tests/deferred-032.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` sections 4 and 6; [architecture](../plugins/truss/docs/architecture.md) ("Workflow calls (ADR-0009)").
 

@@ -907,15 +907,17 @@ The helpers the modules share live in five leaf modules (0.32.0, [ADR-0049](adr/
 - `plan-file.ts` holds `loadPlan`, `savePlan` and `patchPlan`.
 - `settings.ts` holds `settingsOf` and the knowledge config (`docKeysOf`, `knowledgeCfgOf`, `knowledgeCfgFrom`, `knowledgeArgsOf`).
 - `log.ts` holds `appendEvent`, `appendDecision` and `appendDecisionLine`.
-- `roles.ts` holds the roles table (`readRoles`, `roleDefaults`, `rolesWithTypes`, `modelsOf`) and the stage script copy (`scriptPathFor`, `sessionScriptsDir`).
+- `roles.ts` holds the roles table (`readRoles`, `roleDefaults`, `rolesWithTypes`, `modelsOf`) and the stage script copy (`scriptPathFor`, `scriptPathAuto`, `sessionScriptsDir`).
 
 The heavy slot and admission live in three more leaves:
 
-- `slot.ts` holds the slot wait (`HEAVY_WAIT_MS`, `HEAVY_WAIT_MAX_MS`, `explicitWaitMs`, `heavyWaitMs`, `slotWaitMs`, `recordHeavyTime`), the slot count (`slotsAt`, `heavySlotsOf`), `acquireSlot`, `sleepSync`, `pidAlive` and `GROUPS`.
-- `admit.ts` holds `admission`, `cmdAdmit` and `heldOnBusy`, with the unexported `holdOf` and `effectiveParallelism`.
+- `slot.ts` holds the slot wait (`HEAVY_WAIT_MS`, `HEAVY_WAIT_MAX_MS`, `explicitWaitMs`, `heavyWaitMs`, `slotWaitMs`, `recordHeavyTime`), the run limit of a slot holder (`HEAVY_GRACE_MS`, `runMsOf`, `limitNote`), the slot count (`slotsAt`, `heavySlotsOf`), `acquireSlot`, `sleepSync`, `pidAlive` and `GROUPS`.
+- `admit.ts` holds `admission`, `cmdAdmit` and `heldOnBusy`, with the unexported `holdOf` and `effectiveParallelism`. It also holds the `--admit-first` flag (`takeAdmitFlag`, `admitFirst`).
 - `reap.ts` holds `cmdReap`.
 
-`shared.ts` and `resources.ts` are barrels that only re-export those leaves. They stay until a later goal drops them, and new code imports the leaf, never a barrel. `runs.ts` reads Workflow runs and QC reports. `retro-mods.ts` is the lazy load of `retro/` and imports no sibling. The command modules are `plan.ts`, `check.ts`, `doctor.ts`, `crew.ts`, `start.ts`, `warnings.ts`, `personas.ts`, `heavy.ts`, `gates.ts`, `finish.ts`, `audit.ts`, `retire.ts`, `decide.ts`, `decisions.ts` and `knowledge-cmds.ts`; each one's header comment says what it owns. No module imports `factory.ts`, whose top-level `await` would make an import cycle. `gates.ts` needs `main`, so it exports `gatesRun(argv, main)` and `factory.ts` binds it as `gatesMain`. `heavy.ts` and `gates.ts` run the CLI again through `FACTORY`. `factory-split-031.check.ts` and `hub-split-032.check.ts` pin this layout.
+Two more leaves each own one rule. `goal-file.ts` reads a crew's goal file (`goalSections`, `acceptanceCommand`). `rule-bookkeeping.ts` decides whether a base rule file changed only in its bookkeeping (`ruleBookkeepingOnly`), so `knowledgeDocs` in `crew.ts` and the knowledge commit in `decisions.ts` agree.
+
+`shared.ts` and `resources.ts` are barrels that only re-export those leaves. They stay until a later goal drops them, and new code imports the leaf, never a barrel. `runs.ts` reads Workflow runs and QC reports. `retro-mods.ts` is the lazy load of `retro/` and imports no sibling. The command modules are `plan.ts`, `check.ts`, `doctor.ts`, `crew.ts`, `start.ts`, `warnings.ts`, `personas.ts`, `heavy.ts`, `gates.ts`, `finish.ts`, `audit.ts`, `retire.ts`, `decide.ts`, `decisions.ts`, `knowledge-cmds.ts` and `consolidate.ts`; each one's header comment says what it owns. No module imports `factory.ts`, whose top-level `await` would make an import cycle. `gates.ts` needs `main`, so it exports `gatesRun(argv, main)` and `factory.ts` binds it as `gatesMain`. `heavy.ts` and `gates.ts` run the CLI again through `FACTORY`. `factory-split-031.check.ts` and `hub-split-032.check.ts` pin this layout.
 
 ### Doc fragments (0.31.0)
 
