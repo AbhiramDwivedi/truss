@@ -26,7 +26,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 6b9157063194b1f2d394570a270454b159dadec9
+verified: 4d9a68b552bdd93e1cb13f165087246ab137cad7
 ---
 
 # Store, holds and contract-025 stubs
@@ -72,7 +72,7 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (`bin/fa
 - Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
 - Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
 - A busy usage lock is handled by `budgetVerdict` in two ways. With a `usage.jsonl` it reads that file as it stands and accepts the lag. With no `usage.jsonl` the spend is unknown, so it sweeps once more with the store's default wait and lets `StoreBusy` through (exit 2, never an admit; ADR-0038 amendment 2026-11-11). `factory start` wraps its admission in `heldOnBusy`, which holds that crew with `why` `store busy: usage` and still reports the crews already started in the call. `crewCost` gives `usd: null` on any busy lock (`sweepOrRead`, `crewCost` in cost.ts). `factory cost` reads through `sweepOrRead` too: on a busy lock it prints `sweep.busy: true`, and with no `usage.jsonl` and no cursor `run.usd` and `session.usd` are null with `session.why` `usage sweep busy and no earlier reading exists` (`cmdCost` area of cost.ts).
-- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts `sumOf`). Pricing web search needs a new rate field. A price's optional `longContext` tier (0.29.0) prices a standard-speed row whose prompt (in + cache read + both cache writes) is over `abovePromptTokens` wholly at its rates (`ratesFor`, cost.ts). `RATES` and `ratesFor` are exported from cost.ts.
+- The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts `sumOf`). Pricing web search needs a new rate field. A price's optional `longContext` tier (0.29.0) prices a standard-speed row whose prompt (in + cache read + both cache writes) is over `abovePromptTokens` wholly at its rates (`ratesFor`, cost.ts). `ratesFor` is exported from cost.ts; `RATES` is not.
 - Not every Claude Code transcript has a `cost-state` line, so `claudeCodeEstimateUsd` can be null; pick a session that has one before a cross-check (ADR-0038 uses 7026b2da).
 
 ## Inbox transcript proof
