@@ -138,7 +138,7 @@ export function enclosingSymbol(text: string, n: number): string | undefined {
   return n - 1 <= end ? declAt(lines[at] as string) : undefined
 }
 const MODS = '(?:(?:public|private|protected|static|async|readonly|get|set|override|abstract)\\s+)*'
-// True when the code declares `sym` (a dotted `Class.method` is judged by its last part). A call alone is not a declaration.
+// True when the code declares, imports by name or calls `sym` (a dotted `Class.method` is judged by its last part).
 export function declares(text: string, sym: string): boolean {
   const last = sym.split('.').pop() as string
   const e = last.replace(/[$]/g, '\\$')
@@ -148,6 +148,9 @@ export function declares(text: string, sym: string): boolean {
     `^\\s*${MODS}${e}\\s*[:=]`,
     `export\\s*\\{[^}]*(?<![\\w$])${e}(?![\\w$])`,
     `\\bas\\s+${e}(?![\\w$])`,
+    `^\\s*import\\s+${e}\\s*(?:,|from\\b)`,
+    `^\\s*import\\s+(?:[\\w$]+\\s*,\\s*)?\\{[^}]*(?<![\\w$])${e}(?![\\w$])[^}]*\\}\\s*from\\b`,
+    `(?<![\\w$.])${e}\\s*\\(`,
   ]
   return forms.some((f) => new RegExp(f, 'm').test(text))
 }
@@ -176,7 +179,7 @@ function repointLines(text: string, doc: string, tree: Tree): { text: string; ro
 
 // ==== pass 4: a cited symbol the cited file no longer declares is flagged, never resolved ====
 const SYMBOL_CITE = new RegExp(`\`([^\`\\s]+\\.(?:${CODE_EXT}))\`\\s+\`([A-Za-z_$][\\w$.]*)\``, 'g')
-const flagLine = (sym: string, file: string): string => `> consolidate: the cited symbol ${sym} is no longer declared in ${file}; check this claim.`
+const flagLine = (sym: string, file: string): string => `> consolidate: the cited symbol ${sym} is not declared in ${file}; check this claim.`
 function flagMissing(text: string, doc: string, tree: Tree): { text: string; rows: Row[] } {
   const lines = text.split('\n')
   const rows: Row[] = []
