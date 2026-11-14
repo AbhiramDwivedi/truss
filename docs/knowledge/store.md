@@ -27,7 +27,7 @@ sources:
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
   - plugins/truss/bin/factory/runs.ts
-verified: 8c3b46bc
+verified: 328e72ca
 ---
 
 # Store, holds and contract-025 stubs
@@ -70,7 +70,7 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (`bin/fa
 - `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts `sweep`). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts `sweep`).
 - Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (lock.ts `readJsonl`). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts `sweep`).
 - `factory cost` (`costOf`) and the inbox commands `escalate`, `resolve`, `mark-applied` and `list` take `--dir` through `absDirOf` (`bin/inbox.ts`): a relative `--dir` is a usage error, so `sessionOf` never sees a relative basename.
-- Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
+- Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows. The one stored hint is the optional `agent` name, taken from the agent's meta file (`nameOfMeta` in cost.ts, a bare label only) so the retro can attribute an agent with no spawn event; rows swept before 0.32.0 have none.
 - Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
 - A busy usage lock is handled by `budgetVerdict` in two ways. With a `usage.jsonl` it reads that file as it stands and accepts the lag. With no `usage.jsonl` the spend is unknown, so it sweeps once more with the store's default wait and lets `StoreBusy` through (exit 2, never an admit; ADR-0038 amendment 2026-11-11). `factory start` wraps its admission in `heldOnBusy`, which holds that crew with `why` `store busy: usage` and still reports the crews already started in the call. `crewCost` gives `usd: null` on any busy lock (`sweepOrRead`, `crewCost` in cost.ts). `factory cost` reads through `sweepOrRead` too: on a busy lock it prints `sweep.busy: true`, and with no `usage.jsonl` and no cursor `run.usd` and `session.usd` are null with `session.why` `usage sweep busy and no earlier reading exists` (`cmdCost` area of cost.ts).
 - The meter counts think and web-search tokens but prices only in, out, cache read and cache write 5m/1h (cost.ts `sumOf`). Pricing web search needs a new rate field. A price's optional `longContext` tier (0.29.0) prices a standard-speed row whose prompt (in + cache read + both cache writes) is over `abovePromptTokens` wholly at its rates (`ratesFor`, cost.ts).

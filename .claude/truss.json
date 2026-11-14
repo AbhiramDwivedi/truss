@@ -2,8 +2,7 @@
   "architecture": "plugins/truss/docs/architecture.md",
   "adr": "plugins/truss/docs/adr",
   "merge": "sequential",
-  "target": "release-0.32.0",
-  "maxParallelCrews": 6,
+  "target": "main",
   "targetedTests": {
     "map": [
       { "paths": ["plugins/truss/**", ".claude/rules/**"], "tests": ["plugins/truss/tests/release-026.check.ts", "plugins/truss/tests/hygiene-029.check.ts"] },

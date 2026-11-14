@@ -9,7 +9,7 @@ sources:
   - plugins/truss/tests/run-survival-qc-032.check.ts
   - plugins/truss/tests/stage-steps-032.check.ts
   - plugins/truss/tests/stage-step-ruling.check.ts
-verified: 8c3b46bc
+verified: 328e72ca
 ---
 
 Closeout, deferred-fix and stage-step test rules (0.32.0; see also plugin-tests, plugin-tests-fixtures, plugin-tests-leaf, plugin-tests-heavy).

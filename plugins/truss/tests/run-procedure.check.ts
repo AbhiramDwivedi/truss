@@ -143,15 +143,14 @@ describe('run-procedure: SKILL.md section 9 (merge)', () => {
 })
 
 describe('run-procedure: .claude/truss.json', () => {
-  test('parses and carries merge sequential and target release-0.32.0, keeping architecture and adr', () => {
+  test('parses and carries merge sequential and target main, keeping architecture and adr', () => {
     const cfg = json(REPO, '.claude', 'truss.json')
     assert.equal(cfg.merge, 'sequential')
-    // 0.32.0 run: target is release-0.32.0 until the release commit restores main here and in .claude/truss.json
-    assert.equal(cfg.target, 'release-0.32.0')
+    assert.equal(cfg.target, 'main')
     assert.equal(cfg.architecture, 'plugins/truss/docs/architecture.md')
     assert.equal(cfg.adr, 'plugins/truss/docs/adr')
   })
-  test('factory.ts settings --repo prints target release-0.32.0 and its source', () => {
+  test('factory.ts settings --repo prints target main and its source', () => {
     let out = ''
     try {
       out = execFileSync(process.execPath, [join(PLUGIN, 'bin', 'factory.ts'), 'settings', '--repo', REPO], { cwd: REPO, encoding: 'utf8' })
@@ -159,8 +158,7 @@ describe('run-procedure: .claude/truss.json', () => {
       out = String((e as any).stdout ?? '') + String((e as any).stderr ?? '')
     }
     const flat = out.replace(/\s+/g, '')
-    // 0.32.0 run: target is release-0.32.0 until the release commit restores main here and in .claude/truss.json
-    has(flat, /"target":"release-0\.32\.0"/, '"target":"release-0.32.0" in settings output')
+    has(flat, /"target":"main"/, '"target":"main" in settings output')
     has(flat, /"source":"\.claude\/truss\.json"/, '"source":".claude/truss.json" in settings output')
   })
 })
