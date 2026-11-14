@@ -8,7 +8,7 @@ sources:
   - plugins/truss/tests/heavy-slots-stress-032.check.ts
   - plugins/truss/tests/heavy-slots-stress-stage-032.check.ts
   - plugins/truss/tests/heavy-031.check.ts
-verified: 32779348c070ac2889f0e27200977168a6e437e0
+verified: e601aad31fd2bc5703db1ec25536e44218ecd194
 ---
 
 ## Heavy job seams (0.32.0)
