@@ -41,8 +41,7 @@
     {
       "key": "goalcheck-fixer-failing-first",
       "text": "The goalCheck pending test and some fixer tests were proved failing-first by reasoning rather than by a run against the old code, where the old code would hang.",
-      "test": "tests/deferred-032-proof.check.ts",
-      "title": "the goalCheck pending test and the fixer tests fail against the old code under a test timeout"
+      "reason": "goalcheck-fixer-failing-first: the fixer and goalCheck tests were proved failing-first against dccb501f^ once, and the output is in fixtures/deferred-031/goalcheck-proof-evidence.txt."
     },
     {
       "key": "item8-stamps",

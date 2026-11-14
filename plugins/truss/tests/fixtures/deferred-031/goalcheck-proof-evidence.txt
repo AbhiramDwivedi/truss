@@ -1,0 +1,17 @@
+2026-11-14, head a86fe079, node --test --test-reporter=tap plugins/truss/tests/deferred-032-proof.check.ts
+TAP version 13
+# Subtest: the goalCheck pending test and the fixer tests fail against the old code under a test timeout
+ok 1 - the goalCheck pending test and the fixer tests fail against the old code under a test timeout
+  ---
+  duration_ms: 23135.856333
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 23381.955
