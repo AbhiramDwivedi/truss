@@ -2,11 +2,12 @@
 // decisions. Moved unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an
 // import cycle.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { isObj, need, readJson, str, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { isObj, need, readJson, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
 import { localTime } from '../../hooks/register.ts'
 import { SLUG } from './plan.ts'
-import { appendDecisionLine, appendEvent, dirOf, repoOf, run } from './shared.ts'
+import { dirOf, repoOf, run } from './cli.ts'
+import { appendDecisionLine, appendEvent } from './log.ts'
 
 // ==== crew decisions ====
 
