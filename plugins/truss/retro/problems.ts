@@ -11,7 +11,7 @@
 // Erasable TypeScript, Node built-ins only (P19). No price is written here: prices come from the client's `pricing` config.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { ratesFor } from '../bin/cost.ts'
+import { approvedSince, ratesFor } from '../bin/cost.ts'
 import { analyze } from './timing.ts'
 import { codePart } from './problems-code.ts'
 
@@ -422,7 +422,11 @@ function costPart(ctx: Ctx): Part {
   const crewUsd = new Map<string, number | null>()
   let total = 0
   let totalUsd: number | null = 0
-  for (const [id, rows] of ctx.rowsOf) {
+  // the run window is bin/cost.ts `approvedSince` (the plan's approvedAt), as in `factory.ts cost` run.since: rows before it belong to earlier work
+  const since = approvedSince(planned)
+  for (const [id, all] of ctx.rowsOf) {
+    const rows = since === undefined ? all : all.filter((r) => Date.parse(r.ts) >= since)
+    if (rows.length === 0) continue
     const a = id === null ? { crew: 'main', role: 'main' } : (ctx.agents.get(id) ?? byRecordedName(rows, slugs))
     const k = `${keyPart(a.crew)}.${a.role}`
     const acc = by.get(k) ?? { tokens: 0, usd: 0, spawns: 0 }
