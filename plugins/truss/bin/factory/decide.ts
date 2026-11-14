@@ -18,9 +18,12 @@ import { heavyMain } from './heavy.ts'
 // ADR-0027 F-73: the PM's one route to D/decisions.md. Three forms, exactly one per call:
 //   --line '<decision> | <reason> | <checker> | <outcome>'          -> `- HH:MM | <decision> | <reason> | <checker> | <outcome>`
 //   --checker <n> --recommend <answer|defer|pass> --text T --outcome O -> `- HH:MM | checker-<n> RECOMMEND <answer>: T | O`
+//   --checker <n> --recommend <worth|trim|drop> --text T --outcome O   -> `- HH:MM | checker-<n> WORTH <worth>: T | O` (bug G)
 //   --run '<goal>'                                                   -> `## Run <UTC start> | <goal>`
 // The clock stamps every line. Each refusal exits 2 and writes nothing; no form writes a continuation line.
 const RECOMMENDS = ['answer', 'defer', 'pass']
+// A goal item's worth review before planning: plan-args refuses until the run section holds one of these (plan.ts worthGate)
+const WORTHS = ['worth', 'trim', 'drop']
 // True when `dir` is a direct child of <git common dir>/truss; the compare is on real, normalised paths (case-insensitive on win32).
 export function isSessionDirUnderCommon(repo: string, dir: string, platform: string = process.platform): boolean {
   let common: string
@@ -67,10 +70,11 @@ export function cmdDecide(f: Flags, platform: string = process.platform): Obj {
     line = `- ${localTime(Date.now())} | ${fields.join(' | ')}`
   } else if (form === 'checker') {
     if (!/^[1-9]\d*$/.test(vals.checker)) throw usage(`--checker must be a positive integer, got ${vals.checker}`)
-    if (!RECOMMENDS.includes(vals.recommend)) throw usage(`--recommend must be one of ${RECOMMENDS.join(', ')}, got ${vals.recommend}`)
+    const worth = WORTHS.includes(vals.recommend)
+    if (!worth && !RECOMMENDS.includes(vals.recommend)) throw usage(`--recommend must be one of ${[...RECOMMENDS, ...WORTHS].join(', ')}, got ${vals.recommend}`)
     if (vals.text.trim() === '') throw usage('--text is empty')
     if (vals.outcome.trim() === '') throw usage('--outcome is empty')
-    line = `- ${localTime(Date.now())} | checker-${vals.checker} RECOMMEND ${vals.recommend}: ${vals.text.trim()} | ${vals.outcome.trim()}`
+    line = `- ${localTime(Date.now())} | checker-${vals.checker} ${worth ? 'WORTH' : 'RECOMMEND'} ${vals.recommend}: ${vals.text.trim()} | ${vals.outcome.trim()}`
   } else {
     const goal = vals.run.trim()
     if (goal === '') throw usage('--run needs a goal')

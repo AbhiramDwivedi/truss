@@ -776,7 +776,12 @@ t('args 3: the configured paths are used (a backslash is a separator); an invali
 t('args 4: plan-args carries productDecisions, agentsIndex, rulesDir and knowledgeDir (not rules) only when they exist', () => {
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
-  const argsOf = (repo) => runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', mkTrussDir(), '--repo', repo, '--brief-file', brief], repo).json.truss
+  const worthDir = () => {
+    const d = mkTrussDir()
+    writeFileSync(`${d}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
+    return d
+  }
+  const argsOf = (repo) => runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', worthDir(), '--repo', repo, '--brief-file', brief], repo).json.truss
   const none = argsOf(mkRepo())
   for (const k of ['productDecisions', 'agentsIndex', 'rulesDir', 'knowledgeDir', 'rules']) assert.ok(!Object.hasOwn(none, k), k)
   const all = argsOf(mkRepo({ files: { 'AGENTS.md': '# i\n', 'docs/knowledge/product-decisions.md': '# pd\n', '.claude/rules/r.md': RULE } }))
@@ -794,7 +799,9 @@ t('args 6: a path key set in truss.json is passed even when its file or dir does
   assert.ok(!Object.hasOwn(a, 'rules'), 'no rule files yet')
   const brief = `${tmp('brief-')}/brief.md`
   writeFileSync(brief, 'brief\n')
-  const p = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', mkTrussDir(), '--repo', mkRepo({ config: cfg }), '--brief-file', brief], tmp('cwd-')).json.truss
+  const dir = mkTrussDir()
+  writeFileSync(`${dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
+  const p = runCli(`${PLUGIN}/bin/factory.ts`, 'plan-args', ['--dir', dir, '--repo', mkRepo({ config: cfg }), '--brief-file', brief], tmp('cwd-')).json.truss
   assert.deepEqual([p.productDecisions, p.agentsIndex, p.rulesDir, p.knowledgeDir], ['notes/pd.md', 'ctx/INDEX.md', 'policy', 'ctx/topics'])
 })
 
