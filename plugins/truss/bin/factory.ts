@@ -14,6 +14,7 @@ import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS } from './worktypes.ts'
 import { cmdCheck } from './factory/check.ts'
 import { cmdIntegrate, cmdMarkMerged, cmdOwnsCheck, cmdOwnsExtend, cmdSync, cmdTestsCheck } from './factory/crew.ts'
+import { cmdConsolidate } from './factory/consolidate.ts'
 import { cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
 import { cmdCrewDecision, cmdCrewLearned, cmdDecisionAck, cmdDecisionCheckpoint, cmdDecisionReplies, cmdDecisionReply, cmdDecisions, cmdKnowledgeCommit } from './factory/decisions.ts'
 import { cmdDoctor } from './factory/doctor.ts'
@@ -59,7 +60,7 @@ export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckMain } fr
 const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
   'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'gated-merge': cmdGatedMerge, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex, stitch: cmdStitch,
-  'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
+  consolidate: cmdConsolidate, 'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-cap': cmdPlanCap, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
   admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
