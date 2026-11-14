@@ -1,7 +1,7 @@
 ---
 sources:
   - plugins/truss/tests/workflows.check.ts
-verified: 96a749a851e5bac754c78e76bc632331cbce4210
+verified: bbb513c563bca35071524d4de8c6e6b097b55d14
 ---
 
 ## Stage result shape (0.32.0, stage-events)
