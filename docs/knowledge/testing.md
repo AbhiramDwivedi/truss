@@ -17,7 +17,7 @@ Area rules for writing plugin tests: [plugin-tests](../../.claude/rules/plugin-t
 
 ## lifecycle-029.check.ts
 
-Pins `goal-check` (`goalCheckMain`, `cmdGoalCheckJob`; a slow check is collected by a second call with `TRUSS_HEAVY_ATTACH_MS` low), `plan-write` archiving a second run (`keepExisting` in `cmdPlanWrite`) and the session-scripts-dir default `scriptPath` for `plan-args` and `start` (`sessionScriptsDir`). Fixtures:
+Pins `goal-check` (`goalCheckMain`, `cmdGoalCheckJob`; a slow check is collected by a second call with `TRUSS_HEAVY_ATTACH_MS` low), `plan-write` archiving a second run (`keepExisting` in `cmdPlanWrite`) and the session-scripts-dir default `scriptPath` for `plan-args` and `start` (`sessionScriptsDir`, then `scriptPathAuto` falls back to `<truss dir>/scripts` and a tmpdir copy when the session dir is refused). Fixtures:
 
 - `checkWorld()`: `marker.txt` exists only on `main` while the main checkout sits on `topic`, so a `goalCheck` that passes proves it ran at the target head in a temporary worktree.
 - `sessionWorld(sub)`: builds `<common>/truss/<sid>[/wave4]` with a fixture transcript under `TRUSS_TRANSCRIPTS_ROOT`.

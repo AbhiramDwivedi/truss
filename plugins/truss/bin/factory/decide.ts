@@ -9,7 +9,7 @@ import type { Flags, Obj } from '../core.ts'
 import { localTime } from '../../hooks/register.ts'
 import { dirOf, FACTORY, gitOrFail, parseFlags, repoOf, run } from './cli.ts'
 import { loadPlan } from './plan-file.ts'
-import { settingsOf } from './settings.ts'
+import { settingsFor } from './settings.ts'
 import { appendDecision, appendDecisionLine } from './log.ts'
 import { heavyMain } from './heavy.ts'
 
@@ -96,7 +96,7 @@ function goalCheckOf(f: Flags): { dir: string; repo: string; goalId: string | un
     command = g.goalCheck
   }
   if (typeof command !== 'string' || command.trim() === '') throw usage(goalId === undefined ? 'the plan has no goalCheck' : `goal ${goalId} has no goalCheck`)
-  const target = settingsOf(repo).target
+  const target = settingsFor(f, repo).target
   const at = str(f, 'at')
   const sha = gitOrFail(repo, ['-c', 'core.quotepath=off', 'rev-parse', '--verify', `${at ?? target}^{commit}`])
   return { dir, repo, goalId, command, label: goalId === undefined ? 'goalCheck' : `goalCheck of ${goalId}`, target, sha }

@@ -47,6 +47,11 @@
       "type": "integer",
       "minimum": 1
     },
+    "target": {
+      "description": "Optional. The branch this run's crews land on. When set it wins over the target in <repo>/.claude/truss.json for every factory command that knows the run's truss dir (settings --dir, start, finish, land and the merge commands). It must be a valid git branch name; plan-check refuses one that is not. Absent, the truss.json target stands. See adr/0053-run-target.md.",
+      "type": "string",
+      "minLength": 1
+    },
     "reworkAllowance": {
       "description": "How many fresh QCs a crew may start after QC FAILs in this run. Required in version 2, forbidden in version 1. The design engineer copies it from reworkAllowance in <repo>/.claude/truss.json, or writes 2 when the key is absent. The same for every crew. See adr/0004-scope-repair-and-head-gates.md, section 5.",
       "type": "integer",

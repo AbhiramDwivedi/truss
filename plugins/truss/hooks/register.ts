@@ -1506,8 +1506,10 @@ type State = {
   stopped: Set<string>
   // when the main session last made a tool call or a model request
   mainActive?: number
-  // this session's truss folder, resolved once from the session's working directory
+  // this session's truss folder, resolved once per session id from the session's working directory
   root?: string
+  // the session id `root` was resolved for: a /clear or a fork starts a new id, whose folder is a new one
+  rootSession?: string
   // appends to the event log, one at a time, each starting once the one before has settled; /clear leaves it be
   events: Promise<unknown>
   // how many of those appends are queued or running
@@ -1516,13 +1518,34 @@ type State = {
 
 const LIMIT_RESET_REF = { plugin: 'truss', key: 'limitReset' } as const
 
-// The session's truss folder: worked out once, from the session's own working directory, so the path a note
-// names and the path a report is written to always agree. Not cached while it cannot be found.
-async function rootOf($: $, state: State): Promise<string | undefined> {
-  if (state.root !== undefined) return state.root
-  const root = trussDir(await gitCommonDir($, await $.session.cwd()), await homeDir($), await $.session.id())
-  if (root !== undefined) state.root = root
+// The session's truss folder: worked out once per session id, from the session's own working directory, so the path a
+// note names and the path a report is written to always agree. The folder is named by the session id, and a /clear or a
+// fork gives the session a new id, so the cache is keyed by it: a handler after the new id never names the old folder.
+// `sessionId` is the event's own id where the event carries one (classic.SessionStart), else the engine's current id.
+// Not cached while it cannot be found.
+async function rootOf($: $, state: State, sessionId?: string): Promise<string | undefined> {
+  const sid = sessionId ?? (await $.session.id())
+  if (state.root !== undefined && state.rootSession === sid) return state.root
+  const root = trussDir(await gitCommonDir($, await $.session.cwd()), await homeDir($), sid)
+  if (root !== undefined) {
+    state.root = root
+    state.rootSession = sid
+  }
   return root
+}
+
+// The same name as bin/factory/warnings.ts SESSION_START_FILE, which reads it; the hook imports nothing from bin.
+const SESSION_START_FILE = 'session-start.json'
+
+// The sources that start the main session's agents afresh: a new process (startup), a resumed one (resume), and a /clear or
+// a fork, which give the session a new id and reload its agents. A compact keeps the session and its loaded agents.
+const SESSION_START_SOURCES = new Set(['startup', 'resume', 'clear', 'fork'])
+
+// Writes <truss dir>/session-start.json whole, the start `factory start --dir` measures its newer-than-session warnings from
+// (bin/factory/warnings.ts). The caller fails open on a write error.
+async function writeSessionStart($: $, dir: string, source: string, sessionId: string): Promise<void> {
+  const ts = new Date(await $.clock.now()).toISOString()
+  await $.fs.write(`${dir}/${SESSION_START_FILE}`, JSON.stringify({ v: 1, ts, source, session: sessionId }) + '\n')
 }
 
 // The unattended ask gate (contract-025 s7): on the main thread, while the session's own truss dir holds unattended.json,
@@ -2367,6 +2390,7 @@ export const register: Register = on => {
     state.stints.clear()
     state.stopped.clear()
     state.root = undefined
+    state.rootSession = undefined
     return next(e)
   })
 
@@ -2843,11 +2867,17 @@ export const register: Register = on => {
     return result
   }).catch(failOpen)
 
-  // the main session learns where this session's truss files live
+  // the main session learns where this session's truss files live, and, on a start that loads its agents afresh, records
+  // when, in session-start.json; both name the folder of the event's own session id
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
     if (e.agent_id !== undefined) return result
-    const dir = await safely($, 'dir note', () => rootOf($, state))
+    const sid = typeof e.session_id === 'string' && e.session_id !== '' ? e.session_id : undefined
+    const dir = await safely($, 'dir note', () => rootOf($, state, sid))
+    const source = (e as unknown as { source?: unknown }).source
+    if (dir !== undefined && typeof source === 'string' && SESSION_START_SOURCES.has(source)) {
+      await safely($, 'session start record', async () => writeSessionStart($, dir, source, sid ?? (await $.session.id())))
+    }
     return dir === undefined ? result : { ...result, additionalContext: [...(result.additionalContext ?? []), `${DIR_NOTE} ${dir}`] }
   }).catch(failOpen)
 

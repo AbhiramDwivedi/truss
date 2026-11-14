@@ -16,7 +16,7 @@ import { acquireSlot, heavyWaitMs, recordHeavyTime, slotsAt } from './slot.ts'
 import { retro } from './retro-mods.ts'
 import { baseOf, dirOf, gitOrFail, PLUGIN, repoOf, run } from './cli.ts'
 import { loadPlan } from './plan-file.ts'
-import { settingsOf } from './settings.ts'
+import { settingsFor } from './settings.ts'
 
 // Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
 // fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
@@ -153,7 +153,7 @@ function checkTests(f: Flags, dir: string, slug: string, cwd: string): { exit: n
   try {
     const t = configOf(repoOf(f)).targetedTests
     config = isObj(t) ? (t as TestsConfig) : {}
-    sel = selectForCheckout(cwd, baseOf(cwd, settingsOf(repoOf(f)).target), config)
+    sel = selectForCheckout(cwd, baseOf(cwd, settingsFor(f, repoOf(f)).target), config)
   } catch (e) {
     sel = { mode: 'full', why: [`the diff could not be mapped: ${e instanceof Error ? e.message : String(e)}`], files: [], commands: [] }
     const full = typeof config.full === 'string' && config.full.trim() !== '' ? config.full.trim() : existsSync(`${cwd}/package.json`) ? 'npm test' : undefined
@@ -288,7 +288,7 @@ function sourceChangesOf(cwd: string, f: Flags): Obj[] {
   const source = (p: string): boolean => code.test(p) && !isTestPath(p) && !/^(docs?|\.claude)\//.test(p)
   let out: string
   try {
-    out = gitOrFail(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${baseOf(cwd, settingsOf(repoOf(f)).target)}...HEAD`])
+    out = gitOrFail(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${baseOf(cwd, settingsFor(f, repoOf(f)).target)}...HEAD`])
   } catch {
     return []
   }

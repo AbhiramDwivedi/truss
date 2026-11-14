@@ -1,0 +1,73 @@
+{
+  "report": "report-0.31.0.md, section Deferred or unverified",
+  "note": "One entry per bullet. Each holds a stable key (the 0.32.0 report quotes it), the bullet's text, and either test+title (run by tests/deferred-032.check.ts, which needs it to print ok) or a one-line reason. An entry with source ruling serves a program manager ruling, not a bullet. The 0.31.0 reviewer deferred nothing, so there are no reviewer entries.",
+  "entries": [
+    {
+      "key": "wall-clock-after-measurement",
+      "text": "The crew wall-clock after-measurement is pending until 0.32.0 runs.",
+      "reason": "Only the 0.32.0 run itself can measure crew wall-clock after the speed release; hub-split (R-139) reports the after counts, and the retro of this run reads the times."
+    },
+    {
+      "key": "heavy-job-windows",
+      "text": "The background heavy job is unverified on Windows.",
+      "reason": "Served by the heavy-slots crew (R-144), which tests the win32 branch with a stubbed platform and spawn layer because no Windows host exists."
+    },
+    {
+      "key": "hung-suite-slot-taskstop",
+      "text": "A hung background suite holds its slot until it ends. Whether TaskStop can reach these detached jobs is untested.",
+      "reason": "Served by the heavy-slots crew (R-145), which stops a hung job past its limit and tries TaskStop once on a deliberate sleeper job in a live session."
+    },
+    {
+      "key": "conclude-frontmatter-merge-finish",
+      "text": "No test drives `concludeFrontmatterMerge` through `finish`. The function itself is unit-tested and covered through sync.",
+      "reason": "Served by the stage-events crew (R-146), which adds a test that drives concludeFrontmatterMerge through finish."
+    },
+    {
+      "key": "three-line-citations",
+      "text": "Three line citations remain outside the lint's scope, two in skills/retro/SKILL.md (pinned by hygiene-029) and one in agents/planning-engineer.md.",
+      "reason": "Served by the retro-generic crew (R-147), which turns the three into symbol citations and widens the lint to those paths."
+    },
+    {
+      "key": "historical-adr-titles",
+      "text": "About 11 historical ADRs keep section titles that were renamed later. They were left on purpose as a record.",
+      "reason": "Left as they are: the ADR rule is to leave existing ADRs in their own format, so the renamed section titles stay."
+    },
+    {
+      "key": "inbox-timing-margin",
+      "text": "The inbox timing test keeps a scaled wall-clock margin.",
+      "test": "tests/inbox.check.ts",
+      "title": "inbox: a notify grandchild that sleeps is killed within notify-run limit, proved by a pipe close"
+    },
+    {
+      "key": "goalcheck-fixer-failing-first",
+      "text": "The goalCheck pending test and some fixer tests were proved failing-first by reasoning rather than by a run against the old code, where the old code would hang.",
+      "reason": "goalcheck-fixer-failing-first: the fixer and goalCheck tests were proved failing-first against dccb501f^ once, and the output is in fixtures/deferred-031/goalcheck-proof-evidence.txt."
+    },
+    {
+      "key": "item8-stamps",
+      "text": "Item 8 has no requirements (R) entry, only a CHANGELOG line. The R-116 to R-124 \"Added\" stamps use a placeholder time of day.",
+      "test": "tests/deferred-032.check.ts",
+      "title": "R-116 to R-124 Added stamps are not the T00:00:00Z placeholder",
+      "reason": "item8-stamps: 0.32.0 adds R-148 as item 8's requirement entry, and the stamps half is covered by the named test."
+    },
+    {
+      "key": "proposed-for-032",
+      "text": "Proposed for 0.32.0: structural splits for sharper test selection, a run that survives its PM session ending (8h43 in wave 4), folding `admit` and standalone reaps into earlier calls, and real-time stamping of stage events.",
+      "reason": "Served by other crews of this run: hub-split (R-139, structural splits), run-survival (R-141, a run that survives its PM session), heavy-slots (R-142, admit and reaps folded into earlier calls) and stage-events (R-143, real-time stamps)."
+    },
+    {
+      "key": "warnings-transcript-later-process",
+      "source": "ruling",
+      "text": "Program manager ruling: the newer-than-session warnings measure from the process that ran the command, so a process that started after the --transcript session hides a real agent file change.",
+      "test": "tests/warnings-session-032.check.ts",
+      "title": "start measures the session from --transcript: a running process that started after that session does not hide a real agent file change"
+    },
+    {
+      "key": "warnings-transcript-earlier-process",
+      "source": "ruling",
+      "text": "Program manager ruling: the newer-than-session warnings measure from the process that ran the command, so a process that started before the --transcript session raises a false warning.",
+      "test": "tests/warnings-session-032.check.ts",
+      "title": "start measures the session from --transcript: a running process that started before that session does not raise a false warning"
+    }
+  ]
+}
