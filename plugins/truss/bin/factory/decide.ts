@@ -2,8 +2,8 @@
 // top-level await would make an import cycle.
 import path from 'node:path'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { spawnSync } from 'node:child_process'
+import { constants as osConstants, tmpdir } from 'node:os'
+import { spawn } from 'node:child_process'
 import { CliError, commonDir, flat, isObj, refuse, str, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
 import { localTime } from '../../hooks/register.ts'
@@ -126,13 +126,26 @@ export async function goalCheckMain(argv: string[]): Promise<{ body: Obj; code: 
   }
   if (h.ran === false) return { body: { ...base, error: `${g.label} did not run: ${String(h.why)}` }, code: 1 }
   const { heavy: _, ...rest } = r.body
+  // the run limit stopped the job (ADR-0054): the PM must see timedOut, not a bare failure, and the body may be only a tail
+  if (h.timedOut === true) return { body: { ...base, ...rest, ok: false, timedOut: true }, code: r.code === 0 ? 1 : r.code }
   return { body: rest, code: r.code }
+}
+
+export async function goalCheckJobMain(argv: string[]): Promise<{ body: Obj; code: number }> {
+  try {
+    return { body: await cmdGoalCheckJob(parseFlags(argv)), code: 0 }
+  } catch (e) {
+    if (e instanceof CliError) return { body: e.body, code: e.code }
+    return { body: { error: e instanceof Error ? e.message : String(e) }, code: 2 }
+  }
 }
 
 // `goal-check-job --dir D --repo R --at SHA [--goal ID]` (internal, the heavy job goalCheckMain starts): runs the goalCheck with
 // `bash -c` in a temporary detached worktree at SHA, never in the main checkout, removes the worktree, and logs one decision line.
 // It never pushes or moves a branch, and has no time limit of its own: the heavy job runs it in the background.
-export function cmdGoalCheckJob(f: Flags): Obj {
+// The command runs async, not under spawnSync: when the heavy job stops the group at the run limit (ADR-0054), a SIGTERM handler lets
+// this process outlive the check's death, so the cleanup below and the decision line still run. It then reports timedOut.
+export async function cmdGoalCheckJob(f: Flags): Promise<Obj> {
   if (str(f, 'at') === undefined) throw usage('goal-check-job needs --at <sha>; run goal-check instead')
   const { dir, repo, goalId, command, label, target, sha } = goalCheckOf(f)
   const wt = flat(path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'truss-goalcheck-'))), 'wt'))
@@ -140,27 +153,41 @@ export function cmdGoalCheckJob(f: Flags): Obj {
   let status = 1
   let tail = ''
   let added = false
+  let stopped = false
+  const onTerm = (): void => {
+    stopped = true
+  }
+  process.on('SIGTERM', onTerm)
   try {
     gitOrFail(repo, ['-c', 'core.quotepath=off', 'worktree', 'add', '-q', '--detach', wt, sha])
     added = true
     // a goal-check started under node --test must not hand NODE_TEST_CONTEXT to a node --test the check runs (it would skip every file)
     const { NODE_TEST_CONTEXT: _, ...env } = process.env
     const fd = openSync(out, 'w')
-    let r: ReturnType<typeof spawnSync>
+    let errMsg = ''
     try {
-      r = spawnSync('bash', ['-c', command], { cwd: wt, env, stdio: ['ignore', fd, fd], windowsHide: true })
+      const code = await new Promise<number>((resolve) => {
+        const child = spawn('bash', ['-c', command], { cwd: wt, env, stdio: ['ignore', fd, fd], windowsHide: true })
+        child.on('error', (e) => {
+          errMsg = e.message
+          resolve(1)
+        })
+        child.on('close', (c, signal) => resolve(c ?? (signal === null ? 1 : 128 + (osConstants.signals[signal] ?? 0))))
+      })
+      status = code
     } finally {
       closeSync(fd)
     }
-    status = r.status ?? 1
-    tail = `${readFileSync(out, 'utf8')}${r.error ? `\n${r.error.message}` : ''}`.slice(-4000)
+    tail = `${readFileSync(out, 'utf8')}${errMsg === '' ? '' : `\n${errMsg}`}`.slice(-4000)
   } finally {
+    process.off('SIGTERM', onTerm)
     if (added) run(repo, ['-c', 'core.quotepath=off', 'worktree', 'remove', '--force', wt])
     run(repo, ['-c', 'core.quotepath=off', 'worktree', 'prune'])
     rmSync(path.dirname(wt), { recursive: true, force: true })
   }
-  appendDecision(dir, `${label} ${status === 0 ? 'passed' : `failed (exit ${status})`} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
-  const body = { ok: status === 0, goal: goalId ?? null, target, head: sha, exit: status, output: tail }
-  if (status !== 0) throw refuse(body)
+  const verdict = stopped ? `stopped by the run limit (exit ${status})` : status === 0 ? 'passed' : `failed (exit ${status})`
+  appendDecision(dir, `${label} ${verdict} at ${target} ${sha.slice(0, 12)} | run by factory goal-check in a temporary worktree`)
+  const body = { ok: status === 0 && !stopped, goal: goalId ?? null, target, head: sha, exit: status, output: tail, ...(stopped ? { timedOut: true } : {}) }
+  if (!body.ok) throw refuse(body)
   return body
 }

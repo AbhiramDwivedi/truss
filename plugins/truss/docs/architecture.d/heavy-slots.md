@@ -8,6 +8,10 @@ A hung job no longer holds its slot for ever. The wrapper stops the command's gr
 
 A process id can be reused while a hung holder's lock waits past `until`, so the takeover could signal an unrelated process that now has the owner's pid. The window is the grace plus the time until the next waiter, and the lock's token is re-read just before the kill.
 
+A limit past what `setTimeout` can hold (2147483647 ms, about 24.8 days) is clamped in `heavyJobMain`, since Node would otherwise run any longer delay after 1 ms and stop the command at once.
+
+A goalCheck is such a job, and the limit stops it with SIGTERM to its group. The internal `goal-check-job` (`goalCheckJobMain`, `cmdGoalCheckJob` in `bin/factory/decide.ts`) therefore runs the check async with a SIGTERM handler, so it outlives the check's death, removes the worktree, prunes, deletes the temp dir and appends one decision line (`stopped by the run limit (exit <n>)`). Its body then carries `timedOut: true`, and `goalCheckMain` passes `timedOut: true` with `ok: false` to the PM even when the job left only a tail. The PM should read `timedOut` as a limit stop, not a red target, and raise `TRUSS_HEAVY_RUN_MS` before starting a fix crew.
+
 Whether Claude Code's TaskStop reaches a detached heavy job is deferred: it needs a live Claude Code session, which no crew member has, so no evidence exists yet. The run limit does not depend on the answer.
 
 ### Admission and reap folds in stage.js (R-142, 0.32.0)

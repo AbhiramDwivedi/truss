@@ -236,7 +236,8 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
             timedOut = true
             stop(gid, 'SIGTERM')
             timers.push(setTimeout(() => stop(gid, 'SIGKILL'), KILL_GRACE_MS))
-          }, job.slot === true ? runMs : runMs + Number(job.waitLimit)),
+          // setTimeout runs any delay over 2^31-1 ms after 1 ms, so a huge limit is clamped to the longest real delay (about 24.8 days)
+          }, Math.min(job.slot === true ? runMs : runMs + Number(job.waitLimit), 2147483647)),
         )
       }
       child.on('exit', (code, signal) => {
