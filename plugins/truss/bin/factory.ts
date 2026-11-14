@@ -19,6 +19,7 @@ import { cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
 import { cmdCrewDecision, cmdCrewLearned, cmdDecisionAck, cmdDecisionCheckpoint, cmdDecisionReplies, cmdDecisionReply, cmdDecisions, cmdKnowledgeCommit } from './factory/decisions.ts'
 import { cmdDoctor } from './factory/doctor.ts'
 import { cmdFinish, cmdLand } from './factory/finish.ts'
+import { cmdFindRun } from './factory/find-run.ts'
 import { gatesRun } from './factory/gates.ts'
 import { heavyJobMain, heavyMain } from './factory/heavy.ts'
 import { cmdGatedMerge, cmdKnowledgeConfigGate, cmdKnowledgeLint, cmdKnowledgeMigrate, cmdRulesIndex, cmdStitch } from './factory/knowledge-cmds.ts'
@@ -63,7 +64,7 @@ const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   consolidate: cmdConsolidate, 'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
   settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-cap': cmdPlanCap, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
+  'find-run': cmdFindRun, admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
