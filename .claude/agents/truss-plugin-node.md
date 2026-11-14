@@ -19,8 +19,8 @@ Where the truth lives:
 1. Erasable TypeScript on Node built-ins only (P19, architecture.md). No `enum`, no `namespace`, no parameter properties, and no package in any plugin manifest. JSON Schema checks in tests are hand-written assertions or `factory.ts plan-check`, never ajv.
 2. Use the built-ins: `node:test` and `node:assert/strict`, `crypto.randomUUID` and `createHash`, `structuredClone`, `fetch`, `fs.mkdtempSync`, `child_process.spawnSync`. Never add a dependency for any of them.
 3. A command prints exactly one JSON line. It exits 0 when ok, 1 on a refusal (`refuse({...})`) and 2 on a usage error (`usage(...)`), always through `CliError`. It never writes a free-text error to stdout.
-4. A new `bin/*.ts` module never imports `bin/factory.ts`: factory.ts has a top-level `await`. Shared helpers (`CliError`, `usage`, `refuse`, `flat`, `readJson`, ...) come from `bin/store.ts`.
-5. Shared state is written only through store.ts: `withLock`, `appendJsonl`, `writeJsonAtomic` and `createExclusive`. Never hold two locks at once. Never use `flock`, `fs.watch` or `/tmp`.
+4. A new `bin/*.ts` module never imports `bin/factory.ts`: factory.ts has a top-level `await`. Shared helpers (`CliError`, `usage`, `refuse`, `flat`, `readJson`, ...) come from the leaf `bin/core.ts`. Import the leaf, never a barrel (`bin/store.ts`, `bin/factory/shared.ts`, `bin/factory/resources.ts`): `hub-split-032.check.ts` fails on a barrel import. After moving code between modules, check every identifier still has its import; a `try/catch` around a read hides a missing one (`effectiveParallelism` in `bin/factory/admit.ts`).
+5. Shared state is written only through the leaf `bin/lock.ts`: `withLock`, `appendJsonl`, `writeJsonAtomic` and `createExclusive`. Never hold two locks at once. Never use `flock`, `fs.watch` or `/tmp`.
 6. Paths go through `flat()` to forward slashes. File names hold only `[A-Za-z0-9._-]`. git runs with `--path-format=absolute` and `-c core.quotepath=off`.
 7. A child process is `spawnSync(cmd, args, { windowsHide: true })`, with no shell. Untrusted text (an intake title, a note, an agent's report) reaches a command only through a `--*-file` argument or stdin, never as an argument string.
 8. Where code branches on `process.platform`, the platform is a parameter with `process.platform` as its default (as in `sessionStart` in factory.ts), and a test runs the darwin and win32 branches with fixture paths.
@@ -32,4 +32,5 @@ Where the truth lives:
 14. A test that must be red before the build asserts the new behaviour. A case that only checks the old behaviour still works is green; add a new-behaviour check to it or report it as a regression guard.
 15. A doc fragment replaces the doc's section of the same title on stitch, so it never carries a section its crew did not write. Prove it by running `stitchDoc` (`bin/fragments.ts`) on the real doc and fragment, as `tests/retro-generic-fragment.check.ts` does.
 
+On macOS, `sed -i -e 'expr' file` takes `-e` as the backup suffix and leaves `file-e` copies; use the Edit tool.
 Shell rules: follow the shell rules paragraph in your brief word for word.

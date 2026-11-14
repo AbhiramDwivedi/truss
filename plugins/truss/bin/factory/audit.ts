@@ -1,12 +1,14 @@
 // The finish audit: recording a run's agents, restarts and escalations, and the session audit. Moved unchanged from
 // bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
-import { isObj, parseLabel } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { isObj, parseLabel } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { family, markerOf, qcFails, qcK, runStart } from '../../hooks/register.ts'
 import { countedQc, jsonLines, newestMtime, promptTask, reportsOf, runsOf, STALE_MS, SYNTHETIC_MODEL, transcriptFacts } from './runs.ts'
 import type { RunAgent, WfRun } from './runs.ts'
-import { appendDecision, appendEvent, intOr, roleDefaults, run } from './shared.ts'
+import { intOr, run } from './cli.ts'
+import { appendDecision, appendEvent } from './log.ts'
+import { roleDefaults } from './roles.ts'
 
 export type Audit = { label: string; why: string; slug?: string }
 

@@ -6,8 +6,10 @@ import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CliError, commonDir, configOf, flat, listOf, proofTranscriptRoot, readJsonl, readProofFile, readText, refuse, sharedDir, str, usage, need, withLock, writeJsonAtomic } from './store.ts'
-import type { Flags, Obj } from './store.ts'
+import { CliError, commonDir, configOf, flat, listOf, readText, refuse, sharedDir, str, usage, need } from './core.ts'
+import { readJsonl, withLock, writeJsonAtomic } from './lock.ts'
+import { proofTranscriptRoot, readProofFile } from './transcripts.ts'
+import type { Flags, Obj } from './core.ts'
 
 export type EscalateInput = { kind: string; title: string; detail?: string; crews?: string[]; ref?: string | null; blocking?: boolean }
 export type EscalateOut = { id: string; kind: string; deduped: boolean; code: string; notified: boolean | null; notifyError?: string }

@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { escalate, verifiedItems } from './inbox.ts'
-import { CliError, flat, git, isObj, packageName, refuse, writeJsonAtomic } from './store.ts'
+import { CliError, flat, git, isObj, packageName, refuse } from './core.ts'
+import { writeJsonAtomic } from './lock.ts'
 
 export type Reversal = 'cheap' | 'costly' | 'irreversible'
 export type LtcLine = { what: string; later: string; reversal: Reversal }

@@ -1,7 +1,12 @@
 ---
 sources:
   - plugins/truss/bin/store.ts
+  - plugins/truss/bin/core.ts
+  - plugins/truss/bin/lock.ts
+  - plugins/truss/bin/transcripts.ts
   - plugins/truss/bin/factory/resources.ts
+  - plugins/truss/bin/factory/admit.ts
+  - plugins/truss/bin/factory/plan-file.ts
   - plugins/truss/bin/factory/plan.ts
   - plugins/truss/bin/factory/start.ts
   - plugins/truss/bin/factory/finish.ts
@@ -21,7 +26,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: 1b272cf798bade5b57bc807fbbecf6b46dbe2c26
+verified: 6b9157063194b1f2d394570a270454b159dadec9
 ---
 
 # Store, holds and contract-025 stubs
