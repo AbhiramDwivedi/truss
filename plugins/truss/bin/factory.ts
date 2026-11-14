@@ -24,7 +24,7 @@ import { heavyJobMain, heavyMain } from './factory/heavy.ts'
 import { cmdGatedMerge, cmdKnowledgeConfigGate, cmdKnowledgeLint, cmdKnowledgeMigrate, cmdRulesIndex, cmdStitch } from './factory/knowledge-cmds.ts'
 import { cmdPersonaInstall } from './factory/personas.ts'
 import { cmdApprove, cmdPlanArgs, cmdPlanCap, cmdPlanCheck, cmdPlanWrite, cmdSettings } from './factory/plan.ts'
-import { cmdAdmit } from './factory/admit.ts'
+import { admitFirst, cmdAdmit, takeAdmitFlag } from './factory/admit.ts'
 import { cmdReap } from './factory/reap.ts'
 import { parseFlags } from './factory/cli.ts'
 import { argsFileOut, checkArgsFile, cmdStart } from './factory/start.ts'
@@ -190,34 +190,6 @@ export function reapFirst(argv: string[], slug: string): Obj {
     return cmdReap({ ...f, slug, label: `${slug}-check` })
   } catch (e) {
     return { error: e instanceof CliError ? JSON.stringify(e.body) : e instanceof Error ? e.message : String(e) }
-  }
-}
-// ADR-0046 item 1: `--admit-first <slug>` (with optional --admit-label, --admit-title, --admit-persona and the boolean --admit-high)
-// runs `admit --slug <slug>` with no memory wait before the command, so a member start needs no separate admit call. Taken only
-// before the `--`. Its body (a refusal's too) rides on the output as admittedFirst.
-export function takeAdmitFlag(argv: string[]): { admit: Obj | null; argv: string[] } {
-  const cut = argv.indexOf('--')
-  const head = cut < 0 ? argv : argv.slice(0, cut)
-  const rest = cut < 0 ? [] : argv.slice(cut)
-  if (!head.includes('--admit-first')) return { admit: null, argv }
-  const admit: Obj = {}
-  const kept: string[] = []
-  for (let i = 0; i < head.length; i++) {
-    const a = head[i]
-    if (a === '--admit-high') admit.high = true
-    else if (['--admit-first', '--admit-label', '--admit-title', '--admit-persona'].includes(a)) admit[a === '--admit-first' ? 'slug' : a.slice(8)] = head[++i] ?? ''
-    else kept.push(a)
-  }
-  return { admit, argv: [...kept, ...rest] }
-}
-export function admitFirst(argv: string[], admit: Obj): Obj {
-  try {
-    const cut = argv.indexOf('--')
-    const f = parseFlags((cut < 0 ? argv : argv.slice(0, cut)).slice(1))
-    return cmdAdmit({ ...f, ...admit })
-  } catch (e) {
-    if (e instanceof CliError) return e.body
-    return { admitted: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 if (isMain) {

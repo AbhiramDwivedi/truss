@@ -9,7 +9,7 @@ import { admits, minFreeMB, sample } from '../../resources/index.ts'
 import { blockingFor, escalate } from '../inbox.ts'
 import { budgetVerdict } from '../cost.ts'
 import { eventsOf } from './runs.ts'
-import { dirOf, intOr, repoOf } from './cli.ts'
+import { dirOf, intOr, parseFlags, repoOf } from './cli.ts'
 import { appendEvent } from './log.ts'
 import { cmdReap } from './reap.ts'
 import { loadPlan } from './plan-file.ts'
@@ -136,5 +136,34 @@ export function heldOnBusy(f: () => Admission): Admission {
   } catch (e) {
     if (!(e instanceof StoreBusy)) throw e
     return { admitted: false, parallelism: 0, running: 0, freeMB: null, minFreeMB: 0, why: String(e.body.error) }
+  }
+}
+
+// ADR-0046 item 1: `--admit-first <slug>` (with optional --admit-label, --admit-title, --admit-persona and the boolean --admit-high)
+// runs `admit --slug <slug>` with no memory wait before the command, so a member start needs no separate admit call. Taken only
+// before the `--`. Its body (a refusal's too) rides on the output as admittedFirst.
+export function takeAdmitFlag(argv: string[]): { admit: Obj | null; argv: string[] } {
+  const cut = argv.indexOf('--')
+  const head = cut < 0 ? argv : argv.slice(0, cut)
+  const rest = cut < 0 ? [] : argv.slice(cut)
+  if (!head.includes('--admit-first')) return { admit: null, argv }
+  const admit: Obj = {}
+  const kept: string[] = []
+  for (let i = 0; i < head.length; i++) {
+    const a = head[i]
+    if (a === '--admit-high') admit.high = true
+    else if (['--admit-first', '--admit-label', '--admit-title', '--admit-persona'].includes(a)) admit[a === '--admit-first' ? 'slug' : a.slice(8)] = head[++i] ?? ''
+    else kept.push(a)
+  }
+  return { admit, argv: [...kept, ...rest] }
+}
+export function admitFirst(argv: string[], admit: Obj): Obj {
+  try {
+    const cut = argv.indexOf('--')
+    const f = parseFlags((cut < 0 ? argv : argv.slice(0, cut)).slice(1))
+    return cmdAdmit({ ...f, ...admit })
+  } catch (e) {
+    if (e instanceof CliError) return e.body
+    return { admitted: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
