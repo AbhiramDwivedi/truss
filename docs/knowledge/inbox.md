@@ -3,12 +3,12 @@ sources:
   - plugins/truss/bin/inbox.ts
   - plugins/truss/bin/factory/start.ts
   - plugins/truss/bin/factory/plan.ts
-  - plugins/truss/bin/factory/resources.ts
+  - plugins/truss/bin/factory/admit.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/replies.js
-  - plugins/truss/workflows-src/stage/calls.js
   - plugins/truss/workflows-src/stage/crew.js
   - plugins/truss/tests/pm-calls-029.check.ts
+  - plugins/truss/workflows-src/stage/calls.js
 verified: 5a4ea5811e7f736a2221d20c7e84359d048b2208
 ---
 
