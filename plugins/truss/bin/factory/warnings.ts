@@ -73,10 +73,9 @@ export function memberWarnings(c: StartCtx, entries: Obj[]): string[] {
 // on macOS the elapsed time `ps -o etime= -p <pid>` (locale-free, 1 s resolution, so one more second is taken off); on Windows
 // PowerShell's Get-Process start time as epoch ms. Only that one process is asked about, never a scan of the process table, and
 // every command runs through an argument array, never a shell string. Unreadable is undefined, and the caller warns that it
-// can't tell (the safe side: a restart prompt, never a silent pass).
-// Never the /proc/<pid> inode mtime. Not the transcript here either, but sessionStartOnce uses it when start gets --transcript (see
-// transcriptSessionStart). A session-start hook was not used: it
-// fires on clear and compact too, which do not reload agents, and the factory cannot tell which session wrote which stamp.
+// can't tell (the safe side: a restart prompt, never a silent pass). Never the /proc/<pid> inode mtime.
+// This is the last source sessionStartOnce tries; the session-start record and the transcript come first (see the comment
+// above recordSessionStart).
 export type StartProbe = { exec: (file: string, args: string[]) => string | undefined; now: () => number }
 const REAL_PROBE: StartProbe = {
   exec: (file, args) => {
@@ -129,16 +128,32 @@ export function sessionStart(env: Record<string, string | undefined> = process.e
 // sessionStart, asked once per process for the same inputs: a Windows probe can launch PowerShell twice at 8 s each, and one
 // start asks for it in buildPersonas, roleWarnings and stressWarnings. An unreadable start is memoised too.
 const SESSION_START_MEMO = new Map<string, number | undefined>()
-// 0.32.0 (deferred-fixes, PM ruling): when start is given --transcript T, the warnings measure against the session T belongs to, not
-// against the process that ran the command. T is a Workflow run dir <transcripts root>/<project>/<sid>/workflows/<runId>, and the
-// session's main transcript is <transcripts root>/<project>/<sid>.jsonl; its first record's timestamp is the session start.
-// The choice above ("never the transcript, --continue keeps the old one") is overturned here on purpose, because a transcript start can
-// only be too early, never too late: a --continue session keeps its first record's time while its agents load again later, so a
-// file changed between the two warns once more than it should (the safe side, and newerDetail's git numstat and agent-warnings.json
-// hash record still drop an unchanged or already warned file), but a change is never hidden. The pid start is wrong both ways: a
-// process that started later than the session hid real changes, and one that started earlier raised false warnings. No CLAUDE_PID
-// path is removed: without --transcript, or when the main transcript cannot be read, it stays.
-let TRANSCRIPT_START: number | undefined
+// 0.32.0 (deferred-fixes, PM rulings 01:52 and 02:03; ADR-0016 amendment): the warnings measure from the session that loaded the
+// agents, not from the process that ran the command. sessionStartOnce tries, in order:
+// 1. TRUSS_SESSION_START, the test override, which wins over all the rest.
+// 2. <truss dir>/session-start.json (recordSessionStart), when start runs with a truss dir and the record parses with v 1 and a
+//    finite ts. The main session's own SessionStart hook (hooks/register.ts) writes it whole on startup, resume, clear and fork,
+//    the four starts that load the agents afresh, and never on compact, which keeps them. It names the session's own truss dir,
+//    so a record always belongs to the session whose dir it sits in.
+// 3. The first timestamped record of the --transcript session's main transcript (transcriptSessionStart). This is only a fallback,
+//    for a session whose hook did not run: a fresh session's first timestamped record can come later than the process start and
+//    hide a change made in between, and a --continue session's transcript starts before the process that resumed it and loaded
+//    the agents again, which raises false warnings.
+// 4. The CLAUDE_PID process start (sessionStart), which is wrong both ways when the command runs in another process.
+// Unreadable everywhere is undefined, and the caller warns that it can't tell.
+export const SESSION_START_FILE = 'session-start.json'
+export function recordSessionStart(dir: string): number | undefined {
+  try {
+    const v = JSON.parse(readFileSync(`${dir}/${SESSION_START_FILE}`, 'utf8'))
+    if (!isObj(v) || v.v !== 1 || typeof v.ts !== 'string') return undefined
+    const ts = Date.parse(v.ts)
+    return Number.isFinite(ts) ? ts : undefined
+  } catch {
+    // missing or bad: the next source stands
+    return undefined
+  }
+}
+let SESSION_START: number | undefined
 // The first 64 KB of a file as text: a transcript can be many MB, and only its first records are wanted. A cut last line fails to parse and is skipped.
 function headOf(p: string): string {
   const fd = openSync(p, 'r')
@@ -165,11 +180,13 @@ export function transcriptSessionStart(runDir: string, read: (p: string) => stri
   }
   return undefined
 }
-export function useTranscriptStart(runDir: string | undefined): void {
-  TRANSCRIPT_START = runDir === undefined || runDir === '' ? undefined : transcriptSessionStart(runDir)
+// Sets the session start this process's warnings measure from: the truss dir's session-start record, else the --transcript start.
+export function useSessionStart(dir: string | undefined, runDir: string | undefined): void {
+  const rec = dir === undefined || dir === '' ? undefined : recordSessionStart(dir)
+  SESSION_START = rec ?? (runDir === undefined || runDir === '' ? undefined : transcriptSessionStart(runDir))
 }
 export function sessionStartOnce(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform, probe: StartProbe = REAL_PROBE): number | undefined {
-  if (TRANSCRIPT_START !== undefined && (env.TRUSS_SESSION_START === undefined || env.TRUSS_SESSION_START === '')) return TRANSCRIPT_START
+  if (SESSION_START !== undefined && (env.TRUSS_SESSION_START === undefined || env.TRUSS_SESSION_START === '')) return SESSION_START
   const key = `${platform}|${env.CLAUDE_PID ?? ''}|${env.TRUSS_SESSION_START ?? ''}`
   if (!SESSION_START_MEMO.has(key)) SESSION_START_MEMO.set(key, sessionStart(env, platform, probe))
   return SESSION_START_MEMO.get(key)

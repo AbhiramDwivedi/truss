@@ -24,7 +24,7 @@ import { loadPlan, patchPlan } from './plan-file.ts'
 import { docKeysOf, knowledgeArgsOf, settingsOf } from './settings.ts'
 import { appendDecision, appendEvent } from './log.ts'
 import { modelsOf, roleDefaults, rolesWithTypes, scriptPathAuto } from './roles.ts'
-import { loadWarned, memberWarnings, roleWarnings, saveWarned, stressWarnings, useTranscriptStart } from './warnings.ts'
+import { loadWarned, memberWarnings, roleWarnings, saveWarned, stressWarnings, useSessionStart } from './warnings.ts'
 
 // ==== start ====
 
@@ -530,7 +530,7 @@ function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): 
 export function cmdStart(f: Flags): Obj {
   const dir = path.resolve(startDirOf(f))
   const repo = path.resolve(repoOf(f))
-  useTranscriptStart(str(f, 'transcript'))
+  useSessionStart(dir, str(f, 'transcript'))
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
   const settings = settingsOf(repo, dir)
   const plan = loadPlan(dir)
