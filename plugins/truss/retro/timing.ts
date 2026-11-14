@@ -12,7 +12,9 @@
 // never idle; the time from the factory spawn to the first usage row is startLeadMs, outside the split. A crew with no usage rows falls back to
 // its event stamps. Detection (`batchOf`) only flags crews in the output: leave out the factory's own spawn events (they are real-time), sort the
 // other spawn and tag events of crews by timestamp, split them where two neighbours are more than BATCH_GAP_MS apart, and call a group of at least
-// BATCH_MIN events a batch. Coverage: run.usage gives the time range of usage.jsonl and the spawned agents that have no usage row; an agent without
+// BATCH_MIN events a batch. Heavy runner reports (0.32.0 background jobs): a finished report's heavy.waitedMs is slot wait and the rest of
+// the runner's span is test run; a `ran: false` report is all slot wait; a `pending: true` report's waitedMs is the call waiting for a job
+// that was queued or running, so the whole span is test run and none is slot wait (`slotWaitOf`). Coverage: run.usage gives the time range of usage.jsonl and the spawned agents that have no usage row; an agent without
 // rows is never counted as zero time, and time after the last usage row is `noUsage`.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -26,7 +28,7 @@ const NOT_MEASURABLE = {
   clientWait: 'answers and stage results record no author, so a wait on the client cannot be told from a wait on the program manager; both sit in waitRuling',
   builderTests: 'tests a builder or tester runs inside its own agent are in agent work: they need the transcripts, which are not in the run dir',
   conflictQc: 'only resolver agents are tagged as conflict work; the QC rounds and re-greens a conflict caused are not marked, so they sit in QC and test runs',
-  slotWaitBeyondRunners: 'a slot wait is known only from a runner report (heavy.waitedMs); a wait inside a builder is not recorded',
+  slotWaitBeyondRunners: 'a slot wait is known only from a runner report (heavy.waitedMs of a finished or gave-up job; the queue time of a pending job is not told from its run time and counts as test run); a wait inside a builder is not recorded',
 }
 
 type Json = Record<string, any>
@@ -72,6 +74,14 @@ function heavyOf(file: string): Json | null {
   }
   return null
 }
+
+/**
+ * Ms of a runner's heavy record that were a wait for a heavy slot. `waitedMs` means different things by shape (bin/factory/heavy.ts):
+ * a finished job (foreground, or a background job collected on a later call) carries the job's own slot wait; a gave-up job (`ran: false`)
+ * carries the whole wait; a pending job (`pending: true`) carries how long this call waited for the job, which is queue time and run time
+ * together and not told apart in the report, so it is counted as test run (0 here).
+ */
+const slotWaitOf = (h: Json): number => (h.pending === true ? 0 : h.waitedMs)
 
 /** The events (by index in `events`) that sit in a batch-stamped burst; see the header for the rule. */
 function batchOf(events: Json[]): Set<number> {
@@ -167,7 +177,7 @@ export function analyze(dir: string): Json {
       else {
         const h = /-runner(-\d+)?$/.test(name) ? heavyOf(join(dir, 'reports', slug, `${name}.md`)) : null
         if (h) {
-          const w = Math.min(h.waitedMs, e - s)
+          const w = Math.min(slotWaitOf(h), e - s)
           ivs.push([s, s + w, 'heavyWait'])
           if (h.ran !== false) ivs.push([s + w, e, 'testRun'])
           heavyRuns.push({ crew: slug, agent: name, label: h.label, waitedMs: w, runMs: h.ran === false ? 0 : e - s - w, ran: h.ran !== false })
@@ -222,7 +232,7 @@ export function analyze(dir: string): Json {
       if (/-runner(-\d+)?\.md$/.test(f)) {
         rt.runnerReports++
         const h = heavyOf(file)
-        if (h) { rt.slotRuns++; rt.slotWaitMs += h.waitedMs; if (h.ran === false) rt.slotGaveUp++ }
+        if (h) { rt.slotRuns++; rt.slotWaitMs += slotWaitOf(h); if (h.ran === false) rt.slotGaveUp++ }
       } else if (/-qc(-\d+)?\.md$/.test(f)) {
         const v = /VERDICT:\s*(\w+)/.exec(readFileSync(file, 'utf8'))?.[1]
         if (v === 'PASS') rt.qcPass++; else if (v === 'FAIL') rt.qcFail++; else rt.qcOther++
