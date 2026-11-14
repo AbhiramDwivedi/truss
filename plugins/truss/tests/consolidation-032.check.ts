@@ -80,6 +80,17 @@ test('consolidate flags a knowledge claim whose cited symbol the code no longer 
   })
 })
 
+test('consolidate does not flag a cited symbol the file imports by name or calls, and still flags one it never mentions', () => {
+  withFixture({ used: true, contra: true }, (f) => {
+    const body = propose(f)
+    assert.deepEqual(body.changes.map((c) => c.kind), ['flag'])
+    assert.match(body.changes[0]?.reason ?? '', /withLock/, 'only the absent symbol is flagged')
+    const patch = patchOf(f.dir)
+    assert.ok(added(patch).some((l) => l.includes('withLock') && l.includes('not declared in') && !l.includes('no longer')), 'the flag says not declared')
+    for (const s of ['before', 'itFn', 'nsq', 'dflt']) assert.ok(!added(patch).some((l) => l.includes(`symbol ${s} `)), `${s} is not flagged`)
+  })
+})
+
 test('consolidate prunes an entry whose entry paths no longer exist and gives the reason in the diff', () => {
   withFixture({ unsupported: true }, (f) => {
     const body = propose(f)

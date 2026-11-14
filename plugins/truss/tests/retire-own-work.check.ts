@@ -116,6 +116,7 @@ test('fix 3: scratch dirs are excluded in the git common dir, idempotently, and 
   const env = mkEnv({ config: CFG })
   const brief = `${tmp('r0-brief-')}/brief.md`
   writeFileSync(brief, 'goal\n')
+  writeFileSync(`${env.dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   for (let i = 0; i < 2; i++) assert.equal(env.run('plan-args', { 'brief-file': brief }).status, 0)
   const common = path.resolve(env.repo, git(env.repo, ['rev-parse', '--git-common-dir']))
   const lines = readFileSync(`${common}/info/exclude`, 'utf8').split('\n')

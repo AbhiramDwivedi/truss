@@ -28,12 +28,38 @@ export function cmdSettings(f: Flags): Obj {
   return settingsFor(f, repoOf(f))
 }
 
+// Bug G (0.32.0): no goal item reaches planning without a worth review. The current run section of D/decisions.md (everything after
+// the last `## Run` heading, or the whole file when there is none) must hold a `checker-<n> WORTH` line, or the PM's audited
+// `worth review none: <evidence>` decision line saying the client typed every goal item this session. An unattended run has no
+// client typing, so only a WORTH line counts there. Both lines are written by `decide` only.
+const WORTH_LINE = /^- \d\d:\d\d \| checker-[1-9]\d* WORTH (worth|trim|drop): \S/
+const WORTH_NONE = /^- \d\d:\d\d \| worth review none:\s*[^|\s][^|]*\|/
+export function worthGate(dir: string): void {
+  const p = `${dir}/decisions.md`
+  const lines = (existsSync(p) ? readFileSync(p, 'utf8') : '').split(/\r?\n/)
+  let start = 0
+  lines.forEach((l, i) => {
+    if (l.startsWith('## Run')) start = i + 1
+  })
+  const section = lines.slice(start)
+  const unattended = existsSync(`${dir}/unattended.json`)
+  if (section.some((l) => WORTH_LINE.test(l))) return
+  if (!unattended && section.some((l) => WORTH_NONE.test(l))) return
+  const how = "log each goal item's worth review with `decide --checker <n> --recommend <worth|trim|drop> --text T --outcome O`"
+  throw refuse({
+    error: unattended
+      ? `no worth review in this run: an unattended run needs a checker WORTH line in ${p}; ${how}`
+      : `no worth review in this run: ${p} has no checker WORTH line and no 'worth review none:' line since the last ## Run; ${how}, or, when the client typed every goal item this session, \`decide --line 'worth review none: <evidence> | <reason> | none | followed'\``,
+  })
+}
+
 export function cmdPlanArgs(f: Flags): Obj {
   const dir = dirOf(f)
   const repo = repoOf(f)
   const brief = readText(need(f, 'brief-file'))
   const fix = str(f, 'fix')
   if (fix !== undefined) readText(fix)
+  worthGate(dir)
   excludeScratch(repo)
   const cfg = configOf(repo)
   // review 10: the product-owner plan review reads the feature map, so the key (default docs/features.md) goes along when that file exists
