@@ -49,11 +49,21 @@ export function recordHeavyTime(dir: string, row: { label: string; slug: string;
     // a lost row only makes the next wait shorter
   }
 }
+// How long a command that holds a heavy slot may run (R-145): TRUSS_HEAVY_RUN_MS, else slotWaitMs(dir). Past it the heavy job stops the
+// command's group; HEAVY_GRACE_MS later the slot's `until` deadline lets a waiter take the slot from a holder that never got that far.
+export const HEAVY_GRACE_MS = 15000
+export function runMsOf(dir: string, env: Record<string, string | undefined> = process.env): number {
+  const v = env.TRUSS_HEAVY_RUN_MS
+  const n = v === undefined || v.trim() === '' ? NaN : Number(v)
+  return Number.isInteger(n) && n > 0 ? n : slotWaitMs(dir)
+}
 // Takes one of `slots` heavy slots once free memory admits a run, waiting up to limitMs. The token is null when the wait ran out.
-export function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number): { token: string | null; waitedMs: number } {
+// The slot's owner.json carries until = now + the run limit + HEAVY_GRACE_MS, which takeHeavySlot treats as a stale deadline.
+export function acquireSlot(dir: string, owner: { label: string; slug: string }, slots: number, limitMs: number, platform: NodeJS.Platform = process.platform): { token: string | null; waitedMs: number } {
   const t0 = Date.now()
+  const runMs = runMsOf(dir)
   for (;;) {
-    const token = takeHeavySlot(dir, { ...owner, pid: process.pid }, process.platform, slots)
+    const token = takeHeavySlot(dir, { ...owner, pid: process.pid, until: Date.now() + runMs + HEAVY_GRACE_MS }, platform, slots)
     if (token !== null) {
       let low = false
       try {
@@ -62,7 +72,7 @@ export function acquireSlot(dir: string, owner: { label: string; slug: string },
         appendEvent(dir, { event: 'sampler-error', crew: owner.slug, agent: owner.slug, command: 'heavy', error: (e instanceof Error ? e.message : String(e)).slice(0, 200) })
       }
       if (!low) return { token, waitedMs: Date.now() - t0 }
-      releaseHeavySlot(dir, token)
+      releaseHeavySlot(dir, token, platform)
     }
     if (Date.now() - t0 >= limitMs) return { token: null, waitedMs: Date.now() - t0 }
     sleepSync(500)
