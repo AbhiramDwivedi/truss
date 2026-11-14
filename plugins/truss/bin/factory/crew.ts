@@ -227,10 +227,7 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   // 0.32.0 hotfix: a rule fragment (`<rulesDir>.d/<rule>/<crew>.md`) likewise, since the knowledge step writes a rule's `verified`
   // and `sources` there, never into the rule file; stitchDoc merges them into the rule's frontmatter. A frontmatter left with only
   // its fences counts as none, so a new fragment holding only those keys is kept.
-  const kept = (file: string, text: string): string => {
-    const fm = frontmatter(text)
-    const frag = fragOf(file)
-    if (!file.startsWith(`${kc.knowledgeDir}/`) && !(frag !== undefined && frag.startsWith(`${kc.rulesDir}/`))) return fm
+  const withoutBookkeeping = (fm: string): string => {
     let skip = false
     const rest = fm.split('\n').filter((l) => {
       if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
@@ -238,10 +235,25 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
     })
     return rest.every((l) => l.trim() === '---' || l.trim() === '') ? '' : rest.join('\n')
   }
-  const frontmatterKept = (file: string): boolean => {
-    const was = run(c.wt, ['show', `${base}:${file}`])
-    const now = run(c.wt, ['show', `HEAD:${file}`])
-    return kept(file, was.status === 0 ? was.out : '') === kept(file, now.status === 0 ? now.out : '')
+  const kept = (file: string, text: string): string => {
+    const fm = frontmatter(text)
+    const frag = fragOf(file)
+    if (!file.startsWith(`${kc.knowledgeDir}/`) && !(frag !== undefined && frag.startsWith(`${kc.rulesDir}/`))) return fm
+    return withoutBookkeeping(fm)
+  }
+  const contentAt = (rev: string, file: string): string => {
+    const r = run(c.wt, ['show', `${rev}:${file}`])
+    return r.status === 0 ? r.out : ''
+  }
+  const frontmatterKept = (file: string): boolean => kept(file, contentAt(base, file)) === kept(file, contentAt('HEAD', file))
+  // a base rule file (under rulesDir itself, not a fragment): a change of only its `verified` and `sources` keys is bookkeeping, not
+  // rule text, whoever committed it; the body and every other frontmatter key must be unchanged
+  const bookkeepingOnly = (file: string): boolean => {
+    if (!file.startsWith(`${kc.rulesDir}/`)) return false
+    const was = contentAt(base, file)
+    const now = contentAt('HEAD', file)
+    const bodyOf = (t: string): string => t.slice(frontmatter(t).length)
+    return was !== '' && withoutBookkeeping(frontmatter(was)) === withoutBookkeeping(frontmatter(now)) && bodyOf(was) === bodyOf(now)
   }
   const name = (file: string): string => file.split('/').pop() ?? ''
   // free docs: any member may change them with its code, every round
@@ -261,6 +273,7 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const isJudge = (file: string): boolean => /(^|\/)agents\/[^/]+\.md$/.test(file) && /qc|check|review|judge|product-owner/i.test(name(file))
   const isDoc = (file: string): boolean => {
     if (!file.toLowerCase().endsWith('.md')) return false
+    if (bookkeepingOnly(file)) return true
     const allowed = isPrompt(file) ? !isJudge(file) && !byMember.has(file) : isFreeDoc(file)
     return allowed && frontmatterKept(file)
   }

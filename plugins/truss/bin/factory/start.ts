@@ -128,10 +128,9 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0019 item 7, the lean entry: no goal; scope and acceptanceTest only when the goal file lacks their section,
   // since stage.js then points members to goalFile for them
   const has = (h: string) => Object.hasOwn(sections, h)
-  // the goal file holds the acceptance test only when its section quotes the plan's command; a section that only points
-  // elsewhere (such as to the plan's acceptanceTest) leaves the command in the entry, so the prompts still print it
-  const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
-  const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
+  // the goal file is what crews read and the PM edits, so its `## Acceptance test` section wins over plan.json's acceptanceTest
+  // (stageOut warns when the two differ); without the section, the plan's command goes in the entry so the prompts still print it
+  const atInGoal = has('Acceptance test')
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
   const ux = uxOn(crew.ux, uxText)
@@ -158,10 +157,23 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
 }
+// A crew whose goal file has an `## Acceptance test` section that does not quote plan.json's acceptanceTest: the goal file's is used.
+function acceptanceWarnings(c: StartCtx, slugs: string[]): string[] {
+  const out: string[] = []
+  for (const crew of Array.isArray(c.plan.crews) ? (c.plan.crews as Obj[]) : []) {
+    const slug = String(crew.slug)
+    const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
+    const goalFile = `${c.dir}/goals/${slug}.md`
+    if (!slugs.includes(slug) || at === '' || !existsSync(goalFile)) continue
+    const section = goalSections(readFileSync(goalFile, 'utf8'))['Acceptance test']
+    if (section !== undefined && !section.includes(at)) out.push(`crew ${slug}: the goal file's acceptance test differs from plan.json's acceptanceTest; the goal file's is used (the entry carries none and members are pointed to the goal file), but \`factory check\` runs plan.json's, so update plan.json to match`)
+  }
+  return out
+}
 function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
   const found = buildPersonas(c.repo)
-  const warnings = [...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
+  const warnings = [...acceptanceWarnings(c, entries.map((e) => String(e.slug))), ...stressWarnings(c, [...entries, ...projectManagers].map((e) => String(e.slug)), w), ...roleWarnings(c, entries, w, found.personas), ...memberWarnings(c, entries), ...found.warnings]
   saveWarned(c.dir, w)
   return {
     truss: { kind: 'stage', platform: process.platform, dir: c.dir, repo: c.repo, plugin: PLUGIN, target: c.settings.target, reworkAllowance: intOr(c.plan.reworkAllowance, 2, 0), roles: c.roles, personas: found.personas, ...docKeysOf(c.repo), ...knowledgeArgsOf(c.repo, true), scriptPath: c.scriptPath, crews: entries, ...(typeof c.plan.approvedAt === 'string' ? { approvedAt: c.plan.approvedAt } : {}) },
