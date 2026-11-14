@@ -2,6 +2,7 @@
 sources:
   - plugins/truss/tests/hub-split-032.check.ts
   - plugins/truss/bin/lock.ts
+verified: 437983e2009ce0a692761a50299c9243956ff8d8
 ---
 
 ## Leaf modules (0.32.0, ADR-0049)
