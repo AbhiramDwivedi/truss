@@ -375,6 +375,26 @@ describe('retro/cli.ts findings and recur: FAIL, exit 2, when the extract or the
     assert.equal(existsSync(join(empty, 'retro', 'findings.json')), false, 'no findings file is written')
   })
 
+  test('recur with no extract.json finds a fixed catalog entry whose signature a decisions.md line matches, and cites the earlier fix', async () => {
+    const { main } = await cliMod()
+    const root = mktmp()
+    const sig = `sig${hex(4)}`
+    const fixedBy = { finding: 'F-8', date: '2026-01-02' }
+    const catPath = join(root, 'catalog.json')
+    writeFileSync(catPath, JSON.stringify({ v: 1, entries: [{ id: 'struct-e', kind: 'friction', title: 't', anchor: sig, patterns: [`${sig}: `], fix: 'f', fixedBy }] }))
+    const trussDir = join(root, 'truss')
+    mkdirSync(trussDir, { recursive: true })
+    writeFileSync(join(trussDir, 'decisions.md'), `# decisions\n\n- 10:00 | ${sig}: stalled again | none\n`)
+    const r = await main(['recur', trussDir, catPath])
+    assert.equal(r.code, 0, r.out)
+    assert.deepEqual(linesOf(r.out), [`RECURRED: struct-e | fixed by ${fixedBy.finding} (${fixedBy.date}) | decisions.md:3`, 'OK: 1 recurred of 1 fixed'])
+    const empty = join(root, 'truss-none')
+    mkdirSync(empty, { recursive: true })
+    const z = await main(['recur', empty, catPath])
+    assert.equal(z.code, 0, z.out)
+    assert.equal(z.out, 'OK: 0 recurred of 1 fixed\n')
+  })
+
   test('findings against a truss dir with no extract gives FAIL and exit 2, and writes nothing', async () => {
     const a = await prepared()
     const { main } = await cliMod()
