@@ -21,24 +21,24 @@ const flat = (p) => String(p).replace(/\\/g, '/')
 
 // ---- R-97: line citations -------------------------------------------------------------------------------------------
 const storeLine = () => {
-  const n = readFileSync(path.join(PLUGIN, 'bin', 'store.ts'), 'utf8').split('\n').findIndex((l) => /^const OWNERLESS_MS\b/.test(l)) + 1
-  assert.ok(n > 0, 'OWNERLESS_MS is gone from store.ts')
+  const n = readFileSync(path.join(PLUGIN, 'bin', 'lock.ts'), 'utf8').split('\n').findIndex((l) => /^const OWNERLESS_MS\b/.test(l)) + 1
+  assert.ok(n > 0, 'OWNERLESS_MS is gone from lock.ts')
   return n
 }
 
 test('a citation that names its symbol still resolves after the cited lines move', () => {
   const real = storeLine()
   const moved = real + 40 // the symbol's lines drifted: the citation's number is stale, its name is right
-  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${moved}\`).`), [], 'a moved citation that names its symbol must not fail')
-  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${real}\`).`), [], 'the right line still passes')
+  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/lock.ts:${moved}\`).`), [], 'a moved citation that names its symbol must not fail')
+  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/lock.ts:${real}\`).`), [], 'the right line still passes')
 })
 
 test('a citation whose symbol is gone still fails the release check', () => {
   const real = storeLine()
-  const gone = citationFailures('seed', `A lock with no owner counts as stale (\`NO_SUCH_SYMBOL_HYGIENE\`, \`bin/store.ts:${real}\`).`)
+  const gone = citationFailures('seed', `A lock with no owner counts as stale (\`NO_SUCH_SYMBOL_HYGIENE\`, \`bin/lock.ts:${real}\`).`)
   assert.equal(gone.length, 1, 'a symbol that is in no line of the file must fail')
   assert.match(gone[0], /NO_SUCH_SYMBOL_HYGIENE/)
-  const moved = citationFailures('seed', `A lock with no owner counts as stale (\`NO_SUCH_SYMBOL_HYGIENE\`, \`bin/store.ts:${real + 40}\`).`)
+  const moved = citationFailures('seed', `A lock with no owner counts as stale (\`NO_SUCH_SYMBOL_HYGIENE\`, \`bin/lock.ts:${real + 40}\`).`)
   assert.equal(moved.length, 1, 'a moved citation to a missing symbol must fail too')
 })
 
