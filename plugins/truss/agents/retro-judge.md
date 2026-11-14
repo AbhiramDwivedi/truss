@@ -44,6 +44,8 @@ Return each finding as one fenced block whose info string is `finding`, holding 
 - `target`: `{"kind": "plugin" | "project-config" | "proposed-goal", "path": "<repo-relative path>"}`. Use `proposed-goal` when the fix is in product code. Product code is any file that is neither the truss plugin nor project config (`CLAUDE.md` and files under `.claude/`). Product code is never fixed automatically.
 - `signature`: optional, a list of JavaScript regular expressions, no flags, that would match the problem when it comes back.
 
+Return the finding blocks in cost order. Put the block with the highest `cost.wallMs` first and the lowest last, and put every block whose `wallMs` is null after all the blocks that have one. Break a tie in `wallMs` by `cost.tokens` from highest to lowest, with a null `tokens` after any number.
+
 Example:
 
 ```finding
