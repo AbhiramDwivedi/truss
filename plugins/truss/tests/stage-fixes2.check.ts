@@ -278,7 +278,7 @@ t('i7 2: scope is left out of the entry when the goal file has ## Approved scope
 t('i7 3: acceptanceTest is left out of the entry when the goal file has ## Acceptance test', () => {
   const env = startWorld()
   const goal = `${env.dir}/goals/x.md`
-  writeFileSync(goal, `${readFileSync(goal, 'utf8')}\n## Acceptance test\n\nnode --test t.ts\n`)
+  writeFileSync(goal, `${readFileSync(goal, 'utf8')}\n## Acceptance test\n\n\`\`\`\nnode --test t.ts\n\`\`\`\n`)
   const e = startEntry(env)
   assert.ok(!('acceptanceTest' in e), `acceptanceTest is still in the entry: ${JSON.stringify(e.acceptanceTest)}`)
 })
