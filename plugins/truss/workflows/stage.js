@@ -76,7 +76,7 @@ const KNOWLEDGE_DIR = dirArg(F.knowledgeDir, 'docs/knowledge')
 const BUDGETS = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150, ...Object.fromEntries(Object.entries(F.knowledgeBudgets !== null && typeof F.knowledgeBudgets === 'object' && !Array.isArray(F.knowledgeBudgets) ? F.knowledgeBudgets : {}).filter(([, v]) => Number.isInteger(v) && v >= 0)) }
 // 0.31.0 item 4: crews never edit the body of a shared doc, so two crews never conflict on one; `factory stitch` folds each crew's
 // fragment in when the run ends (bin/fragments.ts). A rule file's fragments sit outside the rules dir, which Claude Code loads whole.
-const fragmentLine = (slug) => `Shared docs take fragments, not edits: never edit the body of the feature map (${FEATURE_MAP}), the product decisions file (${PRODUCT_DECISIONS}), the architecture doc, or a knowledge doc or rule file that already exists. Write each section you add or change to your crew's fragment of that doc instead: \`<doc without .md>.d/${slug}.md\` (${FEATURE_MAP.replace(/\.md$/i, '.d')}/${slug}.md), and for a rule file \`${RULES_DIR}.d/<area>/${slug}.md\`. Read a shared doc together with its fragments dir, since an earlier crew of this run may have changed it there. A fragment holds whole sections: a heading the doc already has replaces that section with its subsections, a new heading is appended at the end, and a section whose body is only \`<!-- remove -->\` deletes it. Frontmatter (\`verified\`, \`sources\`) you still edit in the doc itself; a merge conflict on frontmatter alone resolves itself. A new knowledge doc, rule file or ADR you create is yours, so write it directly. \`factory stitch\` folds every fragment into its doc when the run ends.`
+const fragmentLine = (slug) => `Shared docs take fragments, not edits: never edit the body of the feature map (${FEATURE_MAP}), the product decisions file (${PRODUCT_DECISIONS}), the architecture doc, or a knowledge doc or rule file that already exists. Write each section you add or change to your crew's fragment of that doc instead: \`<doc without .md>.d/${slug}.md\` (${FEATURE_MAP.replace(/\.md$/i, '.d')}/${slug}.md), and for a rule file \`${RULES_DIR}.d/<area>/${slug}.md\`. Read a shared doc together with its fragments dir, since an earlier crew of this run may have changed it there. A fragment holds whole sections: a heading the doc already has replaces that section with its subsections, a new heading is appended at the end, and a section whose body is only \`<!-- remove -->\` deletes it. A knowledge doc's frontmatter (\`verified\`, \`sources\`) you still edit in the doc itself; a merge conflict on frontmatter alone resolves itself. A rule file's frontmatter goes in its fragment's frontmatter, never in the rule file. A new knowledge doc or ADR you create is yours, so write it directly; a new rule starts as a fragment too. \`factory stitch\` folds every fragment into its doc when the run ends.`
 // ADR-0033, ADR-0035: what every member's brief asks for in the learned field of its report. A product call never targets an
 // always-loaded file (CLAUDE.md, AGENTS.md, a persona file): it goes to the product decisions file.
 const LEARNED = `Learned items: in the learned field of your report, list each fact a later crew will need, so it need not re-analyse the codebase: new or moved functionality and its entry points; a stack rule or recurring mistake for a persona; a domain or user truth; a design decision. Each item is {kind: ${LEARNED_KINDS.join(' | ')}, text, source, target}: source is a path and the symbol in it (a function, constant or test name), a command or a finding; target is optional, the repo path the item belongs in, and only a markdown file (*.md) can be one. A product item's target is only the product decisions file (${PRODUCT_DECISIONS}), never CLAUDE.md, AGENTS.md or a persona file. An area rule's target is a rule file under ${RULES_DIR}, the feature map (${FEATURE_MAP}) or an ADR; only a rule that holds for every task of a persona targets that persona file. A feature item's target is the feature map, a README, a runbook or a file under ${KNOWLEDGE_DIR}; a decision's is an ADR or the architecture doc. Never name a code file as a target. Leave the field empty when nothing is new, and list no more than a later crew would miss.`
@@ -334,8 +334,17 @@ const seededLearned = (list) =>
     .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null, stepEnds: [] }
 }
+
+// stage.js has no clock: finish reads the time a step ended from the transcript of the last agent that returned while the crew was at it.
+// A step entered again (a QC fix round) moves its entry to the end, so the array stays in the order the steps ended, one entry a step.
+function endStep(crew, label) {
+  crew.stepEnds = crew.stepEnds.filter((s) => s.step !== crew.step)
+  crew.stepEnds.push({ step: crew.step, agent: label })
+}
+const stepEndsOf = (crew) => ({ stepEnds: crew.stepEnds.map((s) => ({ ...s })) })
+
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
 const uxOn = (crew) => crew.e.ux === true
@@ -357,7 +366,7 @@ const knowledgeResult = (crew, stopped = false) => {
 }
 
 function stopResult(crew, err) {
-  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
+  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true), ...stepEndsOf(crew) }
   if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
   return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
@@ -397,7 +406,12 @@ function memberFor(crew, role) {
 // item 1 the reap runs inside the crew's next factory call, --reap-first, or the crew-end reap).
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
-  if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
+  if (role === 'runner') {
+    const label = nextLabel(crew, role)
+    const out = await spawn(role, label, prompt, opts)
+    endStep(crew, label)
+    return out
+  }
   const { at, labelOut, title, ...rest } = opts
   const persona = typeof rest.persona === 'string' && rest.persona ? rest.persona : null
   if (!persona) delete rest.persona
@@ -405,18 +419,36 @@ async function ask(crew, role, prompt, opts = {}) {
   const member = persona ? null : memberFor(crew, role)
   // whether this member is meant to run at effort high, so factory's audit does not flag it (a persona, task effort or ## Members line)
   const high = (PERSONA_ROLES.includes(role) || role === 'po') && ((persona && PERSONAS[persona] && PERSONAS[persona].effort === 'high') || rest.effort === 'high' || (member && member.effort === 'high'))
-  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title), persona, !!high)
+  // reserve the label before the awaited admit: sibling members start in parallel, and a peek taken before the counter moves
+  // would give two of them one label, so the admission title (persona, --high) would land on a label the member does not run under.
+  // A held admission stops the crew and its number stays used: a resume numbers from labelFrom, so the gap is harmless.
+  const label = nextLabel(crew, role)
+  if (labelOut) labelOut.label = label
+  await admit(crew, at ?? crew.step, label, titleOf(crew, role, title), persona, !!high)
   // a member can change the crew branch: no gates result outlives it
   dropGates(crew)
   try {
-    const label = nextLabel(crew, role)
-    if (labelOut) labelOut.label = label
-    return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    const out = await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    endStep(crew, label)
+    return out
   } finally {
     // ADR-0046 item 1: the reap rides on the crew's next factory call (--reap-first), not a runner spawn of its own;
     // reap() runs it alone only where no factory call follows (the crew's end)
     crew.reapDue = true
   }
+}
+
+// R-142: the member start the next factory call carries the admission for. Sets crew.admitPlan (runFactory sends it as
+// --admit-first) for the label, title, persona and high that ask() will admit with; the step's call must be the very next runner call.
+function planAdmit(crew, role, title, persona = null, high = false) {
+  crew.admitPlan = { label: peekLabel(crew, role), title: titleOf(crew, role, title), persona, high }
+}
+
+// the admit-first answer of the last factory call (runFactory), once: only for the member start it was planned for
+function takeAdmitFirst(crew, label, title, persona, high) {
+  const f = crew.admitFirst
+  crew.admitFirst = null
+  return label && f && f.label === label && f.title === title && f.persona === (persona || null) && f.high === !!high ? f : null
 }
 
 // admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
@@ -427,9 +459,12 @@ async function ask(crew, role, prompt, opts = {}) {
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
-  const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
+  // R-142: or the factory call just before this member start (--admit-first) answered for it, with this label, title, persona and high
+  const first = takeAdmitFirst(crew, label, title, persona, high)
+  const pre = first ?? (label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null)
   // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
-  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  // the folded --admit-first answer counts as a memory or parallelism hold only when it carries admit's own figures (minFreeMB)
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true && (pre !== first || typeof pre.parsed.minFreeMB === 'number')
   let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
@@ -524,9 +559,14 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   // before heavy's `--`), so it costs no runner spawn. A reap command itself never carries it.
   const fold = !!crew.reapDue && !/^reap\b/.test(String(command || ''))
   const rf = fold ? ` --reap-first ${sh(crew.slug)}` : ''
-  // the flag goes just before --dir, so --dir, --repo and --status-line stay last
-  const base = line ? (fold ? line.replace(/ --dir /, `${rf} --dir `) : line) : null
-  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
+  // R-142: the admission of the member that starts right after this call (crew.admitPlan, set by the step before it) rides on the
+  // call too (--admit-first), and its answer waits in crew.admitFirst for admit(). Any other runner call voids an earlier answer.
+  const plan = crew.admitPlan && !/^reap\b/.test(String(command || '')) ? crew.admitPlan : null
+  crew.admitFirst = null
+  const af = plan ? ` --admit-first ${sh(crew.slug)} --admit-label ${sh(plan.label)} --admit-title ${sh(plan.title)}${plan.persona ? ` --admit-persona ${sh(plan.persona)}` : ''}${plan.high ? ' --admit-high' : ''}` : ''
+  // the flags go just before --dir, so --dir, --repo and --status-line stay last
+  const base = line ? (rf || af ? line.replace(/ --dir /, `${rf}${af} --dir `) : line) : null
+  const full = base ?? `node ${sh(`${F.plugin}/bin/factory.ts`)} ${command}${rf}${af} --dir ${sh(trussDir())} --repo ${sh(F.repo)} --status-line`
   const prompt = [
     'Run exactly the one command below, as written, in a single shell call. Do not change directory and do not run anything else.',
     ...(line ? ['Run it with a Bash timeout of 600000.'] : []),
@@ -544,6 +584,12 @@ async function runFactory(crew, command, key, line = null, extra = null) {
     crew.reapDue = false
     const rr = fromStdout && fromStdout.reapedFirst
     if (isPlainObject(rr) && !Array.isArray(rr.reaped)) crew.proofs.push(`reap failed: ${typeof rr.error === 'string' ? rr.error : JSON.stringify(rr)}`)
+  }
+  // the admission answer, as admit() takes it: no answer (a factory without --admit-first) leaves the member its own admit call
+  const af1 = plan && fromStdout && isPlainObject(fromStdout.admittedFirst) ? fromStdout.admittedFirst : null
+  if (af1) {
+    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, noWait: true, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
+    crew.admitPlan = null
   }
   const status = statusOf(res.status)
   // ADR-0022 U5: the status line decides met, its fields laid over the stdout JSON (heavy.ran from its ran); an empty or
@@ -622,9 +668,13 @@ async function gates(crew, want) {
   const met = r.parsed && isPlainObject(r.parsed.gates) ? r.parsed.gates : {}
   const codes = r.parsed && isPlainObject(r.parsed.codes) ? r.parsed.codes : {}
   const results = {}
+  // factory gates prints green's head at the top level (bin/factory/gates.ts), and its green step body need not hold it: a met
+  // green sub-result without it read as a pass with no head, even when the gates call stopped later, on owns
+  const topHead = r.parsed && typeof r.parsed.head === 'string' && r.parsed.head ? r.parsed.head : null
   for (const s of steps) {
-    const body = subs[s]
-    if (!isPlainObject(body)) break
+    const sub = subs[s]
+    if (!isPlainObject(sub)) break
+    const body = s === 'green' && topHead && !(typeof sub.head === 'string' && sub.head) ? { ...sub, head: topHead } : sub
     const exit = Number.isInteger(codes[s]) ? codes[s] : r.exit
     // met as the step's own runFactory call would judge it (the same key); gates' own met only says where it stopped
     results[s] = { met: body[GATE_KEY[s]] === true, parsed: body, exit, out: `exit ${exit}\n${JSON.stringify(body)}`, ...(s === 'admit' && admitWait === 0 ? { noWait: true } : {}) }
@@ -858,6 +908,7 @@ function taskPrompt(crew, task, note) {
   }
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
+  if ((crew.testsUpdated || new Set()).has(task.name)) body.push('', 'A test-writer has already updated the tests the ruling above orders; they are merged on the crew branch. The tests are updated, so build the code to pass them and never edit them.')
   if (note) body.push('', ...resumeLines(note))
   const start = firstStep(e, (note && note.branch) || priorOf(crew, task.name))
   return memberPrompt(crew, task.role, { start, body })
@@ -899,7 +950,7 @@ function fixPrompt(crew, what, detail, role = 'builder', prev = '') {
   const tf = testerFiles(crew)
   const body = [`Task: fix, ${what}`]
   if (role === 'tester') {
-    body.push(`Files you may change: ${tf.join(', ')}`)
+    body.push(`Files you may change: ${(tf.length ? tf : ownTestsOf(crew)).join(', ')}`)
   } else {
     body.push(`Files you may change: ${e.owns.filter((o) => !tf.includes(o)).join(', ')}`)
     if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`, 'Never edit a file in the tester list above; when a fix needs one changed, name it in your report instead.')
@@ -1046,6 +1097,9 @@ function learnedOf(report) {
 }
 
 const oneLine = (v, n = 500) => String(v ?? '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, n)
+// R-127: text that reaches a crew result or a member prompt keeps its lines (blanks within a line collapse, 3+ newlines become one blank
+// line). oneLine stays for shell arguments (factory escalate, crew-decision) and decision-log titles, which must be one line.
+const multiLine = (v, n = 500) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, n)
 
 // every crew decision of the run so far, one JSON line each, from the {decisions: [...]} object factory decisions prints (crew
 // and reply status per call); '' when it gave none or something else
@@ -1126,7 +1180,7 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   }
   if (!head.startsWith('PO: DECIDE')) return { escalate: 'the product owner gave neither a PO: DECIDE nor a PO: ESCALATE first line' }
   const reasonLine = body.find((l) => /^reason:/i.test(l.trim()))
-  const answer = oneLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join(' '))
+  const answer = multiLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join('\n'))
   if (!answer) return { escalate: 'the product owner decided with no answer' }
   const reason = reasonLine ? oneLine(reasonLine.trim().replace(/^reason:\s*/i, '')) : ''
   return recordCall(crew, role, makePrompt, opts, at, { question: oneLine(report.text), answer, reason, by: 'product-owner', source: 'product-owner persona, crew product call', branch: typeof report.branch === 'string' ? report.branch : '', log: true })
@@ -1135,23 +1189,26 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
 // Logs a settled product call through crew-decision (log false: an earlier run already logged it), keeps it in the crew's decisions
 // and learned items, and returns the retry note of the asking member. c.by is who decided: product-owner, program-manager or client.
 async function recordCall(crew, role, makePrompt, opts, at, c) {
-  const { question, answer, reason } = c
+  const { question, reason } = c
+  const answer = c.answer
+  // shell arguments, the decision log and the learned item stay one line; only the retry note keeps the lines
+  const flat = oneLine(answer, 4000)
   const resume = { reason: c.by === 'product-owner' ? 'product answer' : 'program manager answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: c.branch }
   if (!c.log) return { resume }
   let id = null
   try {
     // free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
-    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by ${sh(c.by)}`, 'id')
+    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(oneLine(question))} --answer=${sh(flat)} --by ${sh(c.by)}`, 'id')
     if (r.parsed && (typeof r.parsed.id === 'string' || typeof r.parsed.id === 'number') && String(r.parsed.id) !== '') id = String(r.parsed.id)
     else crew.proofs.push(`crew-decision failed: ${r.out}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     crew.proofs.push(`crew-decision failed: ${err && err.message ? err.message : String(err)}`)
   }
-  const item = { kind: 'product', text: `${question} -> ${answer}`, source: c.source, task: at, member: 'po' }
+  const item = { kind: 'product', text: `${oneLine(question)} -> ${flat}`, source: c.source, task: at, member: 'po' }
   crew.learned.push(item)
   crew.decisions.push({
-    id, question, answer, reason, reply: null, note: '', item,
+    id, question, answer: flat, reason, reply: null, note: '', item,
     rerun: rerunOf(crew, role, makePrompt, opts, at),
   })
   return { resume }
@@ -1193,11 +1250,11 @@ const holdStop = (row, question, branch, at) =>
 // already resolved). When no item can be opened the question stops the crew as a QUESTION, the old path, never a faked wait.
 async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
   const ref = callRef(crew, at)
-  const question = oneLine(report.text)
+  const question = multiLine(report.text, 2000)
   let id = null
   let failed = ''
   try {
-    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${question} The product owner's reason: ${why}`, 3000))}`, 'id')
+    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${oneLine(question)} The product owner's reason: ${why}`, 3000))}`, 'id')
     if (r.parsed && typeof r.parsed.id === 'string' && r.parsed.id !== '') id = r.parsed.id
     else failed = clip(r.out, 200)
   } catch (err) {
@@ -1221,7 +1278,7 @@ async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
 // note holds no answer, so the question stops the crew as a QUESTION.
 async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
   // the cap is resolve's own (inbox.ts resolveItem keeps 4000), so no stored answer reaches the member cut short
-  const note = oneLine(row.note, 4000)
+  const note = multiLine(row.note, 4000)
   if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
   // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
   if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
@@ -1375,13 +1432,13 @@ async function applyReplies(crew) {
         await ackReply(crew, d.id)
         continue
       }
-      const note = oneLine(x.note, 800) || 'no note given'
+      const note = multiLine(x.note, 800) || 'no note given'
       if (!(await d.rerun(`Main session changed product call ${d.id}: ${note}`))) continue
       d.reply = 'change'
       d.note = note
       d.answer = note
       const k = crew.learned.indexOf(d.item)
-      d.item = { kind: 'product', text: `${d.question} -> ${note} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
+      d.item = { kind: 'product', text: `${d.question} -> ${oneLine(note)} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
       if (k >= 0) crew.learned[k] = d.item
       else crew.learned.push(d.item)
       // review 3: acked right after its own rerun integrated, so a Stop on a later change leaves this one acked and a resume does not reapply it
@@ -1525,8 +1582,18 @@ function taskOpts(task) {
   return { title: task.name, ...(task.role === 'builder' || persona ? { effort: task.effort } : {}), ...(persona ? { persona } : {}) }
 }
 
+// 0.32.0: the new answers at a task whose role is "tester" (the PM's ruling orders a test change, which a builder may not make)
+const testerRulings = (crew, name) => (crew.e.resume === 'answers' ? freshAnswers(crew.e).filter((a) => a && a.role === 'tester' && a.at === name && typeof a.text === 'string') : [])
+
 async function runTask(crew, task) {
   const at = task.name
+  // such a ruling first goes to a test-writer; its branch is integrated before the stopped task reruns, so the rerun sees the new tests
+  const rulings = testerRulings(crew, at)
+  if (rulings.length) {
+    const detail = [`The program manager ruled on this crew's stop at task ${at}, and the ruling changes tests. Build every test change the ruling orders, commit them on your branch, and change nothing else:`, ...rulings.map((a) => `- ${a.text}`)].join('\n')
+    await fixBuilder(crew, `the program manager ruling at ${at}`, detail, 'tester', '', at)
+    ;(crew.testsUpdated ??= new Set()).add(at)
+  }
   const makePrompt = (note) => taskPrompt(crew, task, note)
   // a resume: the task's product call may still wait on its inbox item (stop again) or be answered (start with the answer)
   const first = await pendingCall(crew, task.role, makePrompt, taskOpts(task), at, true)
@@ -1563,8 +1630,8 @@ async function runMembers(crew, tasks) {
 
 // fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
 // prev: a branch an earlier fix member committed on before it stopped (greenFix's code half), merged in the first step
-async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
-  const at = crew.step
+// at: the step the member belongs to, crew.step unless the caller runs beside other members (a task rerun)
+async function fixBuilder(crew, what, detail, role = 'builder', prev = '', at = crew.step) {
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
   const make = (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev)
@@ -1608,7 +1675,16 @@ async function rulingStep(crew, membersRan) {
     crew.proofs.push(`${p.at}: the commits of its stopped member branch ${p.branch} were merged on resume`)
   }
   if (!rulings.length) return
-  const detail = ['The program manager ruled on this crew\'s stop at QC. Build every change the ruling orders (edits, cherry-picks, doc lines), commit them on your branch, and change nothing else:', ...rulings.map((a) => `- ${a.text}`)].join('\n')
+  // bug K: a ruling with role "tester" orders a test change a builder may not make; a tester fix member builds it first
+  // (fixBuilder integrates its branch), then the other rulings go to the builder
+  const forTester = rulings.filter((a) => a.role === 'tester')
+  const forBuilder = rulings.filter((a) => a.role !== 'tester')
+  if (forTester.length) {
+    const testerDetail = ['The program manager ruled on this crew\'s stop at QC, and the ruling changes tests. Build every test change the ruling orders, commit them on your branch, and change nothing else:', ...forTester.map((a) => `- ${a.text}`)].join('\n')
+    await fixBuilder(crew, 'the program manager ruling at qc', testerDetail, 'tester', '', 'qc')
+  }
+  if (!forBuilder.length) return
+  const detail = ['The program manager ruled on this crew\'s stop at QC. Build every change the ruling orders (edits, cherry-picks, doc lines), commit them on your branch, and change nothing else:', ...forBuilder.map((a) => `- ${a.text}`)].join('\n')
   await fixBuilder(crew, 'the program manager ruling at qc', detail)
 }
 
@@ -2194,6 +2270,20 @@ function alwaysLoaded(p) {
   return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && loadedForm(x.file) === f)
 }
 
+// 0.32.0 hotfix: a rule file under RULES_DIR is outside every crew's owns, and owns-check exempts no change to its frontmatter,
+// so the knowledge member writes every rule change, `sources` and `verified` included, to its fragment, which `factory stitch`
+// folds in (bin/fragments.ts stitchDoc merges a fragment's frontmatter into the rule's)
+const ruleFragment = (slug) => `\`${RULES_DIR}.d/<rule name>/${slug}.md\``
+const ruleFragmentLine = (slug) => `Rule files take only fragments: write every rule change, including \`sources\` and \`verified\`, to your fragment ${ruleFragment(slug)} (whole sections, plus frontmatter holding the \`sources\` you add and the \`verified\` stamp; a new rule's fragment also holds its \`paths\`). Never create or edit a file under \`${RULES_DIR}/\`, its frontmatter included: no crew owns one, so the owns gate stops the crew on it.`
+// the files under RULES_DIR itself (never its `.d` fragments dir) among the knowledge diff's files
+// minus the files `factory knowledge-commit` reports in `bookkeeping`: a base rule file changed only in `verified` and `sources`,
+// which owns-check accepts too (bin/factory/rule-bookkeeping.ts holds the one rule)
+const sharedRuleEdits = (rec) => {
+  const files = rec && Array.isArray(rec.files) ? rec.files : []
+  const ok = new Set(rec && Array.isArray(rec.bookkeeping) ? rec.bookkeeping.map(String) : [])
+  return files.map(String).filter((f) => f.startsWith(`${RULES_DIR}/`) && !ok.has(f))
+}
+
 // again (0.29.0, ADR-0046 item 6): a re-run after a fix round ({why, from, items}) or to clear knowledge-lint failures ({why, from,
 // items: [], lint}); it reviews only the fix's diff, from `from` (the head before that round)
 function knowledgePrompt(crew, resume, again = null) {
@@ -2204,11 +2294,13 @@ function knowledgePrompt(crew, resume, again = null) {
   const from = again && again.from ? again.from : e.base
   const body = [
     `Task: record what crew ${crew.slug} learned`,
-    ...(again && again.lint
-      ? ['Why this run: the knowledge lint failed on the docs this crew changed. Fix each failure below in the doc it names (for a stale stamp, re-read the doc against the diff, fix what is wrong, then set `verified`; fix or drop a citation; fold an entry under its budget); change nothing else.', ...lintData(again.lint)]
-      : again
-        ? [`Why this run: a fix round (${again.why}) changed the code after the docs were recorded. Bring every doc the fix diff makes stale back in line, and record the fixers' learned items below.`]
-        : []),
+    ...(again && again.rules
+      ? [`Why this run: your knowledge commit changed ${again.rules.join(', ')}, under ${RULES_DIR}/, which is outside every crew's owns, so the owns gate would stop the crew. Restore them to their content before the knowledge step (git checkout ${sh(again.from)} -- ${again.rules.map(sh).join(' ')}), write the same change, its \`sources\` and \`verified\` included, to your fragment ${ruleFragment(crew.slug)}, commit, and change nothing else.`]
+      : again && again.lint
+        ? ['Why this run: the knowledge lint failed on the docs this crew changed. Fix each failure below in the doc it names (for a stale stamp, re-read the doc against the diff, fix what is wrong, then set `verified`; fix or drop a citation; fold an entry under its budget); change nothing else.', ...lintData(again.lint)]
+        : again
+          ? [`Why this run: a fix round (${again.why}) changed the code after the docs were recorded. Bring every doc the fix diff makes stale back in line, and record the fixers' learned items below.`]
+          : []),
     `Learned items: ${items.length ? `\n${items.join('\n')}` : 'none reported'}`,
     ...(moved.length ? [`Source files the diff added, renamed or deleted (from git diff --name-status -M; tests, fixtures and docs left out):\n${moved.join('\n')}\nGive each user-facing capability among them a feature-map entry, and fix the feature-map entries and persona paths that name a deleted or renamed file. A file that is only an internal helper needs none.`] : []),
     `Diff range: ${from}...${crew.head || 'HEAD'} (git diff ${from}...${crew.head || 'HEAD'}, in the crew checkout)`,
@@ -2227,7 +2319,7 @@ function knowledgePrompt(crew, resume, again = null) {
     'Where each item goes:',
     '| Item | Goes to |',
     '|---|---|',
-    `| Area-scoped stack rule or invariant | \`${RULES_DIR}/<area>.md\`, with \`paths\` globs |`,
+    `| Area-scoped stack rule or invariant | your rule fragment ${ruleFragment(crew.slug)} |`,
     '| Cross-cutting persona rule | the persona file, under `## Standards` |',
     `| Capability | the feature map (${FEATURE_MAP}) |`,
     `| Product call | the product decisions file (${productOwnerFile()}) |`,
@@ -2236,16 +2328,17 @@ function knowledgePrompt(crew, resume, again = null) {
     '',
     fragmentLine(crew.slug),
     '',
-    `A rule file is lowercase ASCII kebab-case (\`${RULES_DIR}/export-ui.md\`), with frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\`, \`/\` and \`{a,b}\` alternation, no nested braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
+    ruleFragmentLine(crew.slug),
+    `A rule name is lowercase ASCII kebab-case (\`export-ui\`, stitched into \`${RULES_DIR}/export-ui.md\`); a rule has frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\`, \`/\` and \`{a,b}\` alternation, no nested braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. A persona file gets a Standards item the crew learned only when it holds for every task of that persona, and a path a persona file names that the diff moved is fixed. The product decisions file gets the product calls this crew made and any domain truth.`,
     'Every fact you write cites its source path or hunk; drop a fact you cannot cite.',
     // ADR-0046 items 2 and 12: the mechanical repairs run here, before QC, so QC never fails on them
     'Before you commit, repair what is mechanical in the docs the diff touches: cite code by symbol (a function or constant name), not by line number; replace every `file:line` citation the docs hold with the symbol it points at; set `verified` on each doc you re-read.',
     'Then check every line of skill and agent prose (SKILL.md, agents/*.md) the diff added or changed against the code it describes; fix a line that says the code does something it does not, and name each fix in your report.',
     'Reconcile before you add: read what the doc says about the topic, then edit or delete an entry the diff supersedes or contradicts; never append a duplicate or a second entry on the same fact.',
-    `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every rule or knowledge doc you create or edit.`,
-    `A new knowledge or rule file is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
-    `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to ${RULES_DIR}/<area>.md.`,
+    `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every knowledge doc you create or edit, and of every rule fragment you write.`,
+    `A new knowledge doc or rule is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
+    `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to a rule fragment ${ruleFragment(crew.slug)}.`,
     'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the descriptive text in the architecture doc and the feature map (module map entries, paths, how a module works), never edit an existing ADR, and raise a design PROPOSAL instead when an ADR\'s decision no longer holds.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
@@ -2265,6 +2358,32 @@ async function knowledge(crew, again = null) {
   if (!again && !crew.learned.length && !crew.sourceChanges.length) return false
   crew.step = 'knowledge'
   const before = crew.head
+  const { sha, head } = await knowledgeRun(crew, again)
+  crew.knowledgeRan = true
+  if (!sha) return true
+  crew.knowledgeSha = sha
+  // a refusal (the sha is not in before..head) or a failure is logged and the crew carries on: green re-runs, and owns-check then
+  // refuses any out-of-owns doc change because no commit is exempt
+  const rec = await recordKnowledgeCommit(crew, sha, before, head)
+  let shared = sharedRuleEdits(rec)
+  if (!shared.length) return true
+  // 0.32.0 hotfix: the knowledge diff changed a rule file the crew does not own. Sent back once (bound 1: the member had the
+  // fragment rule in its brief and now has the files named; a second miss will not fix itself), checked again on the whole
+  // knowledge diff from `before`, so an edit the send-back left alone still counts
+  log(`knowledge step: crew ${crew.slug} changed ${shared.join(', ')}; sent back once to restore them`)
+  const back = await knowledgeRun(crew, { why: 'shared rule file', from: before, items: [], rules: shared })
+  if (back.sha) {
+    crew.knowledgeSha = back.sha
+    const again2 = await recordKnowledgeCommit(crew, back.sha, before, back.head)
+    // an unconfirmed record keeps the first list: the step stops rather than leave the edit for the owns gate
+    if (again2) shared = sharedRuleEdits(again2)
+  }
+  if (shared.length) throw new Stop('BLOCKED', `the knowledge step changed ${shared.join(', ')}, under ${RULES_DIR}/, and left the change after one send-back. No crew owns a rule file; rule changes go to the crew's fragment under ${RULES_DIR}.d/. Restore those files on the crew branch and resume the crew.`, 'knowledge')
+  return true
+}
+
+// one run of the knowledge writer member, integrated into the crew branch; {sha, head}, sha null when it reported no commit
+async function knowledgeRun(crew, again) {
   const wmake = (resume) => knowledgePrompt(crew, resume, again)
   const wopts = { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }
   const first = await pendingCall(crew, 'writer', wmake, wopts, 'knowledge')
@@ -2278,15 +2397,8 @@ async function knowledge(crew, again = null) {
   }
   crew.proofs.push(`knowledge: ${report.proof}`)
   const head = await integrate(crew, report.branch, 'knowledge')
-  crew.knowledgeRan = true
   const sha = typeof report.commit === 'string' && report.commit.trim() ? report.commit.trim() : null
-  if (sha) {
-    crew.knowledgeSha = sha
-    // a refusal (the sha is not in before..head) or a failure is logged and the crew carries on: green re-runs, and owns-check then
-    // refuses any out-of-owns doc change because no commit is exempt
-    await recordKnowledgeCommit(crew, sha, before, head)
-  }
-  return true
+  return { sha, head }
 }
 
 // factory knowledge-commit: the crew's knowledge commit, which factory's owns check exempts. A failure is logged, never stops the crew.
@@ -2537,6 +2649,7 @@ async function runQc(crew) {
   try {
     dropGates(crew)
     text = await spawn('qc', label, qcPrompt(crew))
+    endStep(crew, label)
   } finally {
     crew.reapDue = true
   }
@@ -2572,7 +2685,7 @@ async function qc(crew) {
       await knowledgeAgain(crew, 'full suite before merge', from)
       continue
     }
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew), ...stepEndsOf(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
@@ -2744,7 +2857,17 @@ async function syncStep(crew) {
 
 async function redStep(crew) {
   crew.step = 'red'
-  const r = await check(crew, 'red')
+  // R-142: the red check is the factory call just before the first member start (the UX direction, else the planner), so its
+  // call carries that member's admission. Saved tasks leave the first member to runMembers: no admission rides here.
+  crew.admitPlan = null
+  if (uxOn(crew) && !crew.direction) planAdmit(crew, 'ux', `UX direction ${crew.slug}`)
+  else if (!(crew.e.tasks || []).length) planAdmit(crew, 'planner')
+  let r
+  try {
+    r = await check(crew, 'red')
+  } finally {
+    crew.admitPlan = null
+  }
   const env = envOf(r)
   if (env) throw new Stop('BLOCKED', `the acceptance test fails on the environment, not the code, so its red proves nothing: ${env}\nFix the host (install what it names) and resume the crew.${knownOf(r)}\n${r.out}`, 'red')
   if (!r.met) throw new Stop('BLOCKED', `the acceptance test is not red at the start:${knownOf(r)}\n${r.out}`, 'red')
@@ -2809,9 +2932,16 @@ async function runCrew(entry) {
   } catch (err) {
     result = stopResult(crew, err)
   }
-  await reap(crew)
   // replies that arrived after the checkpoint are not applied here; the main session turns a late change into a fix at merge
-  const { late, unknown } = await lateReplies(crew)
+  // R-142: the crew-end reap rides on the crew's next factory call (the late-reply read, --reap-first) and runs alone only when
+  // that read makes no call or fails before the reap ran. A Stop there still leaves the reap to run.
+  let lateRead
+  try {
+    lateRead = await lateReplies(crew)
+  } finally {
+    if (crew.reapDue) await reap(crew)
+  }
+  const { late, unknown } = lateRead
   return { ...result, ...(late.length ? { late } : {}), ...(unknown ? { lateUnknown: true } : {}), ...(crew.unrecorded.length ? { unrecorded: crew.unrecorded } : {}) }
 }
 

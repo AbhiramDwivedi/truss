@@ -4,40 +4,30 @@
 import path from 'node:path'
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { CliError, configOf, flat, isObj, listOf, need, parseLabel, readJson, refuse, releaseLease, str, takeLease, usage, writeJsonAtomic } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { CliError, configOf, flat, isObj, listOf, need, parseLabel, readJson, refuse, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { releaseLease, takeLease, writeJsonAtomic } from '../lock.ts'
 import { profilesOf } from '../worktypes.ts'
 import { parsePlan, planVerdict, unbannered } from '../../hooks/register.ts'
 import { goalOf, RUN_GOAL } from '../../hooks/intake.ts'
+import { acceptanceCommand, goalSections } from './goal-file.ts'
 import { guardedOf, isTestPath, mergeIn, operationInProgress } from './crew.ts'
 import { CREW_STATE, learnedOf, readQuiet, setCrewState } from './decisions.ts'
 import { redRecord } from './finish.ts'
 import { buildPersonas } from './personas.ts'
-import { admission, heldOnBusy } from './resources.ts'
+import { admission, heldOnBusy } from './admit.ts'
 import { excludeScratch } from './retire.ts'
 import { crewRunsOf, directionOf, eventsOf, factorySpawned, firstLine, isLive, labelFromOf, promptTask, runOf, runsNextTo, spentOf } from './runs.ts'
 import type { RunAgent, WfRun } from './runs.ts'
-import { appendDecision, appendEvent, archPath, baseOf, crewWorktree, docKeysOf, gitOrFail, intOr, knowledgeArgsOf, loadPlan, modelsOf, patchPlan, PLUGIN, repoOf, roleDefaults, rolesWithTypes, run, scriptPathFor, sessionScriptsDir, settingsOf, startDirOf } from './shared.ts'
-import { loadWarned, memberWarnings, roleWarnings, saveWarned, stressWarnings } from './warnings.ts'
+import { archPath, baseOf, crewWorktree, gitOrFail, intOr, PLUGIN, repoOf, run, startDirOf } from './cli.ts'
+import { loadPlan, patchPlan } from './plan-file.ts'
+import { docKeysOf, knowledgeArgsOf, settingsOf } from './settings.ts'
+import { appendDecision, appendEvent } from './log.ts'
+import { modelsOf, roleDefaults, rolesWithTypes, scriptPathAuto } from './roles.ts'
+import { loadWarned, memberWarnings, roleWarnings, saveWarned, stressWarnings, useSessionStart } from './warnings.ts'
 
 // ==== start ====
 
-// A goal file's `## Heading` sections as {heading: text}; the text before the first heading is under "".
-export function goalSections(text: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  let key = ''
-  let buf: string[] = []
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^## (.+?)\s*$/.exec(line)
-    if (m) {
-      out[key] = buf.join('\n').trim()
-      key = m[1]
-      buf = []
-    } else buf.push(line)
-  }
-  out[key] = buf.join('\n').trim()
-  return out
-}
 // The engine a goal file asks for: workflow only when `## Engine` starts with the word workflow; else project manager with the reason.
 function engineOf(sections: Record<string, string>, merge: string, noWorkflow: boolean): { engine: 'workflow' | 'project-manager'; reason: string } {
   if (merge === 'single') return { engine: 'project-manager', reason: 'merge mode single runs on the project manager path' }
@@ -86,6 +76,50 @@ function ensureWorktree(repo: string, slug: string, target: string): string {
   return wt
 }
 
+// ADR-0052: claims a planned crew under the plan lock (planned to running, only if plan.json still says planned), then creates
+// its worktree. Undefined when another process claimed the crew first. A worktree failure hands the claim back before it throws.
+function claimedWorktree(dir: string, repo: string, slug: string, target: string): string | undefined {
+  let won = false
+  patchPlan(dir, (p) => {
+    const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug)
+    if (e !== undefined && e.status === 'planned') {
+      e.status = 'running'
+      won = true
+    }
+  })
+  if (!won) return undefined
+  try {
+    return ensureWorktree(repo, slug, target)
+  } catch (err) {
+    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'running') { e.status = 'planned' } })
+    throw err
+  }
+}
+
+// ADR-0052 Decision 1: a start that died after claimedWorktree set the crew running and before its spawn event leaves a
+// running workflow crew that no start form can restart (no spawn event, so it is neither stale nor resumable). Such a crew
+// never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
+// A direct (solo or lean) crew writes no spawn event, so its sign of a start that died is no crew worktree.
+function reclaimOrphans(dir: string, repo: string, plan: Obj, merge: string, noWorkflow: boolean): void {
+  // A crew that start listed under projectManagers has a `pm-crew` event: the project manager sets it running by hand, with no spawn event.
+  const pmCrew = (slug: string): boolean => eventsOf(dir).some((e) => e.event === 'pm-crew' && e.crew === slug && e.by === 'factory')
+  const orphaned = (c: Obj): boolean => isDirect(c) ? !existsSync(crewWorktree(repo, String(c.slug))) : !pmCrew(String(c.slug)) && factorySpawned(dir, String(c.slug)) === undefined
+  const orphans = plan.crews.filter((c: unknown) => {
+    if (!isObj(c) || c.status !== 'running' || !orphaned(c)) return false
+    if (isDirect(c)) return true
+    const goalFile = `${dir}/goals/${String(c.slug)}.md`
+    if (!existsSync(goalFile)) return false
+    return engineOf(goalSections(readFileSync(goalFile, 'utf8')), merge, noWorkflow).engine === 'workflow'
+  }) as Obj[]
+  if (orphans.length === 0) return
+  const slugs = new Set(orphans.map((c) => String(c.slug)))
+  patchPlan(dir, (p) => {
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && orphaned(e))e.status = 'planned'
+  })
+  for (const c of orphans) c.status = 'planned'
+  for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
+}
+
 export type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
@@ -123,10 +157,9 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
   // ADR-0019 item 7, the lean entry: no goal; scope and acceptanceTest only when the goal file lacks their section,
   // since stage.js then points members to goalFile for them
   const has = (h: string) => Object.hasOwn(sections, h)
-  // the goal file holds the acceptance test only when its section quotes the plan's command; a section that only points
-  // elsewhere (such as to the plan's acceptanceTest) leaves the command in the entry, so the prompts still print it
-  const at = typeof crew.acceptanceTest === 'string' ? crew.acceptanceTest.trim() : ''
-  const atInGoal = has('Acceptance test') && (at === '' || sections['Acceptance test'].includes(at))
+  // the goal file is what crews read and the PM edits, so its `## Acceptance test` section wins over plan.json's acceptanceTest
+  // (stageOut warns when the two differ); without the section, the plan's command goes in the entry so the prompts still print it
+  const atInGoal = has('Acceptance test')
   // ADR-0022 U3: plan.json ux true, or a ## UX section that is not empty and does not start with none; either is enough
   const uxText = sections.UX ?? ''
   const ux = uxOn(crew.ux, uxText)
@@ -152,6 +185,13 @@ function crewEntry(c: StartCtx, crew: Obj, wt: string, extra: { resume: string |
     spent: spentOf(c.dir, slug), labelFrom: mergeLabelFrom(labelFromOf(c.dir, slug), extra.runLabels ?? {}),
     ux, livePage, direction: directionOf(c.dir, slug), members,
   }
+}
+// The refusal reason for a goal file whose `## Acceptance test` section is malformed (not exactly one fenced code block), else
+// undefined. `factory check` refuses the same section with the same message, so the PM sees it before a crew runs.
+export function acceptanceRefusal(goalFile: string): string | undefined {
+  if (!existsSync(goalFile)) return undefined
+  const r = acceptanceCommand(readFileSync(goalFile, 'utf8'))
+  return typeof r === 'object' ? `goal file ${flat(goalFile)}: ${r.error}` : undefined
 }
 function stageOut(c: StartCtx, entries: Obj[], projectManagers: Obj[], refused: Obj[], stale: Obj[], unfinished: Obj[], held: Obj[] = [], direct: Obj[] = []): Obj {
   const w = loadWarned(c.dir)
@@ -382,7 +422,10 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   let answers: unknown[] = []
   if (kind === 'answers') {
     const a = readJson(need(f, 'answers'))
-    if (!Array.isArray(a) || !a.every((x) => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string')) throw usage('--answers must be a JSON array of {"at","text"}')
+    if (!Array.isArray(a) || !a.every((x) => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string')) throw usage('--answers must be a JSON array of {"at","text"} (and an optional "role")')
+    // 0.32.0: an answer ordering a test change carries "role": "tester", so a test-writer builds it before the stopped task reruns
+    const bad = a.find((x) => isObj(x) && x.role !== undefined && x.role !== 'tester')
+    if (bad !== undefined) throw usage(`--answers: the answer at ${String((bad as Obj).at)} has role ${JSON.stringify((bad as Obj).role)}; role must be "tester" or absent`)
     answers = a
   }
   const crew = c.plan.crews.find((x: unknown) => isObj(x) && x.slug === slug)
@@ -414,6 +457,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
   const goalFile = `${c.dir}/goals/${slug}.md`
   const membersDeny = membersOf(goalSections(existsSync(goalFile) ? readFileSync(goalFile, 'utf8') : '').Members, goalFile).refuse
   if (membersDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: membersDeny }], [], [])
+  const atDeny = acceptanceRefusal(goalFile)
+  if (atDeny !== undefined) return stageOut(c, [], [], [{ slug, reason: atDeny }], [], [])
   // R-89: one finisher per crew; a live finisher lease refuses the resume
   const lease = takeLease(c.dir, `finisher-${slug}`)
   if (lease === null) throw refuse({ slug, why: 'finisher live' })
@@ -440,7 +485,8 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
     // 0.29.0 item 5: every earlier ruling still unbuilt rides along, so a PM's new answers file never drops one
     // 0.31.0 item 6: the new answers come first and their count goes on the entry, so stage.js builds a new ruling at qc once
     const fresh = answers.length
-    answers = carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
+    // bug J: --withdraw-answers carries no stored ruling, so the crew's answers and the store are exactly the fresh ones
+    answers = f['withdraw-answers'] === true ? (answers as Answer[]).map((a) => ({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) })) : carriedAnswers(c.dir, slug, answers as Answer[], runs, plan.from, wt, c.settings.target, rebuild)
     const done = rebuild ? doneTasks(runs.slice(plan.from), slug, wt, c.settings.target).filter((t) => !answers.some((x) => isObj(x) && x.at === t)) : []
     // ADR-0019 item 7: a done task never runs again, so its entry keeps only what stage.js checks and orders by. Review 3: and the
     // brief and persona when present, because a main-session change or an answer can still rerun the task, and a rerun needs both.
@@ -481,13 +527,13 @@ function cmdStartResume(f: Flags, c: StartCtx, slug: string, kind: string): Obj 
 
 // 0.29.0 item 5: the crew's answers store, <dir>/crews/<slug>/answers.json. Each row is one ruling {at, text} plus `after`, the
 // id of the crew's newest Workflow run when the ruling was given (null when the resume had no runs), and `ts`.
-type Answer = { at: string; text: string }
+type Answer = { at: string; text: string; role?: 'tester' }
 type StoredAnswer = Answer & { after: string | null; ts: string }
 const ANSWERS_FILE = (dir: string, slug: string): string => `${CREW_STATE(dir, slug)}/answers.json`
-const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text
+const sameAnswer = (a: Answer, b: Answer): boolean => a.at === b.at && a.text === b.text && a.role === b.role
 function storedAnswers(dir: string, slug: string): StoredAnswer[] {
   const v = readQuiet(ANSWERS_FILE(dir, slug))
-  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
+  return Array.isArray(v) ? v.filter((x): x is StoredAnswer => isObj(x) && typeof x.at === 'string' && typeof x.text === 'string').map((x) => ({ at: x.at, text: x.text, ...(x.role === 'tester' ? { role: 'tester' as const } : {}), after: typeof x.after === 'string' ? x.after : null, ts: typeof x.ts === 'string' ? x.ts : '' })) : []
 }
 
 // The answers a resume hands stage.js: the new ones first, then each stored one that is still unbuilt and not repeated. A stored
@@ -496,7 +542,7 @@ function storedAnswers(dir: string, slug: string): StoredAnswer[] {
 // stress or UX step) is a standing ruling and always rides along. When `after` names no run of the crew, the answer counts as
 // unbuilt: carrying a ruling twice costs one rerun, losing one costs a QC round.
 function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[], from: number, wt: string, target: string, rebuild: boolean): Answer[] {
-  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text }))
+  const out: Answer[] = fresh.map((a) => ({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) }))
   const taskNames = new Set(rebuild ? plannerTasks(runs, slug).tasks.filter(isObj).map((t: Obj) => String(t.name)) : [])
   const builtAfter = new Map<string, string[]>()
   for (const a of storedAnswers(dir, slug)) {
@@ -509,7 +555,7 @@ function carriedAnswers(dir: string, slug: string, fresh: Answer[], runs: WfRun[
         if ((builtAfter.get(key) ?? []).includes(a.at)) continue
       }
     }
-    out.push({ at: a.at, text: a.text })
+    out.push({ at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}) })
   }
   return out
 }
@@ -520,20 +566,22 @@ function saveAnswers(dir: string, slug: string, used: Answer[], runs: WfRun[]): 
   const old = storedAnswers(dir, slug)
   const newest = runs.length > 0 ? runs[runs.length - 1].id : null
   const now = new Date().toISOString()
-  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, after: newest, ts: now })
+  const rows: StoredAnswer[] = used.map((a) => old.find((o) => sameAnswer(o, a)) ?? { at: a.at, text: a.text, ...(a.role === 'tester' ? { role: 'tester' as const } : {}), after: newest, ts: now })
   if (rows.length === 0 && old.length === 0) return
   mkdirSync(CREW_STATE(dir, slug), { recursive: true })
   writeJsonAtomic(ANSWERS_FILE(dir, slug), rows)
 }
 
 export function cmdStart(f: Flags): Obj {
+  if (f['withdraw-answers'] !== undefined && (f['withdraw-answers'] !== true || str(f, 'answers') === undefined)) throw usage('start --withdraw-answers is a flag that needs --answers F (with --resume answers)')
   const dir = path.resolve(startDirOf(f))
   const repo = path.resolve(repoOf(f))
+  useSessionStart(dir, str(f, 'transcript'))
   const roles = rolesWithTypes(PLUGIN, listOf(f, 'type'), configOf(repo).roles)
-  const settings = settingsOf(repo)
+  const settings = settingsOf(repo, dir)
   const plan = loadPlan(dir)
   excludeScratch(repo)
-  const scriptPath = scriptPathFor(PLUGIN, 'stage.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir))
+  const scriptPath = scriptPathAuto(PLUGIN, 'stage.js', str(f, 'scripts-dir'), repo, dir)
   const arch = archPath(repo, plan.architecture)
   const adrDir = `${path.posix.dirname(arch)}/adr`
   const adrs = existsSync(adrDir) ? readdirSync(adrDir).filter((n) => n.endsWith('.md')).sort().map((n) => `${adrDir}/${n}`) : []
@@ -541,6 +589,7 @@ export function cmdStart(f: Flags): Obj {
   const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
+  if (resumeFlag === undefined && slugFlag === undefined) reclaimOrphans(dir, repo, plan, settings.merge, f['no-workflow'] === true)
   if (resumeFlag !== undefined) {
     if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
@@ -619,9 +668,9 @@ export function cmdStart(f: Flags): Obj {
         refused.push({ slug, reason: directVerdict.deny })
         continue
       }
-      const wt = ensureWorktree(repo, slug, settings.target)
+      const wt = claimedWorktree(dir, repo, slug, settings.target)
+      if (wt === undefined) continue // another start process claimed this crew first
       crew.status = 'running'
-      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
       appendDecision(dir, `started direct crew ${slug} (process ${String(crew.process)}) in stage ${crew.stage} | worktree truss-${slug} from ${settings.target}`)
       slots--
       direct.push({ slug, process: crew.process, qc: crew.process === 'lean' ? crew.qc === true : false, red: crew.process === 'lean' ? crew.red === true : false, worktree: wt, branch: `truss-${slug}` })
@@ -635,6 +684,8 @@ export function cmdStart(f: Flags): Obj {
         continue
       }
       projectManagers.push({ slug, reason })
+      // ADR-0052: record the crew as the project manager's, so a later start's reclaim does not take its by-hand running for a dead start's
+      appendEvent(dir, { event: 'pm-crew', crew: slug, by: 'factory' })
       slots--
       continue
     }
@@ -649,9 +700,14 @@ export function cmdStart(f: Flags): Obj {
       refused.push({ slug, reason: membersDeny })
       continue
     }
-    const wt = ensureWorktree(repo, slug, settings.target)
+    const atDeny = acceptanceRefusal(goalFile)
+    if (atDeny !== undefined) {
+      refused.push({ slug, reason: atDeny })
+      continue
+    }
+    const wt = claimedWorktree(dir, repo, slug, settings.target)
+    if (wt === undefined) continue // another start process claimed this crew first
     crew.status = 'running'
-    patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined) e.status = 'running' })
     appendEvent(dir, { event: 'spawn', crew: slug, agent: slug, agentId: null, type: 'workflow-crew', ...roleDefaults(roles, 'planner'), by: 'factory' })
     appendDecision(dir, `started workflow crew ${slug} in stage ${crew.stage}${goalOf(crew) === RUN_GOAL ? '' : ` of goal ${goalOf(crew)}`} | worktree truss-${slug} from ${settings.target}; the cap leaves ${slots - 1} slot(s)`)
     slots--

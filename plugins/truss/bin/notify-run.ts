@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { configOf } from './store.ts'
+import { configOf } from './core.ts'
 
 type Ops = {
   spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown
@@ -102,7 +102,10 @@ async function main(): Promise<void> {
     return fail(`cannot read truss.json: ${(e as Error).message}`)
   }
   if (typeof cmd !== 'string' || cmd === '') return fail('no notify command')
-  const child = spawn(cmd, { shell: true, detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, env: notifyEnv(row, repo, process.platform, process.env) as NodeJS.ProcessEnv })
+  // TRUSS_TEST_NOTIFY_STDERR=inherit is a test seam (inbox.check.ts, the pipe-close proof of the tree kill): the notify command's stderr is
+  // then notify-run's own, so a pipe the test holds closes only when every process of the tree has exited. Unset, stderr is ignored.
+  const errStdio = process.env.TRUSS_TEST_NOTIFY_STDERR === 'inherit' ? 'inherit' : 'ignore'
+  const child = spawn(cmd, { shell: true, detached: true, stdio: ['pipe', 'ignore', errStdio], windowsHide: true, env: notifyEnv(row, repo, process.platform, process.env) as NodeJS.ProcessEnv })
   const pid = child.pid
   const done = new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => {

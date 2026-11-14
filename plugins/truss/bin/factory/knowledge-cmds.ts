@@ -3,15 +3,16 @@
 // factory.ts, whose top-level await would make an import cycle.
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { CliError, configOf, isObj, need, refuse, repoPathOf, str, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { CliError, configOf, isObj, need, refuse, repoPathOf, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
 import { lint as knowledgeLint, migrate as knowledgeMigrate, rulesIndex as knowledgeRulesIndex } from '../knowledge.ts'
 import type { KCfg, LintResult } from '../knowledge.ts'
 import { docOfFragment, stitchTree } from '../fragments.ts'
 import { redRecord } from './finish.ts'
 import { SLUG } from './plan.ts'
 import { worktreesOf } from './retire.ts'
-import { crewWorktree, dirOf, knowledgeCfgFrom, knowledgeCfgOf, repoOf, run, settingsOf } from './shared.ts'
+import { crewWorktree, dirOf, repoOf, run } from './cli.ts'
+import { knowledgeCfgFrom, knowledgeCfgOf, settingsFor } from './settings.ts'
 
 // ==== knowledge (ADR-0035) ====
 
@@ -42,7 +43,7 @@ export function cmdKnowledgeLint(f: Flags): Obj {
       let target = ''
       let targetErr: string | undefined
       try {
-        target = settingsOf(repo).target
+        target = settingsFor(f, repo).target
       } catch (e) {
         if (!(e instanceof CliError)) throw e
         targetErr = e.message
@@ -162,7 +163,7 @@ function landingRefusal(at: string, old: string, result: string, target?: string
 type MergeSides = { head: string; old: string; base: string; target?: string }
 // Resolves the three commits a merge of `branch` into `into` is judged on and refuses on the branch's own change. Its base is the fork from the
 // target, also for an integration branch: `into` may be older than a target the branch already holds, and that change is not the branch's own.
-function mergeSides(repo: string, branch: string, into: string): { sides?: MergeSides; why?: string } {
+function mergeSides(repo: string, branch: string, into: string, targetName: string): { sides?: MergeSides; why?: string } {
   if (branch.startsWith('-') || into === '' || into.startsWith('-')) return { why: 'knowledge config gate: the branch or target name is not usable' }
   const tip = (b: string): string | undefined => {
     const r = gateGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}^{commit}`])
@@ -172,7 +173,6 @@ function mergeSides(repo: string, branch: string, into: string): { sides?: Merge
   if (head === undefined) return { why: `knowledge config gate: branch ${branch} does not resolve` }
   const old = tip(into)
   if (old === undefined) return { why: `knowledge config gate: branch ${into} does not resolve` }
-  const targetName = settingsOf(repo).target
   const targetTip = tip(targetName)
   if (targetTip === undefined) return { why: `knowledge config gate: branch ${targetName} does not resolve` }
   const base = gateGit(repo, ['merge-base', targetTip, head])
@@ -186,8 +186,9 @@ function mergeSides(repo: string, branch: string, into: string): { sides?: Merge
 export function cmdKnowledgeConfigGate(f: Flags): Obj {
   const repo = repoOf(f)
   const branch = need(f, 'branch')
-  const into = str(f, 'into') ?? settingsOf(repo).target
-  const { sides, why } = mergeSides(repo, branch, into)
+  const targetName = settingsFor(f, repo).target
+  const into = str(f, 'into') ?? targetName
+  const { sides, why } = mergeSides(repo, branch, into, targetName)
   if (sides === undefined) throw refuse({ ok: false, branch, into, why })
   const mt = gateGit(repo, ['merge-tree', '--write-tree', sides.old, sides.head])
   const tree = mt.status === 0 || mt.status === 1 ? mt.out.split('\n')[0]?.trim() : undefined
@@ -200,13 +201,14 @@ export function cmdKnowledgeConfigGate(f: Flags): Obj {
 export function cmdGatedMerge(f: Flags): Obj {
   const repo = repoOf(f)
   const branch = need(f, 'branch')
-  const into = str(f, 'into') ?? settingsOf(repo).target
+  const targetName = settingsFor(f, repo).target
+  const into = str(f, 'into') ?? targetName
   for (const k of ['ff-only', 'continue']) if (f[k] !== undefined && f[k] !== true) throw usage(`--${k} takes no value`)
   const ffOnly = f['ff-only'] === true
   const resume = f.continue === true
   if (ffOnly && resume) throw usage('--ff-only and --continue do not go together')
   const no = (why: string, more: Obj = {}): CliError => refuse({ ok: false, merged: false, branch, into, why, ...more })
-  const { sides, why } = mergeSides(repo, branch, into)
+  const { sides, why } = mergeSides(repo, branch, into, targetName)
   if (sides === undefined) throw no(why ?? 'knowledge config gate: refused')
   const { head, old, target } = sides
   const holder = worktreesOf(repo).find((w) => w.branch === into)

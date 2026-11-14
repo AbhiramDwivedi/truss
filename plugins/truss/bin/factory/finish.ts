@@ -5,8 +5,9 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { headVerdict, latestQc, NO_HEAD_REASON, NO_PASS_REASON, PATCH_COMMAND, patchIdOf, planAtLeastV2, qcFails, qcRuling, runStart } from '../../hooks/register.ts'
 import type { QcRuling } from '../../hooks/register.ts'
-import { CliError, configOf, flat, isObj, need, parseLabel, readJson, refreshLease, refuse, releaseLease, str, takeLease, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { CliError, configOf, flat, isObj, need, parseLabel, readJson, refuse, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { refreshLease, releaseLease, takeLease } from '../lock.ts'
 import { ltcCrewGate } from '../guard.ts'
 import { crewCost } from '../cost.ts'
 import { ledgerAppend } from '../ledger.ts'
@@ -17,12 +18,16 @@ import { cmdCheck } from './check.ts'
 import { concludeFrontmatterMerge } from '../fragments.ts'
 import { cmdOwnsCheck } from './crew.ts'
 import { setCrewState } from './decisions.ts'
-import { gateGit, knowledgeConfigRefusal } from './knowledge-cmds.ts'
+import { cmdKnowledgeLint, gateGit, knowledgeConfigRefusal } from './knowledge-cmds.ts'
 import { retireBranch, retireWorktree, sweepMembers, worktreesOf } from './retire.ts'
 import type { RetireCtx, RetireWhy } from './retire.ts'
 import { retro } from './retro-mods.ts'
 import { countedQc, factorySpawned, isLive, jsonLines, reportsOf, runOf } from './runs.ts'
-import { appendDecision, appendEvent, crewWorktree, dirOf, intOr, loadPlan, patchPlan, PLUGIN, repoOf, rolesWithTypes, run, settingsOf } from './shared.ts'
+import { crewWorktree, dirOf, intOr, PLUGIN, repoOf, run } from './cli.ts'
+import { loadPlan, patchPlan } from './plan-file.ts'
+import { settingsFor } from './settings.ts'
+import { appendDecision, appendEvent } from './log.ts'
+import { rolesWithTypes } from './roles.ts'
 
 // The merge step's head rule (ADR-0009 step 3), failing closed. headVerdict is fail-open for the stop gate (it passes an undefined head
 // or patch, and a plan below v2), so this refuses first when the QC, head or patch is missing, whatever the plan version, and then
@@ -68,7 +73,19 @@ export function redRecord(dir: string, slug: string): Obj | undefined {
   return undefined
 }
 
-type Outcome ={ merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string }
+type Outcome ={ merged?: true; left?: { path: string; branch: string; why: string }[]; rework?: string; blocked?: string; refused?: string; lint?: Obj[] }
+
+// 0.32.0 bug F: the knowledge-lint failures that block a merge. A failure counts as new unless it says `new: false`, as stage.js
+// `isNewFinding` counts it; predating failures and warnings never block.
+function newLintFailures(failures: unknown): Obj[] {
+  return Array.isArray(failures) ? failures.filter((x): x is Obj => isObj(x) && x.new !== false) : []
+}
+/** A passed Workflow result's new knowledge-lint failures; none when it has no `knowledgeLint` or the lint did not run. */
+function resultLintFailures(res: Obj): Obj[] {
+  const l = res.knowledgeLint
+  return isObj(l) && l.ran === true ? newLintFailures(l.failures) : []
+}
+const lintWhy = (fresh: Obj[]): string => `knowledge-lint: ${fresh.length} new failure${fresh.length === 1 ? '' : 's'}: ${fresh.map((x) => `[${String(x.check)}] ${String(x.path)}: ${String(x.message)}`).join('; ')}`
 
 // Merge step for one crew whose newest QC is a clean PASS (ADR-0009 steps 1 to 5). Fails closed: any doubt is a refusal.
 // `gates` (ADR-0031 land) switches the red and QC gates by the crew's booleans; absent, both are on (finish, a full crew).
@@ -108,6 +125,17 @@ function mergeCrew(f: Flags, dir: string, repo: string, target: string, crew: Ob
   const red = needRed ? redRecord(dir, slug) : undefined
   if (needRed && (red === undefined || !Number.isInteger(red.exit) || red.exit === 0)) return { refused: 'no red record: the lowest-numbered checks file is missing or has exit 0' }
   if (run(wt, ['rev-parse', `refs/heads/truss-${slug}`]).out !== run(wt, ['rev-parse', 'HEAD']).out) return { refused: `the crew worktree is not on branch truss-${slug}` }
+  // 0.32.0 bug F: a direct crew (land) has no Workflow result, so land runs the knowledge lint on the crew worktree itself, against
+  // the fork point, and refuses on a new failure. A lint that cannot run (a usage error) does not block, as a result with ran false.
+  if (gates !== undefined) {
+    let fresh: Obj[] = []
+    try {
+      fresh = newLintFailures(cmdKnowledgeLint({ repo, dir, slug }).failures)
+    } catch (e) {
+      if (!(e instanceof CliError)) throw e
+    }
+    if (fresh.length > 0) return { refused: lintWhy(fresh), lint: fresh }
+  }
   // step 2: resolve the target once, fully qualified (a same-named tag must not win), and merge that commit in, never a rebase
   const targetRef = `refs/heads/${target}`
   const resolved = run(repo, ['rev-parse', '--verify', `${targetRef}^{commit}`])
@@ -218,7 +246,7 @@ function agentFileWarnings(repo: string, before: string, target: string): string
 export function cmdLand(f: Flags): Obj {
   const repo = repoOf(f)
   const slug = need(f, 'slug')
-  const settings = settingsOf(repo)
+  const settings = settingsFor(f, repo)
   if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const plan = loadPlan(dir)
@@ -244,6 +272,7 @@ export function cmdLand(f: Flags): Obj {
   }
   const r = mergeCrew(f, dir, repo, settings.target, crew, ruling, [], fails, { process, qc, red })
   if (r.merged) return { merged: true, slug, process, qc, red, head: run(repo, ['rev-parse', '--verify', `refs/heads/${settings.target}`]).out, ...(r.left !== undefined && r.left.length > 0 ? { leftWorktrees: r.left } : {}) }
+  if (r.lint !== undefined) throw refuse({ merged: false, slug, why: r.refused ?? 'knowledge-lint', failures: r.lint })
   throw no(r.rework ?? r.blocked ?? r.refused ?? 'refused')
 }
 
@@ -260,7 +289,7 @@ export function cmdFinish(f: Flags): Obj {
 function finishRun(f: Flags, held: Map<string, string>): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
-  const settings = settingsOf(repo)
+  const settings = settingsFor(f, repo)
   if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const tdir = flat(need(f, 'transcript')).replace(/\/+$/, '')
@@ -370,6 +399,13 @@ function finishRun(f: Flags, held: Map<string, string>): Obj {
     const newest = latestQc(c.slug, files, since)
     const ruling = newest === undefined ? undefined : qcRuling(newest.text)
     if (ruling === undefined || ruling.verdict !== 'PASS' || ruling.unscoped > 0) continue
+    // 0.32.0 bug F: a PASS does not merge past a new knowledge-lint failure; the crew goes back through `start --resume merge-ready`,
+    // whose QC loop re-lints and sends the knowledge writer the failing lines (stage.js lintClean)
+    const lint = resultLintFailures(res)
+    if (lint.length > 0) {
+      out.rework.push({ slug: c.slug, why: 'knowledge-lint', failures: lint })
+      continue
+    }
     const r = mergeCrew(f, dir, repo, settings.target, c, ruling, audits, qcFails(c.slug, countedQc(dir, c.slug, files), since), undefined, wfRun.id, held.get(String(c.slug)))
     if (r.merged) {
       out.merged.push(c.slug)

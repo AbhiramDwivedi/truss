@@ -1,13 +1,19 @@
 // The crew git commands: sync, integrate, mark-merged, owns-check, owns-extend and tests-check. Moved unchanged from
 // bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { acceptanceCommand } from './goal-file.ts'
 import path from 'node:path'
-import { configOf, isObj, need, refuse, repoPathOf, usage, withLock } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { configOf, isObj, need, refuse, repoPathOf, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { withLock } from '../lock.ts'
 import { concludeFrontmatterMerge, docOfFragment } from '../fragments.ts'
 import { knowledgeShas } from './decisions.ts'
+import { frontmatter, ruleBookkeepingOnly, withoutBookkeeping } from './rule-bookkeeping.ts'
 import { gateGit, knowledgeConfigRefusal, preMergeOf } from './knowledge-cmds.ts'
-import { appendDecision, baseOf, crewWorktree, dirOf, docKeysOf, gitOrFail, knowledgeCfgOf, loadPlan, patchPlan, repoOf, run, savePlan, settingsOf } from './shared.ts'
+import { baseOf, crewWorktree, dirOf, gitOrFail, repoOf, run } from './cli.ts'
+import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
+import { docKeysOf, knowledgeCfgOf, settingsOf } from './settings.ts'
+import { appendDecision } from './log.ts'
 
 // The existing crew worktree for --slug, and the repo and target it belongs to.
 function crewCtx(f: Flags): { dir: string; repo: string; slug: string; wt: string; target: string } {
@@ -16,7 +22,7 @@ function crewCtx(f: Flags): { dir: string; repo: string; slug: string; wt: strin
   const repo = repoOf(f)
   const wt = crewWorktree(repo, slug)
   if (!existsSync(wt)) throw usage(`no crew worktree for ${slug} at ${wt}`)
-  return { dir, repo, slug, wt, target: settingsOf(repo).target }
+  return { dir, repo, slug, wt, target: settingsOf(repo, dir).target }
 }
 // Runs a merge in the worktree; on conflict leaves it in progress and refuses with the conflicting paths.
 export function mergeIn(wt: string, args: string[]): Obj {
@@ -42,9 +48,12 @@ export function cmdSync(f: Flags): Obj {
 }
 // Commits in HEAD..branch whose message has a `Truss-Crew:` or `Truss-Role:` line that git's trailer parser doesn't see:
 // a blank line inside the trailer block, or between it and a later one such as Co-Authored-By. QC reads the role with
-// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; [] when the range can't be read.
-export function unparsedTrailers(wt: string, branch: string): string[] {
-  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`])
+// %(trailers:key=Truss-Role), so such a commit would fail as a role violation. `<sha> <subject>` each; a commit the target already
+// holds (another crew's landed work) never counts. [] when the range can't be read.
+export function unparsedTrailers(wt: string, target: string, branch: string): string[] {
+  const r = run(wt, ['log', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1f%B%x1e', `HEAD..${branch}`, '--not', notTarget(wt, target)])
+  // Keeps its [] contract on an unreadable range, though that is not fail-open: cmdIntegrate runs `untrailered` next, which walks
+  // the same range (same exclusion) and refuses fail-closed when it cannot be read, so the unchecked trailers never merge.
   if (r.status !== 0) return []
   const missed = (parsed: string | undefined, key: string, body: string | undefined): boolean => String(parsed).trim() === '' && new RegExp(`^${key}:`, 'm').test(String(body))
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 4)
@@ -52,11 +61,13 @@ export function unparsedTrailers(wt: string, branch: string): string[] {
 }
 // Non-merge commits in HEAD..branch that the target does not hold and that carry neither Truss-Crew nor Truss-Role, `<sha> <subject>`
 // each; [] when the range can't be read. A commit already in the target (a main commit that reached the branch by a merge) never counts.
-function untrailered(wt: string, target: string, branch: string): string[] {
-  // a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits
+// The ref to exclude for a target: a local branch first, else the target as git names it (origin/main): `refs/heads/origin/main` is a fatal error, which used to read as no commits.
+function notTarget(wt: string, target: string): string {
   const local = run(wt, ['rev-parse', '-q', '--verify', `refs/heads/${target}^{commit}`]).status === 0
-  const not = local ? `refs/heads/${target}` : target
-  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', not])
+  return local ? `refs/heads/${target}` : target
+}
+function untrailered(wt: string, target: string, branch: string): string[] {
+  const r = run(wt, ['log', '--no-merges', '--format=%H %s%x1f%(trailers:key=Truss-Crew,valueonly)%x1f%(trailers:key=Truss-Role,valueonly)%x1e', `HEAD..${branch}`, '--not', notTarget(wt, target)])
   // fail closed: an unreadable range (an unknown target, a bad branch) is no proof that every commit carries a trailer
   if (r.status !== 0) throw refuse({ merged: false, conflicts: [], missingTrailers: [], why: `could not read the commits of ${branch} that ${target} does not hold, so their trailers are unchecked: ${r.err.trim().split('\n')[0] ?? ''}` })
   return r.out.split('\x1e').map((rec) => rec.replace(/^\n/, '').split('\x1f')).filter((x) => x.length === 3)
@@ -85,7 +96,7 @@ export function cmdIntegrate(f: Flags): Obj {
   if (inProgress !== undefined) {
     throw refuse({ merged: false, conflicts: [], inProgress, why: `a ${inProgress} is in progress in ${c.wt}; conclude or abort it before integrating ${branch}` })
   }
-  const trailers = unparsedTrailers(c.wt, branch)
+  const trailers = unparsedTrailers(c.wt, c.target, branch)
   if (trailers.length > 0) throw refuse({ merged: false, conflicts: [], trailers })
   const missingTrailers = untrailered(c.wt, c.target, branch)
   if (missingTrailers.length > 0) throw refuse({ merged: false, conflicts: [], missingTrailers })
@@ -107,7 +118,7 @@ export function cmdMarkMerged(f: Flags): Obj {
   const plan = loadPlan(dir)
   const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  const target = settingsOf(repo).target
+  const target = settingsOf(repo, dir).target
   const r = run(repo, ['merge-base', '--is-ancestor', `truss-${slug}`, target])
   if (r.status !== 0) throw refuse({ ok: false, slug, merged: false, why: `truss-${slug} is not an ancestor of ${target}` })
   // ADR-0035: a raw merge cannot be recorded as merged. The same two comparisons as a merge: the crew head against its fork from the target's
@@ -211,29 +222,26 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const keys = docKeysOf(c.repo)
   const featureMap = keys.featureMap ?? 'docs/features.md'
   const adrDir = keys.adrDir ?? 'docs/adr'
-  const frontmatter = (text: string): string => {
-    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
-    if (lines[0]?.trim() !== '---') return ''
-    const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
-    return (end < 0 ? lines : lines.slice(0, end + 1)).join('\n')
-  }
   const kc = knowledgeCfgOf(c.repo)
   // ADR-0046: every exempt file keeps its YAML frontmatter, except a knowledge doc's `verified` stamp and `sources` list, which
   // knowledge-lint checks and a builder keeps true with its doc change (an indented line under `sources:` belongs to it)
+  // 0.32.0 hotfix: a rule fragment (`<rulesDir>.d/<rule>/<crew>.md`) likewise, since the knowledge step writes a rule's `verified`
+  // and `sources` there, never into the rule file; stitchDoc merges them into the rule's frontmatter. A frontmatter left with only
+  // its fences counts as none, so a new fragment holding only those keys is kept.
   const kept = (file: string, text: string): string => {
     const fm = frontmatter(text)
-    if (!file.startsWith(`${kc.knowledgeDir}/`)) return fm
-    let skip = false
-    return fm.split('\n').filter((l) => {
-      if (/^\S/.test(l)) skip = /^(verified|sources)\s*:/.test(l)
-      return !skip
-    }).join('\n')
+    const frag = fragOf(file)
+    if (!file.startsWith(`${kc.knowledgeDir}/`) && !(frag !== undefined && frag.startsWith(`${kc.rulesDir}/`))) return fm
+    return withoutBookkeeping(fm)
   }
-  const frontmatterKept = (file: string): boolean => {
-    const was = run(c.wt, ['show', `${base}:${file}`])
-    const now = run(c.wt, ['show', `HEAD:${file}`])
-    return kept(file, was.status === 0 ? was.out : '') === kept(file, now.status === 0 ? now.out : '')
+  const contentAt = (rev: string, file: string): string => {
+    const r = run(c.wt, ['show', `${rev}:${file}`])
+    return r.status === 0 ? r.out : ''
   }
+  const frontmatterKept = (file: string): boolean => kept(file, contentAt(base, file)) === kept(file, contentAt('HEAD', file))
+  // a base rule file (under rulesDir itself, not a fragment): a change of only its `verified` and `sources` keys is bookkeeping, not
+  // rule text, whoever committed it; the body and every other frontmatter key must be unchanged
+  const bookkeepingOnly = (file: string): boolean => ruleBookkeepingOnly(c.wt, base, 'HEAD', file, kc.rulesDir)
   const name = (file: string): string => file.split('/').pop() ?? ''
   // free docs: any member may change them with its code, every round
   // (only these: a README, a changelog or any other .md is a crew's to change only when its owns name it)
@@ -252,6 +260,7 @@ function knowledgeDocs(c: { dir: string; repo: string; slug: string; wt: string;
   const isJudge = (file: string): boolean => /(^|\/)agents\/[^/]+\.md$/.test(file) && /qc|check|review|judge|product-owner/i.test(name(file))
   const isDoc = (file: string): boolean => {
     if (!file.toLowerCase().endsWith('.md')) return false
+    if (bookkeepingOnly(file)) return true
     const allowed = isPrompt(file) ? !isJudge(file) && !byMember.has(file) : isFreeDoc(file)
     return allowed && frontmatterKept(file)
   }
@@ -273,6 +282,10 @@ export function cmdTestsCheck(f: Flags): Obj {
 // The one guarded-set rule, used by tests-check and by the start entry's `guarded`.
 export function guardedOf(c: { dir: string; slug: string; wt: string; target: string }): { touched: Obj[]; tests: string[] } {
   const out = gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'log', '--cc', '--name-status', '-M', '--format=%x00%H %(trailers:key=Truss-Role,valueonly,separator=%x2C)', `${baseOf(c.wt, c.target)}..HEAD`])
+  // a merge commit's --cc name list holds every file that differs from all parents, a clean auto-merge included; the resolver
+  // wrote a line of it only when the combined diff of that file has a hunk
+  const merges = new Set(gitOrFail(c.wt, ['log', '--merges', '--format=%H', `${baseOf(c.wt, c.target)}..HEAD`]).split('\n').map((l) => l.trim()).filter(Boolean))
+  const hunked = (sha: string, file: string): boolean => gitOrFail(c.wt, ['-c', 'core.quotepath=off', 'show', '--cc', '--format=', sha, '--', file]) !== ''
   // Oldest first; each entry is a status letter (R keeps its score) with the old path and, for a rename, the new one.
   const commits = out.split('\0').filter((b) => b.trim() !== '').map((b) => {
     const [first = '', ...rest] = b.split('\n')
@@ -287,8 +300,12 @@ export function guardedOf(c: { dir: string; slug: string; wt: string; target: st
   const plan = loadPlan(c.dir)
   const crew = Array.isArray(plan.crews) ? plan.crews.find((x: unknown) => isObj(x) && x.slug === c.slug) : undefined
   const base = baseOf(c.wt, c.target)
-  const named = typeof crew?.acceptanceTest === 'string'
-    ? crew.acceptanceTest.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
+  // the goal file's command wins, as in `factory check`; a malformed section is that command's refusal, not this rule's
+  const goalFile = `${c.dir}/goals/${c.slug}.md`
+  const fromGoal = existsSync(goalFile) ? acceptanceCommand(readFileSync(goalFile, 'utf8')) : undefined
+  const accepted = typeof fromGoal === 'string' ? fromGoal : crew?.acceptanceTest
+  const named = typeof accepted === 'string'
+    ? accepted.split(/[\s"'`;&|<>()=]+/).map((t: string) => t.replace(/^\.\//, '')).filter((t: string) => t !== '' && !t.startsWith('/') && !t.startsWith('-') && !t.split('/').includes('..') && (existsSync(`${c.wt}/${t}`) ? statSync(`${c.wt}/${t}`).isFile() : run(c.wt, ['cat-file', '-e', `${base}:${t}`]).status === 0))
     : []
   const guarded = new Set<string>(named.filter(isTestPath))
   const touched: Obj[] = []
@@ -305,7 +322,7 @@ export function guardedOf(c: { dir: string; slug: string; wt: string; target: st
       }
       if (!guarded.has(e.from)) continue
       if (renamed && e.st === 'R100') { guarded.delete(e.from); guarded.add(e.to); continue }
-      if (role !== undefined) files.push(e.to)
+      if (role !== undefined && (!merges.has(x.sha) || hunked(x.sha, e.to))) files.push(e.to)
       if (renamed) { guarded.delete(e.from); guarded.add(e.to) }
     }
     if (role !== undefined && !writer && files.length > 0) touched.push({ commit: x.sha, role, files })

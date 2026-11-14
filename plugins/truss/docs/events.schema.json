@@ -8,15 +8,27 @@
   "properties": {
     "v": { "description": "The line's shape. Goes up when a field is renamed or retyped.", "const": 1 },
     "ts": { "description": "The engine clock, as toISOString() gives it (UTC, Z).", "type": "string", "format": "date-time" },
-    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc"] },
+    "event": { "enum": ["spawn", "stall", "tag", "report", "allowance-spent", "fetch", "incomplete", "refusal", "sampler-error", "restart", "title", "retire", "stop", "crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc", "pm-crew"] },
     "crew": { "description": "The crew's name: its project manager's spawn name, as reports/<crew>/ uses it.", "type": "string", "minLength": 1 },
     "agent": { "description": "The agent the event is about, by its spawn name, else its id. For spawn: the new agent (the caller is by); for stall: the idle agent; for tag: the project manager; for report: the reporting agent; for allowance-spent: the QC whose FAIL report spent the allowance.", "type": "string", "minLength": 1 }
   },
   "allOf": [
     {
       "description": "Every event except the crew-level ones of truss ADR-0033 and the wave-2 kinds of contract-025 names its agent. Those (crew-decision, decision-reply, decision-ack, knowledge-commit, knowledge, escalate, resolve, notify-error, budget-hold, intake, unattended and ltc) are about a crew or the run, not an agent, and carry no agent field.",
-      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc"] } } } },
+      "if": { "properties": { "event": { "not": { "enum": ["crew-decision", "decision-reply", "decision-ack", "knowledge-commit", "knowledge", "escalate", "resolve", "notify-error", "budget-hold", "intake", "unattended", "ltc", "pm-crew"] } } } },
       "then": { "required": ["agent"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "pm-crew" } } },
+      "then": {
+        "description": "factory start listed the crew under projectManagers: its project manager sets it running by hand, with no spawn event (truss ADR-0052). by is always factory.",
+        "additionalProperties": false,
+        "required": ["by"],
+        "properties": {
+          "v": true, "ts": true, "event": true, "crew": true,
+          "by": { "const": "factory" }
+        }
+      }
     },
     {
       "if": { "properties": { "event": { "const": "escalate" } } },
@@ -27,7 +39,7 @@
         "properties": {
           "v": true, "ts": true, "event": true, "crew": true,
           "id": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
-          "kind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage"] },
+          "kind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage", "pm-question"] },
           "blocking": { "type": "boolean" }
         }
       }

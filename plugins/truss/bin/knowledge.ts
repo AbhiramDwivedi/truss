@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { isFragment } from './fragments.ts'
+import { docOfFragment, isFragment } from './fragments.ts'
 
 export type Budgets = { agentsIndex: number; persona: number; personaStandards: number; rule: number; featureEntry: number; doc: number }
 export const DEFAULT_BUDGETS: Budgets = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150 }
@@ -371,12 +371,12 @@ const bodyFrom = (text: string): number => parseFrontmatter(text)?.end ?? 0
 // `subjects` say what a finding is about beyond its file: the dead glob or missing path, the budget kind, the normalised call
 // texts. A finding is new when one of its subjects did not fail the same check on the same path at the base. `stale` has none:
 // it is computed against the base already.
-type Raw = { severity: 'failure' | 'warning'; check: string; path: string; message: string; subjects?: string[] }
+type Raw = { severity: 'failure' | 'warning'; check: string; path: string; message: string; subjects?: string[]; size?: number }
 const callKey = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 function structural(tree: Tree, cfg: KCfg): Raw[] {
   const out: Raw[] = []
-  const add = (severity: Raw['severity'], check: string, p: string, message: string, subjects: string[] = ['']): void => { out.push({ severity, check, path: p, message, subjects }) }
+  const add = (severity: Raw['severity'], check: string, p: string, message: string, subjects: string[] = [''], size?: number): void => { out.push({ severity, check, path: p, message, subjects, size }) }
   const files = tree.files
   const set = new Set(files)
   // a doc fragment (`<doc>.d/<crew>.md`) is stitched into its doc at release, so it is linted as part of that doc, not on its own
@@ -423,12 +423,12 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
 
   if (indexText !== undefined) {
     const n = countLines(indexText)
-    if (n > cfg.budgets.agentsIndex) add('failure', 'over-budget', cfg.agentsIndex, `${n} lines, budget ${cfg.budgets.agentsIndex}: keep pointers only and move detail to ${cfg.knowledgeDir}/<topic>.md`, ['agentsIndex'])
+    if (n > cfg.budgets.agentsIndex) add('failure', 'over-budget', cfg.agentsIndex, `${n} lines, budget ${cfg.budgets.agentsIndex}: keep pointers only and move detail to ${cfg.knowledgeDir}/<topic>.md`, ['agentsIndex'], n)
   }
   for (const p of personas) {
     const t = text(p)
     const n = countLines(t)
-    if (n > cfg.budgets.persona) add('failure', 'over-budget', p, `${n} lines, budget ${cfg.budgets.persona}: move area rules to ${cfg.rulesDir}/<area>.md`, ['persona'])
+    if (n > cfg.budgets.persona) add('failure', 'over-budget', p, `${n} lines, budget ${cfg.budgets.persona}: move area rules to ${cfg.rulesDir}/<area>.md`, ['persona'], n)
     const s = standardsItems(t)
     if (s > cfg.budgets.personaStandards) add('failure', 'over-budget', p, `${s} Standards items, budget ${cfg.budgets.personaStandards}: fold entries into fewer cross-cutting rules and move area rules to ${cfg.rulesDir}/<area>.md`, ['personaStandards'])
     const pl = splitLines(t)
@@ -443,11 +443,11 @@ function structural(tree: Tree, cfg: KCfg): Raw[] {
   }
   for (const r of rules) {
     const n = countLines(text(r))
-    if (n > cfg.budgets.rule) add('failure', 'over-budget', r, `${n} lines, budget ${cfg.budgets.rule}: split by area or fold entries into fewer rules`, ['rule'])
+    if (n > cfg.budgets.rule) add('failure', 'over-budget', r, `${n} lines, budget ${cfg.budgets.rule}: split by area or fold entries into fewer rules`, ['rule'], n)
   }
   for (const d of docs) {
     const n = countLines(text(d))
-    if (n > cfg.budgets.doc) add('warning', 'over-budget', d, `${n} lines, budget ${cfg.budgets.doc}: fold entries into fewer, or split the topic`, ['doc'])
+    if (n > cfg.budgets.doc) add('warning', 'over-budget', d, `${n} lines, budget ${cfg.budgets.doc}: fold entries into fewer, or split the topic`, ['doc'], n)
   }
   return out
 }
@@ -473,7 +473,20 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
     const changed = nameLines(d.out)
     const bt = baseTree(repo, base)
     for (const doc of docs) {
-      const touched = changed.filter((c) => c !== doc.path && doc.sources.some((s) => sourceTouches(s, c)))
+      // a changed fragment of this doc that lists a source and carries a new non-empty `verified` re-checks that source
+      const rechecks: string[][] = []
+      for (const c of changed) {
+        if (docOfFragment(c, cfg.rulesDir) !== doc.path) continue
+        const hf = head.read(c)
+        const fmHead = hf === undefined ? undefined : parseFrontmatter(hf)
+        const vHead = fmHead && typeof fmHead.data.verified === 'string' ? fmHead.data.verified : ''
+        if (!fmHead || vHead === '') continue
+        const bf = bt.read(c)
+        const fmBase = bf === undefined ? undefined : parseFrontmatter(bf)
+        if (fmBase && fmBase.data.verified === vHead) continue
+        rechecks.push(asList(fmHead.data.sources))
+      }
+      const touched = changed.filter((c) => c !== doc.path && doc.sources.some((s) => sourceTouches(s, c)) && !rechecks.some((l) => l.some((s) => sourceTouches(s, c))))
       if (touched.length === 0) continue
       const was = bt.read(doc.path)
       if (was === undefined) continue
@@ -505,8 +518,12 @@ export function lint(repo: string, cfg: KCfg, base?: string): LintResult {
   const head = headTree(repo)
   const raw = [...structural(head, cfg), ...staleRaw(repo, head, cfg, base)]
   const keys = (r: Raw): string[] => (r.subjects ?? ['']).map((s) => `${r.check}\0${r.path}\0${s}`)
-  const atBase = new Set<string>(base === undefined ? [] : structural(baseTree(repo, base), cfg).flatMap(keys))
-  const fin = (r: Raw): Finding => ({ check: r.check, path: r.path, message: r.message, new: base === undefined || r.check === 'stale' || keys(r).some((k) => !atBase.has(k)) })
+  const baseRaw = base === undefined ? [] : structural(baseTree(repo, base), cfg)
+  const atBase = new Set<string>(baseRaw.flatMap(keys))
+  // an over-budget file that grew since the base is new even though it was over budget there
+  const sizeAtBase = new Map<string, number>(baseRaw.flatMap((r) => (r.size === undefined ? [] : keys(r).map((k): [string, number] => [k, r.size as number]))))
+  const grew = (r: Raw): boolean => r.size !== undefined && keys(r).some((k) => r.size as number > (sizeAtBase.get(k) ?? 0))
+  const fin = (r: Raw): Finding => ({ check: r.check, path: r.path, message: r.message, new: base === undefined || r.check === 'stale' || keys(r).some((k) => !atBase.has(k)) || grew(r) })
   const order = (a: Finding, b: Finding): number => (a.check < b.check ? -1 : a.check > b.check ? 1 : a.path < b.path ? -1 : a.path > b.path ? 1 : a.message < b.message ? -1 : a.message > b.message ? 1 : 0)
   const failures = raw.filter((r) => r.severity === 'failure').map(fin).sort(order)
   const warnings = raw.filter((r) => r.severity === 'warning').map(fin).sort(order)

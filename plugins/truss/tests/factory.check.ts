@@ -123,6 +123,7 @@ test('settings: this checkout, run from the real bin, gives "merge":"sequential"
 function briefFile(env, text = 'Build the thing.\nSecond line.') {
   const p = `${env.dir}/brief.md`
   writeFileSync(p, text)
+  writeFileSync(`${env.dir}/decisions.md`, '- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   return p
 }
 
@@ -344,12 +345,12 @@ test('plan-check: a good plan is ok and lists crews with acceptanceTestProved fa
   // ADR-0044: stage 2 has no Why line in plan.md, so a warning; with the line, no warnings key
   assert.equal(json.warnings.length, 1)
   writeFileSync(`${env.dir}/plan.md`, '# Plan\n\nWhy stage 2: gamma needs alpha\'s merged parser\n')
-  assert.deepEqual(assertOneLine(env.run('plan-check', { repo: null })), { ok: true, unproved: ['beta', 'gamma'] })
+  assert.deepEqual(assertOneLine(env.run('plan-check', { repo: null })), { ok: true, unproved: ['beta', 'gamma'], warnings: [] })
 })
 
 test('plan-check: all proved gives an empty unproved list', () => {
   const { json } = checkPlan(planObj([crew('alpha')]))
-  assert.deepEqual(json, { ok: true, unproved: [] })
+  assert.deepEqual(json, { ok: true, unproved: [], warnings: [] })
 })
 
 test('plan-check: version must be 2', () => {

@@ -18,8 +18,9 @@ import { join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { parseLabel } from '../bin/store.ts'
+import { parseLabel } from '../bin/core.ts'
 import { codeOnly } from './hooks-load.check.ts'
+import { docText } from './fixtures/doc-text.ts'
 import { mkRepo, REAL_FACTORY, runCli } from './fixtures/workflow-run/harness.ts'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '').replace(/\\/g, '/')
@@ -428,7 +429,7 @@ test('each .md file of this crew that keeps a bare PM defines it as program mana
     `${REPO_ROOT}/.claude/agents/truss-workflow-scripts.md`,
   ]
   const bad = mds.filter((f) => {
-    const text = readFileSync(f, 'utf8')
+    const text = docText(rel(f), REPO_ROOT)
     return /\bPM\b/.test(text) && !text.includes('program manager (PM)')
   })
   assert.deepEqual(bad.map(rel), [], 'these files use PM and never define it as "program manager (PM)"')

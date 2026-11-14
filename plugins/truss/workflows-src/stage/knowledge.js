@@ -51,6 +51,20 @@ function alwaysLoaded(p) {
   return Object.values(PERSONAS).some((x) => isPlainObject(x) && typeof x.file === 'string' && loadedForm(x.file) === f)
 }
 
+// 0.32.0 hotfix: a rule file under RULES_DIR is outside every crew's owns, and owns-check exempts no change to its frontmatter,
+// so the knowledge member writes every rule change, `sources` and `verified` included, to its fragment, which `factory stitch`
+// folds in (bin/fragments.ts stitchDoc merges a fragment's frontmatter into the rule's)
+const ruleFragment = (slug) => `\`${RULES_DIR}.d/<rule name>/${slug}.md\``
+const ruleFragmentLine = (slug) => `Rule files take only fragments: write every rule change, including \`sources\` and \`verified\`, to your fragment ${ruleFragment(slug)} (whole sections, plus frontmatter holding the \`sources\` you add and the \`verified\` stamp; a new rule's fragment also holds its \`paths\`). Never create or edit a file under \`${RULES_DIR}/\`, its frontmatter included: no crew owns one, so the owns gate stops the crew on it.`
+// the files under RULES_DIR itself (never its `.d` fragments dir) among the knowledge diff's files
+// minus the files `factory knowledge-commit` reports in `bookkeeping`: a base rule file changed only in `verified` and `sources`,
+// which owns-check accepts too (bin/factory/rule-bookkeeping.ts holds the one rule)
+const sharedRuleEdits = (rec) => {
+  const files = rec && Array.isArray(rec.files) ? rec.files : []
+  const ok = new Set(rec && Array.isArray(rec.bookkeeping) ? rec.bookkeeping.map(String) : [])
+  return files.map(String).filter((f) => f.startsWith(`${RULES_DIR}/`) && !ok.has(f))
+}
+
 // again (0.29.0, ADR-0046 item 6): a re-run after a fix round ({why, from, items}) or to clear knowledge-lint failures ({why, from,
 // items: [], lint}); it reviews only the fix's diff, from `from` (the head before that round)
 function knowledgePrompt(crew, resume, again = null) {
@@ -61,11 +75,13 @@ function knowledgePrompt(crew, resume, again = null) {
   const from = again && again.from ? again.from : e.base
   const body = [
     `Task: record what crew ${crew.slug} learned`,
-    ...(again && again.lint
-      ? ['Why this run: the knowledge lint failed on the docs this crew changed. Fix each failure below in the doc it names (for a stale stamp, re-read the doc against the diff, fix what is wrong, then set `verified`; fix or drop a citation; fold an entry under its budget); change nothing else.', ...lintData(again.lint)]
-      : again
-        ? [`Why this run: a fix round (${again.why}) changed the code after the docs were recorded. Bring every doc the fix diff makes stale back in line, and record the fixers' learned items below.`]
-        : []),
+    ...(again && again.rules
+      ? [`Why this run: your knowledge commit changed ${again.rules.join(', ')}, under ${RULES_DIR}/, which is outside every crew's owns, so the owns gate would stop the crew. Restore them to their content before the knowledge step (git checkout ${sh(again.from)} -- ${again.rules.map(sh).join(' ')}), write the same change, its \`sources\` and \`verified\` included, to your fragment ${ruleFragment(crew.slug)}, commit, and change nothing else.`]
+      : again && again.lint
+        ? ['Why this run: the knowledge lint failed on the docs this crew changed. Fix each failure below in the doc it names (for a stale stamp, re-read the doc against the diff, fix what is wrong, then set `verified`; fix or drop a citation; fold an entry under its budget); change nothing else.', ...lintData(again.lint)]
+        : again
+          ? [`Why this run: a fix round (${again.why}) changed the code after the docs were recorded. Bring every doc the fix diff makes stale back in line, and record the fixers' learned items below.`]
+          : []),
     `Learned items: ${items.length ? `\n${items.join('\n')}` : 'none reported'}`,
     ...(moved.length ? [`Source files the diff added, renamed or deleted (from git diff --name-status -M; tests, fixtures and docs left out):\n${moved.join('\n')}\nGive each user-facing capability among them a feature-map entry, and fix the feature-map entries and persona paths that name a deleted or renamed file. A file that is only an internal helper needs none.`] : []),
     `Diff range: ${from}...${crew.head || 'HEAD'} (git diff ${from}...${crew.head || 'HEAD'}, in the crew checkout)`,
@@ -84,7 +100,7 @@ function knowledgePrompt(crew, resume, again = null) {
     'Where each item goes:',
     '| Item | Goes to |',
     '|---|---|',
-    `| Area-scoped stack rule or invariant | \`${RULES_DIR}/<area>.md\`, with \`paths\` globs |`,
+    `| Area-scoped stack rule or invariant | your rule fragment ${ruleFragment(crew.slug)} |`,
     '| Cross-cutting persona rule | the persona file, under `## Standards` |',
     `| Capability | the feature map (${FEATURE_MAP}) |`,
     `| Product call | the product decisions file (${productOwnerFile()}) |`,
@@ -93,16 +109,17 @@ function knowledgePrompt(crew, resume, again = null) {
     '',
     fragmentLine(crew.slug),
     '',
-    `A rule file is lowercase ASCII kebab-case (\`${RULES_DIR}/export-ui.md\`), with frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\`, \`/\` and \`{a,b}\` alternation, no nested braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
+    ruleFragmentLine(crew.slug),
+    `A rule name is lowercase ASCII kebab-case (\`export-ui\`, stitched into \`${RULES_DIR}/export-ui.md\`); a rule has frontmatter \`paths\` (globs: \`**\`, \`*\`, \`?\`, \`/\` and \`{a,b}\` alternation, no nested braces, no negation; each must match a tracked file), \`sources\` (the repo paths its facts come from) and \`verified\`. A rule holds invariants, gotchas and where-X-lives for that area, never a product call. A longer topic goes to \`${KNOWLEDGE_DIR}/<topic>.md\`, with frontmatter \`sources\` and \`verified\`, one topic per file. The persona files hold Standards only: a product call is never written into a persona file.`,
     `The feature map gets an entry for each user-facing capability the diff adds or moves, even when no item names it: what it does, its entry points as paths, the owning persona and pointers to its docs. A persona file gets a Standards item the crew learned only when it holds for every task of that persona, and a path a persona file names that the diff moved is fixed. The product decisions file gets the product calls this crew made and any domain truth.`,
     'Every fact you write cites its source path or hunk; drop a fact you cannot cite.',
     // ADR-0046 items 2 and 12: the mechanical repairs run here, before QC, so QC never fails on them
     'Before you commit, repair what is mechanical in the docs the diff touches: cite code by symbol (a function or constant name), not by line number; replace every `file:line` citation the docs hold with the symbol it points at; set `verified` on each doc you re-read.',
     'Then check every line of skill and agent prose (SKILL.md, agents/*.md) the diff added or changed against the code it describes; fix a line that says the code does something it does not, and name each fix in your report.',
     'Reconcile before you add: read what the doc says about the topic, then edit or delete an entry the diff supersedes or contradicts; never append a duplicate or a second entry on the same fact.',
-    `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every rule or knowledge doc you create or edit.`,
-    `A new knowledge or rule file is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
-    `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to ${RULES_DIR}/<area>.md.`,
+    `Set \`verified: ${crew.head || 'the crew head'}\` in the frontmatter of every knowledge doc you create or edit, and of every rule fragment you write.`,
+    `A new knowledge doc or rule is linked from the feature map or the agents index (${AGENTS_INDEX}), in the same commit; the index holds pointers only.`,
+    `Budgets (lines; the lint fails an always-loaded file over its budget): agents index ${BUDGETS.agentsIndex}, persona ${BUDGETS.persona} and ${BUDGETS.personaStandards} items under \`## Standards\`, rule file ${BUDGETS.rule}. It warns on a knowledge doc over ${BUDGETS.doc} and a feature-map entry over ${BUDGETS.featureEntry}. Over budget, fold entries into one another or move area rules to a rule fragment ${ruleFragment(crew.slug)}.`,
     'Keep every entry terse. Edit or merge into an existing entry rather than appending a new one beside it. Nothing to record is a valid outcome: Recording nothing for an item is allowed when the code already makes it obvious, and so is an unchanged doc. Name every architecture section, ADR, feature-map entry or rule file this change makes stale: update the descriptive text in the architecture doc and the feature map (module map entries, paths, how a module works), never edit an existing ADR, and raise a design PROPOSAL instead when an ADR\'s decision no longer holds.',
     `Commit with the subject \`docs(knowledge): ${crew.slug} learned\`, list every file you changed (repo-relative) in the files field of your report, and report DONE.`,
   ]
@@ -122,6 +139,32 @@ async function knowledge(crew, again = null) {
   if (!again && !crew.learned.length && !crew.sourceChanges.length) return false
   crew.step = 'knowledge'
   const before = crew.head
+  const { sha, head } = await knowledgeRun(crew, again)
+  crew.knowledgeRan = true
+  if (!sha) return true
+  crew.knowledgeSha = sha
+  // a refusal (the sha is not in before..head) or a failure is logged and the crew carries on: green re-runs, and owns-check then
+  // refuses any out-of-owns doc change because no commit is exempt
+  const rec = await recordKnowledgeCommit(crew, sha, before, head)
+  let shared = sharedRuleEdits(rec)
+  if (!shared.length) return true
+  // 0.32.0 hotfix: the knowledge diff changed a rule file the crew does not own. Sent back once (bound 1: the member had the
+  // fragment rule in its brief and now has the files named; a second miss will not fix itself), checked again on the whole
+  // knowledge diff from `before`, so an edit the send-back left alone still counts
+  log(`knowledge step: crew ${crew.slug} changed ${shared.join(', ')}; sent back once to restore them`)
+  const back = await knowledgeRun(crew, { why: 'shared rule file', from: before, items: [], rules: shared })
+  if (back.sha) {
+    crew.knowledgeSha = back.sha
+    const again2 = await recordKnowledgeCommit(crew, back.sha, before, back.head)
+    // an unconfirmed record keeps the first list: the step stops rather than leave the edit for the owns gate
+    if (again2) shared = sharedRuleEdits(again2)
+  }
+  if (shared.length) throw new Stop('BLOCKED', `the knowledge step changed ${shared.join(', ')}, under ${RULES_DIR}/, and left the change after one send-back. No crew owns a rule file; rule changes go to the crew's fragment under ${RULES_DIR}.d/. Restore those files on the crew branch and resume the crew.`, 'knowledge')
+  return true
+}
+
+// one run of the knowledge writer member, integrated into the crew branch; {sha, head}, sha null when it reported no commit
+async function knowledgeRun(crew, again) {
   const wmake = (resume) => knowledgePrompt(crew, resume, again)
   const wopts = { title: `Record what ${crew.slug} learned`, member: { model: 'sonnet', effort: 'medium' } }
   const first = await pendingCall(crew, 'writer', wmake, wopts, 'knowledge')
@@ -135,15 +178,8 @@ async function knowledge(crew, again = null) {
   }
   crew.proofs.push(`knowledge: ${report.proof}`)
   const head = await integrate(crew, report.branch, 'knowledge')
-  crew.knowledgeRan = true
   const sha = typeof report.commit === 'string' && report.commit.trim() ? report.commit.trim() : null
-  if (sha) {
-    crew.knowledgeSha = sha
-    // a refusal (the sha is not in before..head) or a failure is logged and the crew carries on: green re-runs, and owns-check then
-    // refuses any out-of-owns doc change because no commit is exempt
-    await recordKnowledgeCommit(crew, sha, before, head)
-  }
-  return true
+  return { sha, head }
 }
 
 // factory knowledge-commit: the crew's knowledge commit, which factory's owns check exempts. A failure is logged, never stops the crew.

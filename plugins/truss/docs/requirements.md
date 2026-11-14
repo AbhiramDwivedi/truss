@@ -589,63 +589,63 @@ Source: client
 Example: Given two crews in one stage whose owns both list skills/run/SKILL.md, when plan-check runs, then it reports no overlap error; both crews build at the same time in their own worktrees; on the program manager's go-ahead the first merges to the target, and the second, on its go-ahead, merges the latest target into its branch, resolves conflicts, reruns its checks and QC, then merges to the target.
 
 ## R-85: An agent cannot approve a plan or goal as the client
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan with approval client, when an agent runs `factory approve --by client` without the typed-prompt proof `/truss:inbox` resolve requires (ADR-0037), then the factory refuses and approvedAt stays null; with a genuine typed client prompt it approves; and the run skill tells the program manager never to call a client-only command.
 
 ## R-86: A crew decision that needs the program manager reaches the program manager's inbox and waits
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a running crew whose product owner escalates a call that needs the program manager, when the crew posts it, then an item appears in the program manager's inbox and the asking task waits for the reply instead of counting the call as accepted.
 
 ## R-87: plan-write writes the full plan on every path
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a plan.js result whose designer hand-back holds a full plan.json and plan.md, when plan-write runs on the path that wrote a stub in wave 3, then plan.json and plan.md on disk hold every crew of the hand-back.
 
 ## R-88: A bare-directory owns entry matches the files under it
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose owns lists `plugins/truss/bin/`, when owns-check or globToRegExp tests `plugins/truss/bin/factory.ts`, then it matches, as `plugins/truss/bin/**` would; and plan-check warns on the bare-directory entry.
 
 ## R-89: Only one finisher runs per crew
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew whose resumed agent is still finishing, when the program manager runs finish or a resume for the same crew, then the second is refused by a lock or state check and no duplicate finisher starts; once the first ends, a later finish runs.
 
 ## R-90: A resume merges the target into the crew branch before the crew restarts
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew branch cut from main at A, and another crew merged to main at B, when the program manager resumes the crew, then the crew branch contains B before any resumed member starts, and a conflict goes to a resolver, never a silent drop.
 
 ## R-91: Every factory command accepts or refuses a relative --dir the same way
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given any factory command run with a relative `--dir`, when it starts, then it either resolves the path against the cwd or refuses with a message naming --dir, never writing to a wrong directory.
 
 ## R-92: Stage green installs ui dependencies when they are missing
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 Example: Given a crew worktree whose ui/node_modules is missing, when the stage green check runs, then it runs `npm --prefix ui ci` first and the ui checks run instead of failing on missing modules.
 
 ## R-93: The goal check has a factory command
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
@@ -658,7 +658,7 @@ Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-95: A second run in one session dir has a supported start
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
@@ -672,13 +672,13 @@ Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-97: Docs cite code by symbol, or the release check tolerates line drift, and the wrong citations on main are fixed
-Status: open
+Status: met
 Kind: constraint
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
 
 ## R-98: factory cost prices the Claude 5.5 family
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-12T12:01:59Z | truss 0.30.0 wave-3 plugin-fix release
 Source: goal
@@ -806,65 +806,253 @@ Example: Given a nit whose fix would change behaviour, when the fix round runs, 
 ## R-116: Green, fix and QC rounds run only the tests a diff reaches
 Status: open
 Kind: functional
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given a diff to one factory command module, when green runs, then it runs the test files that import that module through the symbol graph, the crew's acceptance and regression tests, and the whole-repo checks its files trigger; and when the reach is unclear (config, shared test helpers, package.json, an unimported file), it runs the full suite.
 
 ## R-117: The heavy slot fits the suite and a background run never overruns the Bash limit
 Status: open
 Kind: constraint
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given a suite run, when it holds the heavy slot, then the slot is released when the suite ends, the wait scales with the measured suite time, no more suites run at once than heavySlots allows, and a run that could pass 600 s goes to a background job.
 
 ## R-118: Obvious calls do not stop a run
 Status: open
 Kind: functional
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given a session-audit hit from a no-work or in-progress transcript, when the audit runs, then it is ignored; given any other audit hit, the program manager may waive it with an evidence line in decisions.md; and scope, budget, approval, untrusted intake, permissions and outward-facing actions stay hard stops.
 
 ## R-119: The manager prompts say the role is brave, empowered and accountable
 Status: open
 Kind: constraint
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given the program-manager and project-manager prompts, when a test reads them, then each contains the words brave, empowered and accountable.
 
 ## R-120: Crews write doc fragments and factory stitch folds them
 Status: open
 Kind: functional
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given two crews that each add a feature-map entry as a fragment under docs/features.d, when they merge, then the docs do not conflict; and when factory stitch runs, then the fragments are folded into docs/features.md; and a merge that conflicts only in frontmatter resolves automatically.
 
 ## R-121: Docs cite code by symbol, never by line
 Status: open
 Kind: constraint
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given a doc, ADR or knowledge file that cites a source file, when the doc-citations lint runs in the default suite, then a line-number citation fails it.
 
 ## R-122: factory.ts and stage.js are split by command group and step
 Status: open
 Kind: constraint
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given the command modules and the stage step modules, when the suite runs, then bin/factory.ts only dispatches, behaviour is unchanged, and a test fails when the committed stage.js bundle differs from what its sources build.
 
 ## R-123: A program-manager ruling at QC is built on resume
 Status: open
 Kind: functional
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given an answers resume whose saved tasks are all done and whose ruling orders edits, when the crew resumes, then a fix builder runs before green and its commits are in the head QC sees; and a member commit dropped after a PROPOSAL stop is merged or named.
 
 ## R-124: A resumed run's cost and timing cover every session that ran it
 Status: open
 Kind: functional
-Added: 2026-11-13T00:00:00Z | truss 0.31.0 speed release
+Added: 2026-11-13T17:33:53Z | truss 0.31.0 speed release
 Source: goal
 Example: Given a run driven by two program-manager sessions, when the cost meter sweeps, then it reads the transcripts of both sessions and usage.jsonl holds the rows of each.
+
+## R-125: The two hand-merged 0.30.0 crews get QC and a code review after the fact
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given the run-lifecycle diff (fast-forward to 09423cbf) and the crew-decisions diff (merge 29953ee2), when a QC engineer and a reviewer rule on each, then every finding they raise is fixed or deferred with a logged reason, and the 10 deferred gaps from those crews' stage results are fixed or deferred the same way.
+
+## R-126: R-85 to R-98 carry a status verified from evidence
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given R-85 to R-98 marked open, when the run checks each against a test or command output, then each is set to met or stays open with the failing evidence named, and the report says which ones only the hand-merged crews cover.
+
+## R-127: stage.js keeps multi-line text intact
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a stop text or ruling with three lines, when stage.js passes it to a member or a result, then the three lines arrive as three lines and are not flattened by oneLine.
+
+## R-128: The retro finds problems on any project and ranks them by cost
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a session dir with recorded step timings, test durations, slot waits, conflicts, QC rounds and usage, when the retro runs, then it reports findings on time, code structure, tests, the quality loop, rules and gates, and cost, each with counted evidence, its wall-clock or token cost, a proposed fix and a target (plugin, project config, or project code as a proposed goal), ranked by cost; product-code findings are proposed goals and never auto-fixed.
+
+## R-129: The retro is open-ended and keeps findings outside the known categories
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given the retro judge's brief, when a test reads it, then it says plainly the judge is empowered and expected to find any other problem or optimization the evidence shows and may name a new category; and given a finding whose category is not in the checklist, judge and triage keep it in the same format.
+
+## R-130: The retro reads structured events, not transcripts, and finishes in bounded time
+Status: met
+Kind: nfr
+Measure: on a session dir the size of 0.31.0's wave 4 (48e2a721), the retro's counting step reads no transcript file and finishes in under 300 s
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: default
+
+## R-131: Memory consolidation proposes a reviewed diff between waves and never deletes silently
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given docs/knowledge and the architecture notes holding two entries for one capability, one claim the code contradicts and one line citation, when the consolidation step runs between waves, then it proposes one diff that merges the duplicates, resolves or flags the contradiction, prunes the unsupported entry with its reason and re-points the citation by symbol, and nothing is removed until a reviewer accepts the diff.
+
+## R-132: The plan flags a hotspot file most crews will touch
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a plan where most crews own the same file, when the design engineer drafts it and the checking engineer reviews it, then both flag the file and propose a refactor goal first or one crew owning it, instead of serial merges.
+
+## R-133: The PM proposes next goals from retro findings and never starts them unasked
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a finished wave with retro findings, when the PM reports, then it lists proposed next goals, each with its evidence and a cost estimate, and starts none of them without the client's yes.
+
+## R-134: Decision lines reach decisions.md only through factory decide, whatever tool writes them
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given the main session runs a Bash command that redirects or appends text to its decisions.md, when the guard sees it, then the command is refused with a message naming factory decide.
+
+## R-135: The trussFile gate lets a PM use another session's truss dir it legitimately runs
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a run driven across two PM sessions, when the second session passes a trussFile under the first session's truss dir, then the gate lets the call through; a trussFile outside the repo's truss dirs is still refused.
+
+## R-136: Leftover worktrees are cleaned up at the end of a run
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a run whose crews all merged or dropped and whose worktrees hold no unmerged change or lock, when the run ends, then those worktrees and their branches are removed, and any kept one is listed with why.
+
+## R-137: The citation coupling scope trap is confirmed closed
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a crew that changes a file a doc cites by symbol outside the crew's owns, when the crew's checks run, then no out-of-owns doc edit is needed, and a test pins that case.
+
+## R-138: Items 0.31.0's report or reviewer deferred are fixed or deferred with a reason
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given each deferred item in report-0.31.0.md and the 0.31.0 reviewer's notes, when the run ends, then each is either fixed with a test or listed in report-0.32.0.md with why it stays deferred.
+
+## R-139: A one-line change to a leaf module selects far fewer tests
+Status: open
+Kind: nfr
+Measure: with the same selectForCheckout measure as 0.31.0 (hubs 95 to 103 of 163 test files), a change to bin/factory/shared.ts, bin/factory/resources.ts or bin/store.ts selects at most 50 test files, and the report gives the before and after count per module
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: default
+
+## R-140: A stage test can drive one step without the whole stage.js bundle
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a test of one stage step, when it runs, then it loads that step's module and its stubs only, and a change to another step's module does not select it.
+
+## R-141: A run survives its PM session ending
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a run whose PM session ended while crews were running, when a new PM session starts on the same repo, then it finds the run, its unfinished crews and their saved results, and resumes them without redoing merged work.
+
+## R-142: admit and standalone reaps cost no extra turn
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a direct crew's next member start, when the PM runs the call that starts or records it, then admission and the reap run inside that call, and no separate admit or reap call is needed.
+
+## R-143: Stage events are stamped when they happen
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a stage run with three steps, when each step ends, then its event lands in the events log with that moment's time, not in one batch at the end of the run.
+
+## R-144: The background heavy job works on Windows
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given process.platform win32, when a heavy check starts as a background job and ends, then it runs, reports its result and releases its slot, and a test covers that path.
+
+## R-145: A hung heavy job never holds its slot for ever
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a detached heavy job that hangs past its limit, when the limit passes, then its slot is released and the job is stopped; and the report says, with evidence, whether TaskStop reaches a detached heavy job.
+
+## R-146: A test drives concludeFrontmatterMerge through finish
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a crew branch whose merge with the target conflicts only in doc frontmatter, when finish merges it, then concludeFrontmatterMerge settles the conflict and the merge completes, and a test drives that path through finish.
+
+## R-147: The last three line citations become symbol citations and the lint covers their paths
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given skills/retro/SKILL.md and agents/planning-engineer.md, when the citation lint runs, then it checks those files and finds no path:line citation in them.
+
+## R-148: Timing bounds crew periods by agent activity
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a crew whose recorded start and end span a long gap with no agent activity, when retro/timing.ts measures it, then the crew's period is bounded by its first and last agent activity.
+
+## R-149: The report compares wave-4 and 0.32.0 crew wall-clock with the same method
+Status: met
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given a cost sweep over every session that ran this run, when retro/timing.ts measures this run's crews, then report-0.32.0.md puts their crew-time and run time beside 0.31.0's wave-4 baseline of 81h55 crew-time over a 25h39 run.
+
+## R-150: The 0.32.0 release is a U-drive handoff that never touches GitHub
+Status: open
+Kind: constraint
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+
+## R-151: The report lists per item what changed and the new retro's output on the last three waves
+Status: open
+Kind: functional
+Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
+Source: goal
+Example: Given the merged run, when report-0.32.0.md is written, then it has one entry per goal item saying what changed, and the new retro's output on the last three waves beside the 7-day retro of 2026-11-12.
 
 ## Non-goals
 - The UI never edits the plugin, or Truss's files and state; the plugin does its own work (writing agents, plans, reports) and the UI only displays it and communicates with the session.

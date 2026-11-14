@@ -1,0 +1,39 @@
+I found seven problems, listed below in cost order. Most of them are root causes that run across crews and sit behind the counting step's per-crew findings. I did not repeat the counting findings. The brief carried no PM account of the run. I worked only from `retro/problems.json`, `decisions.md`, the `stage-result-*.json` files, the catalog and file lists in the repo. None of the seven is in the catalog yet. Two small refusal findings from the counting step do match catalog entries: the worktree-guard refusals match `worktree-guard-shell-shape`, and the main-thread edit refusal matches `pm-edits-repo-files-during-run`.
+
+There are four things the combiner should weigh beyond the blocks.
+
+First, the counting finding `P-time-idle-gaps` points at the wrong cause. Its 2 h 54 min gap is the client's own pause (decisions.md 17:08 to 21:47), not a truss stall. The real truss cost there was the takeover. The new session's Workflow gate refused `args.trussFile` from the old session's dir, so the PM had to paste about 8 KB of args inline. No measure counts that cost, so I give it no block.
+
+Second, the `time.waitRulingMs` figures for hygiene and resume-guard both include that pause. My first block cites the hygiene figure, and part of it is the pause rather than slot waiting.
+
+Third, the session audit blocked merges twice for no real reason. In one case it read another workflow's in-progress transcript. In the other it read `<synthetic>` transcripts left by runners that failed with API 403. Each time the client had to type a waiver (decisions.md 03:12, 05:16, 05:20, 07:42). No wall-time or token measure covers this, so it has no block. It should still go into the factory fix goal.
+
+Fourth, the run never finished through the pipeline. At 10:07 the client said to skip the pipeline and finish within 30 min. The PM stopped crew-decisions and run-lifecycle and marked both merged by ancestry.
+
+```finding
+{"category": "rules and gates", "title": "One heavy slot with a fixed 540 s wait is shorter than a full npm test run (8 to 16 min), so crews waiting at green stopped BLOCKED instead of queueing", "evidence": [{"measure": "rules.slotBusyStops.hygiene", "value": 1}, {"measure": "rules.slotBusyStops.crew-decisions", "value": 2}, {"measure": "rules.slotBusyStops.approve-proof", "value": 1}, {"measure": "time.waitRulingMs.hygiene", "value": 24705263}], "cost": {"wallMs": 24705263, "tokens": null, "usd": null}, "fix": "Make the heavy-slot wait queue behind the holder, or scale its limit to the holder's measured check time, rather than stop the crew at a fixed 540 s; each stop cost a PM ruling and a resume.", "target": {"kind": "plugin", "path": "plugins/truss/workflows/stage.js"}, "signature": ["heavy slot busy: waited \\d+ ms \\(limit \\d+ ms\\)"]}
+```
+
+```finding
+{"category": "quality loop", "title": "factory-gaps passed QC three times: a merge conflict with main and a session-audit refusal each forced a full re-QC of unchanged crew work", "evidence": [{"measure": "time.qcMs.factory-gaps", "value": 8020087}, {"measure": "time.qcRounds.factory-gaps", "value": 3}, {"measure": "time.conflictMs.factory-gaps", "value": 103045}], "cost": {"wallMs": 8020087, "tokens": null, "usd": null}, "fix": "After a crew that already passed QC is resynced with main, have QC review only the resolution diff against the passed head, not the whole crew diff.", "target": {"kind": "plugin", "path": "plugins/truss/workflows/stage.js"}}
+```
+
+```finding
+{"category": "time", "title": "Stage 0 held crews whose work had ended as running until the whole stage returned, so queued crews could not start and two slots sat idle for about 2 h", "evidence": [{"measure": "time.idleMs.crew-decisions", "value": 4344673}, {"measure": "time.idleMs.resume-guard", "value": 3813040}], "cost": {"wallMs": 4344673, "tokens": null, "usd": null}, "fix": "Free a crew's slot and start the next queued crew as soon as that crew stops. Count a crew that passed QC but has not finished as done for admission.", "target": {"kind": "plugin", "path": "plugins/truss/bin/factory.ts"}}
+```
+
+```finding
+{"category": "quality loop", "title": "A resume --answers file replaced the crew's earlier rulings instead of adding to them, so approve-proof's 11:26 ruling was lost on resume and QC failed it again until the rework allowance ran out", "evidence": [{"measure": "quality.qcFail.approve-proof", "value": 5}, {"measure": "quality.allowanceSpent.approve-proof", "value": 1}, {"measure": "rules.allowanceStops.approve-proof", "value": 1}, {"measure": "quality.qcFailMs.approve-proof", "value": 3803551}, {"measure": "quality.qcFailTokens.approve-proof", "value": 7181995}], "cost": {"wallMs": 3803551, "tokens": 7181995, "usd": null}, "fix": "Have start --resume add new answers to the crew's earlier rulings rather than replace them, or refuse a resume whose answers leave out an earlier ruling that has not been built yet.", "target": {"kind": "plugin", "path": "plugins/truss/bin/factory.ts"}}
+```
+
+```finding
+{"category": "quality loop", "title": "A resume at qc that carried an approved PROPOSAL ruling started no fix builder, so run-lifecycle's qc-3 failed on unbuilt work and spent the rework allowance", "evidence": [{"measure": "quality.qcFail.run-lifecycle", "value": 3}, {"measure": "quality.allowanceSpent.run-lifecycle", "value": 1}, {"measure": "rules.allowanceStops.run-lifecycle", "value": 1}, {"measure": "quality.qcFailMs.run-lifecycle", "value": 2497108}, {"measure": "quality.qcFailTokens.run-lifecycle", "value": 4524746}], "cost": {"wallMs": 2497108, "tokens": 4524746, "usd": null}, "fix": "When a resume at qc carries a ruling that asks for a change, route it to a builder or test-writer before QC reruns, and do not charge a QC fail caused this way to the rework allowance.", "target": {"kind": "plugin", "path": "plugins/truss/workflows/stage.js"}}
+```
+
+```finding
+{"category": "code structure", "title": "The plan ran six crews in parallel on one stage although all but one edited factory.ts or stage.js, so factory-gaps overlapped every other crew and needed resolver agents", "evidence": [{"measure": "code.crews.plugins_truss_bin_factory_ts", "value": 5}, {"measure": "code.crews.plugins_truss_workflows_stage_js", "value": 3}, {"measure": "rules.ownsStops.crew-decisions", "value": 2}, {"measure": "time.conflictMs.factory-gaps", "value": 103045}, {"measure": "cost.tokens.factory-gaps.resolver", "value": 1768916}], "cost": {"wallMs": 103045, "tokens": 1768916, "usd": null}, "fix": "Have plan-check flag crews in the same stage whose owns share a hot file, and put them in sequential stages or make one crew own that file, rather than relying on sync agents and owns extensions.", "target": {"kind": "plugin", "path": "plugins/truss/bin/factory.ts"}}
+```
+
+```finding
+{"category": "cost", "title": "Runner agents, spawned just to run commands, used about 60M tokens across six crews; crew-decisions alone spawned 225 runners", "evidence": [{"measure": "cost.tokens.crew-decisions.runner", "value": 21066711}, {"measure": "cost.spawns.crew-decisions.runner", "value": 225}, {"measure": "cost.tokens.approve-proof.runner", "value": 12534932}, {"measure": "cost.tokens.run-lifecycle.runner", "value": 9016051}, {"measure": "cost.tokens.hygiene.runner", "value": 7273686}, {"measure": "cost.tokens.resume-guard.runner", "value": 5324193}, {"measure": "cost.tokens.factory-gaps.runner", "value": 5263370}], "cost": {"wallMs": null, "tokens": 21066711, "usd": null}, "fix": "Batch the commands of a step into one runner spawn on the cheapest model, and keep the runner brief minimal, because each spawn pays about 90K tokens of context to run one command.", "target": {"kind": "plugin", "path": "plugins/truss/workflows/stage.js"}}
+```

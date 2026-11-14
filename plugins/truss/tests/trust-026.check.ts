@@ -21,7 +21,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 import { ltcCrewGate, ltcPlanGate, ltcTriggers } from '../bin/guard.ts'
-import { sharedDir } from '../bin/store.ts'
+import { sharedDir } from '../bin/core.ts'
 import { proofPlugin } from './fixtures/inbox/proof-plugin.ts'
 import { CHEAP, COSTLY, cli as ltcCli, clientResolves, designerResult, mkWorld, planWrite } from './fixtures/ltc/harness.ts'
 import { REAL_PLUGIN, flat, head, highSampleFile, mkEnv, mkRepo, mkTrussDir, pluginCopy, putFile, runCli } from './fixtures/workflow-run/harness.ts'
@@ -698,13 +698,15 @@ test('trust-026: an admit over 20 resolved items in 5 session transcripts reads 
   writeFileSync(`${w.dir}/ltc-plan.json`, JSON.stringify({ rev: 'r1', ids: ltc }))
   writeFileSync(w.readLog, '')
   const ms = await inproc(w, async (m) => {
-    const t0 = performance.now()
+    // CPU time of this process, not wall time: a busy machine (parallel heavy slots) stretches wall time but not the work done.
+    const c0 = process.cpuUsage()
     for (const sid of sids) {
       assert.deepEqual(m.inbox.blockingFor(w.repo, sid, 'a'), [])
       assert.deepEqual(m.inbox.budgetRaises(w.repo, sid), [])
     }
     assert.deepEqual(m.guard.ltcPlanGate(w.repo, w.dir), [])
-    return performance.now() - t0
+    const c = process.cpuUsage(c0)
+    return (c.user + c.system) / 1000
   })
   const counts = new Map<string, number>()
   for (const r of readsOf(w)) counts.set(r, (counts.get(r) ?? 0) + 1)

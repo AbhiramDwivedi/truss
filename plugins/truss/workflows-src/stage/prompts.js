@@ -92,6 +92,7 @@ function taskPrompt(crew, task, note) {
   }
   body.push('', 'Brief:', task.brief)
   if (answers.length) body.push('', 'Answers to your earlier questions:', ...answers)
+  if ((crew.testsUpdated || new Set()).has(task.name)) body.push('', 'A test-writer has already updated the tests the ruling above orders; they are merged on the crew branch. The tests are updated, so build the code to pass them and never edit them.')
   if (note) body.push('', ...resumeLines(note))
   const start = firstStep(e, (note && note.branch) || priorOf(crew, task.name))
   return memberPrompt(crew, task.role, { start, body })
@@ -133,7 +134,7 @@ function fixPrompt(crew, what, detail, role = 'builder', prev = '') {
   const tf = testerFiles(crew)
   const body = [`Task: fix, ${what}`]
   if (role === 'tester') {
-    body.push(`Files you may change: ${tf.join(', ')}`)
+    body.push(`Files you may change: ${(tf.length ? tf : ownTestsOf(crew)).join(', ')}`)
   } else {
     body.push(`Files you may change: ${e.owns.filter((o) => !tf.includes(o)).join(', ')}`)
     if (tf.length) body.push(`Files a tester owns, which you must not change: ${tf.join(', ')}`, 'Never edit a file in the tester list above; when a fix needs one changed, name it in your report instead.')

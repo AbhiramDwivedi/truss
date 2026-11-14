@@ -1,0 +1,113 @@
+// @ts-nocheck
+// R-140: a stage test can drive one step without the whole stage bundle. loadStageStep and loadStageBundle (bin/build-stage.ts)
+// load a module or the bundle with stubbed free names; bin/testmap.ts maps a step module to its single-step tests only.
+
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import test from 'node:test'
+
+const STEP_DIR = path.join(import.meta.dirname, '../workflows-src/stage')
+const RULING = path.join(STEP_DIR, 'ruling.js')
+
+test("a single-step stage test loads that step's module and its stubs only", async () => {
+  const { loadStageStep } = await import('../bin/build-stage.ts')
+  const stubs = { agent: async () => ({}), args: {}, log: () => {}, freshAnswers: () => [], fixBuilder: async () => {} }
+  const m = await loadStageStep(RULING, stubs)
+  assert.deepEqual(m.loaded, [RULING])
+  assert.equal(typeof m.scope.rulingStep, 'function')
+  assert.equal(typeof m.scope.rulingOrdersChange, 'function')
+  // integrate is neither declared by ruling.js nor stubbed: reaching it throws
+  const crew = { e: { prior: [{ at: 'fix, a', branch: 'b1' }] }, proofs: [] }
+  await assert.rejects(() => m.scope.rulingStep(crew, false), (err) => err instanceof ReferenceError && /integrate/.test(err.message))
+  // a file that is not a stage module is refused
+  const d = realpathSync(mkdtempSync(path.join(tmpdir(), 'stage-steps-')))
+  try {
+    writeFileSync(path.join(d, 'x.js'), 'function x() {}\n')
+    await assert.rejects(() => loadStageStep(path.join(d, 'x.js'), {}))
+  } finally {
+    rmSync(d, { recursive: true, force: true })
+  }
+})
+
+test('a change to another stage step\'s module does not select a single-step test', async () => {
+  const { selectTests } = await import('../bin/testmap.ts')
+  const root = path.resolve(import.meta.dirname, '..', '..', '..')
+  const r = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', windowsHide: true })
+  assert.equal(r.status, 0, r.stderr)
+  const tracked = new Set(r.stdout.split('\n').filter(Boolean))
+  for (const f of ['plugins/truss/tests/stage-step-ruling.check.ts', 'plugins/truss/tests/stage-steps-032.check.ts']) tracked.add(f)
+  const pick = (mod: string) => {
+    assert.ok(tracked.has(mod), `${mod} is tracked`)
+    return selectTests({
+      tracked: [...tracked],
+      changed: [{ path: mod, deleted: false }],
+      read: (p: string) => {
+        try {
+          return readFileSync(path.join(root, p), 'utf8')
+        } catch {
+          return null
+        }
+      },
+      config: {},
+      packageTest: JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts.test,
+    })
+  }
+  const single = 'plugins/truss/tests/stage-step-ruling.check.ts'
+  const other = pick('plugins/truss/workflows-src/stage/qc.js')
+  assert.equal(other.mode, 'targeted', other.why.join('\n'))
+  assert.ok(!other.files.includes(single), `qc.js must not select ${single}: ${other.files.join(', ')}`)
+  // the case that drives the bundle through loadStageBundle is reached by any stage module
+  assert.ok(other.files.includes('plugins/truss/tests/stage-steps-032.check.ts'), `qc.js selects the bundle-driving test: ${other.files.join(', ')}`)
+  const own = pick('plugins/truss/workflows-src/stage/ruling.js')
+  assert.equal(own.mode, 'targeted', own.why.join('\n'))
+  assert.ok(own.files.includes(single), `ruling.js selects ${single}: ${own.files.join(', ')}`)
+})
+
+test('a single step driven alone returns the same result as the same step inside the stage.js bundle', async () => {
+  const { loadStageStep, loadStageBundle } = await import('../bin/build-stage.ts')
+  const stubs = { agent: async () => ({}), args: {}, log: () => {} }
+  const alone = await loadStageStep(RULING, stubs)
+  const bundle = await loadStageBundle(stubs)
+  assert.equal(typeof bundle.scope.rulingStep, 'function')
+  for (const text of ['Cherry-pick the fix and update the doc', 'Waive and proceed; no change is needed', 'nothing to fix', 'rewrite the section']) {
+    assert.deepEqual(alone.scope.rulingOrdersChange(text), bundle.scope.rulingOrdersChange(text), text)
+  }
+  // a crew with nothing stopped and no answers returns before any runner call, in both
+  const mk = () => ({ e: { prior: [], resume: 'fresh' }, proofs: [] })
+  const a = mk()
+  const b = mk()
+  assert.deepEqual(await alone.scope.rulingStep(a, false), await bundle.scope.rulingStep(b, false))
+  assert.deepEqual(a, b)
+})
+
+test('a test that drives the bundle through loadStageBundle is selected by a change to any stage module', async () => {
+  const { selectTests } = await import('../bin/testmap.ts')
+  const files = {
+    'package.json': '{}',
+    'bin/build-stage.ts': 'export async function loadStageBundle() {}\nexport async function loadStageStep() {}\n',
+    'wf/stage.js': '// Generated by `npm run build:stage` (bin/build-stage.ts) from the modules in ../wf-src/stage/. Edit those and rebuild; never edit this file.\nexport const meta = {}\n',
+    'wf-src/stage/crew.js': '// stage.js module: crew. Edit here.\nfunction crew() {}\n',
+    'wf-src/stage/qc.js': '// stage.js module: qc. Edit here.\nfunction qc() {}\n',
+    'tests/bundle.check.ts': "const { loadStageBundle } = await import('../bin/build-stage.ts')\nawait loadStageBundle({})\n",
+    'tests/step.check.ts': "const { loadStageStep } = await import('../bin/build-stage.ts')\nawait loadStageStep('../wf-src/stage/crew.js', {})\n",
+  }
+  const pick = (changed: string) =>
+    selectTests({
+      tracked: Object.keys(files),
+      changed: [{ path: changed, deleted: false }],
+      read: (p: string) => (Object.hasOwn(files, p) ? files[p] : null),
+      config: {},
+      packageTest: 'node --test tests/*.check.ts',
+    })
+  for (const mod of ['wf-src/stage/crew.js', 'wf-src/stage/qc.js']) {
+    const s = pick(mod)
+    assert.equal(s.mode, 'targeted', `${mod}: ${s.why.join('\n')}`)
+    assert.ok(s.files.includes('tests/bundle.check.ts'), `${mod} selects the bundle test: ${s.files.join(', ')}`)
+  }
+  const q = pick('wf-src/stage/qc.js')
+  assert.ok(!q.files.includes('tests/step.check.ts'), 'qc.js does not select the crew single-step test')
+  assert.ok(pick('wf-src/stage/crew.js').files.includes('tests/step.check.ts'), 'crew.js selects its single-step test')
+})

@@ -2,9 +2,10 @@
 // unchanged from bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import path from 'node:path'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { flat, parseLabel } from '../store.ts'
+import { flat, parseLabel } from '../core.ts'
 import { crewRunsOf, jsonLines, runOf, runsNextTo } from './runs.ts'
-import { appendEvent, run } from './shared.ts'
+import { run } from './cli.ts'
+import { appendEvent } from './log.ts'
 
 // The git worktrees of the repo as {path, branch}.
 export function worktreesOf(repo: string): { path: string; branch: string | undefined; locked: boolean }[] {
@@ -252,6 +253,19 @@ export function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal
       const kept = retireWorktree(x, w, { crew: crew ?? merged[0] as string, run: id, why: 'merged' })
       if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
     }
+  }
+  // Claude Code Agent worktrees agent-<agentId> on worktree-agent-<agentId>: attributed to a crew by the spawn event naming that agentId.
+  // Only a terminal crew's are retired; one holding a tip the target lacks, a lock or changes is kept and listed with why.
+  const agentCrew = new Map<string, string>()
+  for (const e of events) if (e.event === 'spawn' && typeof e.agentId === 'string' && typeof e.crew === 'string') agentCrew.set(e.agentId, e.crew)
+  for (const w of worktreesOf(x.repo)) {
+    const id = w.branch === undefined ? undefined : /^worktree-agent-([\w.-]+)$/.exec(w.branch)?.[1]
+    if (w.branch === undefined || id === undefined || path.basename(w.path) !== `agent-${id}`) continue
+    const crew = agentCrew.get(id)
+    const why = crew === undefined ? undefined : terminal.get(crew)
+    if (why === undefined || crew === undefined) continue
+    const kept = w.locked ? 'locked' : run(x.repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${x.target}`]).status !== 0 ? 'unmerged' : retireWorktree(x, w, { crew, run: runId, why })
+    if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
   }
   // member branches whose worktree is already gone
   const heads = run(x.repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])

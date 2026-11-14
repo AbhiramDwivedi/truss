@@ -22,8 +22,18 @@ function taskOpts(task) {
   return { title: task.name, ...(task.role === 'builder' || persona ? { effort: task.effort } : {}), ...(persona ? { persona } : {}) }
 }
 
+// 0.32.0: the new answers at a task whose role is "tester" (the PM's ruling orders a test change, which a builder may not make)
+const testerRulings = (crew, name) => (crew.e.resume === 'answers' ? freshAnswers(crew.e).filter((a) => a && a.role === 'tester' && a.at === name && typeof a.text === 'string') : [])
+
 async function runTask(crew, task) {
   const at = task.name
+  // such a ruling first goes to a test-writer; its branch is integrated before the stopped task reruns, so the rerun sees the new tests
+  const rulings = testerRulings(crew, at)
+  if (rulings.length) {
+    const detail = [`The program manager ruled on this crew's stop at task ${at}, and the ruling changes tests. Build every test change the ruling orders, commit them on your branch, and change nothing else:`, ...rulings.map((a) => `- ${a.text}`)].join('\n')
+    await fixBuilder(crew, `the program manager ruling at ${at}`, detail, 'tester', '', at)
+    ;(crew.testsUpdated ??= new Set()).add(at)
+  }
   const makePrompt = (note) => taskPrompt(crew, task, note)
   // a resume: the task's product call may still wait on its inbox item (stop again) or be answered (start with the answer)
   const first = await pendingCall(crew, task.role, makePrompt, taskOpts(task), at, true)
@@ -60,8 +70,8 @@ async function runMembers(crew, tasks) {
 
 // fix builder for a failing check, a QC finding or a stress-test finding; integrates its branch
 // prev: a branch an earlier fix member committed on before it stopped (greenFix's code half), merged in the first step
-async function fixBuilder(crew, what, detail, role = 'builder', prev = '') {
-  const at = crew.step
+// at: the step the member belongs to, crew.step unless the caller runs beside other members (a task rerun)
+async function fixBuilder(crew, what, detail, role = 'builder', prev = '', at = crew.step) {
   guardAllowance(crew, at)
   const persona = personaFor(crew, role, detail, null)
   const make = (resume) => fixPrompt(crew, what, resume ? `${detail}\n\n${resumeLines(resume).join('\n')}` : detail, role, (resume && resume.branch) || prev)

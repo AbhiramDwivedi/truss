@@ -19,8 +19,17 @@ const seededLearned = (list) =>
     .map((i) => ({ kind: i.kind, text: i.text.trim(), source: typeof i.source === 'string' ? i.source : '', ...(typeof i.target === 'string' && i.target.trim() ? { target: i.target.trim() } : {}), task: typeof i.task === 'string' && i.task ? i.task : 'earlier run', member: typeof i.member === 'string' && i.member ? i.member : 'earlier run' }))
 
 function makeCrew(entry) {
-  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null }
+  return { e: entry, slug: entry.slug, step: 'red', counters: {}, fails: 0, head: null, proofs: [], stressTest: null, deferred: Array.isArray(entry.deferred) ? entry.deferred : [], lock: Promise.resolve(), halted: null, direction: directionOf(entry), uxReview: null, greenOut: '', learned: seededLearned(entry.learned), decisions: [], asked: new Set(), calls: {}, knowledgeRan: false, knowledgeSha: null, checkpointed: false, pastKnowledge: false, unrecorded: [], sourceChanges: [], lint: null, lintHead: null, stepEnds: [] }
 }
+
+// stage.js has no clock: finish reads the time a step ended from the transcript of the last agent that returned while the crew was at it.
+// A step entered again (a QC fix round) moves its entry to the end, so the array stays in the order the steps ended, one entry a step.
+function endStep(crew, label) {
+  crew.stepEnds = crew.stepEnds.filter((s) => s.step !== crew.step)
+  crew.stepEnds.push({ step: crew.step, agent: label })
+}
+const stepEndsOf = (crew) => ({ stepEnds: crew.stepEnds.map((s) => ({ ...s })) })
+
 
 // ADR-0022 U3: a crew builds UI only when its entry says ux true; a missing ux is false
 const uxOn = (crew) => crew.e.ux === true
@@ -42,7 +51,7 @@ const knowledgeResult = (crew, stopped = false) => {
 }
 
 function stopResult(crew, err) {
-  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true) }
+  const ux = { ...(uxOn(crew) && crew.uxReview ? { ux: uxResult(crew) } : {}), ...(crew.ltc && crew.ltc.length ? { longTermCosts: crew.ltc } : {}), ...decisionsResult(crew), ...knowledgeResult(crew, true), ...stepEndsOf(crew) }
   if (err instanceof Stop) return { slug: crew.slug, state: 'stopped', tag: err.tag, text: err.text, at: err.at, ...ux }
   const text = err && err.message ? String(err.message) : String(err)
   return { slug: crew.slug, state: 'stopped', tag: 'BLOCKED', text, at: crew.step, ...ux }
@@ -82,7 +91,12 @@ function memberFor(crew, role) {
 // item 1 the reap runs inside the crew's next factory call, --reap-first, or the crew-end reap).
 // opts.at names where a held admission stops (a task's name); it defaults to the crew's step.
 async function ask(crew, role, prompt, opts = {}) {
-  if (role === 'runner') return spawn(role, nextLabel(crew, role), prompt, opts)
+  if (role === 'runner') {
+    const label = nextLabel(crew, role)
+    const out = await spawn(role, label, prompt, opts)
+    endStep(crew, label)
+    return out
+  }
   const { at, labelOut, title, ...rest } = opts
   const persona = typeof rest.persona === 'string' && rest.persona ? rest.persona : null
   if (!persona) delete rest.persona
@@ -90,18 +104,36 @@ async function ask(crew, role, prompt, opts = {}) {
   const member = persona ? null : memberFor(crew, role)
   // whether this member is meant to run at effort high, so factory's audit does not flag it (a persona, task effort or ## Members line)
   const high = (PERSONA_ROLES.includes(role) || role === 'po') && ((persona && PERSONAS[persona] && PERSONAS[persona].effort === 'high') || rest.effort === 'high' || (member && member.effort === 'high'))
-  await admit(crew, at ?? crew.step, peekLabel(crew, role), titleOf(crew, role, title), persona, !!high)
+  // reserve the label before the awaited admit: sibling members start in parallel, and a peek taken before the counter moves
+  // would give two of them one label, so the admission title (persona, --high) would land on a label the member does not run under.
+  // A held admission stops the crew and its number stays used: a resume numbers from labelFrom, so the gap is harmless.
+  const label = nextLabel(crew, role)
+  if (labelOut) labelOut.label = label
+  await admit(crew, at ?? crew.step, label, titleOf(crew, role, title), persona, !!high)
   // a member can change the crew branch: no gates result outlives it
   dropGates(crew)
   try {
-    const label = nextLabel(crew, role)
-    if (labelOut) labelOut.label = label
-    return await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    const out = await spawn(role, label, prompt, member ? { ...rest, member } : rest)
+    endStep(crew, label)
+    return out
   } finally {
     // ADR-0046 item 1: the reap rides on the crew's next factory call (--reap-first), not a runner spawn of its own;
     // reap() runs it alone only where no factory call follows (the crew's end)
     crew.reapDue = true
   }
+}
+
+// R-142: the member start the next factory call carries the admission for. Sets crew.admitPlan (runFactory sends it as
+// --admit-first) for the label, title, persona and high that ask() will admit with; the step's call must be the very next runner call.
+function planAdmit(crew, role, title, persona = null, high = false) {
+  crew.admitPlan = { label: peekLabel(crew, role), title: titleOf(crew, role, title), persona, high }
+}
+
+// the admit-first answer of the last factory call (runFactory), once: only for the member start it was planned for
+function takeAdmitFirst(crew, label, title, persona, high) {
+  const f = crew.admitFirst
+  crew.admitFirst = null
+  return label && f && f.label === label && f.title === title && f.persona === (persona || null) && f.high === !!high ? f : null
 }
 
 // admit --slug: a held answer stops the crew, with no retry. ADR-0027 F-67: admit fails closed, so a result with no JSON
@@ -112,9 +144,12 @@ async function ask(crew, role, prompt, opts = {}) {
 async function admit(crew, at, label, title, persona = null, high = false) {
   const cmd = `admit --wait-ms 90000 --slug ${sh(crew.slug)}${label ? ` --label ${sh(label)} --title ${sh(title)}${persona ? ` --persona ${sh(persona)}` : ''}${high ? ' --high' : ''}` : ''}`
   // ADR-0046 item 1: the QC admit may have run inside gates, with this same label and title
-  const pre = label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null
+  // R-142: or the factory call just before this member start (--admit-first) answered for it, with this label, title, persona and high
+  const first = takeAdmitFirst(crew, label, title, persona, high)
+  const pre = first ?? (label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null)
   // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
-  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  // the folded --admit-first answer counts as a memory or parallelism hold only when it carries admit's own figures (minFreeMB)
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true && (pre !== first || typeof pre.parsed.minFreeMB === 'number')
   let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.

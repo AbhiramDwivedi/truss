@@ -3,8 +3,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { configOf, isObj, need, readText, refuse, str, usage, withLock } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { configOf, isObj, need, readText, refuse, str, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
+import { withLock } from '../lock.ts'
 import { profilesOf, workTypeErrors } from '../worktypes.ts'
 import { fencedBlock, parsePlan } from '../../hooks/register.ts'
 import { ltcPlan, ltcPlanGate } from '../guard.ts'
@@ -15,11 +16,41 @@ import { buildPersonas, parsePersonaFile, PERSONA_KEBAB, personaFault } from './
 import { excludeScratch, retireBranch, retireWorktree, worktreesOf } from './retire.ts'
 import type { RetireCtx, RetireWhy } from './retire.ts'
 import { runOf } from './runs.ts'
-import { appendDecision, archPath, dirOf, docKeysOf, intOr, knowledgeArgsOf, loadPlan, patchPlan, PLUGIN, repoOf, rolesWithTypes, run, savePlan, scriptPathFor, sessionScriptsDir, settingsOf } from './shared.ts'
-import { goalSections, uxSaysOff } from './start.ts'
+import { archPath, dirOf, intOr, PLUGIN, repoOf, run } from './cli.ts'
+import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
+import { docKeysOf, knowledgeArgsOf, settingsFor, settingsOf, validBranchName } from './settings.ts'
+import { appendDecision } from './log.ts'
+import { rolesWithTypes, scriptPathAuto } from './roles.ts'
+import { goalSections } from './goal-file.ts'
+import { uxSaysOff } from './start.ts'
 
 export function cmdSettings(f: Flags): Obj {
-  return settingsOf(repoOf(f))
+  return settingsFor(f, repoOf(f))
+}
+
+// Bug G (0.32.0): no goal item reaches planning without a worth review. The current run section of D/decisions.md (everything after
+// the last `## Run` heading, or the whole file when there is none) must hold a `checker-<n> WORTH` line, or the PM's audited
+// `worth review none: <evidence>` decision line saying the client typed every goal item this session. An unattended run has no
+// client typing, so only a WORTH line counts there. Both lines are written by `decide` only.
+const WORTH_LINE = /^- \d\d:\d\d \| checker-[1-9]\d* WORTH (worth|trim|drop): \S/
+const WORTH_NONE = /^- \d\d:\d\d \| worth review none:\s*[^|\s][^|]*\|/
+export function worthGate(dir: string): void {
+  const p = `${dir}/decisions.md`
+  const lines = (existsSync(p) ? readFileSync(p, 'utf8') : '').split(/\r?\n/)
+  let start = 0
+  lines.forEach((l, i) => {
+    if (l.startsWith('## Run')) start = i + 1
+  })
+  const section = lines.slice(start)
+  const unattended = existsSync(`${dir}/unattended.json`)
+  if (section.some((l) => WORTH_LINE.test(l))) return
+  if (!unattended && section.some((l) => WORTH_NONE.test(l))) return
+  const how = "log each goal item's worth review with `decide --checker <n> --recommend <worth|trim|drop> --text T --outcome O`"
+  throw refuse({
+    error: unattended
+      ? `no worth review in this run: an unattended run needs a checker WORTH line in ${p}; ${how}`
+      : `no worth review in this run: ${p} has no checker WORTH line and no 'worth review none:' line since the last ## Run; ${how}, or, when the client typed every goal item this session, \`decide --line 'worth review none: <evidence> | <reason> | none | followed'\``,
+  })
 }
 
 export function cmdPlanArgs(f: Flags): Obj {
@@ -28,6 +59,7 @@ export function cmdPlanArgs(f: Flags): Obj {
   const brief = readText(need(f, 'brief-file'))
   const fix = str(f, 'fix')
   if (fix !== undefined) readText(fix)
+  worthGate(dir)
   excludeScratch(repo)
   const cfg = configOf(repo)
   // review 10: the product-owner plan review reads the feature map, so the key (default docs/features.md) goes along when that file exists
@@ -36,7 +68,7 @@ export function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir)), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
+      scriptPath: scriptPathAuto(PLUGIN, 'plan.js', str(f, 'scripts-dir'), repo, dir), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -118,7 +150,18 @@ export function cmdPlanWrite(f: Flags): Obj {
   const longTermCosts = ltcPlan(repoOf(f), dir, texts, createHash('sha256').update(message).digest('hex').slice(0, 12)).ids
   // under the plan lock, re-checking the existing plan: an owns-extend or approve that landed since the first check is not overwritten
   withLock(dir, 'plan', () => {
+    const had = existsSync(`${dir}/plan.json`)
     keepExisting(true, seenApproved)
+    // the replaced run's per-crew state (reply checkpoint, answers, learned, crew decisions) moves aside, so a new run's crew of the same slug starts clean
+    if (had) {
+      let name = 'run-state'
+      for (let n = 2; existsSync(`${dir}/${name}`); n++) name = `run-state-${n}`
+      for (const [sub, to] of [['crews', 'crews'], ['crew-decisions', 'decisions']]) {
+        if (!existsSync(`${dir}/${sub}`)) continue
+        mkdirSync(`${dir}/${name}`, { recursive: true })
+        renameSync(`${dir}/${sub}`, `${dir}/${name}/${to}`)
+      }
+    }
     savePlan(dir, { ...carried, approvedAt: null })
   })
   writeFileSync(`${dir}/plan.md`, md as string)
@@ -179,7 +222,7 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
   try {
     const repo = repoOf(f)
     const wts = worktreesOf(repo)
-    const x: RetireCtx = { dir, repo, target: settingsOf(repo).target, mainTop: wts[0]?.path ?? repo }
+    const x: RetireCtx = { dir, repo, target: settingsOf(repo, dir).target, mainTop: wts[0]?.path ?? repo }
     const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
     const o = { crew: 'plan', run: runId, why: 'merged' as RetireWhy }
@@ -195,6 +238,24 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
     // no repo or settings: nothing retired
   }
   return left
+}
+
+// plan-cap: sets plan.maxParallelCrews under the plan lock and logs why. Running crews keep running when the cap drops below their count; start admits no new crew until the count falls.
+export function cmdPlanCap(f: Flags): Obj {
+  const dir = dirOf(f)
+  const raw = need(f, 'max-parallel-crews')
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN
+  if (!Number.isInteger(n) || n < 1 || n > 16) throw usage(`--max-parallel-crews must be an integer from 1 to 16, got ${raw}`)
+  const reason = need(f, 'reason')
+  let from = 4
+  let running = 0
+  patchPlan(dir, (plan) => {
+    from = intOr(plan.maxParallelCrews, 4, 1)
+    running = plan.crews.filter((c) => isObj(c) && c.status === 'running').length
+    plan.maxParallelCrews = n
+  })
+  appendDecision(dir, `maxParallelCrews changed from ${from} to ${n} (${running} running): ${reason}`)
+  return { ok: true, from, to: n, running }
 }
 
 const WORK_TYPES = ['feature', 'bugfix', 'migration', 'dependency', 'docs', 'refactor']
@@ -221,6 +282,8 @@ export function cmdPlanCheck(f: Flags): Obj {
     if (!errors.includes(e)) errors.push(e)
   }
   if (plan.version !== 2 && plan.version !== 3 && plan.version !== 4) errors.push('plan: version must be 2, 3 or 4')
+  // ADR-0053: an optional run target must be a valid git branch name
+  if (Object.hasOwn(plan, 'target') && (typeof plan.target !== 'string' || !validBranchName(plan.target))) errors.push(`plan: target must be a valid git branch name, got ${JSON.stringify(plan.target)}`)
   const goalIds: string[] = []
   if (plan.version === 2 || plan.version === 3 || plan.version === 4) {
     // plan.schema.json: top-level goals and a crew's goal are version 3 only.
@@ -310,7 +373,16 @@ export function cmdPlanCheck(f: Flags): Obj {
   // 0.31.0 item 1: the green check runs the tests the diff reaches and the full suite runs before merge, so a trailing whole-suite
   // step only slows every check; factory check cuts it (stripBlanketSuite), and the plan should drop it
   for (const c of crews) if (typeof c.acceptanceTest === 'string' && stripBlanketSuite(c.acceptanceTest).blanket) warnings.push(`crew ${name(c)}: the acceptance test ends with the whole test suite (npm test); the green check runs the tests the diff reaches and the full suite runs before merge, so drop that step`)
-  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), ...(warnings.length > 0 ? { warnings } : {}) }
+  // R-132: a file owned (by exact path, not glob) by more than half of a goal's crews, in a goal of 3 crews or more, is a hotspot
+  const byGoal = new Map<string, any[]>()
+  for (const c of crews) byGoal.set(goalOf(c), [...(byGoal.get(goalOf(c)) ?? []), c])
+  for (const [g, gc] of byGoal) {
+    if (gc.length < 3) continue
+    const owners = new Map<string, Set<string>>()
+    for (const c of gc) for (const o of Array.isArray(c.owns) ? c.owns : []) if (typeof o === 'string' && !/[*?[\]{}]/.test(o) && !o.endsWith('/')) owners.set(o, (owners.get(o) ?? new Set()).add(name(c)))
+    for (const [p, s] of owners) if (s.size * 2 > gc.length) warnings.push(`hotspot: ${p} is owned by ${s.size} of ${gc.length} crews${g === RUN_GOAL ? '' : ` of goal ${g}`}; propose a refactor goal first or one crew that owns it instead of serial merges`)
+  }
+  return { ok: true, unproved: crews.filter((c) => c.acceptanceTestProved === false).map(name), warnings }
 }
 
 // ADR-0044 (split by need): a stage after a goal's first needs a `Why stage <n>: <crew> needs <crew>'s merged <what>` line in the goal's
@@ -364,7 +436,7 @@ export function cmdApprove(f: Flags): Obj {
   }
   const ltc = ltcPlanGate(repo, dir)
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
-  const s = settingsOf(repo)
+  const s = settingsOf(repo, dir)
   const approvedAt = new Date().toISOString()
   patchPlan(dir, (p) => { p.approvedAt = approvedAt })
   appendDecision(dir, `plan approved (${by}): merge ${s.merge}, target ${s.target} from ${s.source}; approvedAt ${approvedAt}; scope frozen | the plan is approved by ${by}, so crews may start`)

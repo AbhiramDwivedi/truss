@@ -1,12 +1,14 @@
 // The finish audit: recording a run's agents, restarts and escalations, and the session audit. Moved unchanged from
 // bin/factory.ts (0.31.0 item 5). Never imports factory.ts, whose top-level await would make an import cycle.
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
-import { isObj, parseLabel } from '../store.ts'
-import type { Obj } from '../store.ts'
+import { isObj, parseLabel } from '../core.ts'
+import type { Obj } from '../core.ts'
 import { family, markerOf, qcFails, qcK, runStart } from '../../hooks/register.ts'
 import { countedQc, jsonLines, newestMtime, promptTask, reportsOf, runsOf, STALE_MS, SYNTHETIC_MODEL, transcriptFacts } from './runs.ts'
 import type { RunAgent, WfRun } from './runs.ts'
-import { appendDecision, appendEvent, intOr, roleDefaults, run } from './shared.ts'
+import { intOr, run } from './cli.ts'
+import { appendDecision, appendEvent } from './log.ts'
+import { roleDefaults } from './roles.ts'
 
 export type Audit = { label: string; why: string; slug?: string }
 
@@ -30,6 +32,22 @@ export function roleAudit(role: string, agentType: string | undefined, toolNames
   }
   if (role === 'stress' && agentType !== 'truss:stress-engineer' && agentType !== 'truss:qc-engineer') return `stress ran as ${agentType ?? 'an unknown type'}, not truss:stress-engineer or truss:qc-engineer`
   return undefined
+}
+
+// R-143: the time a step's event carries, from a transcript time; {} (so appendEvent keeps its finish-time ts) when none can be read.
+const stamp = (t: string | undefined): Obj => {
+  const ms = t === undefined ? NaN : Date.parse(t)
+  return Number.isFinite(ms) ? { ts: new Date(ms).toISOString() } : {}
+}
+// The latest transcript end of the agents of `wfRun` under `label`, or undefined.
+const endOf = (wfRun: WfRun, label: string | undefined): string | undefined => {
+  let best: string | undefined
+  for (const a of wfRun.agents) {
+    if (a.label !== label) continue
+    const t = transcriptFacts(a.transcript).lastTs
+    if (t !== undefined && Number.isFinite(Date.parse(t)) && (best === undefined || Date.parse(t) > Date.parse(best))) best = t
+  }
+  return best
 }
 
 // Record step: files each crew agent's result under reports/, appends spawn and report lines (once), and audits every agent of the run.
@@ -95,11 +113,11 @@ export function recordRun(dir: string, wfRun: WfRun, crewSlugs: Set<string>, rol
     const by = `workflow:${wfRun.id}`
     if (!events.some((e) => e.event === 'spawn' && e.agentId === a.agentId && e.by === by)) {
       const dflt = roleDefaults(roles, parsed.role)
-      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? dflt.model, effort: facts.effort ?? dflt.effort, persona: personaName, by })
+      appendEvent(dir, { event: 'spawn', crew: slug, agent: a.label, agentId: a.agentId, type: agentType ?? 'general-purpose', model: facts.model ?? dflt.model, effort: facts.effort ?? dflt.effort, persona: personaName, by, ...stamp(facts.firstTs) })
     }
     const marker = markerOf(text)
     if (!events.some((e) => e.event === 'report' && e.crew === slug && e.agent === a.label && (e.marker ?? null) === marker)) {
-      appendEvent(dir, { event: 'report', crew: slug, agent: a.label, marker })
+      appendEvent(dir, { event: 'report', crew: slug, agent: a.label, marker, ...stamp(facts.lastTs) })
     }
   }
   recordRestarts(dir, wfRun, crewSlugs, events)
@@ -127,7 +145,7 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
     const n = (nOf.get(x.a.agentId) ?? 0) + 1
     nOf.set(next.a.agentId, n)
     if (!events.some((e) => e.event === 'restart' && e.crew === x.p?.slug && e.label === x.a.label)) {
-      appendEvent(dir, { event: 'restart', crew: x.p.slug, agent: x.a.label, label: x.a.label, n, reason })
+      appendEvent(dir, { event: 'restart', crew: x.p.slug, agent: x.a.label, label: x.a.label, n, reason, ...stamp(transcriptFacts(next.a.transcript).firstTs) })
     }
   }
 }
@@ -136,6 +154,15 @@ function recordRestarts(dir: string, wfRun: WfRun, crewSlugs: Set<string>, event
 // counts a Workflow crew's stops and spent allowances from events.jsonl the same way. One `tag` line per crew stopped with
 // QUESTION, BLOCKED or PROPOSAL in this run's result (once per crew and run), and one `allowance-spent` line naming the QC
 // file whose FAIL took the crew's counted QC FAILs past reworkAllowance (once per crew and QC; the count is finish's merge gate's).
+// The agent label a crew result's stepEnds names for `step`, or for no step the last entry's.
+const stepAgent = (res: Obj | undefined, step?: string): string | undefined => {
+  const ends = Array.isArray(res?.stepEnds) ? res.stepEnds.filter((s: unknown) => isObj(s) && typeof s.agent === 'string') : []
+  const hit = step === undefined ? undefined : ends.find((s: Obj) => s.step === step)
+  const e = hit ?? ends[ends.length - 1]
+  return e === undefined ? undefined : e.agent
+}
+const tagAgent = (res: Obj | undefined): string | undefined => stepAgent(res, typeof res?.at === 'string' ? res.at : undefined)
+
 export function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], results: Obj[] | undefined, plan: Obj): void {
   const events = existsSync(`${dir}/events.jsonl`) ? jsonLines(`${dir}/events.jsonl`) : []
   const allowance = intOr(plan.reworkAllowance, 2, 0)
@@ -144,12 +171,12 @@ export function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], resul
     const slug = String(c.slug)
     const res = results?.find((r) => r.slug === slug)
     const tag = res !== undefined && res.state === 'stopped' && ['QUESTION', 'BLOCKED', 'PROPOSAL'].includes(res.tag) ? String(res.tag) : undefined
-    if (tag !== undefined && !events.some((e) => e.event === 'tag' && e.crew === slug && e.run === wfRun.id)) appendEvent(dir, { event: 'tag', crew: slug, agent: slug, tag, run: wfRun.id })
+    if (tag !== undefined && !events.some((e) => e.event === 'tag' && e.crew === slug && e.run === wfRun.id)) appendEvent(dir, { event: 'tag', crew: slug, agent: slug, tag, run: wfRun.id, ...stamp(endOf(wfRun, tagAgent(res))) })
     const fails = countedQc(dir, slug, reportsOf(dir, slug)).filter((f) => qcFails(slug, [f], since) === 1).sort((a, b) => qcK(a.name) - qcK(b.name))
     const spender = fails[allowance]
     if (spender === undefined) continue
     const agent = spender.name.replace(/\.md$/, '')
-    if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent })
+    if (!events.some((e) => e.event === 'allowance-spent' && e.crew === slug && e.agent === agent)) appendEvent(dir, { event: 'allowance-spent', crew: slug, agent, ...stamp(endOf(wfRun, agent)) })
   }
   // ADR-0033: one knowledge line per crew and run, from the result's knowledge field (the retro's signal for optional learning)
   for (const c of crews) {
@@ -157,7 +184,7 @@ export function recordEscalations(dir: string, wfRun: WfRun, crews: Obj[], resul
     const k = results?.find((r) => r.slug === slug)?.knowledge
     if (!isObj(k) || !Number.isInteger(k.items) || k.items < 0 || typeof k.ran !== 'boolean') continue
     if (events.some((e) => e.event === 'knowledge' && e.crew === slug && e.run === wfRun.id)) continue
-    appendEvent(dir, { event: 'knowledge', crew: slug, run: wfRun.id, items: k.items, ran: k.ran, sourceChanges: Number.isInteger(k.sourceChanges) && k.sourceChanges >= 0 ? k.sourceChanges : 0 })
+    appendEvent(dir, { event: 'knowledge', crew: slug, run: wfRun.id, items: k.items, ran: k.ran, sourceChanges: Number.isInteger(k.sourceChanges) && k.sourceChanges >= 0 ? k.sourceChanges : 0, ...stamp(endOf(wfRun, stepAgent(results?.find((r) => r.slug === slug), 'knowledge'))) })
   }
 }
 

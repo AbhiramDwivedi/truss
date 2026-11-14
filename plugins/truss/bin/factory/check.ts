@@ -4,16 +4,19 @@ import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { configOf, declares, flat, isObj, need, packageName, refuse, usage } from '../store.ts'
-import type { Flags, Obj } from '../store.ts'
+import { configOf, declares, flat, isObj, need, packageName, refuse, usage } from '../core.ts'
+import type { Flags, Obj } from '../core.ts'
 import { selectForCheckout, stripBlanketSuite } from '../testmap.ts'
 import type { Selection, TestsConfig } from '../testmap.ts'
 import { releaseHeavySlot } from '../../resources/index.ts'
 import type { Catalog } from '../../retro/catalog.ts'
 import { isTestPath } from './crew.ts'
-import { acquireSlot, heavyWaitMs, recordHeavyTime, slotsAt } from './resources.ts'
+import { acceptanceCommand } from './goal-file.ts'
+import { acquireSlot, heavyWaitMs, limitNote, recordHeavyTime, runMsOf, slotsAt } from './slot.ts'
 import { retro } from './retro-mods.ts'
-import { baseOf, dirOf, gitOrFail, loadPlan, PLUGIN, repoOf, run, settingsOf } from './shared.ts'
+import { baseOf, dirOf, gitOrFail, PLUGIN, repoOf, run } from './cli.ts'
+import { loadPlan } from './plan-file.ts'
+import { settingsFor } from './settings.ts'
 
 // Environment failures (ADR-0009 "check, environment failures"): output lines that say the host, not the code, failed, so no
 // fix builder can clear them. Kept short and literal on purpose: a miss only costs the fix ladder, a false hit stops a crew.
@@ -22,6 +25,7 @@ export const ENV_PATTERNS: RegExp[] = [
   /browserType\.launch: /, // Playwright: the browser process could not start
   /Executable doesn't exist at /, // Playwright: the browser binary was never downloaded
   /error while loading shared libraries: /, // the dynamic loader: a system library is missing
+  /^mk[ds]?temp: mk[ds]?temp failed on .*Operation not permitted/, // a sandbox forbids the temp dir the host's mktemp picked
 ]
 // The first line of a failed check's output that names an environment failure, cut at 300 characters, or undefined. Besides
 // ENV_PATTERNS, node's `Cannot find package 'x' imported from <file>` (ERR_MODULE_NOT_FOUND) counts when the package.json
@@ -114,17 +118,45 @@ export function installMissingDeps(cwd: string, platform: string = process.platf
 }
 
 // Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
-function bashRun(cwd: string, command: string): { exit: number; text: string } {
+// Prefixed (on the same line, so line numbers in the output stay the crew's) to every command bashRun runs. BSD mktemp with no
+// template uses the Darwin per-user temp dir and ignores TMPDIR, which a sandbox forbids; GNU mktemp already honours TMPDIR, so
+// this is harmless on Linux. A call with a template, or with flags other than a lone -d, goes to the real mktemp unchanged.
+export const MKTEMP_PREFIX =
+  'mktemp() { if [ "$#" -eq 0 ]; then command mktemp "${TMPDIR:-/tmp}/tmp.XXXXXXXX"; ' +
+  'elif [ "$#" -eq 1 ] && [ "$1" = "-d" ]; then command mktemp -d "${TMPDIR:-/tmp}/tmp.XXXXXXXX"; ' +
+  'else command mktemp "$@"; fi; }; '
+
+// Runs `bash -c command` in cwd with stdout and stderr to one file; returns the exit and the text.
+// group (a direct full-suite check, which holds the heavy slot itself): the suite runs as its own process group, recorded in
+// resources/groups with heavyPid = this process, so the `until` takeover (stopHolder in resources/index.ts) stops it with the owner.
+export function bashRun(cwd: string, command: string, group?: { dir: string; label: string; slug: string }, platform: string = process.platform): { exit: number; text: string; signal?: string } {
   const scratch = mkdtempSync(`${tmpdir()}/factory-check-`)
   try {
     const fd = openSync(`${scratch}/out.txt`, 'w')
     // a check started under node --test (the plugin's own tests) must not hand NODE_TEST_CONTEXT to the tests it runs: a nested
     // node --test that sees it skips every file and exits 0
     const { NODE_TEST_CONTEXT: _, ...env } = process.env
-    const r = spawnSync('bash', ['-c', command], { cwd, env, stdio: ['ignore', fd, fd] })
+    // under `factory heavy` the wrapper's own group already holds the suite and stops it on the run limit
+    const rec = group !== undefined && platform !== 'win32' && !process.env.TRUSS_HEAVY_JOB ? group : undefined
+    const gdir = rec ? `${rec.dir}/resources/groups` : ''
+    const body = rec ? JSON.stringify({ heavyPid: process.pid, direct: true, label: rec.label, slug: rec.slug, since: Date.now() }).slice(1, -1) : ''
+    const q = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`
+    const record = rec ? `mkdir -p ${q(gdir)}; printf '{"pgid":%s,%s}' "$$" ${q(body)} > ${q(gdir)}/"$$".json; ` : ''
+    const r = spawnSync('bash', ['-c', record + MKTEMP_PREFIX + command], { cwd, env, stdio: ['ignore', fd, fd], ...(rec ? { detached: true } : {}) })
     closeSync(fd)
+    if (rec && r.pid) {
+      let alive = false
+      try {
+        process.kill(-r.pid, 0)
+        alive = true
+      } catch {
+        alive = false
+      }
+      // a member that outlived the suite keeps its record for the reap
+      if (!alive) rmSync(`${gdir}/${r.pid}.json`, { force: true })
+    }
     if (r.error) throw usage(`cannot run bash in ${cwd}: ${r.error.message}`)
-    return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8') }
+    return { exit: r.status ?? 1, text: readFileSync(`${scratch}/out.txt`, 'utf8'), ...(r.signal ? { signal: r.signal } : {}) }
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }
@@ -140,7 +172,7 @@ function checkTests(f: Flags, dir: string, slug: string, cwd: string): { exit: n
   try {
     const t = configOf(repoOf(f)).targetedTests
     config = isObj(t) ? (t as TestsConfig) : {}
-    sel = selectForCheckout(cwd, baseOf(cwd, settingsOf(repoOf(f)).target), config)
+    sel = selectForCheckout(cwd, baseOf(cwd, settingsFor(f, repoOf(f)).target), config)
   } catch (e) {
     sel = { mode: 'full', why: [`the diff could not be mapped: ${e instanceof Error ? e.message : String(e)}`], files: [], commands: [] }
     const full = typeof config.full === 'string' && config.full.trim() !== '' ? config.full.trim() : existsSync(`${cwd}/package.json`) ? 'npm test' : undefined
@@ -171,14 +203,18 @@ function suiteRun(f: Flags, dir: string, slug: string, cwd: string, command: str
   const a = acquireSlot(dir, { label, slug }, slotsAt(cwd), limit)
   if (a.token === null) return { exit: 1, text: '', slot: { ran: false, waitedMs: a.waitedMs, waitLimitMs: limit, why: `waited ${a.waitedMs} ms (limit ${limit} ms) for the heavy slot and free memory` } }
   const t1 = Date.now()
-  let r: { exit: number; text: string }
+  const runMs = runMsOf(dir)
+  let r: { exit: number; text: string; signal?: string }
   try {
-    r = bashRun(cwd, command)
+    r = bashRun(cwd, command, { dir, label, slug })
   } finally {
     releaseHeavySlot(dir, a.token)
   }
-  recordHeavyTime(dir, { label, slug, ms: Date.now() - t1 })
-  return r
+  // a waiter took the slot past its `until` and stopped the suite's group (stopHolder in resources/index.ts): this process lives on,
+  // so it records the stopped run and tells the caller the limit, as heavyJobMain does for a wrapped command
+  const timedOut = r.signal !== undefined && Date.now() - t1 >= runMs
+  recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
+  return timedOut ? { exit: r.exit, text: `${r.text}\n${limitNote(runMs)}\n` } : r
 }
 
 export function cmdCheck(f: Flags): Obj {
@@ -189,13 +225,19 @@ export function cmdCheck(f: Flags): Obj {
   if (expect !== 'red' && expect !== 'green') throw usage('--expect must be red or green')
   const crew = loadPlan(dir).crews.find((c: Obj) => isObj(c) && c.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  if (typeof crew.acceptanceTest !== 'string' || crew.acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
+  // the goal file is the one home of the acceptance command: its `## Acceptance test` fenced block wins; plan.json's acceptanceTest
+  // is the fallback only when the goal file has no such section, and a malformed section is refused, never guessed at
+  const goalFile = `${dir}/goals/${slug}.md`
+  const fromGoal = existsSync(goalFile) ? acceptanceCommand(readFileSync(goalFile, 'utf8')) : undefined
+  if (typeof fromGoal === 'object') throw refuse({ ok: false, why: `goal file ${flat(goalFile)}: ${fromGoal.error}` })
+  const acceptanceTest = fromGoal ?? crew.acceptanceTest
+  if (typeof acceptanceTest !== 'string' || acceptanceTest === '') throw usage(`crew ${slug} has no acceptanceTest`)
   // 0.31.0 item 1: a trailing whole-suite step (`&& npm test`) is cut; the green check adds the targeted set itself. An acceptance
   // test that is nothing but the suite stays as it is, and since it is the whole suite it runs inside the heavy slot (suiteRun,
   // item 2); its green run is then the full suite already, so no tests are added after it.
-  const cut = stripBlanketSuite(crew.acceptanceTest)
+  const cut = stripBlanketSuite(acceptanceTest)
   const suiteOnly = cut.blanket && cut.command.trim() === ''
-  const command = cut.blanket && !suiteOnly ? cut.command : crew.acceptanceTest
+  const command = cut.blanket && !suiteOnly ? cut.command : acceptanceTest
   // a failed install goes into the check text, so the env catalog sees it
   const installs = expect === 'green' ? installMissingDeps(cwd).filter((i) => i.status !== 0) : []
   const acc = suiteOnly ? suiteRun(f, dir, slug, cwd, command) : bashRun(cwd, command)
@@ -269,7 +311,7 @@ function sourceChangesOf(cwd: string, f: Flags): Obj[] {
   const source = (p: string): boolean => code.test(p) && !isTestPath(p) && !/^(docs?|\.claude)\//.test(p)
   let out: string
   try {
-    out = gitOrFail(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${baseOf(cwd, settingsOf(repoOf(f)).target)}...HEAD`])
+    out = gitOrFail(cwd, ['-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${baseOf(cwd, settingsFor(f, repoOf(f)).target)}...HEAD`])
   } catch {
     return []
   }

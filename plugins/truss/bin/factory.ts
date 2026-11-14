@@ -6,32 +6,39 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { realpathSync } from 'node:fs'
-import { CliError, isObj, refuse, usage } from './store.ts'
-import type { Flags, Obj } from './store.ts'
+import { CliError, isObj, refuse, usage } from './core.ts'
+import type { Flags, Obj } from './core.ts'
 import { INBOX_COMMANDS } from './inbox.ts'
 import { ATTACH_COMMANDS, COST_COMMANDS, recordSession } from './cost.ts'
 import { QUEUE_COMMANDS } from './queue.ts'
 import { WORKTYPE_COMMANDS } from './worktypes.ts'
 import { cmdCheck } from './factory/check.ts'
 import { cmdIntegrate, cmdMarkMerged, cmdOwnsCheck, cmdOwnsExtend, cmdSync, cmdTestsCheck } from './factory/crew.ts'
-import { cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
+import { cmdConsolidate } from './factory/consolidate.ts'
+import { cmdDecide, cmdGoalCheckJob, goalCheckJobMain, goalCheckMain } from './factory/decide.ts'
 import { cmdCrewDecision, cmdCrewLearned, cmdDecisionAck, cmdDecisionCheckpoint, cmdDecisionReplies, cmdDecisionReply, cmdDecisions, cmdKnowledgeCommit } from './factory/decisions.ts'
 import { cmdDoctor } from './factory/doctor.ts'
 import { cmdFinish, cmdLand } from './factory/finish.ts'
+import { cmdFindRun } from './factory/runs.ts'
 import { gatesRun } from './factory/gates.ts'
 import { heavyJobMain, heavyMain } from './factory/heavy.ts'
 import { cmdGatedMerge, cmdKnowledgeConfigGate, cmdKnowledgeLint, cmdKnowledgeMigrate, cmdRulesIndex, cmdStitch } from './factory/knowledge-cmds.ts'
 import { cmdPersonaInstall } from './factory/personas.ts'
-import { cmdApprove, cmdPlanArgs, cmdPlanCheck, cmdPlanWrite, cmdSettings } from './factory/plan.ts'
-import { cmdAdmit, cmdReap } from './factory/resources.ts'
-import { parseFlags } from './factory/shared.ts'
+import { cmdApprove, cmdPlanArgs, cmdPlanCap, cmdPlanCheck, cmdPlanWrite, cmdSettings } from './factory/plan.ts'
+import { admitFirst, cmdAdmit, takeAdmitFlag } from './factory/admit.ts'
+import { cmdReap } from './factory/reap.ts'
+import { parseFlags } from './factory/cli.ts'
 import { argsFileOut, checkArgsFile, cmdStart } from './factory/start.ts'
 
 // ADR-0037: the shared helpers live in store.ts and are re-exported here, so existing imports keep working.
-export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf } from './store.ts'
+export { CliError, usage, refuse, flat, str, need, listOf, isObj, readText, readJson, parseLabel, repoPathOf, configOf } from './core.ts'
 export type { Flags, Obj }
 // The names the command modules exported from here before the split, so existing imports keep working.
-export { loadPlan, savePlan, settingsOf, knowledgeCfgOf, crewWorktree, baseOf, appendEvent, appendDecision, readRoles, roleDefaults } from './factory/shared.ts'
+export { loadPlan, savePlan } from './factory/plan-file.ts'
+export { settingsOf, knowledgeCfgOf } from './factory/settings.ts'
+export { crewWorktree, baseOf } from './factory/cli.ts'
+export { appendEvent, appendDecision } from './factory/log.ts'
+export { readRoles, roleDefaults } from './factory/roles.ts'
 export type { RunAgent, WfRun } from './factory/runs.ts'
 export { runOf, runsOf, SYNTHETIC_MODEL, transcriptFacts, newestMtime, STALE_MS, isLive, reportsOf, replannedFrom, countedQc, uxReworks, spentOf, directionOf, labelFromOf, factorySpawned } from './factory/runs.ts'
 export { personaDrafts } from './factory/plan.ts'
@@ -40,24 +47,24 @@ export { unparsedTrailers } from './factory/crew.ts'
 export { membersOf, uxSaysOff, uxOn } from './factory/start.ts'
 export type { StartProbe } from './factory/warnings.ts'
 export { sessionStart, sessionStartOnce } from './factory/warnings.ts'
-export { HEAVY_WAIT_MS, HEAVY_WAIT_MAX_MS, heavyWaitMs, slotWaitMs, heavySlotsOf, pidAlive } from './factory/resources.ts'
+export { HEAVY_WAIT_MS, HEAVY_WAIT_MAX_MS, heavyWaitMs, slotWaitMs, heavySlotsOf, pidAlive } from './factory/slot.ts'
 export { HEAVY_ATTACH_MS, heavyMain, heavyJobMain } from './factory/heavy.ts'
 export { GATE_STEPS, gateMet } from './factory/gates.ts'
 export type { GateStep } from './factory/gates.ts'
 export { mergeHeadVerdict } from './factory/finish.ts'
 export { roleAudit, sessionAudit } from './factory/audit.ts'
 export { OLD_WF_BRANCH, OLD_WF_PATH, OLD_WF_IDLE_MS, ARCHIVE_PREFIX, ARCHIVE_KEEP_MS, SCRATCH_DIRS, worktreeChanges } from './factory/retire.ts'
-export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
+export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckJobMain, goalCheckMain } from './factory/decide.ts'
 
 // ==== main ====
 
 const CORE_COMMANDS: Record<string, (f: Flags) => Obj> = {
   'crew-decision': cmdCrewDecision, 'decision-reply': cmdDecisionReply, 'decision-replies': cmdDecisionReplies, 'decision-ack': cmdDecisionAck, 'decision-checkpoint': cmdDecisionCheckpoint,
   'knowledge-lint': cmdKnowledgeLint, 'knowledge-config-gate': cmdKnowledgeConfigGate, 'gated-merge': cmdGatedMerge, 'knowledge-migrate': cmdKnowledgeMigrate, 'rules-index': cmdRulesIndex, stitch: cmdStitch,
-  'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
-  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
+  consolidate: cmdConsolidate, 'knowledge-commit': cmdKnowledgeCommit, 'crew-learned': cmdCrewLearned, decisions: cmdDecisions,
+  settings: cmdSettings, 'plan-args': cmdPlanArgs, 'plan-write': cmdPlanWrite, 'plan-cap': cmdPlanCap, 'plan-check': cmdPlanCheck, approve: cmdApprove, start: (f) => (checkArgsFile(f), argsFileOut(f, cmdStart(f))),
   sync: cmdSync, check: cmdCheck, integrate: cmdIntegrate, 'mark-merged': cmdMarkMerged, 'owns-check': cmdOwnsCheck, 'owns-extend': cmdOwnsExtend, 'tests-check': cmdTestsCheck, finish: cmdFinish, land: cmdLand, doctor: cmdDoctor,
-  admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
+  'find-run': cmdFindRun, admit: cmdAdmit, reap: cmdReap, decide: cmdDecide, 'goal-check-job': cmdGoalCheckJob, 'persona-install': cmdPersonaInstall,
   heavy: () => {
     throw usage('heavy is async: run it from the command line')
   },
@@ -187,11 +194,14 @@ export function reapFirst(argv: string[], slug: string): Obj {
   }
 }
 if (isMain) {
-  const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
+  const { on, argv: plain0 } = takeStatusFlag(process.argv.slice(2))
+  const { admit: admitArgs, argv: plain } = takeAdmitFlag(plain0)
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : main(argv)
+  const admitted = admitArgs === null ? null : admitFirst(argv, admitArgs)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : argv[0] === 'goal-check-job' ? await goalCheckJobMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
+  if (admitted) body.admittedFirst = admitted
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
   else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
