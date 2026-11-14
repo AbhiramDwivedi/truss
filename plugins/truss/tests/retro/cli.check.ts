@@ -171,7 +171,7 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
     category: 'time',
     title,
     evidence: [{ measure, value }],
-    cost: { wallMs: 900, tokens: null, usd: null },
+    cost: measure.startsWith('cost.tokens.') ? { wallMs: null, tokens: value, usd: null } : { wallMs: value, tokens: null, usd: null },
     fix: `change the prompt for ${title}`,
     target: { kind: 'plugin', path: 'agents/project-manager.md' },
     ...extra,

@@ -620,7 +620,7 @@ describe('retro/cli.ts findings: a finding with no cited line is dropped, a vali
     writeFileSync(report, block(counted(a.t.ERR, 'time', 'time.slotWaitMs.alpha', 1200)))
     await main(['findings', a.trussDir, 'j1', report])
     const again = `second-${a.t.CMD}`
-    writeFileSync(report, block(counted(again, 'cost', 'cost.tokens.alpha.builder', 5000)))
+    writeFileSync(report, block(counted(again, 'cost', 'cost.tokens.alpha.builder', 5000, { cost: { wallMs: null, tokens: 5000, usd: null } })))
     const r = await main(['findings', a.trussDir, 'j2', report])
     assert.ok(r.out.includes(`KEPT: F-2 | ${again}`), r.out)
     const saved = JSON.parse(readFileSync(join(a.trussDir, 'retro', 'findings.json'), 'utf8'))
