@@ -1351,16 +1351,16 @@ function normalizePath(p: string): string {
   return head + out.join('/')
 }
 
-type DecisionWalk = { sid: string; cwd: string; cd: boolean }
+type DecisionWalk = { sid: string }
 
-// Is this write target the session's decision log, or one the guard cannot resolve? A path is read against the session's
-// cwd; after a cd in the same command a relative path is unresolved, so only its name is judged.
+// Is this write target the session's decision log, or one the guard cannot resolve? A relative path is never resolved: a
+// Bash cd carries over between calls, so the hook cannot know the shell's cwd, and only the file's name is judged.
 function hitsDecisionLog(t: ShellTok, k: DecisionWalk): boolean {
   if (t.dyn) return true
   const p = slashed(t.text)
   const absolute = /^(?:[A-Za-z]:)?\//.test(p)
-  if (!absolute && k.cd) return baseName(p) === 'decisions.md'
-  return isDecisionLog(normalizePath(absolute ? p : `${slashed(k.cwd)}/${p}`).toLowerCase(), k.sid.toLowerCase())
+  if (!absolute) return baseName(p) === 'decisions.md'
+  return isDecisionLog(normalizePath(p).toLowerCase(), k.sid.toLowerCase())
 }
 
 function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): boolean {
@@ -1395,10 +1395,7 @@ function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): 
   if (n >= words.length) return false
   const cmd = baseName(words[n].text)
   const args = words.slice(n + 1)
-  if (cmd === 'cd' || cmd === 'pushd' || cmd === 'popd') {
-    k.cd = true
-    return false
-  }
+  if (cmd === 'cd' || cmd === 'pushd' || cmd === 'popd') return false
   if ((cmd === 'node' || cmd === 'nodejs') && args.some((a, j) => /(?:^|[\\/])factory\.ts$/.test(a.text) && args[j + 1]?.text === 'decide')) return false
   if (SHELLS.has(cmd)) {
     const c = args.findIndex((a) => /^-[a-z]*c[a-z]*$/i.test(a.text))
@@ -1418,19 +1415,16 @@ function segmentWritesDecisionLog(seg: string, k: DecisionWalk, depth: number): 
 function writesDecisionLog(text: string, k: DecisionWalk, depth: number): boolean {
   if (depth > 6) return true
   for (const seg of commandSegments(text, true).segments) {
-    if (!namesDecisionLog(seg)) {
-      if (/^\s*(?:cd|pushd|popd)(?:\s|$)/.test(seg)) k.cd = true
-      continue
-    }
+    if (!namesDecisionLog(seg)) continue
     if (segmentWritesDecisionLog(seg, k, depth)) return true
   }
   return false
 }
 
 // Fail closed: the caller refuses when this throws on a command that names decisions.md (see the Bash handler).
-export function decisionLogBashVerdict(command: unknown, sessionId: string, cwd: string): { deny: string } | undefined {
+export function decisionLogBashVerdict(command: unknown, sessionId: string): { deny: string } | undefined {
   if (!namesDecisionLog(command)) return undefined
-  return writesDecisionLog(command as string, { sid: sessionId, cwd, cd: false }, 0) ? { deny: DECISION_LOG_REFUSAL } : undefined
+  return writesDecisionLog(command as string, { sid: sessionId }, 0) ? { deny: DECISION_LOG_REFUSAL } : undefined
 }
 
 async function homeDir($: $): Promise<string | undefined> {
@@ -2606,7 +2600,7 @@ export const register: Register = on => {
       let decisionLog: { deny: string } | undefined
       if (namesDecisionLog(command)) {
         try {
-          decisionLog = decisionLogBashVerdict(command, await $.session.id(), await $.session.cwd())
+          decisionLog = decisionLogBashVerdict(command, await $.session.id())
         } catch (error) {
           decisionLog = { deny: DECISION_LOG_REFUSAL }
           try {
