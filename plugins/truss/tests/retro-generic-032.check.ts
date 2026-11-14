@@ -150,7 +150,9 @@ test('counts.ts reports time, code structure, tests, quality loop, rules and gat
   const p = wave4Problems()
   const seen = new Map<string, number>()
   for (const f of p.findings) seen.set(f.category, (seen.get(f.category) ?? 0) + 1)
-  for (const c of SIX) assert.ok((seen.get(c) ?? 0) >= 1, `no ${c} finding on wave 4; categories seen: ${JSON.stringify([...seen])}`)
+  // wave 4's only timed check runs are red, and a red run is no trend baseline (F-33), so it has no tests finding
+  for (const c of SIX.filter((x) => x !== 'tests')) assert.ok((seen.get(c) ?? 0) >= 1, `no ${c} finding on wave 4; categories seen: ${JSON.stringify([...seen])}`)
+  assert.equal(seen.get('tests') ?? 0, 0, 'no tests finding on wave 4 now that red runs are not a baseline')
 })
 
 test('counts.ts on a small non-truss project fixture gives findings whose target is project config or a proposed goal', () => {

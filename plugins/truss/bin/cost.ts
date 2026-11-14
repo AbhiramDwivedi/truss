@@ -28,7 +28,16 @@ const count = (v: unknown): number => {
 const iso = (v: unknown): string => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : new Date().toISOString())
 
 // One usage row from a transcript line, or undefined when it is not an assistant line with usage, or its token fields are all zero (<synthetic>).
-function rowOf(line: Obj, sid: string, agentId: string | null): Obj | undefined | 'bad' {
+// The agent's name as its meta file records it (`name`, else a `description` that is a bare label such as `stage-events-builder-1`), or undefined.
+// The retro reads it to attribute an agent that has no spawn event; a free-text description is not a name and is not stored.
+const NAME_RE = /^[A-Za-z0-9._-]{1,80}$/
+export function nameOfMeta(meta: unknown): string | undefined {
+  if (!isObj(meta)) return undefined
+  for (const v of [meta.name, meta.description]) if (typeof v === 'string' && NAME_RE.test(v)) return v
+  return undefined
+}
+
+function rowOf(line: Obj, sid: string, agentId: string | null, agent?: string): Obj | undefined | 'bad' {
   if (line.type !== 'assistant' || !isObj(line.message) || !isObj(line.message.usage)) return undefined
   const m = line.message
   const u = m.usage
@@ -38,6 +47,7 @@ function rowOf(line: Obj, sid: string, agentId: string | null): Obj | undefined 
     ts: iso(line.timestamp),
     sid,
     agentId,
+    ...(agent !== undefined ? { agent } : {}),
     model: typeof m.model === 'string' ? m.model : 'unknown',
     speed: u.speed === 'fast' ? 'fast' : 'standard',
     msgId: typeof m.id === 'string' && m.id !== '' ? m.id : typeof line.uuid === 'string' ? line.uuid : '',
@@ -165,7 +175,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
       const fresh: Obj[] = []
       let bad = 0
       let read = 0
-      const take = (text: string, sid: string, agentId: string | null): void => {
+      const take = (text: string, sid: string, agentId: string | null, agent?: string): void => {
         for (const raw of text.split('\n')) {
           const l = raw.endsWith('\r') ? raw.slice(0, -1) : raw
           if (l.trim() === '') continue
@@ -187,7 +197,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
             if (e === undefined || ts >= e.ts) estimates.set(sid, { usd: line.totalCostUSD, ts })
             continue
           }
-          const row = rowOf(line, sid, agentId)
+          const row = rowOf(line, sid, agentId, agent)
           if (row === undefined) continue
           if (row === 'bad') {
             bad++
@@ -220,7 +230,7 @@ export function sweep(dir: string, repo?: string, opts: SweepOpts = {}): SweepOu
             pending = Buffer.concat([pending, buf.subarray(0, n)])
             const nl = pending.lastIndexOf(10)
             if (nl >= 0) {
-              take(pending.subarray(0, nl + 1).toString('utf8'), t.sid, t.agentId)
+              take(pending.subarray(0, nl + 1).toString('utf8'), t.sid, t.agentId, nameOfMeta(t.meta))
               committed += nl + 1
               pending = pending.subarray(nl + 1)
             }

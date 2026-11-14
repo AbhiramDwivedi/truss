@@ -397,8 +397,23 @@ function rulesPart(ctx: Ctx): Part {
 
 // ---------- cost ----------
 
+// An agent with no spawn event (a direct crew's member, a hotfix agent) has no crew on record, but `bin/cost.ts` sweep stores the agent's name on
+// its usage rows. The crew is the longest plan slug the name starts with (`stage-events-builder-1` is crew `stage-events`), a hotfix or fix agent
+// is crew `hotfix`, and a row with no name, or a name of neither kind, stays unattributed.
+const HOTFIX_NAME = /^(?:hotfix|fix)(?:-|$)/
+function byRecordedName(rows: Json[], slugs: string[]): { crew: string; role: string } {
+  const name = rows.map((r) => r.agent).find((n) => typeof n === 'string' && n !== '')
+  if (typeof name !== 'string') return { crew: 'unattributed', role: 'unattributed' }
+  const slug = slugs.filter((s) => name.startsWith(`${s}-`)).sort((x, y) => y.length - x.length)[0]
+  if (slug !== undefined) return { crew: slug, role: roleOf({ crew: slug, agent: name }) }
+  if (HOTFIX_NAME.test(name)) return { crew: 'hotfix', role: roleOf({ crew: 'hotfix', agent: name }) }
+  return { crew: 'unattributed', role: 'unattributed' }
+}
+
 function costPart(ctx: Ctx): Part {
   const M = ctx.M
+  const planned = readJson(join(ctx.dir, 'plan.json'))
+  const slugs: string[] = (Array.isArray(planned?.crews) ? planned.crews : []).map((c: Json) => c?.slug).filter((s: unknown): s is string => typeof s === 'string' && s !== '')
   const F: (Finding | null)[] = []
   type Acc = { tokens: number; usd: number | null; spawns: number }
   const by = new Map<string, Acc>() // `${crew}.${role}`
@@ -408,7 +423,7 @@ function costPart(ctx: Ctx): Part {
   let total = 0
   let totalUsd: number | null = 0
   for (const [id, rows] of ctx.rowsOf) {
-    const a = id === null ? { crew: 'main', role: 'main' } : (ctx.agents.get(id) ?? { crew: 'unattributed', role: 'unattributed' })
+    const a = id === null ? { crew: 'main', role: 'main' } : (ctx.agents.get(id) ?? byRecordedName(rows, slugs))
     const k = `${keyPart(a.crew)}.${a.role}`
     const acc = by.get(k) ?? { tokens: 0, usd: 0, spawns: 0 }
     for (const r of rows) {
