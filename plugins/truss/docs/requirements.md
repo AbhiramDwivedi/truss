@@ -1042,7 +1042,7 @@ Source: goal
 Example: Given a cost sweep over every session that ran this run, when retro/timing.ts measures this run's crews, then report-0.32.0.md puts their crew-time and run time beside 0.31.0's wave-4 baseline of 81h55 crew-time over a 25h39 run.
 
 ## R-150: The 0.32.0 release is a U-drive handoff that never touches GitHub
-Status: open
+Status: met (2026-11-14: the Mac pushed nothing; the other machine imported release-0.32.0.bundle and released it as PR #23, main b76b04d5)
 Kind: constraint
 Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
 Source: goal
