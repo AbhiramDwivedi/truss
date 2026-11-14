@@ -6,7 +6,7 @@
   "$defs": {
     "inboxId": { "type": "string", "pattern": "^E-[0-9]{8}-[0-9a-f]{6}$" },
     "slug": { "type": "string", "minLength": 1 },
-    "inboxKind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage"] },
+    "inboxKind": { "enum": ["client-question", "scope-change", "client-trigger", "long-term-cost", "budget", "allowance-spent", "doctor-bundle", "blocked", "stall-unrecovered", "push-pr", "prod-deploy", "intake-triage", "pm-question"] },
     "inboxOpen": {
       "description": "S/inbox.jsonl, op open. codeHash is sha256(id + code); the code is 6 characters from ABCDEFGHJKMNPQRSTUVWXYZ23456789.",
       "type": "object",
