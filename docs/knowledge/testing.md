@@ -8,7 +8,7 @@ sources:
   - plugins/truss/bin/testmap.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/green.js
-verified: 6b9157063194b1f2d394570a270454b159dadec9
+verified: 23b9ab72731017b5c3d8ae06d8a07fc70f2529de
 ---
 
 # Plugin test notes
