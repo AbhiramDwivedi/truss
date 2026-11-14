@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/fixtures/retro-generic/non-truss.ts
   - plugins/truss/tests/fixtures/retro-generic/rubric.ts
   - plugins/truss/docs/adr/0051-generic-retro.md
-verified: 328e72ca
+verified: 460ba545
 ---
 
 # Generic retro: where things live
@@ -27,7 +27,7 @@ The design is in `plugins/truss/docs/adr/0051-generic-retro.md`. This page holds
 - `retro/problems-code.ts` `codePart(ctx)` returns two parts. Code structure: churn, size, merge conflict and owns-overlap findings from read-only git and `plan.json`. Tests: flaky run, full-versus-targeted and duration-trend findings from `checks/*.json`.
 - The two modules import each other, so every import in `problems-code.ts` stays inside a function.
 - A code finding's cost is measured. A file costs the commit-to-commit time of the commits that touched it, gaps over 2 hours dropped (`structurePart`). A flaky or repeated full run costs the crew's median heavy-slot run time times the repeat count (`testsPart`). Checks hold no per-run duration except the reporter's `duration_ms` line in the tail.
-- Do not call `bin/cost.ts` `crewCost` or `attributor` from the counting step: they read transcript metadata. Attribute `usage.jsonl` rows through spawn events by `agentId`; a null `agentId` is `main`. An agent with no spawn event is attributed by the `agent` name the cost sweep stored on its rows: the longest plan crew slug the name starts with, or `hotfix` for a `hotfix-` or `fix-` name (`byRecordedName` in `retro/problems.ts`); rows swept before that field existed stay unattributed. The duration trend compares green runs of one command, and a crew's conflict time is split over the overlapping pairs it is in, so pairs never add up to more than the crews' own time (`testsPart`, `structurePart`).
+- Do not call `bin/cost.ts` `crewCost` or `attributor` from the counting step: they read transcript metadata. Attribute `usage.jsonl` rows through spawn events by `agentId`; a null `agentId` is `main`. An agent with no spawn event is attributed by the `agent` name the cost sweep stored on its rows: the longest plan crew slug the name starts with, or `hotfix` for a `hotfix-` or `fix-` name (`byRecordedName` in `retro/problems.ts`); rows swept before that field existed stay unattributed. The cost measures count only rows at or after the plan's `approvedAt`, through `approvedSince` exported from `bin/cost.ts`, as `factory cost` does for its run window, so an earlier run's rows in the same session are not counted (`costPart`). The duration trend compares green runs of one command, and a crew's conflict time is split over the overlapping pairs it is in, so pairs never add up to more than the crews' own time (`testsPart`, `structurePart`).
 - Read `.claude/truss.json` with a tolerant `readJson` in `problems.ts` `readCtx`, never `bin/store.ts` `configOf`. `configOf` throws a `CliError` on text that is not JSON, and the wave-4 fixture's repo holds filler there. A failed read means no pricing.
 - A `refusal` event in `events.jsonl` has `agent` set to the agent id for a subagent (crew is `main`) and `main` for the main session. `rulesPart` finds a refusal's retry cost from that agent's next usage row.
 - `problems.ts` imports `ratesFor` from `bin/cost.ts`; importing that module opens no transcript, so the counting step still reads none. Never copy the pricing lookup back.
