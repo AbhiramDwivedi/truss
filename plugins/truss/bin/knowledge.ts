@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { isFragment } from './fragments.ts'
+import { docOfFragment, isFragment } from './fragments.ts'
 
 export type Budgets = { agentsIndex: number; persona: number; personaStandards: number; rule: number; featureEntry: number; doc: number }
 export const DEFAULT_BUDGETS: Budgets = { agentsIndex: 60, persona: 120, personaStandards: 15, rule: 40, featureEntry: 6, doc: 150 }
@@ -473,7 +473,20 @@ function staleRaw(repo: string, head: Tree, cfg: KCfg, base: string | undefined)
     const changed = nameLines(d.out)
     const bt = baseTree(repo, base)
     for (const doc of docs) {
-      const touched = changed.filter((c) => c !== doc.path && doc.sources.some((s) => sourceTouches(s, c)))
+      // a changed fragment of this doc that lists a source and carries a new non-empty `verified` re-checks that source
+      const rechecks: string[][] = []
+      for (const c of changed) {
+        if (docOfFragment(c, cfg.rulesDir) !== doc.path) continue
+        const hf = head.read(c)
+        const fmHead = hf === undefined ? undefined : parseFrontmatter(hf)
+        const vHead = fmHead && typeof fmHead.data.verified === 'string' ? fmHead.data.verified : ''
+        if (!fmHead || vHead === '') continue
+        const bf = bt.read(c)
+        const fmBase = bf === undefined ? undefined : parseFrontmatter(bf)
+        if (fmBase && fmBase.data.verified === vHead) continue
+        rechecks.push(asList(fmHead.data.sources))
+      }
+      const touched = changed.filter((c) => c !== doc.path && doc.sources.some((s) => sourceTouches(s, c)) && !rechecks.some((l) => l.some((s) => sourceTouches(s, c))))
       if (touched.length === 0) continue
       const was = bt.read(doc.path)
       if (was === undefined) continue
