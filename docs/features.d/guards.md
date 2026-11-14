@@ -1,6 +1,7 @@
 ## End-of-run worktree cleanup
 
-At the end of a run, `finish` (and `land`) retire the `agent-<agentId>` worktrees and `worktree-agent-<agentId>` branches of merged or dropped crews, attributed by the `spawn` event with that agentId (`bin/factory/retire.ts` `sweepMembers`). A worktree whose tip the target lacks, that is locked, or that has changes is kept and listed in `leftWorktrees` with its why (`unmerged`, `locked`, `dirty`). A running crew's agent worktrees are never touched.
+At the end of a run, only `finish` (through `sweepMembers` in `bin/factory/retire.ts`) retires the Claude Code Agent worktrees `agent-<agentId>` and branches `worktree-agent-<agentId>` of merged or dropped crews. A crew is matched only by a `spawn` event in `events.jsonl` carrying that `agentId` and `crew`; the `wf_<run>-<n>` name match never sees these. A worktree whose tip the target lacks, that is locked, or that has changes is kept and listed in `leftWorktrees` with its why (`unmerged`, `locked`, `dirty`). A running crew's agent worktrees are never touched. `land` only merges the crew and retires its own `truss-<slug>` worktree (`cmdLand` calls `mergeCrew`), so a solo or lean crew's Agent worktrees stay until a later `finish` sweep.
+- Tests: `plugins/truss/tests/guards-032.check.ts` cases 5 and 6.
 
 ## Decision log Bash guard
 
