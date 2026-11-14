@@ -170,22 +170,14 @@ function startJob(dir: string, key: string, job: Obj, spawnFn: typeof spawn = sp
 // `heavy-job --dir D --job KEY` (internal, started by heavyMain): takes the slot when the job needs it, runs the command in its
 // own process group with output to the job dir, releases the slot the moment the command ends, records a slot run's time for
 // slotWaitMs, and writes result.json last (atomically), which is what the caller waits for.
-// R-144: sys.platform and sys.spawn default to process.platform and child_process.spawn. On win32 a group kill is `taskkill /pid <pid> /T /F`
-// through sys.spawn (no negative-pid signal). R-145: a command still running after TRUSS_HEAVY_RUN_MS (default slotWaitMs) has its group
-// stopped (SIGTERM, then SIGKILL KILL_GRACE_MS later; the tree kill on win32), the slot released and result.json written with timedOut: true.
+// R-144: sys.platform and sys.spawn default to process.platform and child_process.spawn. R-145: a command still running after
+// TRUSS_HEAVY_RUN_MS (default slotWaitMs) has its group stopped (SIGTERM, then SIGKILL KILL_GRACE_MS later), the slot released and
+// result.json written with timedOut: true. killGroup in resources/index.ts does the tree stop on win32, so this file holds no OS kill tool.
 export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<{ body: Obj; code: number }> {
   const platform = sys.platform ?? process.platform
   const spawnFn = sys.spawn ?? spawn
   const stop = (pid: number, signal: NodeJS.Signals): void => {
-    if (platform !== 'win32') {
-      killGroup(pid, signal, platform)
-      return
-    }
-    try {
-      spawnFn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {})
-    } catch {
-      // the tree is gone or taskkill is missing: the run limit's result still goes out
-    }
+    killGroup(pid, signal, platform)
   }
   const f = parseFlags(argv)
   const dir = need(f, 'dir')
