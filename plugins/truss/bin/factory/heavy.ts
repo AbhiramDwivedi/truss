@@ -242,6 +242,9 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
       child.on('exit', (code, signal) => {
         for (const t of timers) clearTimeout(t)
         // the command is gone; a member of its group that outlived it dies with the timeout too
+        // a check holds the slot inside its own command (slot: false), so a waiting crew's `until` takeover can kill it by signal
+        // before this timer fires: a signal death past the run limit is the limit stopping it
+        if (!timedOut && job.slot !== true && signal !== null && Date.now() - t1 >= runMs) timedOut = true
         if (timedOut && pgid !== undefined && groupAlive(pgid, platform)) stop(pgid, 'SIGKILL')
         resolve(code ?? (signal === null ? 1 : 128))
       })
@@ -253,6 +256,9 @@ export async function heavyJobMain(argv: string[], sys: HeavySys = {}): Promise<
       token = null
       // a run the limit stopped is no suite time (slotWaitMs skips it), but it stretches the next default run limit (runMsOf)
       recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
+    } else if (timedOut) {
+      // a check job holds no wrapper token and the check never reached its own recordHeavyTime: the stopped run is recorded here
+      recordHeavyTime(dir, { label, slug, ms: Date.now() - t1, timedOut: true })
     }
     if (pgid !== undefined && !groupAlive(pgid, platform)) rmSync(`${GROUPS(dir)}/${pgid}.json`, { force: true })
     done({ ran: true, exit, waitedMs, ms: Date.now() - t1, ...(timedOut ? { timedOut: true } : {}) })
