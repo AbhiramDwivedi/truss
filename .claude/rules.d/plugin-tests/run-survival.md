@@ -4,7 +4,7 @@ sources:
   - plugins/truss/tests/run-survival-qc-032.check.ts
   - plugins/truss/bin/factory/runs.ts
   - plugins/truss/bin/factory.ts
-verified: 4280130df45280f9972729007ea0ab1ba582e95f
+verified: f969c4c17345c52b0348cfc607a355f6cc8f3302
 ---
 
 ## Factory module list
