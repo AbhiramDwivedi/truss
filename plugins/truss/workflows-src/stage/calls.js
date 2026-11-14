@@ -10,6 +10,9 @@ function learnedOf(report) {
 }
 
 const oneLine = (v, n = 500) => String(v ?? '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, n)
+// R-127: text that reaches a crew result or a member prompt keeps its lines (blanks within a line collapse, 3+ newlines become one blank
+// line). oneLine stays for shell arguments (factory escalate, crew-decision) and decision-log titles, which must be one line.
+const multiLine = (v, n = 500) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, n)
 
 // every crew decision of the run so far, one JSON line each, from the {decisions: [...]} object factory decisions prints (crew
 // and reply status per call); '' when it gave none or something else
@@ -90,7 +93,7 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   }
   if (!head.startsWith('PO: DECIDE')) return { escalate: 'the product owner gave neither a PO: DECIDE nor a PO: ESCALATE first line' }
   const reasonLine = body.find((l) => /^reason:/i.test(l.trim()))
-  const answer = oneLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join(' '))
+  const answer = multiLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join('\n'))
   if (!answer) return { escalate: 'the product owner decided with no answer' }
   const reason = reasonLine ? oneLine(reasonLine.trim().replace(/^reason:\s*/i, '')) : ''
   return recordCall(crew, role, makePrompt, opts, at, { question: oneLine(report.text), answer, reason, by: 'product-owner', source: 'product-owner persona, crew product call', branch: typeof report.branch === 'string' ? report.branch : '', log: true })
@@ -99,23 +102,26 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
 // Logs a settled product call through crew-decision (log false: an earlier run already logged it), keeps it in the crew's decisions
 // and learned items, and returns the retry note of the asking member. c.by is who decided: product-owner, program-manager or client.
 async function recordCall(crew, role, makePrompt, opts, at, c) {
-  const { question, answer, reason } = c
+  const { question, reason } = c
+  const answer = c.answer
+  // shell arguments, the decision log and the learned item stay one line; only the retry note keeps the lines
+  const flat = oneLine(answer, 4000)
   const resume = { reason: c.by === 'product-owner' ? 'product answer' : 'program manager answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: c.branch }
   if (!c.log) return { resume }
   let id = null
   try {
     // free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
-    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by ${sh(c.by)}`, 'id')
+    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(oneLine(question))} --answer=${sh(flat)} --by ${sh(c.by)}`, 'id')
     if (r.parsed && (typeof r.parsed.id === 'string' || typeof r.parsed.id === 'number') && String(r.parsed.id) !== '') id = String(r.parsed.id)
     else crew.proofs.push(`crew-decision failed: ${r.out}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     crew.proofs.push(`crew-decision failed: ${err && err.message ? err.message : String(err)}`)
   }
-  const item = { kind: 'product', text: `${question} -> ${answer}`, source: c.source, task: at, member: 'po' }
+  const item = { kind: 'product', text: `${oneLine(question)} -> ${flat}`, source: c.source, task: at, member: 'po' }
   crew.learned.push(item)
   crew.decisions.push({
-    id, question, answer, reason, reply: null, note: '', item,
+    id, question, answer: flat, reason, reply: null, note: '', item,
     rerun: rerunOf(crew, role, makePrompt, opts, at),
   })
   return { resume }
