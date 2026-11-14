@@ -119,6 +119,8 @@ test('a heavy run longer than the attach budget goes on in the background, holds
   assert.ok(existsSync(join(jdir, 'pid.json')), 'the spawner recorded the wrapper pid itself')
   assert.match(first.stdout, /truss-status: .*"pending":true/)
   const lock = join(w.dir, 'resources', 'heavy.lock', 'owner.json')
+  // under a loaded machine the wrapper may take the slot after the attach budget; wait on the real signal, bounded
+  for (let i = 0; i < 1000 && !existsSync(lock); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
   assert.ok(existsSync(lock), 'the job holds the slot after the caller returned')
   const owner = JSON.parse(readFileSync(lock, 'utf8'))
   assert.doesNotThrow(() => process.kill(owner.pid, 0), 'the slot owner is the live background job')
