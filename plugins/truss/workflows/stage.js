@@ -1050,6 +1050,9 @@ function learnedOf(report) {
 }
 
 const oneLine = (v, n = 500) => String(v ?? '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, n)
+// R-127: text that reaches a crew result or a member prompt keeps its lines (blanks within a line collapse, 3+ newlines become one blank
+// line). oneLine stays for shell arguments (factory escalate, crew-decision) and decision-log titles, which must be one line.
+const multiLine = (v, n = 500) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, n)
 
 // every crew decision of the run so far, one JSON line each, from the {decisions: [...]} object factory decisions prints (crew
 // and reply status per call); '' when it gave none or something else
@@ -1130,7 +1133,7 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
   }
   if (!head.startsWith('PO: DECIDE')) return { escalate: 'the product owner gave neither a PO: DECIDE nor a PO: ESCALATE first line' }
   const reasonLine = body.find((l) => /^reason:/i.test(l.trim()))
-  const answer = oneLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join(' '))
+  const answer = multiLine([head.slice('PO: DECIDE'.length).replace(/^[:\s-]+/, ''), ...body.filter((l) => l !== reasonLine)].join('\n'))
   if (!answer) return { escalate: 'the product owner decided with no answer' }
   const reason = reasonLine ? oneLine(reasonLine.trim().replace(/^reason:\s*/i, '')) : ''
   return recordCall(crew, role, makePrompt, opts, at, { question: oneLine(report.text), answer, reason, by: 'product-owner', source: 'product-owner persona, crew product call', branch: typeof report.branch === 'string' ? report.branch : '', log: true })
@@ -1139,23 +1142,26 @@ async function productCall(crew, role, report, at, makePrompt, opts) {
 // Logs a settled product call through crew-decision (log false: an earlier run already logged it), keeps it in the crew's decisions
 // and learned items, and returns the retry note of the asking member. c.by is who decided: product-owner, program-manager or client.
 async function recordCall(crew, role, makePrompt, opts, at, c) {
-  const { question, answer, reason } = c
+  const { question, reason } = c
+  const answer = c.answer
+  // shell arguments, the decision log and the learned item stay one line; only the retry note keeps the lines
+  const flat = oneLine(answer, 4000)
   const resume = { reason: c.by === 'product-owner' ? 'product answer' : 'program manager answer', note: reason ? `${answer}\nReason: ${reason}` : answer, branch: c.branch }
   if (!c.log) return { resume }
   let id = null
   try {
     // free text goes in the --flag=value form, so a value that starts with -- cannot be read as a flag
-    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(question)} --answer=${sh(answer)} --by ${sh(c.by)}`, 'id')
+    const r = await runFactory(crew, `crew-decision --crew ${sh(crew.slug)} --task ${sh(at)} --question=${sh(oneLine(question))} --answer=${sh(flat)} --by ${sh(c.by)}`, 'id')
     if (r.parsed && (typeof r.parsed.id === 'string' || typeof r.parsed.id === 'number') && String(r.parsed.id) !== '') id = String(r.parsed.id)
     else crew.proofs.push(`crew-decision failed: ${r.out}`)
   } catch (err) {
     if (err instanceof Stop) throw err
     crew.proofs.push(`crew-decision failed: ${err && err.message ? err.message : String(err)}`)
   }
-  const item = { kind: 'product', text: `${question} -> ${answer}`, source: c.source, task: at, member: 'po' }
+  const item = { kind: 'product', text: `${oneLine(question)} -> ${flat}`, source: c.source, task: at, member: 'po' }
   crew.learned.push(item)
   crew.decisions.push({
-    id, question, answer, reason, reply: null, note: '', item,
+    id, question, answer: flat, reason, reply: null, note: '', item,
     rerun: rerunOf(crew, role, makePrompt, opts, at),
   })
   return { resume }
@@ -1197,11 +1203,11 @@ const holdStop = (row, question, branch, at) =>
 // already resolved). When no item can be opened the question stops the crew as a QUESTION, the old path, never a faked wait.
 async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
   const ref = callRef(crew, at)
-  const question = oneLine(report.text)
+  const question = multiLine(report.text, 2000)
   let id = null
   let failed = ''
   try {
-    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${question} The product owner's reason: ${why}`, 3000))}`, 'id')
+    const r = await runFactory(crew, `escalate --kind ${kind} --crew ${sh(crew.slug)} --blocking --ref ${sh(ref)} --title=${sh(oneLine(report.text, 200))} --detail=${sh(oneLine(`Product call of crew ${crew.slug}, from the ${role} on ${at}. Question: ${oneLine(question)} The product owner's reason: ${why}`, 3000))}`, 'id')
     if (r.parsed && typeof r.parsed.id === 'string' && r.parsed.id !== '') id = r.parsed.id
     else failed = clip(r.out, 200)
   } catch (err) {
@@ -1225,7 +1231,7 @@ async function openCall(crew, role, report, at, makePrompt, opts, kind, why) {
 // note holds no answer, so the question stops the crew as a QUESTION.
 async function takeCall(crew, role, makePrompt, opts, at, row, branch, log) {
   // the cap is resolve's own (inbox.ts resolveItem keeps 4000), so no stored answer reaches the member cut short
-  const note = oneLine(row.note, 4000)
+  const note = multiLine(row.note, 4000)
   if (!note) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with no note, so it holds no answer` }
   // a client resolve whose note factory inbox could not bind to the client's typed line is not the client's decision
   if (row.noteUnbound === true) return { escalate: `inbox item ${row.id} was resolved (${row.decision}) with a note that is not bound to a proven answer, so it holds no answer` }
@@ -1379,13 +1385,13 @@ async function applyReplies(crew) {
         await ackReply(crew, d.id)
         continue
       }
-      const note = oneLine(x.note, 800) || 'no note given'
+      const note = multiLine(x.note, 800) || 'no note given'
       if (!(await d.rerun(`Main session changed product call ${d.id}: ${note}`))) continue
       d.reply = 'change'
       d.note = note
       d.answer = note
       const k = crew.learned.indexOf(d.item)
-      d.item = { kind: 'product', text: `${d.question} -> ${note} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
+      d.item = { kind: 'product', text: `${d.question} -> ${oneLine(note)} (overruled by main session)`, source: `main session, product call ${d.id}`, task: d.item.task, member: 'po' }
       if (k >= 0) crew.learned[k] = d.item
       else crew.learned.push(d.item)
       // review 3: acked right after its own rerun integrated, so a Stop on a later change leaves this one acked and a resume does not reapply it
