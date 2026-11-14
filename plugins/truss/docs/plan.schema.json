@@ -260,20 +260,6 @@
           "description": "Set by the PM as crews start and merge. The hooks only read it.",
           "enum": ["planned", "running", "merged", "dropped"]
         },
-        "owner": {
-          "description": "Set by `start` under the plan lock when it claims a crew (planned to running): the claiming process's pid and a random start token. A later `start` resets a running workflow crew that has no spawn event to planned only when this pid is dead or the field is absent (adr/0052-run-survival.md).",
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["pid", "token"],
-          "properties": {
-            "pid": { "type": "integer", "minimum": 1 },
-            "token": { "type": "string", "minLength": 1 }
-          }
-        },
-        "engine": {
-          "description": "Set by `start` when it lists a planned crew under projectManagers (the project manager path). A later `start` never resets a running crew that carries it, since that crew has no spawn event and no owner by design; a workflow claim clears it (adr/0052-run-survival.md).",
-          "enum": ["project-manager"]
-        },
         "ux": { "type": "boolean", "default": false },
         "process": {
           "description": "Optional, version 4 and above. How much process the crew gets: solo (one agent, no QC engineer, no red-then-green test), lean (one or two members; qc and red record the PM's proof choice) or full (today's crew). Absent means full. See adr/0031-right-size-process.md.",

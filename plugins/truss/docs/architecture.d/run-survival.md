@@ -25,11 +25,11 @@ There is no pointer file: the plan files are the index. `results` lists the file
 
 ### The start claim
 
-`cmdStart` claims a crew through `claimedWorktree` (`bin/factory/start.ts`) after the refusals and admission checks that come before it. Under the plan lock (`patchPlan`) the crew goes from `planned` to `running` only if `plan.json` still says `planned`. Only the winner creates the worktree, writes the decision line and, on the workflow path, the `spawn` event. The loser skips the crew without an error. A worktree failure sets the crew back to `planned` before the error is rethrown. The claim does not re-check `maxParallelCrews` under the lock, so two concurrent `start` calls can together pass the cap.
+`cmdStart` claims a crew through `claimedWorktree` (`bin/factory/start.ts`) after the refusals and admission checks that come before it. Under the plan lock (`patchPlan`) the crew goes from `planned` to `running` only if `plan.json` still says `planned`. Only the winner creates the worktree, writes the decision line and, on the workflow path, the `spawn` event. The loser skips the crew without an error. A worktree failure sets the crew back to `planned` before the error is rethrown. One PM session drives a run; concurrent resume of one run is not supported, and the claim records no owner. The claim does not re-check `maxParallelCrews` under the lock, so two concurrent `start` calls can together pass the cap.
 
 | Failure | Recovery |
 | --- | --- |
 | The PM session ended with crews running | A new session runs `find-run` and resumes the listed `dir`. |
-| Two sessions resume one run at once | Each crew is claimed once; the losing `start` skips it and exits 0. |
+| Two sessions resume one run at once | Not supported: one PM session drives a run. |
 | `ensureWorktree` fails after a claim | The crew is back to `planned`; run `start` again. |
-| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event (a direct crew: no worktree) and a dead owner (a crew stamped `engine: "project-manager"`, listed under `projectManagers`, is never reset). The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |
+| A start dies after the claim, before the `spawn` event | The crew is `running` with no spawn event (a direct crew: no worktree) (a crew stamped `engine: "project-manager"`, listed under `projectManagers`, is never reset). The next `start` without `--resume` or `--slug` sets it back to `planned` (`reclaimOrphans`) and starts it. |

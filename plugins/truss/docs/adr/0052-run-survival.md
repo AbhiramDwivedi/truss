@@ -10,13 +10,13 @@ A run lives in its PM session's truss dir, `<git common dir>/truss/<session id>/
 
 A new session that resumes the run must also launch stage workflows from the old session's `start` output. ADR-0024, item 29, seam 3, holds `args.trussFile` to "the session's truss dir": `expandTrussFile` refused any other path with `args.trussFile must be inside the session's truss dir`. R-135 asks that a trussFile under the first session's truss dir be let through, while "a trussFile outside the repo's truss dirs is still refused".
 
-Two PM sessions can also resume one run at the same moment. Before this ADR, `cmdStart` created a crew's worktree with `ensureWorktree` and only then set the crew to `running` through `patchPlan`. Two processes that both read the crew as `planned` would both start it.
+One PM session drives a run. Concurrent resume of one run by two sessions is not supported (client ruling 2026-11-14). Before this ADR, `cmdStart` created a crew's worktree with `ensureWorktree` and only then set the crew to `running` through `patchPlan`, so a start that died left no sign that the crew was claimed.
 
 ## Decision Drivers
 
 - A new session finds the run with no help from the session that ended.
 - Resume never starts a crew that merged or dropped.
-- Two concurrent resumes start each crew once.
+- One PM session drives a run; concurrent resume of one run is not supported.
 - The gate widens only as far as the repo's own truss dirs and refuses everything else it refused before.
 - No new file must be kept in step with the plans.
 
@@ -48,7 +48,7 @@ The command takes no lock and writes nothing.
 
 ### 2. The start claim
 
-`cmdStart` claims each crew before it starts it (`bin/factory/start.ts` `claimedWorktree`). Under the plan lock, through `patchPlan`, it re-reads `plan.json` and sets the crew from `planned` to `running` only if the file still says `planned`. Only the process that made that change creates the worktree with `ensureWorktree`, writes the decision line and, on the workflow path, the `spawn` event, and lists the crew in its output. A process that lost the claim skips the crew without an error. So two concurrent resumes start each crew once, and both exit 0.
+`cmdStart` claims each crew before it starts it (`bin/factory/start.ts` `claimedWorktree`). Under the plan lock, through `patchPlan`, it re-reads `plan.json` and sets the crew from `planned` to `running` only if the file still says `planned`. Only the process that made that change creates the worktree with `ensureWorktree`, writes the decision line and, on the workflow path, the `spawn` event, and lists the crew in its output. A process that lost the claim skips the crew without an error. The claim is not a guarantee for concurrent resume: one PM session drives a run, and concurrent resume of one run is not supported.
 
 The claim replaces the old unconditional `patchPlan` that set `running` after `ensureWorktree`, on both the direct path (solo and lean crews) and the workflow path. It runs after the refusals and admission checks that come before it, so their order is unchanged. If `ensureWorktree` throws, the claim is handed back (`running` to `planned`) before the error is rethrown. A crew that is `merged` or `dropped` is never `planned`, so it is never claimed.
 
@@ -85,19 +85,19 @@ The goal's approved scope records it, word for word: "16:58 | long-term cost (ch
 Positive:
 
 - A new PM session finds the run, its unfinished crews and their saved results from the plan files alone (R-141).
-- Resume starts no merged or dropped crew, and two concurrent resumes start each crew once.
+- Resume starts no merged or dropped crew.
 - The `--transcript T` of a resume is the Workflow run dir of the new session's own run, not the `transcript` that `find-run` lists, which is the old session's main `.jsonl`. With the old session's value `start` lists no stale crew.
-- A start killed after `claimedWorktree` set a workflow crew `running` and before its spawn event leaves no spawn event, and no resume form can restart it (`--resume stale` answers "not stale" because `factorySpawned` is undefined). The next `start` (`reclaimOrphans` in `bin/factory/start.ts`) sets such a crew back to planned and starts it again. It runs only for a `start` with neither `--resume` nor `--slug` (`cmdStart`), because `start --slug` on a running crew must stay a no-op. A direct (solo or lean) crew writes no spawn event, so `reclaimOrphans` takes it back to planned when its owner is dead and its crew worktree does not exist; a direct crew whose worktree exists is a live crew and stays running. The finished member results of the old run are dropped on a stale resume unless the old run is finished first.
+- A start killed after `claimedWorktree` set a workflow crew `running` and before its spawn event leaves no spawn event, and no resume form can restart it (`--resume stale` answers "not stale" because `factorySpawned` is undefined). The next `start` (`reclaimOrphans` in `bin/factory/start.ts`) sets such a crew back to planned and starts it again. It runs only for a `start` with neither `--resume` nor `--slug` (`cmdStart`), because `start --slug` on a running crew must stay a no-op. A direct (solo or lean) crew writes no spawn event, so `reclaimOrphans` takes it back to planned when its crew worktree does not exist; a direct crew whose worktree exists is a live crew and stays running. The finished member results of the old run are dropped on a stale resume unless the old run is finished first.
 - A PM session can pass the old session's start output to the Workflow gate (R-135).
-- The reclaim does not touch a crew whose claiming start is still alive. `claimedWorktree` records `owner: { pid, token }` on the crew under the same plan lock as the claim, and `reclaimOrphans` resets a crew only when `ownerDead` finds that pid gone (`process.kill(pid, 0)` throws ESRCH; EPERM counts as alive) or the crew has no owner, as in a plan written before 0.32.0. The spawn event is written by the same `start` process, right after the claim and before it exits, so the owner pid is the right liveness signal. A second concurrent `start` therefore skips a crew the first is still setting up. `plan.schema.json` has an `owner` property for it.
-- A project-manager-path crew has no spawn event and no owner by design, because the project manager sets it `running` by hand. When `start` lists a crew under `projectManagers` it stamps `engine: "project-manager"` on the plan entry, and `reclaimOrphans` never resets a crew that carries the stamp, whatever engine the later `start` call would pick. A workflow claim in `claimedWorktree` clears the stamp. `plan.schema.json` has an `engine` property for it.
+- The claim records no owner (no pid or start token) and `reclaimOrphans` checks no process liveness. It assumes one PM session drives the run, so a `running` crew with no spawn event (a direct crew: no worktree) belongs to a start that died. A second `start` running at the same moment against the same run is not supported and may reset a crew the first is still setting up.
+- A project-manager-path crew has no spawn event by design, because the project manager sets it `running` by hand. When `start` lists a crew under `projectManagers` it stamps `engine: "project-manager"` on the plan entry, and `reclaimOrphans` never resets a crew that carries the stamp, whatever engine the later `start` call would pick. A workflow claim in `claimedWorktree` clears the stamp. `plan.schema.json` is not changed by this ADR, so the schema does not list `engine`.
 
 Negative:
 
 - The gate accepts a file under any directory of `<trussRoot>`, not only a session's. It does not check that `<name>` is a session id, so `<git common dir>/truss/shared/` passes too.
 - The handler's `readReal` checks only that the real path is inside `<trussRoot>`. A path written inside a session dir that is a symlink to a file directly in `<trussRoot>` passes.
 - Outside a git repo the truss dir is `~/.claude/truss/<session id>` (`trussDir`), so the root is `~/.claude/truss` and spans every such session.
-- The claim does not re-check the parallel cap under the lock. Each `start` counts the running crews it read when it began, so two concurrent resumes can together pass `maxParallelCrews`.
+- Concurrent resume of one run is not supported. The claim does not re-check the parallel cap under the lock, so two concurrent `start` calls can together pass `maxParallelCrews`.
 - `find-run` cannot tell whether a listed run's PM session is alive, because the run holds no PM pid or heartbeat. `skills/run/SKILL.md` has the new PM ask the client whether the old PM ended before it takes the run over. A real liveness signal is not built.
 - Any later gate or hook that reads `args.trussFile` must assume the file may belong to another session (Decision 4).
 
