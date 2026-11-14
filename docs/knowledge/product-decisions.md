@@ -13,7 +13,7 @@ sources:
   - plugins/truss/docs/adr/0052-run-survival.md
   - plugins/truss/bin/factory/start.ts
   - plugins/truss/skills/run/SKILL.md
-verified: f969c4c17345c52b0348cfc607a355f6cc8f3302
+verified: 8c3b46bc
 ---
 
 # Product decisions

@@ -10,12 +10,12 @@ sources:
   - plugins/truss/workflows-src/stage/green.js
   - plugins/truss/bin/fragments.ts
   - plugins/truss/tests/hub-split-032.check.ts
-verified: 6b9157063194b1f2d394570a270454b159dadec9
+verified: 8c3b46bc
 ---
 
 # Plugin test notes
 
-Area rules for writing plugin tests: [plugin-tests](../../.claude/rules/plugin-tests.md).
+Area rules for writing plugin tests: [plugin-tests](../../.claude/rules/plugin-tests.md), [fixtures](../../.claude/rules/plugin-tests-fixtures.md), [leaf modules and check runs](../../.claude/rules/plugin-tests-leaf.md), [heavy jobs](../../.claude/rules/plugin-tests-heavy.md), [closeout and stage steps](../../.claude/rules/plugin-tests-closeout.md).
 
 ## lifecycle-029.check.ts
 
@@ -30,7 +30,7 @@ Pins `goal-check` (`goalCheckMain`, `cmdGoalCheckJob`; a slow check is collected
 
 ## Running the suite
 
-`npm test` takes over 600 s, so one foreground Bash call can hit its 600 s timeout. A bare `exit -1` with an empty tail is then a timeout or kill, not a failing test. Run it with output redirected to a file and read the tail. `lifecycle-029.check.ts` alone runs 8 cases in about 20 s.
+`npm test` takes over 600 s, so one foreground Bash call can hit its 600 s timeout. A bare `exit -1` with an empty tail is then a timeout or kill, not a failing test. Run it with output redirected to a file and read the tail. `lifecycle-029.check.ts` alone runs 10 cases in about 12 s.
 
 ## Root contract checks
 
