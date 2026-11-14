@@ -12,12 +12,15 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { bashRun } from '../bin/factory/check.ts'
 import { fragmentSections, splitFront } from '../bin/fragments.ts'
+import { pendingFragment } from './fixtures/doc-text.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const plugin = path.resolve(here, '..')
 
-test('heavy-slots QC 2: the architecture fragment replaces no section of architecture.md, so another crew\'s edit to it survives a stitch', () => {
-  const frag = readFileSync(path.join(plugin, 'docs', 'architecture.d', 'heavy-slots.md'), 'utf8')
+// Only a pending fragment can clash: once the stitch step folds it into architecture.md the fragment is gone.
+const FRAG = pendingFragment('plugins/truss/docs/architecture.md', 'heavy-slots.md')
+test('heavy-slots QC 2: the architecture fragment replaces no section of architecture.md, so another crew\'s edit to it survives a stitch', { skip: FRAG === undefined && 'fragment already stitched into the doc' }, () => {
+  const frag = FRAG as string
   const doc = readFileSync(path.join(plugin, 'docs', 'architecture.md'), 'utf8')
   const docHeads = splitFront(doc).body.map((l) => /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l)).filter(Boolean).map((m) => `${m[1].length} ${m[2]}`)
   const { sections } = fragmentSections(splitFront(frag).body)

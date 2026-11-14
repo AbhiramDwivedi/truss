@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { docText } from './fixtures/doc-text.ts'
 import { crew, flat, mkRepo, planObj, readEvents, readPlan, REAL_FACTORY, runCli, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
 const say = (r: any): string => `exit ${r.status}; stdout ${String(r.stdout).slice(0, 700)}; stderr ${String(r.stderr).slice(0, 300)}`
@@ -27,15 +28,15 @@ function session(repo: string, plan: any): string {
 test('run-survival doc: the case numbers it cites are the cases of that title in run-survival-032.check.ts', () => {
   const src = readFileSync(new URL('./run-survival-032.check.ts', import.meta.url), 'utf8')
   const titles = [...src.matchAll(/^test\((['"`])(.*)\1,/gm)].map((m) => m[2])
-  const doc = readFileSync(new URL('../../../docs/features.d/run-survival.md', import.meta.url), 'utf8')
+  const doc = docText('docs/features.md')
   const sections = doc.split(/^## /m).filter((s) => s.trim())
-  assert.equal(sections.length, 2, 'two sections')
   const casesOf = (s: string): number[] => {
     const line = s.split('\n').find((l) => l.startsWith('- Tests:')) ?? ''
     return [...line.replace(/`[^`]*`/g, '').matchAll(/\d+/g)].map((m) => Number(m[0]))
   }
   const gate = sections.find((s) => s.startsWith('Cross-session trussFile gate'))
   const find = sections.find((s) => s.startsWith('Find and resume'))
+  assert.ok(gate && find, 'both run-survival sections are in the feature doc')
   const gateCases = casesOf(gate)
   const findCases = casesOf(find)
   assert.ok(gateCases.length > 0 && findCases.length > 0, 'both sections cite cases')
