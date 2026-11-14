@@ -1094,3 +1094,7 @@ export const counts = (args: string[]): Counts => {
   if (!isDir(directory)) return { code: 2, out: '', err: `retro: NO_TRUSS_DIR: ${directory}\n` }
   return { code: 0, out: `${dumps(retro(directory))}\n`, err: '' }
 }
+
+// the counting step of the generic retro (ADR-0051), in retro/problems.ts
+export { CHECKLIST, problems } from './problems.ts'
+export type { Finding, Problems } from './problems.ts'

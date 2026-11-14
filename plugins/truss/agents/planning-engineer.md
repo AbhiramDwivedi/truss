@@ -27,7 +27,7 @@ Return only this JSON, no prose around it:
 - `name`: unique and short.
 - `persona`: the name of the editing persona that does the task, from the `personas` map in your brief (an entry with `readOnly` false), or `null` when no persona fits. Match by the persona's `description` (stack and area) to the files the task writes. A judge (`readOnly` true) is never a task's persona. A task never spans two personas' areas: split it along them, one task per persona, even when the leaf test alone would keep it whole. `null` only when no persona fits; when you set it for a task in a stack the map has a persona for, say why in the task's `brief`.
 - `files`: the files the task writes, each a file path and never a directory, even when the task will create new files: name each one.
-- `reads`: the exact files, functions and line ranges the member reads (`src/a.ts:40-90`, `parse()` in `src/b.ts`), plus the rule files (`.claude/rules/<area>.md`) whose `paths` globs match the task's `files`. Never "the codebase".
+- `reads`: the exact files and functions the member reads (`parse()` in `src/b.ts`, `Config` in `src/a.ts`, lines 40 to 90), named by symbol first and a line range only after it, never as `file:line`, plus the rule files (`.claude/rules/<area>.md`) whose `paths` globs match the task's `files`. Never "the codebase".
 - `brief`: the task's goal, the approved scope quoted word for word, what it must not touch, the check to run and what done means.
   Each Check command in a brief is one plain command: no `&&`, `;`, pipe, `cd`, for-loop or `$VAR` argument. Any logic goes in a script file the task names in `files`, and the Check runs that file.
   No task's deliverable is a report, summary or findings `.md` file; findings go in the member's hand-back.
