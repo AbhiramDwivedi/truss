@@ -11,6 +11,7 @@
 // Erasable TypeScript, Node built-ins only (P19). No price is written here: prices come from the client's `pricing` config.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { ratesFor } from '../bin/cost.ts'
 import { analyze } from './timing.ts'
 import { codePart } from './problems-code.ts'
 
@@ -58,27 +59,9 @@ const fmtTokens =(n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` :
 
 // ---------- pricing: the client's `pricing` config, never a table of ours ----------
 
-const RATES = ['inputPerMTok', 'outputPerMTok', 'cacheReadPerMTok', 'cacheWrite5mPerMTok', 'cacheWrite1hPerMTok'] as const
-type Rates = Record<(typeof RATES)[number], number>
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
-const ratesOk = (v: unknown): v is Rates => isObj(v) && RATES.every((k) => typeof v[k] === 'number' && Number.isFinite(v[k]) && v[k] >= 0)
 
-// the same lookup as bin/cost.ts `ratesFor`: the longest pricing key that prefixes the model id, fast and long-context rates included
-function ratesFor(pricing: unknown, model: string, fast: boolean, prompt: number): Rates | null {
-  if (!isObj(pricing)) return null
-  let best: string | undefined
-  for (const k of Object.keys(pricing)) if (model.startsWith(k) && (best === undefined || k.length > best.length)) best = k
-  if (best === undefined) return null
-  const p = pricing[best]
-  const long = !fast && isObj(p) && isObj(p.longContext) ? p.longContext : undefined
-  if (long !== undefined) {
-    const above = long.abovePromptTokens
-    if (typeof above !== 'number' || !Number.isFinite(above) || above < 0) return null
-    if (prompt > above) return ratesOk(long) ? long : null
-  }
-  const r = fast && isObj(p) ? p.fast : p
-  return ratesOk(r) ? r : null
-}
+// the pricing lookup is bin/cost.ts `ratesFor`, imported so the two never drift
 
 /** USD of one usage row, or null when its model has no price (never 0). */
 function rowUsd(pricing: unknown, r: Json): number | null {

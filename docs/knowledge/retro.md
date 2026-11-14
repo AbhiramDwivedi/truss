@@ -12,7 +12,7 @@ sources:
   - plugins/truss/tests/fixtures/retro-generic/non-truss.ts
   - plugins/truss/tests/fixtures/retro-generic/rubric.ts
   - plugins/truss/docs/adr/0051-generic-retro.md
-verified: 73be6836b7662713bc604e83a3201c4284796636
+verified: ba1e57a945ffad8e05c2769425cb55b42ccebc45
 ---
 
 # Generic retro: where things live
@@ -30,6 +30,8 @@ The design is in `plugins/truss/docs/adr/0051-generic-retro.md`. This page holds
 - Do not call `bin/cost.ts` `crewCost` or `attributor` from the counting step: they read transcript metadata. Attribute `usage.jsonl` rows through spawn events by `agentId`; a null `agentId` is `main`.
 - Read `.claude/truss.json` with a tolerant `readJson` in `problems.ts` `readCtx`, never `bin/store.ts` `configOf`. `configOf` throws a `CliError` on text that is not JSON, and the wave-4 fixture's repo holds filler there. A failed read means no pricing.
 - A `refusal` event in `events.jsonl` has `agent` set to the agent id for a subagent (crew is `main`) and `main` for the main session. `rulesPart` finds a refusal's retry cost from that agent's next usage row.
+- `problems.ts` imports `ratesFor` from `bin/cost.ts`; importing that module opens no transcript, so the counting step still reads none. Never copy the pricing lookup back.
+- `retro/cli.ts` `judgedProblem` drops a judge finding whose non-null `cost` number equals no measure the evidence cites. `runTriage` (the `triage` command) parses the triage report into `retro/triage.json`.
 
 ## Recur reads structured files
 
