@@ -8,7 +8,9 @@ sources:
   - plugins/truss/bin/testmap.ts
   - plugins/truss/workflows/stage.js
   - plugins/truss/workflows-src/stage/green.js
-verified: 62e37e3803ca6204e4410dc394852b1adbb86a1c
+  - plugins/truss/bin/fragments.ts
+  - plugins/truss/tests/hub-split-032.check.ts
+verified: 6b9157063194b1f2d394570a270454b159dadec9
 ---
 
 # Plugin test notes
@@ -40,4 +42,21 @@ Every git call in that file uses its own `GIT_CONFIG_GLOBAL` with `maintenance.a
 
 ## Targeted tests
 
-Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. The selector follows names, not whole files, and reaches a factory command's handler only when a test names that command (architecture.md, "Targeted tests"). A test that runs the CLI through a computed command reaches every handler, so name the command as a literal when you can. Only files package.json's test globs match are ever selected. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`, `symbolGraph`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows-src/stage/green.js` (`fullSuite`).
+Since 0.31.0 a green check runs only the tests the crew's diff reaches, and the full suite runs once after QC passes. The selection, its reasons and the check record are in the green result's `tests` field and in `D/checks/`. In this repo, `.claude/truss.json` `targetedTests.map` adds `release-026.check.ts` and `hygiene-029.check.ts` (the citation checks) for any change under `plugins/truss/` or `.claude/rules/`, and `npm --prefix ui test` for a change under `ui/`. The selector follows names, not whole files, and reaches a factory command's handler only when a test names that command (architecture.md, "Targeted tests"). A test that runs the CLI through a computed command reaches every handler, so name the command as a literal when you can. Only files package.json's test globs match are ever selected. Since 0.32.0 a stage test can load one `workflows-src/stage/` module with `loadStageStep` (`bin/build-stage.ts`) and is then selected by a change to that module only; a test that loads the bundle (`loadStageBundle`, or a literal naming `stage.js`) is still selected by every stage module, and the older stage tests still run the bundle. Sources: `plugins/truss/bin/testmap.ts` (`selectTests`, `symbolGraph`, `stageBundles`), `plugins/truss/bin/factory/check.ts` (`checkTests`), `plugins/truss/workflows-src/stage/green.js` (`fullSuite`), `plugins/truss/bin/build-stage.ts` (`loadStageStep`).
+
+## Open: R-96 inbox lock wait under CPU load
+
+The load case in `plugins/truss/tests/hygiene-029.check.ts` ("inbox.check.ts passes 20 of 20 consecutive whole-file runs under artificial CPU load") runs only with `TRUSS_HYGIENE_LOAD_RUNS` set. With `TRUSS_HYGIENE_LOAD_RUNS=20` the inbox case "inbox: 8 concurrent escalates with one kind and ref leave one open op and 7 links" fails with `store busy: inbox` (exit 2), so the inbox lock wait is too short under CPU load. R-96 is still open; it is not fixed by 0.32.0.
+
+## Why a leaf still selects about 110 test files
+
+`selectTests` (`bin/testmap.ts`) picks a test when the files it reaches include the changed file. It follows symbols, and a test that spawns `factory.ts` without naming a command is assumed to run every command. So a leaf that holds a widely used primitive (`withLock`, `readJson`, `CliError`) is reached by about 110 of 173 test files however the hubs are split; only a leaf few commands use stays small (`roles.ts` 56, `admit.ts` 84). To measure, call `selectTests` on `git ls-files` with a one-file diff and assert `mode === 'targeted'`: a full selection returns zero files. The hub-split count cases log counts and do not enforce a bar (ADR-0049).
+
+## Writing doc fragments
+
+- A fragment replaces only sections at its own shallowest heading depth (`fragmentSections` and `applySection` in `bin/fragments.ts`). To change a `####` subsection, such as "Resource-aware sizing" under "### The Workflow path (ADR-0009)" in `architecture.md`, the fragment carries the whole `###` parent section.
+- A rule file with no headings takes only an appended section, so a fragment cannot replace one of its stale bullets. Say in the appended section which bullet it supersedes.
+
+## Open: evals-run-model tmpdir scan flakes under concurrency
+
+The case "run-model: a missing binary leaves no truss-evals-* dir in os.tmpdir()" in `plugins/truss/tests/evals-run-model.check.ts` scans the shared `os.tmpdir()`, so it flakes when the full suite runs files concurrently and another file's `truss-evals-*` dir is present. A fix gives the child a private `TMPDIR` and scans that. Not fixed by crew stage-events.
