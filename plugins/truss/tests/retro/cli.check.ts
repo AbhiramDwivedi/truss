@@ -364,7 +364,18 @@ describe('retro/cli.ts findings: only a block that parses and passes $defs.judge
 // ---------- no extract, corrupt extract, no report ----------
 
 describe('retro/cli.ts findings and recur: FAIL, exit 2, when the extract or the report cannot be read', () => {
-  test('findings and recur against a truss dir with no extract give FAIL and exit 2, and write nothing', async () => {
+  test('recur against a truss dir with no extract.json (the automatic retro never writes one) gives OK, exit 0, and no finding', async () => {
+    const a = await prepared()
+    const { main } = await cliMod()
+    const empty = join(a.root, 'truss-noextract')
+    mkdirSync(empty, { recursive: true })
+    const r = await main(['recur', empty, a.catPath])
+    assert.equal(r.code, 0, r.out)
+    assert.ok(r.out.startsWith('OK: 0 recurred of'), r.out)
+    assert.equal(existsSync(join(empty, 'retro', 'findings.json')), false, 'no findings file is written')
+  })
+
+  test('findings against a truss dir with no extract gives FAIL and exit 2, and writes nothing', async () => {
     const a = await prepared()
     const { main } = await cliMod()
     const empty = join(a.root, 'truss-empty')
@@ -375,9 +386,6 @@ describe('retro/cli.ts findings and recur: FAIL, exit 2, when the extract or the
     assert.equal(f.code, 2, f.out)
     assert.ok(f.out.startsWith('FAIL:'), f.out)
     assert.ok(!f.out.includes('KEPT'), 'nothing is kept without an extract to check against')
-    const r = await main(['recur', empty, a.catPath])
-    assert.equal(r.code, 2, r.out)
-    assert.ok(r.out.startsWith('FAIL:'), r.out)
     assert.equal(existsSync(join(empty, 'retro', 'findings.json')), false, 'no findings file is written')
   })
 
