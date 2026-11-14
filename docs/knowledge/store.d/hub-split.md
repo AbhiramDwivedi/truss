@@ -5,7 +5,7 @@ sources:
   - plugins/truss/bin/transcripts.ts
   - plugins/truss/bin/factory/admit.ts
   - plugins/truss/bin/factory/plan-file.ts
-verified: faca93659184649f2923a3cf0832d75b5fb5ab99
+verified: 6b9157063194b1f2d394570a270454b159dadec9
 ---
 
 ## The store (`bin/store.ts`)
@@ -33,8 +33,8 @@ Plan writes: `savePlan` goes through `writeJsonAtomic`, and `patchPlan` (`bin/fa
 ## Cost meter (`bin/cost.ts`)
 
 - `sweep(dir, repo?, {platform?, waitMs?})` returns `{rows, files, bad, found}` and runs under the `usage` lock (cost.ts `sweep`). `platform` is a parameter so tests cover win32.
-- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts `sweep`, 78). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts `sweep`, 134).
-- Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (lock.ts `readJsonl`). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts `sweep`, 174).
+- `D/usage-cursor.json` is `{files: {<path key>: {offset}}, project, ccEstimate: {usd, ts} | null}`; win32 keys are lowercased paths (cost.ts `sweep`). Dedupe uses the msgId set loaded from `D/usage.jsonl`, not the cursor, so a deleted cursor re-adds nothing (cost.ts `sweep`).
+- Torn rows: `readJsonl` skips an unterminated last line and any line that doesn't parse (lock.ts `readJsonl`). Before appending, the sweep writes a newline when `endsTorn` finds the file's last byte is not one, so a new row is never glued to a torn one (cost.ts `sweep`).
 - `factory cost` (`costOf`) and the inbox commands `escalate`, `resolve`, `mark-applied` and `list` take `--dir` through `absDirOf` (`bin/inbox.ts`): a relative `--dir` is a usage error, so `sessionOf` never sees a relative basename.
 - Attribution (workflow label, spawn event, `worktreePath`, Agent label, `main`, unattributed) is computed on every read and never stored in rows.
 - Raise refs: `budget:<sid>:crew:<slug>`, `:workType:<slug>`, `:run:run`, `:session:session` (cost.ts). `sessionUsd` is checked at every admit and at queue-next; a held session verdict carries `ref` `budget:<sid>:session:session`, which `holdOf` and `queue-next` escalate with, so one raise lifts every crew (`budgetVerdict` in cost.ts; ADR-0038 amendment 2026-11-11). Every `why` starts `budget: `.
