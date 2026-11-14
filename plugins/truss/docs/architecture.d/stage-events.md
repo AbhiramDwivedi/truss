@@ -15,4 +15,6 @@ At finish, `recordRun` and `recordEscalations` in `bin/factory/audit.ts` give ea
 
 When no time can be read, `stamp` adds no `ts`, and `appendEvent` in `bin/factory/log.ts` writes the finish time, as before. So a batch write at finish no longer gives every event the same time.
 
+This supersedes one sentence of "Timing baseline (0.31.0, speed goal step 0)" under "Roles and who talks to whom": a stage's spawn and tag events no longer all carry the stage's end time when a transcript time can be read. The `stampLagMs` and `batchOf` logic in `retro/timing.ts` still handles the finish-time fallback. TODO: decide whether `batchOf` and that paragraph need revising.
+
 `tests/stage-events-032.check.ts` pins this. It also drives `concludeFrontmatterMerge` through `finish`: a crew branch whose only conflict with the target is doc frontmatter merges with no conflict marker and no merge left in progress.
