@@ -1,0 +1,6 @@
+## Memory consolidation (0.32.0)
+
+- What: between waves, `factory consolidate` proposes one reviewable diff to the feature map, the knowledge docs and the architecture doc. It merges two entries with the same capability heading into the first, flags a claim whose cited symbol the code no longer declares (the claim stays), replaces an entry whose entry paths no longer exist with a comment that gives the reason, and re-points a line citation to its enclosing top-level symbol. The rules run in code, never through an agent. The command changes no tracked file: it writes `consolidation.patch` and `consolidation.json` under the truss dir. `--accept` applies the diff and commits it once as `docs: consolidate knowledge`; `--reject` drops it. A checking engineer reviews the diff before the PM accepts it.
+- Entry points: `plugins/truss/bin/factory/consolidate.ts` (`cmdConsolidate`, `unifiedDiff`, `enclosingSymbol`, `declares`); `plugins/truss/bin/factory.ts` (`CORE_COMMANDS`); `plugins/truss/skills/run/SKILL.md` (the between-wave step, section 6).
+- Owner: `truss-plugin-node`.
+- Docs: `plugins/truss/docs/architecture.md` ("Memory consolidation (0.32.0)"); `plugins/truss/tests/consolidation-032.check.ts`.
