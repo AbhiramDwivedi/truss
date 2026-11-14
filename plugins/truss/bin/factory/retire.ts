@@ -253,6 +253,19 @@ export function sweepMembers(x: RetireCtx, tdir: string, runId: string, terminal
       if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
     }
   }
+  // Claude Code Agent worktrees agent-<agentId> on worktree-agent-<agentId>: attributed to a crew by the spawn event naming that agentId.
+  // Only a terminal crew's are retired; one holding a tip the target lacks, a lock or changes is kept and listed with why.
+  const agentCrew = new Map<string, string>()
+  for (const e of events) if (e.event === 'spawn' && typeof e.agentId === 'string' && typeof e.crew === 'string') agentCrew.set(e.agentId, e.crew)
+  for (const w of worktreesOf(x.repo)) {
+    const id = w.branch === undefined ? undefined : /^worktree-agent-([\w.-]+)$/.exec(w.branch)?.[1]
+    if (w.branch === undefined || id === undefined || path.basename(w.path) !== `agent-${id}`) continue
+    const crew = agentCrew.get(id)
+    const why = crew === undefined ? undefined : terminal.get(crew)
+    if (why === undefined || crew === undefined) continue
+    const kept = w.locked ? 'locked' : run(x.repo, ['merge-base', '--is-ancestor', `refs/heads/${w.branch}`, `refs/heads/${x.target}`]).status !== 0 ? 'unmerged' : retireWorktree(x, w, { crew, run: runId, why })
+    if (kept !== undefined) left.push({ path: w.path, branch: w.branch, why: kept })
+  }
   // member branches whose worktree is already gone
   const heads = run(x.repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
   for (const b of heads.status === 0 ? heads.out.split('\n') : []) {
