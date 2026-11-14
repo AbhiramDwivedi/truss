@@ -447,7 +447,8 @@ async function admit(crew, at, label, title, persona = null, high = false) {
   const first = takeAdmitFirst(crew, label, title, persona, high)
   const pre = first ?? (label && !persona && !high ? takeGate(crew, 'admit', (g) => g.admitLabel === label && g.admitTitle === title) : null)
   // a gates admit sent with no wait (the call ran green) that came back held for memory or parallelism gets its own waiting run
-  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true
+  // the folded --admit-first answer counts as a memory or parallelism hold only when it carries admit's own figures (minFreeMB)
+  const held = pre && pre.noWait && isPlainObject(pre.parsed) && pre.parsed.admitted === false && pre.parsed.budget !== true && pre.parsed.awaiting !== true && (pre !== first || typeof pre.parsed.minFreeMB === 'number')
   let r = pre && !held ? pre : await runFactory(crew, cmd, 'admitted')
   // exit 2 "store busy": another process holds the crew store for a moment; one retry, then the stop below. Workflow scripts have
   // no timers (ADR-0009), so the pause is not here: factory's own lock wait (withLock, 5 s) already ran before this exit.
@@ -571,7 +572,7 @@ async function runFactory(crew, command, key, line = null, extra = null) {
   // the admission answer, as admit() takes it: no answer (a factory without --admit-first) leaves the member its own admit call
   const af1 = plan && fromStdout && isPlainObject(fromStdout.admittedFirst) ? fromStdout.admittedFirst : null
   if (af1) {
-    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
+    crew.admitFirst = { label: plan.label, title: plan.title, persona: plan.persona || null, high: !!plan.high, noWait: true, met: af1.admitted === true, parsed: af1, exit: res.exit, out: `exit ${res.exit}\n${JSON.stringify(af1)}` }
     crew.admitPlan = null
   }
   const status = statusOf(res.status)
