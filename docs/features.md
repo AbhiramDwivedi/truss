@@ -196,14 +196,14 @@ One entry per capability. Rules: [plugin-tests](../.claude/rules/plugin-tests.md
 
 ## Decision log line (decide)
 
-- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `bin/factory/decide.ts`).
+- What: `factory decide` appends one decision line to the session log from exactly one of `--line`, `--checker` or `--run`. `--run` may create the session dir, only directly under `<common>/truss` and only after the goal text validates, so a refused `--run` writes nothing (`cmdDecide`, `plugins/truss/bin/factory/decide.ts`).
 - Entry points: `plugins/truss/bin/factory/decide.ts` (`cmdDecide`).
 - Owner: `truss-plugin-node`.
 
 ## Goal check (goal-check)
 
 - What: `factory goal-check --dir D --repo R [--goal ID]` runs the plan's `goalCheck` (or a goal's own) at the target head in a temporary detached worktree, removed after the check, never in the main checkout. It prints one JSON line with the head sha and the output tail (exit 1 when the check fails), logs one decision line once the check has a result, and never pushes or moves a branch. A plan or goal with no `goalCheck` is a usage error (`goalCheckOf`). It checks only the head of `settingsOf(repo).target` and has no flag for another ref, so a single-mode integration branch check stays a hand-run in the integrator's worktree.
-- Background run: a goalCheck is a suite run, so `goalCheckMain` hands it to the heavy background job (`heavyMain` in `bin/factory/heavy.ts`), the path green's full suite takes. The job is detached, holds a heavy slot, and waits for the slot up to `slotWaitMs`. The internal `goal-check-job` command (`cmdGoalCheckJob`) does the worktree run inside it. The caller waits at most `HEAVY_ATTACH_MS` (540 s), so no call overruns the 600 s Bash limit. When the wait runs out, the JSON has `pending: true` and a one-line `error` (`goalCheck still running after N s`), and the same command run again collects the result. Truss kills nothing: a job nobody collects is stopped with Claude Code's TaskStop.
+- Background run: a goalCheck is a suite run, so `goalCheckMain` hands it to the heavy background job (`heavyMain` in `plugins/truss/bin/factory/heavy.ts`), the path green's full suite takes. The job is detached, holds a heavy slot, and waits for the slot up to `slotWaitMs`. The internal `goal-check-job` command (`cmdGoalCheckJob`) does the worktree run inside it. The caller waits at most `HEAVY_ATTACH_MS` (540 s), so no call overruns the 600 s Bash limit. When the wait runs out, the JSON has `pending: true` and a one-line `error` (`goalCheck still running after N s`), and the same command run again collects the result. Truss kills nothing: a job nobody collects is stopped with Claude Code's TaskStop.
 - Entry points: `plugins/truss/bin/factory/decide.ts` (`goalCheckMain`, `cmdGoalCheckJob`), `plugins/truss/tests/lifecycle-029.check.ts`.
 - Owner: `truss-plugin-node`.
 - Docs: `plugins/truss/skills/run/SKILL.md` section 9 ("Goal check"); [architecture](../plugins/truss/docs/architecture.md) ("Goal check (step 9)").

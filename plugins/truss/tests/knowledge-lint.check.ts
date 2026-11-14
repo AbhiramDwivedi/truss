@@ -340,6 +340,17 @@ t('lint 19: new keys on the subject too: a second dead glob in one rule, a secon
   assert.equal(j.predatingCount, 4)
 })
 
+t('lint 19b: an over-budget rule that grows past its base length is a new failure; one that keeps its length is predating', () => {
+  const rule = (n) => `${fm({ paths: ['src/**'] })}\n${lines(n)}`
+  const { env } = goodWorld({ '.claude/rules/src.md': rule(50) })
+  const base = git(env.repo, ['rev-parse', 'HEAD'])
+  const flag = () => lint(env, [`--base=${base}`]).failures.filter((f) => f.check === 'over-budget' && f.path === '.claude/rules/src.md').map((f) => f.new)
+  commit(env.repo, { '.claude/rules/src.md': rule(50) + 'x\n' })
+  assert.deepEqual(flag(), [true], 'grew by one line')
+  commit(env.repo, { '.claude/rules/src.md': rule(50) }, 'back to the base length')
+  assert.deepEqual(flag(), [false], 'same length as the base')
+})
+
 t('lint 20: a heading that only mentions product calls (judging rules) is not persona-calls and migrate leaves it; a heading that is a log of calls is', () => {
   const judging = '## How I judge product calls\n\n- prefer the smaller scope\n- ask who the user is\n\n### Making product decisions\n\n- write the reason down\n'
   const { env } = goodWorld({ '.claude/agents/product-owner.md': PERSONA_OF('product-owner', judging) })
