@@ -98,6 +98,7 @@ test('plan-args picks a writable scripts dir when the session workflows folder r
   const { w, blocker, plugin } = blockedWorld()
   const brief = `${w.dir}/brief.md`
   writeFileSync(brief, 'Build the thing.')
+  writeFileSync(`${w.dir}/decisions.md`, '## Run 2026-11-14T05:00:00Z | the goal\n- 05:10 | checker-1 WORTH worth: the goal item | followed\n')
   const r = cli(w, 'plan-args', ['--brief-file', brief])
   assert.equal(r.status, 0, say(r))
   assertWritableScript(assertOneLine(r).truss.scriptPath, blocker, `${plugin}/workflows/plan.js`)
