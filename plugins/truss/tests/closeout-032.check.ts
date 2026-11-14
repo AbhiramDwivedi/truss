@@ -118,7 +118,10 @@ const evidenceRows = () => {
   return byReq
 }
 
-test('every finding of the run-lifecycle and crew-decisions reviews and each deferred gap in the wave-4 stage results is fixed with a named test or deferred with a reason in 0.32.0-closeout.md', () => {
+// The wave-4 run dir is outside the repo; without TRUSS_WAVE4_DIR the case skips with a message instead of failing the full suite.
+const WAVE4_SKIP = process.env.TRUSS_WAVE4_DIR ? false : 'TRUSS_WAVE4_DIR is not set; export it to the wave-4 run dir to run this case'
+
+test('every finding of the run-lifecycle and crew-decisions reviews and each deferred gap in the wave-4 stage results is fixed with a named test or deferred with a reason in 0.32.0-closeout.md', { skip: WAVE4_SKIP }, () => {
   const md = readDoc()
   const keys = waveGaps()
   const problems = []
