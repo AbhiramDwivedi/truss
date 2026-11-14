@@ -1,0 +1,8 @@
+## Deferred fixes (0.32.0)
+
+The deferred-fixes crew closed the items that report-0.31.0.md listed under "Deferred or unverified", or gave each a reason line in `plugins/truss/tests/fixtures/deferred-031/ledger.json`. The code changes are four.
+
+- **Run target.** `settingsOf` in `bin/factory/settings.ts` takes an optional truss dir. A `target` string in that dir's `plan.json` wins over `.claude/truss.json`. Every caller that knows a dir passes it: `settingsFor(f, repo)` reads `--dir` from the flags for `settings`, `land`, `finish`, `check`, `goal-check`, the knowledge gates and `gated-merge`, and `start`, `crew` and `approve` pass their own `dir`. `plan-check` refuses a `target` that `validBranchName` rejects. ADR-0053 records the decision.
+- **Scripts dir fallback.** `scriptPathAuto` in `bin/factory/roles.ts` tries the session scripts dir, then `<truss dir>/scripts`, then `<os.tmpdir()>/truss-scripts`, and falls back to the plugin's own script last. An explicit `--scripts-dir` is never retried.
+- **Warnings from the named session.** `useTranscriptStart` in `bin/factory/warnings.ts` makes `sessionStartOnce` answer with the first timestamp of the session's main transcript when `start` got `--transcript`. The choice recorded in the comment above `sessionStart` ("never the transcript") is replaced: the transcript start can be too early, never too late.
+- **Notify tree kill proof.** `bin/notify-run.ts` hands the notify command's stderr down when `TRUSS_TEST_NOTIFY_STDERR=inherit`, so `inbox.check.ts` holds the read end of a pipe that closes only when the whole tree has exited. The variable is a test seam; unset, stderr is ignored as before.

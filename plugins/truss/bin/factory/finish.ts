@@ -25,7 +25,7 @@ import { retro } from './retro-mods.ts'
 import { countedQc, factorySpawned, isLive, jsonLines, reportsOf, runOf } from './runs.ts'
 import { crewWorktree, dirOf, intOr, PLUGIN, repoOf, run } from './cli.ts'
 import { loadPlan, patchPlan } from './plan-file.ts'
-import { settingsOf } from './settings.ts'
+import { settingsFor } from './settings.ts'
 import { appendDecision, appendEvent } from './log.ts'
 import { rolesWithTypes } from './roles.ts'
 
@@ -223,7 +223,7 @@ function agentFileWarnings(repo: string, before: string, target: string): string
 export function cmdLand(f: Flags): Obj {
   const repo = repoOf(f)
   const slug = need(f, 'slug')
-  const settings = settingsOf(repo)
+  const settings = settingsFor(f, repo)
   if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const plan = loadPlan(dir)
@@ -265,7 +265,7 @@ export function cmdFinish(f: Flags): Obj {
 function finishRun(f: Flags, held: Map<string, string>): Obj {
   const repo = repoOf(f)
   need(f, 'transcript')
-  const settings = settingsOf(repo)
+  const settings = settingsFor(f, repo)
   if (settings.merge === 'single') throw usage('single merge mode runs on the project manager path')
   const dir = dirOf(f)
   const tdir = flat(need(f, 'transcript')).replace(/\/+$/, '')

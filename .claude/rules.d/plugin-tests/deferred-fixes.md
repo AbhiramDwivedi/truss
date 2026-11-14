@@ -1,0 +1,5 @@
+## Deferred fixes test rules (0.32.0)
+
+- Prove a tree kill with a pipe the test holds, not a pid poll and not a margin: `inbox.check.ts` runs `bin/notify-run.ts` with `TRUSS_TEST_NOTIFY_STDERR=inherit` and waits for the child's `close`, which fires only when notify-run, the command and its detached grandchild (`fixtures/inbox/spawn-sleeper-pipe.ts`) have all exited.
+- Prove a test failing-first against old code by building the old tree in a mkdtemp dir with a private `GIT_INDEX_FILE`, `git read-tree <rev>:plugins/truss` and `git checkout-index -a -f --prefix=<dir>/`, then writing the new test files over its tests (`deferred-032-proof.check.ts`). Give the old code's hang a short limit through its own env (`TRUSS_GOALCHECK_TIMEOUT_MS`) so no process outlives the run, and run the same titles on the current checkout as a control.
+- A test that makes the session scripts dir unwritable makes `<transcripts root>/<project>/<sid>/workflows` a regular file, which fails the same way on macOS, Linux and Windows (`deferred-032.check.ts`, `blockedWorld`).

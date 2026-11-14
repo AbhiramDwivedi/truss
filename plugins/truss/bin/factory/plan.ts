@@ -18,14 +18,14 @@ import type { RetireCtx, RetireWhy } from './retire.ts'
 import { runOf } from './runs.ts'
 import { archPath, dirOf, intOr, PLUGIN, repoOf, run } from './cli.ts'
 import { loadPlan, patchPlan, savePlan } from './plan-file.ts'
-import { docKeysOf, knowledgeArgsOf, settingsOf } from './settings.ts'
+import { docKeysOf, knowledgeArgsOf, settingsFor, settingsOf, validBranchName } from './settings.ts'
 import { appendDecision } from './log.ts'
-import { rolesWithTypes, scriptPathFor, sessionScriptsDir } from './roles.ts'
+import { rolesWithTypes, scriptPathAuto } from './roles.ts'
 import { goalSections } from './goal-file.ts'
 import { uxSaysOff } from './start.ts'
 
 export function cmdSettings(f: Flags): Obj {
-  return settingsOf(repoOf(f))
+  return settingsFor(f, repoOf(f))
 }
 
 export function cmdPlanArgs(f: Flags): Obj {
@@ -42,7 +42,7 @@ export function cmdPlanArgs(f: Flags): Obj {
     truss: {
       kind: 'plan', dir, repo, plugin: PLUGIN, schema: `${PLUGIN}/docs/plan.schema.json`, architecture: archPath(repo, cfg.architecture),
       maxParallelCrews: intOr(cfg.maxParallelCrews, 4, 1), reworkAllowance: intOr(cfg.reworkAllowance, 2, 0), roles: rolesWithTypes(PLUGIN, [], cfg.roles),
-      scriptPath: scriptPathFor(PLUGIN, 'plan.js', str(f, 'scripts-dir') ?? sessionScriptsDir(repo, dir)), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
+      scriptPath: scriptPathAuto(PLUGIN, 'plan.js', str(f, 'scripts-dir'), repo, dir), personas: buildPersonas(repo).personas, workTypes: profilesOf(cfg).profiles,
       ...(existsSync(`${repo}/${featureMap}`) ? { featureMap } : {}),
       ...knowledgeArgsOf(repo, false),
     },
@@ -196,7 +196,7 @@ function retirePlanRun(f: Flags, dir: string, runId: string): { path: string; br
   try {
     const repo = repoOf(f)
     const wts = worktreesOf(repo)
-    const x: RetireCtx = { dir, repo, target: settingsOf(repo).target, mainTop: wts[0]?.path ?? repo }
+    const x: RetireCtx = { dir, repo, target: settingsOf(repo, dir).target, mainTop: wts[0]?.path ?? repo }
     const idRe = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const branchRe = new RegExp(`^worktree-${idRe}-\\d+$`)
     const o = { crew: 'plan', run: runId, why: 'merged' as RetireWhy }
@@ -256,6 +256,8 @@ export function cmdPlanCheck(f: Flags): Obj {
     if (!errors.includes(e)) errors.push(e)
   }
   if (plan.version !== 2 && plan.version !== 3 && plan.version !== 4) errors.push('plan: version must be 2, 3 or 4')
+  // ADR-0053: an optional run target must be a valid git branch name
+  if (Object.hasOwn(plan, 'target') && (typeof plan.target !== 'string' || !validBranchName(plan.target))) errors.push(`plan: target must be a valid git branch name, got ${JSON.stringify(plan.target)}`)
   const goalIds: string[] = []
   if (plan.version === 2 || plan.version === 3 || plan.version === 4) {
     // plan.schema.json: top-level goals and a crew's goal are version 3 only.
@@ -408,7 +410,7 @@ export function cmdApprove(f: Flags): Obj {
   }
   const ltc = ltcPlanGate(repo, dir)
   if (ltc.length > 0) throw refuse({ error: 'long-term cost awaiting the client', ids: ltc })
-  const s = settingsOf(repo)
+  const s = settingsOf(repo, dir)
   const approvedAt = new Date().toISOString()
   patchPlan(dir, (p) => { p.approvedAt = approvedAt })
   appendDecision(dir, `plan approved (${by}): merge ${s.merge}, target ${s.target} from ${s.source}; approvedAt ${approvedAt}; scope frozen | the plan is approved by ${by}, so crews may start`)

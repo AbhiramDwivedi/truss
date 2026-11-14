@@ -22,7 +22,7 @@ function crewCtx(f: Flags): { dir: string; repo: string; slug: string; wt: strin
   const repo = repoOf(f)
   const wt = crewWorktree(repo, slug)
   if (!existsSync(wt)) throw usage(`no crew worktree for ${slug} at ${wt}`)
-  return { dir, repo, slug, wt, target: settingsOf(repo).target }
+  return { dir, repo, slug, wt, target: settingsOf(repo, dir).target }
 }
 // Runs a merge in the worktree; on conflict leaves it in progress and refuses with the conflicting paths.
 export function mergeIn(wt: string, args: string[]): Obj {
@@ -113,7 +113,7 @@ export function cmdMarkMerged(f: Flags): Obj {
   const plan = loadPlan(dir)
   const crew = plan.crews.find((x: Obj) => isObj(x) && x.slug === slug)
   if (crew === undefined) throw usage(`no crew ${slug} in the plan`)
-  const target = settingsOf(repo).target
+  const target = settingsOf(repo, dir).target
   const r = run(repo, ['merge-base', '--is-ancestor', `truss-${slug}`, target])
   if (r.status !== 0) throw refuse({ ok: false, slug, merged: false, why: `truss-${slug} is not an ancestor of ${target}` })
   // ADR-0035: a raw merge cannot be recorded as merged. The same two comparisons as a merge: the crew head against its fork from the target's

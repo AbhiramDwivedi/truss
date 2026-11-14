@@ -1,8 +1,9 @@
 // The roles table and the session scripts dir: readRoles, the role defaults, --type and --model overlays, the stage script copy.
 // Split from bin/factory/shared.ts (0.32.0 item 8). Never imports factory.ts, whose top-level await would make an import cycle.
+import os from 'node:os'
 import path from 'node:path'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { commonDir, flat, isObj, listOf, readJson, usage } from '../core.ts'
+import { CliError, commonDir, flat, isObj, listOf, readJson, usage } from '../core.ts'
 import type { Flags, Obj } from '../core.ts'
 import { transcriptsOf } from '../transcripts.ts'
 
@@ -67,6 +68,24 @@ export function scriptPathFor(plugin: string, script: string, scriptsDir: string
   const to = `${flat(scriptsDir)}/truss-${script}`
   copyFileSync(src, to)
   return to
+}
+// The script copy for plan-args and start. An explicit --scripts-dir is used as given, and its failure stays an error. Otherwise the
+// session scripts dir comes first; when the sandbox or the file system refuses it (EPERM, ENOTDIR), the copy goes to
+// <truss dir>/scripts, which the factory writes anyway and which the session's tools can read, and then to a truss-scripts dir under
+// os.tmpdir(), which exists on macOS, Linux and Windows. The plugin's own copy of the script stays the last resort.
+export function scriptPathAuto(plugin: string, script: string, explicit: string | undefined, repo: string, dir: string): string {
+  if (explicit !== undefined) return scriptPathFor(plugin, script, explicit)
+  const sessionDir = sessionScriptsDir(repo, dir)
+  if (sessionDir === undefined) return scriptPathFor(plugin, script, undefined)
+  const candidates = [sessionDir, `${flat(path.resolve(dir))}/scripts`, `${flat(os.tmpdir())}/truss-scripts`]
+  for (const d of candidates) {
+    try {
+      return scriptPathFor(plugin, script, d)
+    } catch (e) {
+      if (e instanceof CliError) throw e
+    }
+  }
+  return scriptPathFor(plugin, script, undefined)
 }
 // The session scripts dir the Workflow tool accepts: <dirname of the main transcript>/<sid>/workflows/scripts, where <sid> is the path
 // segment directly under <git common dir>/truss/ of the truss dir (a wave subdir is allowed). undefined when the session is not found.

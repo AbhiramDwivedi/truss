@@ -292,7 +292,7 @@ For an auto run, write `approvedAt` with Edit, as an RFC 3339 date-time with a t
 
 **Auto run (`approval: "auto"`, whatever its stages).** Don't ask the client anything:
 
-1. Run `node <plugin>/bin/factory.ts settings --repo <repo>`. It prints the merge mode, the target and their source (`.claude/truss.json`, `default` or `mixed`); an unset `merge` is `sequential` and an unset `target` is the current branch.
+1. Run `node <plugin>/bin/factory.ts settings --repo <repo> --dir <truss dir>`. It prints the merge mode, the target and their source (`.claude/truss.json`, `plan.json`, `default` or `mixed`); an unset `merge` is `sequential` and an unset `target` is the current branch. An optional top-level `target` in `plan.json` overrides the config target for this run (ADR-0053).
 2. Log the merge mode and target, and where each came from.
 3. Overwrite the design engineer's `approvedAt` with now, the time of the log line in step 2.
 4. Add the merge mode, the target and the members you chose to `plan.md`.
