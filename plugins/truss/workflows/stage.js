@@ -1648,7 +1648,16 @@ async function rulingStep(crew, membersRan) {
     crew.proofs.push(`${p.at}: the commits of its stopped member branch ${p.branch} were merged on resume`)
   }
   if (!rulings.length) return
-  const detail = ['The program manager ruled on this crew\'s stop at QC. Build every change the ruling orders (edits, cherry-picks, doc lines), commit them on your branch, and change nothing else:', ...rulings.map((a) => `- ${a.text}`)].join('\n')
+  // bug K: a ruling with role "tester" orders a test change a builder may not make; a tester fix member builds it first
+  // (fixBuilder integrates its branch), then the other rulings go to the builder
+  const forTester = rulings.filter((a) => a.role === 'tester')
+  const forBuilder = rulings.filter((a) => a.role !== 'tester')
+  if (forTester.length) {
+    const testerDetail = ['The program manager ruled on this crew\'s stop at QC, and the ruling changes tests. Build every test change the ruling orders, commit them on your branch, and change nothing else:', ...forTester.map((a) => `- ${a.text}`)].join('\n')
+    await fixBuilder(crew, 'the program manager ruling at qc', testerDetail, 'tester', '', 'qc')
+  }
+  if (!forBuilder.length) return
+  const detail = ['The program manager ruled on this crew\'s stop at QC. Build every change the ruling orders (edits, cherry-picks, doc lines), commit them on your branch, and change nothing else:', ...forBuilder.map((a) => `- ${a.text}`)].join('\n')
   await fixBuilder(crew, 'the program manager ruling at qc', detail)
 }
 
