@@ -15,7 +15,7 @@ import { WORKTYPE_COMMANDS } from './worktypes.ts'
 import { cmdCheck } from './factory/check.ts'
 import { cmdIntegrate, cmdMarkMerged, cmdOwnsCheck, cmdOwnsExtend, cmdSync, cmdTestsCheck } from './factory/crew.ts'
 import { cmdConsolidate } from './factory/consolidate.ts'
-import { cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
+import { cmdDecide, cmdGoalCheckJob, goalCheckJobMain, goalCheckMain } from './factory/decide.ts'
 import { cmdCrewDecision, cmdCrewLearned, cmdDecisionAck, cmdDecisionCheckpoint, cmdDecisionReplies, cmdDecisionReply, cmdDecisions, cmdKnowledgeCommit } from './factory/decisions.ts'
 import { cmdDoctor } from './factory/doctor.ts'
 import { cmdFinish, cmdLand } from './factory/finish.ts'
@@ -25,7 +25,7 @@ import { heavyJobMain, heavyMain } from './factory/heavy.ts'
 import { cmdGatedMerge, cmdKnowledgeConfigGate, cmdKnowledgeLint, cmdKnowledgeMigrate, cmdRulesIndex, cmdStitch } from './factory/knowledge-cmds.ts'
 import { cmdPersonaInstall } from './factory/personas.ts'
 import { cmdApprove, cmdPlanArgs, cmdPlanCap, cmdPlanCheck, cmdPlanWrite, cmdSettings } from './factory/plan.ts'
-import { cmdAdmit } from './factory/admit.ts'
+import { admitFirst, cmdAdmit, takeAdmitFlag } from './factory/admit.ts'
 import { cmdReap } from './factory/reap.ts'
 import { parseFlags } from './factory/cli.ts'
 import { argsFileOut, checkArgsFile, cmdStart } from './factory/start.ts'
@@ -54,7 +54,7 @@ export type { GateStep } from './factory/gates.ts'
 export { mergeHeadVerdict } from './factory/finish.ts'
 export { roleAudit, sessionAudit } from './factory/audit.ts'
 export { OLD_WF_BRANCH, OLD_WF_PATH, OLD_WF_IDLE_MS, ARCHIVE_PREFIX, ARCHIVE_KEEP_MS, SCRATCH_DIRS, worktreeChanges } from './factory/retire.ts'
-export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckMain } from './factory/decide.ts'
+export { isSessionDirUnderCommon, cmdDecide, cmdGoalCheckJob, goalCheckJobMain, goalCheckMain } from './factory/decide.ts'
 
 // ==== main ====
 
@@ -194,11 +194,14 @@ export function reapFirst(argv: string[], slug: string): Obj {
   }
 }
 if (isMain) {
-  const { on, argv: plain } = takeStatusFlag(process.argv.slice(2))
+  const { on, argv: plain0 } = takeStatusFlag(process.argv.slice(2))
+  const { admit: admitArgs, argv: plain } = takeAdmitFlag(plain0)
   const { slug: reapSlug, argv } = takeReapFlag(plain)
   const first = reapSlug === null ? null : reapFirst(argv, reapSlug)
-  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : main(argv)
+  const admitted = admitArgs === null ? null : admitFirst(argv, admitArgs)
+  const { body, code } = argv[0] === 'heavy' ? await heavyMain(argv.slice(1)) : argv[0] === 'heavy-job' ? await heavyJobMain(argv.slice(1)) : argv[0] === 'gates' ? await gatesMain(argv.slice(1)) : argv[0] === 'goal-check' ? await goalCheckMain(argv.slice(1)) : argv[0] === 'goal-check-job' ? await goalCheckJobMain(argv.slice(1)) : main(argv)
   if (first && !Array.isArray(first.reaped)) body.reapedFirst = first
+  if (admitted) body.admittedFirst = admitted
   // ADR-0032: persona-install refuses with one stderr line (and no stdout), not the JSON error object the other commands print
   if (argv[0] === 'persona-install' && code !== 0) process.stderr.write(`persona-install: ${typeof body.error === 'string' ? body.error : JSON.stringify(body)}\n`.replace(/\n(?=.)/g, ' '))
   else process.stdout.write(JSON.stringify(body) + '\n' + (on ? statusLine(body) + '\n' : ''))
