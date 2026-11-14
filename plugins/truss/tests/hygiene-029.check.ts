@@ -14,6 +14,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { REAL_FACTORY, mkRepo, mkTrussDir, runCli, tmp } from './fixtures/workflow-run/harness.ts'
 import { citationFailures } from './release-026.check.ts'
+import { CITATION_DOC_FILES, lineCitations } from './fixtures/citations/line-citations.ts'
 
 const PLUGIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = path.resolve(PLUGIN, '..', '..')
@@ -134,16 +135,13 @@ test('product-decisions.md does not call the Haiku 5.5 prompt tier inexpressible
   assert.doesNotMatch(line, /derived from the general 0\.1x rule|lists no per-model write price/, 'the Pricing line contradicts features.md, which takes the rates from the claude-api skill pricing page')
 })
 
-test('retro SKILL.md cites typedText and OUTPUT_TAG at the lines they have in bin/inbox.ts', () => {
-  const src = readFileSync(path.join(PLUGIN, 'bin', 'inbox.ts'), 'utf8').split('\n')
-  const at = (re) => src.findIndex((l) => re.test(l)) + 1
-  const fnLine = at(/^function typedText\b/)
-  const tagLine = at(/^const OUTPUT_TAG\b/)
-  assert.ok(fnLine > 0 && tagLine > 0, 'typedText and OUTPUT_TAG exist in inbox.ts')
+test('retro SKILL.md cites typedText and OUTPUT_TAG by symbol, and the lint finds no line citation in CITATION_DOC_FILES', () => {
   const skill = readFileSync(path.join(PLUGIN, 'skills', 'retro', 'SKILL.md'), 'utf8')
-  const fn = /`typedText` in `bin\/inbox\.ts:(\d+)(?:-(\d+))?`/.exec(skill)
-  const tag = /`OUTPUT_TAG`, `bin\/inbox\.ts:(\d+)`/.exec(skill)
-  assert.ok(fn && tag, 'the retro skill cites both symbols with a bin/inbox.ts line')
-  assert.ok(Number(fn[1]) <= fnLine && fnLine <= Number(fn[2] ?? fn[1]), `typedText is at ${fnLine}, the skill cites ${fn[1]}-${fn[2] ?? fn[1]}`)
-  assert.equal(Number(tag[1]), tagLine, `OUTPUT_TAG is at ${tagLine}, the skill cites ${tag[1]}`)
+  assert.match(skill, /`typedText`/, 'the retro skill names typedText')
+  assert.match(skill, /`OUTPUT_TAG`/, 'the retro skill names OUTPUT_TAG')
+  const found = CITATION_DOC_FILES.flatMap((f) => {
+    assert.ok(existsSync(path.join(ROOT, ...f.split('/'))), `${f} exists`)
+    return lineCitations(readFileSync(path.join(ROOT, ...f.split('/')), 'utf8')).map((c) => `${f}:${c.line} cites ${c.text}`)
+  })
+  assert.deepEqual(found, [], 'these docs still cite code by line number')
 })

@@ -309,14 +309,14 @@ function attributor(dir: string, repo: string, slugs: string[], platform: NodeJS
 
 // ==== pricing ====
 
-const RATES = ['inputPerMTok', 'outputPerMTok', 'cacheReadPerMTok', 'cacheWrite5mPerMTok', 'cacheWrite1hPerMTok'] as const
+const RATES =['inputPerMTok', 'outputPerMTok', 'cacheReadPerMTok', 'cacheWrite5mPerMTok', 'cacheWrite1hPerMTok'] as const
 const ratesOk = (v: unknown): v is Record<(typeof RATES)[number], number> => isObj(v) && RATES.every((k) => typeof v[k] === 'number' && Number.isFinite(v[k]) && v[k] >= 0)
 
 // The rates for a model: the longest pricing key that is a prefix of its id, its fast rates for a fast row; null when there are none.
 // 0.29.0: a price may carry `longContext: {abovePromptTokens, <rates>}` (Claude Haiku 5.5 bills a request whose prompt is over
 // 100,000 tokens at higher rates). A row is one request, and its prompt is all its input tokens: in, cache reads and both cache
 // writes. A row over the threshold takes the longContext rates; a fast row never does (no model has both today).
-function ratesFor(pricing: unknown, model: string, fast: boolean, prompt = 0): Record<(typeof RATES)[number], number> | null {
+export function ratesFor(pricing: unknown, model: string, fast: boolean, prompt = 0): Record<(typeof RATES)[number], number> | null {
   if (!isObj(pricing)) return null
   let best: string | undefined
   for (const k of Object.keys(pricing)) if (model.startsWith(k) && (best === undefined || k.length > best.length)) best = k
