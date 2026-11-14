@@ -26,7 +26,7 @@ sources:
   - plugins/truss/tests/fixtures/cost/lock-holder.ts
   - plugins/truss/docs/state.schema.json
   - plugins/truss/docs/plan.schema.json
-verified: bbb513c563bca35071524d4de8c6e6b097b55d14
+verified: 549b93d1f1d4abd467542347603482804f752bba
 ---
 
 # Store, holds and contract-025 stubs
