@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { configOf } from './store.ts'
+import { configOf } from './core.ts'
 
 type Ops = {
   spawnSync: (cmd: string, args: string[], opts: Record<string, unknown>) => unknown
