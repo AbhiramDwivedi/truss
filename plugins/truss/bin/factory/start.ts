@@ -84,7 +84,6 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
     const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug)
     if (e !== undefined && e.status === 'planned') {
       e.status = 'running'
-      delete e.engine
       won = true
     }
   })
@@ -102,9 +101,11 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
 // never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
 // A direct (solo or lean) crew writes no spawn event, so its sign of a start that died is no crew worktree.
 function reclaimOrphans(dir: string, repo: string, plan: Obj, merge: string, noWorkflow: boolean): void {
-  const orphaned = (c: Obj): boolean => isDirect(c) ? !existsSync(crewWorktree(repo, String(c.slug))) : factorySpawned(dir, String(c.slug)) === undefined
+  // A crew that start listed under projectManagers has a `pm-crew` event: the project manager sets it running by hand, with no spawn event.
+  const pmCrew = (slug: string): boolean => eventsOf(dir).some((e) => e.event === 'pm-crew' && e.crew === slug && e.by === 'factory')
+  const orphaned = (c: Obj): boolean => isDirect(c) ? !existsSync(crewWorktree(repo, String(c.slug))) : !pmCrew(String(c.slug)) && factorySpawned(dir, String(c.slug)) === undefined
   const orphans = plan.crews.filter((c: unknown) => {
-    if (!isObj(c) || c.status !== 'running' || c.engine === 'project-manager' || !orphaned(c)) return false
+    if (!isObj(c) || c.status !== 'running' || !orphaned(c)) return false
     if (isDirect(c)) return true
     const goalFile = `${dir}/goals/${String(c.slug)}.md`
     if (!existsSync(goalFile)) return false
@@ -113,7 +114,7 @@ function reclaimOrphans(dir: string, repo: string, plan: Obj, merge: string, noW
   if (orphans.length === 0) return
   const slugs = new Set(orphans.map((c) => String(c.slug)))
   patchPlan(dir, (p) => {
-    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && e.engine !== 'project-manager' && orphaned(e)) e.status = 'planned'
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && orphaned(e))e.status = 'planned'
   })
   for (const c of orphans) c.status = 'planned'
   for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
@@ -683,8 +684,8 @@ export function cmdStart(f: Flags): Obj {
         continue
       }
       projectManagers.push({ slug, reason })
-      // ADR-0052: stamp the crew as the project manager's, so a later start's reclaim does not take its by-hand running for a dead start's
-      patchPlan(dir, (p) => { const e = p.crews.find((x: Obj) => isObj(x) && x.slug === slug); if (e !== undefined && e.status === 'planned') e.engine = 'project-manager' })
+      // ADR-0052: record the crew as the project manager's, so a later start's reclaim does not take its by-hand running for a dead start's
+      appendEvent(dir, { event: 'pm-crew', crew: slug, by: 'factory' })
       slots--
       continue
     }
