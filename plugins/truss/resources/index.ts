@@ -266,8 +266,10 @@ export function treeKill(pid: number, spawn: typeof spawnSync = spawnSync): bool
   }
 }
 
-// A heavy slot held past its `until`: stops the groups its owner's wrapper recorded (resources/groups, heavyPid = the owner pid), then
-// the owner pid itself, so the next waiter takes a free machine. Every failure is ignored: the takeover that follows decides.
+// A heavy slot held past its `until`: stops the groups recorded for its owner (resources/groups: heavyPid = the owner pid, or pgid =
+// the owner pid, which is how a wrapper under `factory heavy` records the check it spawned as its own group leader), then the owner's
+// own group when it leads one, then the owner pid itself, so the next waiter takes a free machine. Every failure is ignored: the
+// takeover that follows decides.
 function stopHolder(resources: string, pid: number, platform: string, spawn: typeof spawnSync): void {
   let names: string[] = []
   try {
@@ -278,7 +280,7 @@ function stopHolder(resources: string, pid: number, platform: string, spawn: typ
   for (const name of names) {
     try {
       const rec = JSON.parse(readFileSync(`${resources}/groups/${name}`, 'utf8'))
-      if (rec && rec.heavyPid === pid && Number.isInteger(rec.pgid)) {
+      if (rec && (rec.heavyPid === pid || rec.pgid === pid) && Number.isInteger(rec.pgid)) {
         killGroup(rec.pgid, 'SIGKILL', platform, spawn)
         rmSync(`${resources}/groups/${name}`, { force: true })
       }
@@ -290,6 +292,8 @@ function stopHolder(resources: string, pid: number, platform: string, spawn: typ
     treeKill(pid, spawn)
     return
   }
+  // a check run under `factory heavy` leads its own group and runs its suite inside it, with no record of the suite's own
+  killGroup(pid, 'SIGKILL', platform, spawn)
   try {
     process.kill(pid, 'SIGKILL')
   } catch {
