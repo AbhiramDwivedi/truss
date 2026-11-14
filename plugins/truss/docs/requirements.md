@@ -958,7 +958,7 @@ Source: goal
 Example: Given a crew that changes a file a doc cites by symbol outside the crew's owns, when the crew's checks run, then no out-of-owns doc edit is needed, and a test pins that case.
 
 ## R-138: Items 0.31.0's report or reviewer deferred are fixed or deferred with a reason
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
 Source: goal
@@ -1035,7 +1035,7 @@ Source: goal
 Example: Given a crew whose recorded start and end span a long gap with no agent activity, when retro/timing.ts measures it, then the crew's period is bounded by its first and last agent activity.
 
 ## R-149: The report compares wave-4 and 0.32.0 crew wall-clock with the same method
-Status: open
+Status: met
 Kind: functional
 Added: 2026-11-13T21:22:48Z | truss 0.32.0 retro, consolidation, planning and cleanup release
 Source: goal
