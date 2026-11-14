@@ -115,6 +115,7 @@
         "ts": { "type": "string" },
         "sid": { "type": "string", "minLength": 1 },
         "agentId": { "type": ["string", "null"] },
+        "agent": { "type": "string", "minLength": 1 },
         "model": { "type": "string" },
         "speed": { "type": ["string", "null"] },
         "msgId": { "type": "string", "minLength": 1 },

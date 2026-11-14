@@ -150,12 +150,15 @@ function structurePart(ctx: Ctx): Part {
   const timed = new Map<string, Json>((ctx.timing.crews as Json[]).map((c) => [String(c.slug), c]))
   const base = (g: string): string => g.replace(/\/?\*\*?.*$/, '')
   const covers = (a: string, b: string): boolean => a === b || (/\*/.test(a) && (b === base(a) || b.startsWith(`${base(a)}/`)))
+  // a crew's conflict time is charged once: it is split evenly over the overlapping pairs the crew is in, so the pairs never add up to more than the crews' own
+  const overlap = (i: number, j: number): string[] => [...new Set(crews[i].owns.flatMap((a) => crews[j].owns.filter((b) => covers(a, b) || covers(b, a)).map((b) => (a.length <= b.length ? a : b))))]
+  const pairsOf = crews.map((_, i) => crews.filter((_c, j) => j !== i && overlap(Math.min(i, j), Math.max(i, j)).length > 0).length)
+  const share = (i: number): number => Number(timed.get(crews[i].slug)?.conflictMs ?? 0) / Math.max(1, pairsOf[i])
   for (let i = 0; i < crews.length; i++) {
     for (let j = i + 1; j < crews.length; j++) {
-      const shared = crews[i].owns.flatMap((a) => crews[j].owns.filter((b) => covers(a, b) || covers(b, a)).map((b) => (a.length <= b.length ? a : b)))
-      const uniq = [...new Set(shared)]
+      const uniq = overlap(i, j)
       if (uniq.length === 0) continue
-      const ms = Number(timed.get(crews[i].slug)?.conflictMs ?? 0) + Number(timed.get(crews[j].slug)?.conflictMs ?? 0)
+      const ms = Math.round(share(i) + share(j))
       if (ms < MIN_COST_MS) continue
       const k = `${keyPart(crews[i].slug)}.${keyPart(crews[j].slug)}`
       F.push(finding(M, `P-code-owns-${k}`, 'code structure', `Crews ${crews[i].slug} and ${crews[j].slug} own overlapping paths (${uniq.slice(0, 3).join(', ')}) and their conflict resolution took ${fmtMs(ms)}`,
@@ -173,14 +176,14 @@ const FULL = /\bnpm (?:run )?test\b|\byarn test\b|\bpnpm (?:run )?test\b|\bpytes
 function testsPart(ctx: Ctx): Part {
   const M = ctx.M
   const F: (Finding | null)[] = []
-  type Run = { n: number; exit: number; head: string; full: boolean; ms: number | null }
+  type Run = { n: number; exit: number; head: string; command: string; full: boolean; ms: number | null }
   const by = new Map<string, Run[]>()
   for (const f of list(join(ctx.dir, 'checks'))) {
     const m = /^(.+)-(\d+)\.json$/.exec(f)
     const j = m ? readJson(join(ctx.dir, 'checks', f)) : null
     if (!m || j === null || typeof j !== 'object') continue
     const d = [...String(j.tail ?? '').matchAll(/duration_ms\s+([0-9.]+)/g)].pop()
-    const run: Run = { n: Number(m[2]), exit: Number(j.exit), head: String(j.head ?? ''), full: FULL.test(String(j.command ?? '')), ms: d ? Number(d[1]) : null }
+    const run: Run = { n: Number(m[2]), exit: Number(j.exit), head: String(j.head ?? ''), command: String(j.command ?? ''), full: FULL.test(String(j.command ?? '')), ms: d ? Number(d[1]) : null }
     by.set(m[1], [...(by.get(m[1]) ?? []), run])
   }
   for (const [slug, all] of by) {
@@ -208,7 +211,10 @@ function testsPart(ctx: Ctx): Part {
     }
 
     // suite duration trend: the run time the test reporter printed, first run against the later ones
-    const timed = runs.filter((r) => r.ms !== null).map((r) => r.ms as number)
+    // only green runs of one command are compared: a red run stops early and a different command runs a different set of tests
+    const byCommand = new Map<string, number[]>()
+    for (const r of runs) if (r.exit === 0 && r.ms !== null) byCommand.set(r.command, [...(byCommand.get(r.command) ?? []), r.ms])
+    const timed = [...byCommand.values()].sort((a, b) => b.length - a.length)[0] ?? []
     if (timed.length >= 3) {
       const first = timed[0]
       const excessMs = timed.slice(1).reduce((n, d) => n + Math.max(0, d - first), 0)
