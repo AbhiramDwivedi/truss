@@ -42,3 +42,7 @@ On a v2 plan, the QC engineer FAILs a crew may repair are bounded. Once a crew's
 
 **A reload mid-session.** The module's memory starts over. An agent that ended before the reload resolves to no crew, so a message to it from a crew agent is refused. A pending limit-reset wake survives in plugin state.
 
+## Fragment heading depth (stitch)
+
+`fragmentSections` in `bin/fragments.ts` takes the shallowest heading depth in a fragment as the section depth. Text before the first heading of that depth is preamble: `stitchDoc` drops it and warns `text before the first heading is ignored`. So a fragment starts with its shallowest heading, and a deeper section placed first is lost. Put a `###` section under a `##` section that comes first. A fragment cannot replace a `###` section of the doc and a `##` section in one file: the `###` is then part of the `##` section above it.
+

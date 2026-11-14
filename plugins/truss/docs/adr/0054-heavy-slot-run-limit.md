@@ -6,6 +6,8 @@ Amends: ADR-0015 Decision 3 (stale-lock takeover), ADR-0046 (heavy job from 0.31
 
 ## Context
 
+The number is 0054 because plan.md reserves ADR-0049 to ADR-0053 for other crews of the 0.32.0 run.
+
 Before this change a heavy slot was stale only when its owner pid was dead. A hung command under a live wrapper held the slot for ever, and on win32 a group kill by negative pid does not exist.
 
 ## Decision
