@@ -219,8 +219,7 @@ t('i1 1: the reap after each member rides on the crew\'s next factory call; only
   const r = await runStage([OLD({ stressTest: true })], { labels })
   passed(r)
   const reaps = runners(r).filter((c) => c.runner.cmd === 'reap')
-  assert.equal(reaps.length, 1, `one standalone reap, got ${reaps.length}`)
-  assert.equal(reaps[0], r.calls.at(-1), 'the standalone reap is the crew-end one')
+  assert.equal(reaps.length, 0, `no standalone reap (heavy-slots folds the crew-end one too), got ${reaps.length}`)
   // every member spawn is followed by a call carrying --reap-first a before the next member, or by the crew-end reap
   r.calls.forEach((c, k) => {
     if (!isMember(c)) return
