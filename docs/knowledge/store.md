@@ -1,7 +1,12 @@
 ---
 sources:
   - plugins/truss/bin/store.ts
+  - plugins/truss/bin/core.ts
+  - plugins/truss/bin/lock.ts
+  - plugins/truss/bin/transcripts.ts
   - plugins/truss/bin/factory/resources.ts
+  - plugins/truss/bin/factory/admit.ts
+  - plugins/truss/bin/factory/plan-file.ts
   - plugins/truss/bin/factory/plan.ts
   - plugins/truss/bin/factory/start.ts
   - plugins/truss/bin/factory/finish.ts
