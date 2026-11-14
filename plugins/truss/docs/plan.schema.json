@@ -265,6 +265,10 @@
             "token": { "type": "string", "minLength": 1 }
           }
         },
+        "engine": {
+          "description": "Set by `start` when it lists a planned crew under projectManagers (the project manager path). A later `start` never resets a running crew that carries it, since that crew has no spawn event and no owner by design; a workflow claim clears it (adr/0052-run-survival.md).",
+          "enum": ["project-manager"]
+        },
         "ux": { "type": "boolean", "default": false },
         "process": {
           "description": "Optional, version 4 and above. How much process the crew gets: solo (one agent, no QC engineer, no red-then-green test), lean (one or two members; qc and red record the PM's proof choice) or full (today's crew). Absent means full. See adr/0031-right-size-process.md.",
