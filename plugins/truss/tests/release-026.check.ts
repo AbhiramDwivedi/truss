@@ -182,13 +182,13 @@ export function citationFailures(docName, doc, about = ABOUT) {
 
 test('release-026: every line citation in architecture.md and the knowledge files resolves', () => {
   // Seeded: a citation to an existing but wrong line must fail, and the right line must pass.
-  const store = readFileSync(path.join(PLUGIN, 'bin', 'store.ts'), 'utf8').split('\n')
+  const store = readFileSync(path.join(PLUGIN, 'bin', 'lock.ts'), 'utf8').split('\n')
   const real = store.findIndex((l) => /^const OWNERLESS_MS\b/.test(l)) + 1
-  assert.ok(real > 0, 'OWNERLESS_MS is gone from store.ts')
+  assert.ok(real > 0, 'OWNERLESS_MS is gone from lock.ts')
   const wrong = real === 1 ? 2 : 1
-  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${real}\`).`), [])
-  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/store.ts:${wrong}\`).`), [], 'a wrong line that names a symbol in the file passes')
-  const bad = citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`NO_SUCH_SYMBOL_RELEASE\`, \`bin/store.ts:${wrong}\`).`)
+  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/lock.ts:${real}\`).`), [])
+  assert.deepEqual(citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`OWNERLESS_MS\`, \`bin/lock.ts:${wrong}\`).`), [], 'a wrong line that names a symbol in the file passes')
+  const bad = citationFailures('seed', `A lock with no owner counts as stale after 3 s (\`NO_SUCH_SYMBOL_RELEASE\`, \`bin/lock.ts:${wrong}\`).`)
   assert.equal(bad.length, 1, 'a citation whose symbol is gone from the file must fail')
   assert.match(bad[0], /hold none of NO_SUCH_SYMBOL_RELEASE/)
   assert.equal(citationFailures('seed', 'See `store.ts:99999`.').length, 1, 'a line past the end of the file must fail')
@@ -207,10 +207,10 @@ test('release-026: the run skill resume step filters the inbox by session with t
 })
 
 test('release-026: the architecture doc states the stale-lock rule', () => {
-  const store = plugin('bin/store.ts')
+  const store = plugin('bin/lock.ts')
   const ownerless = Number(store.match(/^const OWNERLESS_MS = ([\d_]+)/m)?.[1].replace(/_/g, ''))
   const age = Number(store.match(/^const STALE_AGE_MS = ([\d_]+)/m)?.[1].replace(/_/g, ''))
-  assert.ok(ownerless > 0 && age > 0, 'store.ts no longer holds OWNERLESS_MS or STALE_AGE_MS')
+  assert.ok(ownerless > 0 && age > 0, 'lock.ts no longer holds OWNERLESS_MS or STALE_AGE_MS')
   const waitMs = Number(store.match(/waitMs\s*=\s*([\d_]+)/)?.[1].replace(/_/g, '') ?? 5000)
   const lockPara = plugin('docs/architecture.md').split('\n').find((l) => /OWNERLESS_MS/.test(l) && /STALE_AGE_MS/.test(l))
   assert.ok(lockPara, 'no paragraph names both stale-lock rules (OWNERLESS_MS and STALE_AGE_MS)')

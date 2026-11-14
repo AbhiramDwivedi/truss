@@ -28,7 +28,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
-import { sharedDir } from '../bin/store.ts'
+import { sharedDir } from '../bin/core.ts'
 import { mkEnv, mkTrussDir, pluginCopy, runCli, tmp } from './fixtures/workflow-run/harness.ts'
 
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))

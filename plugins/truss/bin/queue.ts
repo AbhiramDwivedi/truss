@@ -8,8 +8,10 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import path from 'node:path'
 import { budgetVerdict } from './cost.ts'
 import { escalate } from './inbox.ts'
-import { configOf, createExclusive, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, transcriptsOf, usage, withLock, writeJsonAtomic } from './store.ts'
-import type { Flags, Obj } from './store.ts'
+import { configOf, flat, git, isObj, listOf, need, readJson, readText, refuse, sharedDir, str, usage } from './core.ts'
+import { createExclusive, withLock, writeJsonAtomic } from './lock.ts'
+import { transcriptsOf } from './transcripts.ts'
+import type { Flags, Obj } from './core.ts'
 
 const STATES = ['new', 'claimed', 'running', 'triage', 'done', 'dropped']
 const TRANSITIONS: Record<string, string[]> = {
