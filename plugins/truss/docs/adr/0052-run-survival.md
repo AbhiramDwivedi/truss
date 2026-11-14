@@ -86,6 +86,8 @@ Positive:
 
 - A new PM session finds the run, its unfinished crews and their saved results from the plan files alone (R-141).
 - Resume starts no merged or dropped crew, and two concurrent resumes start each crew once.
+- The `--transcript T` of a resume is the Workflow run dir of the new session's own run, not the `transcript` that `find-run` lists, which is the old session's main `.jsonl`. With the old session's value `start` lists no stale crew.
+- A start killed after `claimedWorktree` set a workflow crew `running` and before its spawn event leaves no spawn event. The next `start` (`reclaimOrphans` in `bin/factory/start.ts`) sets such a crew back to planned and starts it again.
 - A PM session can pass the old session's start output to the Workflow gate (R-135).
 
 Negative:

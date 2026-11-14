@@ -96,7 +96,26 @@ function claimedWorktree(dir: string, repo: string, slug: string, target: string
   }
 }
 
-export type StartCtx = { dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
+// ADR-0052 Decision 1: a start that died after claimedWorktree set the crew running and before its spawn event leaves a
+// running workflow crew that no start form can restart (no spawn event, so it is neither stale nor resumable). Such a crew
+// never ran anything, so it goes back to planned, in plan.json and in the in-memory plan, and the loop below starts it.
+function reclaimOrphans(dir: string, plan: Obj, merge: string, noWorkflow: boolean): void {
+  const orphans = plan.crews.filter((c: unknown) => {
+    if (!isObj(c) || c.status !== 'running' || isDirect(c) || factorySpawned(dir, String(c.slug)) !== undefined) return false
+    const goalFile = `${dir}/goals/${String(c.slug)}.md`
+    if (!existsSync(goalFile)) return false
+    return engineOf(goalSections(readFileSync(goalFile, 'utf8')), merge, noWorkflow).engine === 'workflow'
+  }) as Obj[]
+  if (orphans.length === 0) return
+  const slugs = new Set(orphans.map((c) => String(c.slug)))
+  patchPlan(dir, (p) => {
+    for (const e of p.crews) if (isObj(e) && slugs.has(String(e.slug)) && e.status === 'running' && factorySpawned(dir, String(e.slug)) === undefined) e.status = 'planned'
+  })
+  for (const c of orphans) c.status = 'planned'
+  for (const s of slugs) appendDecision(dir, `crew ${s} was left running by a start that died before its spawn event; set back to planned and started again`)
+}
+
+export type StartCtx ={ dir: string; repo: string; roles: Obj; settings: { merge: string; target: string; source: string }; plan: Obj; scriptPath: string; arch: string; adrs: string[]; models: Record<string, string> }
 const NEED_TRANSCRIPT = 'start needs --transcript T (a Workflow run dir; the runs root is its parent) to read the runs of this session'
 
 // A ## UX section that says UX is off: starts with none, no, off, or "ux: false" (also "ux: no" / "ux: off").
@@ -562,6 +581,7 @@ export function cmdStart(f: Flags): Obj {
   const ctx: StartCtx = { dir, repo, roles, settings, plan, scriptPath, arch, adrs, models }
   const slugFlag = str(f, 'slug')
   const resumeFlag = str(f, 'resume')
+  if (resumeFlag === undefined) reclaimOrphans(dir, plan, settings.merge, f['no-workflow'] === true)
   if (resumeFlag !== undefined) {
     if (!slugFlag || !resumeFlag) throw usage('start --resume needs --slug S')
     return cmdStartResume(f, ctx, slugFlag, resumeFlag)
