@@ -18,7 +18,7 @@
 
 import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { assertOneLine, crew, mkEnv, mkRun, planObj, pluginCopy, runCli, tmp, writeGoal, writePlan } from './fixtures/workflow-run/harness.ts'
 
@@ -76,8 +76,10 @@ async function sessionStartHook(opts: { writeFails?: boolean } = {}) {
   const mod = await import('../hooks/register.ts')
   const root = tmp('wstart-hook-')
   const common = join(root, 'git')
-  const sessionId = 's1'
-  const truss = mod.trussDir(common, undefined, sessionId)
+  // the session id the engine answers now: a fire with another session_id (a /clear or a fork) moves it, as the real engine does
+  let sessionId = 's1'
+  const dirOf = (sid: string): string => mod.trussDir(common, undefined, sid)
+  const truss = dirOf('s1')
   mkdirSync(truss, { recursive: true })
   let now = T0
   const $: any = {
@@ -92,6 +94,8 @@ async function sessionStartHook(opts: { writeFails?: boolean } = {}) {
       stat: async () => ({}),
       write: async (p: string, text: string) => {
         if (opts.writeFails) throw new Error('disk full')
+        // the real $.fs.write creates the file "and its directories as needed"
+        mkdirSync(dirname(p), { recursive: true })
         writeFileSync(p, text)
       },
     },
@@ -107,10 +111,14 @@ async function sessionStartHook(opts: { writeFails?: boolean } = {}) {
   assert.ok(handler, 'the classic.SessionStart handler was not registered')
   const fire = (source: string, at: number, extra: Record<string, unknown> = {}) => {
     now = at
+    if (typeof extra.session_id === 'string') sessionId = extra.session_id
     return handler($, { hook_event_name: 'SessionStart', session_id: sessionId, source, ...extra }, async () => ({}))
   }
-  const record = (): any => (existsSync(join(truss, RECORD)) ? JSON.parse(readFileSync(join(truss, RECORD), 'utf8')) : undefined)
-  return { fire, record, truss, note: `${mod.DIR_NOTE} ${truss}` }
+  const record = (sid = 's1'): any => {
+    const p = join(dirOf(sid), RECORD)
+    return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : undefined
+  }
+  return { fire, record, truss, dirOf, note: `${mod.DIR_NOTE} ${truss}` }
 }
 
 test('the session-start hook writes the record on startup and on resume, with the hook clock time', async () => {
@@ -136,6 +144,19 @@ test('the session-start hook leaves the record alone on compact, writes it on cl
   const sub = await sessionStartHook()
   await sub.fire('startup', T0, { agent_id: 'A1', agent_type: 'kit:builder' })
   assert.equal(sub.record(), undefined, "a subagent's SessionStart writes no record")
+})
+
+test('the session-start hook writes a clear or fork that changes the session id into the new session truss dir and leaves the old record alone', async () => {
+  for (const source of ['clear', 'fork']) {
+    const h = await sessionStartHook()
+    await h.fire('startup', T0 - HOUR)
+    const before = h.record('s1')
+    assert.deepEqual(before, { v: 1, ts: iso(T0 - HOUR), source: 'startup', session: 's1' }, `${source}: the startup record`)
+    const r = await h.fire(source, T0 - 10 * MIN, { session_id: 's2' })
+    assert.deepEqual(h.record('s2'), { v: 1, ts: iso(T0 - 10 * MIN), source, session: 's2' }, `${source}: the record lands in the new session's truss dir ${h.dirOf('s2')}`)
+    assert.deepEqual(h.record('s1'), before, `${source}: the old session's record is unchanged`)
+    assert.ok((r.additionalContext ?? []).includes(`[truss] dir: ${h.dirOf('s2')}`), `${source}: the dir note names the new session's dir: ${JSON.stringify(r)}`)
+  }
 })
 
 test('the session-start hook fails open when the record cannot be written', async () => {
