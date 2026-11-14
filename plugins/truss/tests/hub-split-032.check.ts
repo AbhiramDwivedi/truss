@@ -67,11 +67,63 @@ function selected(rel: string): string[] {
 // the denominator the 0.31.0 report used: every test file package.json's `node --test` globs name
 const runnableTotal = tracked.filter((t) => /^plugins\/truss\/tests\/([^/]+\/)?[^/]+\.check\.ts$/.test(t) || /^checks\/[^/]+\.check\.ts$/.test(t)).length
 
-function countCase(rel: string): void {
-  const files = selected(rel)
+const countMemo = new Map<string, string[]>()
+const selectedMemo = (rel: string): string[] => {
+  if (!countMemo.has(rel)) countMemo.set(rel, selected(rel))
+  return countMemo.get(rel) as string[]
+}
+/** The names a module declares itself: a declaration, or `export { a }` without `from`. A re-export (`export ... from`, `export *`) declares nothing. */
+function ownExports(file: string): Set<string> {
+  const out = new Set<string>()
+  const text = readFileSync(file, 'utf8')
+  for (const m of text.matchAll(/^export\s+(?:declare\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|type|interface)\s+([\w$]+)/gm)) out.add(m[1] as string)
+  for (const m of text.matchAll(/^export\s+(?:type\s+)?\{([^}]*)\}(?!\s*from)/gm)) {
+    for (const part of (m[1] as string).split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop()?.trim()
+      if (name) out.add(name)
+    }
+  }
+  return out
+}
+/** The module that declares `name` as the hub exports it: the hub itself, or the module its `export ... from` / `export *` lines lead to. */
+function homeOf(file: string, name: string, seen = new Set<string>()): string[] {
+  if (seen.has(file) || !existsSync(file)) return []
+  seen.add(file)
+  if (ownExports(file).has(name)) return [file]
+  const text = readFileSync(file, 'utf8')
+  const out: string[] = []
+  for (const m of text.matchAll(/^export\s+(?:type\s+)?(\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]/gm)) {
+    const listed = m[1] === '*' ? [name] : (m[1] as string).slice(1, -1).split(',').map((p) => p.trim().split(/\s+as\s+/).pop()?.trim())
+    if (listed.includes(name)) out.push(...homeOf(path.resolve(path.dirname(file), m[2] as string), name, seen))
+  }
+  return out
+}
+/** The real leaves a hub's code lives in now: for each name the hub exported before the split, the module under bin/ that declares it. */
+function leavesOf(hub: string): Map<string, string[]> {
+  const leaves = new Map<string, string[]>()
+  for (const n of HUB_EXPORTS[hub as keyof typeof HUB_EXPORTS]) {
+    const hubFile = path.join(PLUGIN, hub)
+    // a hub a later goal deletes leaves no re-export to follow: every module under bin/ that declares the name is then its home
+    const found = existsSync(hubFile) ? homeOf(hubFile, n) : tsUnder(BIN).filter((f) => ownExports(f).has(n))
+    const homes = found.map((f) => REL(f).replace(/^plugins\/truss\//, ''))
+    assert.ok(homes.length > 0, `${hub} exported ${n} before the split and neither it nor a module it re-exports declares it now`)
+    for (const h of homes) leaves.set(h, [...(leaves.get(h) ?? []), n])
+  }
+  return leaves
+}
+
+/** A one-line change in each leaf the hub's code moved to selects at most LIMIT test files. A leaf no test reaches does not count as small. */
+function countCase(hub: string): void {
+  const leaves = leavesOf(hub)
+  assert.ok(leaves.size > 0, `${hub}: no leaf found`)
+  const rows = [...leaves.keys()].sort().map((rel) => ({ rel, n: selectedMemo(rel).length }))
+  const report = rows.map((r) => `${r.rel}: ${r.n} of ${runnableTotal}`).join('; ')
+  const dead = rows.filter((r) => r.n === 0).map((r) => r.rel)
+  assert.deepEqual(dead, [], `no test file is selected for a change to ${dead.join(', ')}: a leaf nothing reaches is not a small one (${report})`)
+  const worst = rows.reduce((a, b) => (b.n > a.n ? b : a))
   assert.ok(
-    files.length <= LIMIT,
-    `a change to ${rel} selects ${files.length} of ${runnableTotal} test files, over ${LIMIT}: split it so its callers load only the leaf they use`,
+    worst.n <= LIMIT,
+    `a one-line change to ${worst.rel}, a leaf ${hub}'s code moved to, selects ${worst.n} of ${runnableTotal} test files, over ${LIMIT}; split it so tests reach it only through the code they use. All leaves: ${report}`,
   )
 }
 
