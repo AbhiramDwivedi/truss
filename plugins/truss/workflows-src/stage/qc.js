@@ -94,6 +94,7 @@ async function runQc(crew) {
   try {
     dropGates(crew)
     text = await spawn('qc', label, qcPrompt(crew))
+    endStep(crew, label)
   } finally {
     crew.reapDue = true
   }
@@ -129,7 +130,7 @@ async function qc(crew) {
       await knowledgeAgain(crew, 'full suite before merge', from)
       continue
     }
-    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew) }
+    if (j.verdict === 'PASS' && unscoped.length === 0) return { slug: crew.slug, state: 'passed', head: crew.head, base: crew.e.base, qc: j.label, ...(ltcLinesOf(j.text).length ? { longTermCosts: ltcLinesOf(j.text) } : {}), ...(crew.e.stressTest ? { deferred: crew.deferred || [] } : {}), ...(uxOn(crew) ? { ux: uxResult(crew) } : {}), ...decisionsResult(crew), ...knowledgeResult(crew), ...lintResult(crew), ...stepEndsOf(crew) }
     crew.fails++
     if (spendOf(crew) > F.reworkAllowance) throw allowanceStop(crew, 'qc', j.text)
     const detail = unscoped.length
