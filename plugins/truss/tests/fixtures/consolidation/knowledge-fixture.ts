@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 
-export type Cases = { dup?: boolean; contra?: boolean; unsupported?: boolean; linecite?: boolean }
+export type Cases = { dup?: boolean; contra?: boolean; unsupported?: boolean; linecite?: boolean; used?: boolean }
 export type Fixture = { repo: string; dir: string; cleanup: () => void }
 
 export const git = (cwd: string, ...args: string[]): string => {
@@ -45,6 +45,10 @@ export function buildFixture(cases: Cases): Fixture {
   if (cases.contra) {
     put(repo, 'src/lock.ts', 'export function acquire() {\n  return 1\n}\n')
     store += '\nThe `src/lock.ts` `withLock` takes the lock before it writes.\n'
+  }
+  if (cases.used) {
+    put(repo, 'src/uses.ts', "import { before, it as itFn } from 'node:test'\nimport * as nsq from 'node:path'\nimport dflt from 'node:os'\n\nbefore(async () => {\n  itFn()\n})\n")
+    store += '\nThe `src/uses.ts` `before` runs first, `src/uses.ts` `itFn` second, `src/uses.ts` `nsq` third, `src/uses.ts` `dflt` fourth.\n'
   }
   put(repo, 'docs/knowledge/store.md', store)
 
